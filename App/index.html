@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Proyectos de Obra</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="text-gray-800">
+
+    <div id="loading-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-white">
+        <div class="loader"></div>
+    </div>
+
+    <div id="auth-container" class="hidden">
+        <div id="login-view" class="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+            <div class="max-w-md w-full bg-white p-8 rounded-lg shadow-lg">
+                <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">Iniciar Sesión</h2>
+                <form id="login-form">
+                    <div class="mb-4">
+                        <label for="login-email" class="block text-sm font-medium text-gray-700">Correo Electrónico</label>
+                        <input type="email" id="login-email" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div class="mb-6">
+                        <label for="login-password" class="block text-sm font-medium text-gray-700">Contraseña</label>
+                        <input type="password" id="login-password" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-all">Ingresar</button>
+                    <p id="login-error" class="text-red-500 text-sm mt-4 text-center"></p>
+                </form>
+                <p class="text-center text-sm text-gray-600 mt-4">
+                    ¿No tienes cuenta? <a href="#" id="show-register" class="font-medium text-blue-600 hover:text-blue-500">Regístrate</a>
+                </p>
+            </div>
+        </div>
+
+        <div id="register-view" class="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8 hidden">
+            <div class="max-w-md w-full bg-white p-8 rounded-lg shadow-lg">
+                <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">Crear Cuenta</h2>
+                <form id="register-form" class="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="register-firstName" class="block text-sm font-medium text-gray-700">Nombre</label>
+                            <input type="text" id="register-firstName" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                        </div>
+                        <div>
+                            <label for="register-lastName" class="block text-sm font-medium text-gray-700">Apellido</label>
+                            <input type="text" id="register-lastName" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="register-idNumber" class="block text-sm font-medium text-gray-700">Número de Cédula</label>
+                        <input type="text" id="register-idNumber" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label for="register-email" class="block text-sm font-medium text-gray-700">Correo Electrónico</label>
+                        <input type="email" id="register-email" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                     <div>
+                        <label for="register-phone" class="block text-sm font-medium text-gray-700">Celular</label>
+                        <input type="tel" id="register-phone" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                     <div>
+                        <label for="register-address" class="block text-sm font-medium text-gray-700">Dirección de Residencia</label>
+                        <input type="text" id="register-address" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label for="register-password" class="block text-sm font-medium text-gray-700">Contraseña</label>
+                        <input type="password" id="register-password" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div class="flex items-center">
+                        <input id="accept-terms" name="accept-terms" type="checkbox" required class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                        <label for="accept-terms" class="ml-2 block text-sm text-gray-900">Acepto el uso de datos personales</label>
+                    </div>
+                    <button type="submit" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-all">Registrarse</button>
+                    <p id="register-error" class="text-red-500 text-sm text-center"></p>
+                </form>
+                <p class="text-center text-sm text-gray-600 mt-4">
+                    ¿Ya tienes una cuenta? <a href="#" id="show-login" class="font-medium text-blue-600 hover:text-blue-500">Inicia sesión</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div id="app-container" class="container mx-auto p-4 md:p-8 hidden">
+        <div id="notification-permission-banner" class="hidden bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded-lg shadow-md" role="alert">
+            <div class="flex">
+                <div class="py-1"><svg class="h-6 w-6 text-blue-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" /></svg></div>
+                <div>
+                    <p class="font-bold">Habilitar Notificaciones</p>
+                    <p class="text-sm">Recibe alertas importantes sobre tus proyectos. Habilita las notificaciones para una mejor experiencia.</p>
+                    <button id="enable-notifications-btn" class="mt-2 bg-blue-500 text-white px-3 py-1 text-xs rounded hover:bg-blue-600">Habilitar</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="dashboard-view">
+            <header class="flex justify-between items-center mb-6">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-700">Mis Proyectos</h1>
+                    <p id="user-info" class="text-sm text-gray-500"></p>
+                </div>
+                <div class="flex items-center">
+                    <div class="relative">
+                        <button id="notifications-bell-btn" class="text-gray-500 hover:text-gray-700 relative">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+                            <span id="notification-badge" class="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full hidden"></span>
+                        </button>
+                        <div id="notifications-dropdown" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl z-10">
+                            <div class="p-4 font-bold border-b">Notificaciones</div>
+                            <div id="notifications-list" class="p-2 max-h-96 overflow-y-auto"></div>
+                        </div>
+                    </div>
+                    <button id="profile-btn" class="bg-gray-700 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-lg shadow-md items-center transition-all hidden ml-4">Mi Perfil</button>
+                    <button id="admin-panel-btn" class="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg shadow-md items-center transition-all hidden ml-4">Gestionar Usuarios</button>
+                    <button id="new-project-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md items-center transition-all ml-2">Nuevo Proyecto</button>
+                    <button id="logout-btn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg shadow-md items-center transition-all ml-2">Cerrar Sesión</button>
+                </div>
+            </header>
+            <div id="notifications-container-main" class="mb-8"></div>
+            <div id="projects-container" class="min-h-[300px]"></div>
+        </div>
+        
+        <div id="admin-panel-view" class="hidden">
+            <header class="mb-6">
+                <button id="back-to-dashboard-from-admin-btn" class="text-blue-500 hover:text-blue-700 mb-4 flex items-center">&larr; Volver a Proyectos</button>
+                <h1 class="text-3xl font-bold text-gray-700">Gestionar Usuarios</h1>
+            </header>
+            <div class="mb-4 border-b border-gray-200">
+                <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                    <button id="active-users-tab" class="tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 active">Activos y Pendientes</button>
+                    <button id="archived-users-tab" class="tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">Archivados</button>
+                </nav>
+            </div>
+            <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left text-gray-500">
+                        <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3">Nombre</th>
+                                <th class="px-6 py-3">Correo Electrónico</th>
+                                <th class="px-6 py-3">Rol</th>
+                                <th class="px-6 py-3">Estado</th>
+                                <th class="px-6 py-3 text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body"></tbody>
+                    </table>
+                    <div id="loading-users" class="text-center py-10"><p class="text-gray-500">Cargando usuarios...</p></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="project-details-view" class="hidden">
+            <header class="mb-6">
+                <button id="back-to-dashboard-btn" class="text-blue-500 hover:text-blue-700 mb-4 flex items-center">&larr; Volver a Proyectos</button>
+                <div class="flex flex-col md:flex-row justify-between md:items-center">
+                    <h1 id="project-name-header" class="text-3xl font-bold text-gray-700"></h1>
+                    <div id="project-actions" class="flex flex-wrap gap-2 mt-4 md:mt-0">
+                        <button id="add-item-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md">Añadir Ítem</button>
+                        <button id="import-items-btn" class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg shadow-md">Importar Ítems</button>
+                        <button id="export-pdf-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg shadow-md">Exportar a PDF</button>
+                    </div>
+                </div>
+            </header>
+            <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left text-gray-500">
+                        <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 cursor-pointer hover:bg-gray-100 sortable-header" data-sort="name">Objeto <span class="sort-indicator"></span></th>
+                                <th class="px-6 py-3">Medida</th>
+                                <th class="px-6 py-3 text-center">Cant. Cont.</th>
+                                <th class="px-6 py-3 text-center">M² Cont.</th>
+                                <th class="px-6 py-3 text-center cursor-pointer hover:bg-gray-100 sortable-header" data-sort="executedCount">Cant. Ejec. <span class="sort-indicator"></span></th>
+                                <th class="px-6 py-3 text-center">M² Ejec.</th>
+                                <th class="px-6 py-3 text-center cursor-pointer hover:bg-gray-100 sortable-header" data-sort="status">Estado <span class="sort-indicator"></span></th>
+                                <th class="px-6 py-3 text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="items-table-body"></tbody>
+                    </table>
+                    <div id="loading-items" class="text-center py-10"><p class="text-gray-500">Cargando ítems...</p></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="sub-items-view" class="hidden">
+            <header class="mb-6">
+                <button id="back-to-project-btn" class="text-blue-500 hover:text-blue-700 mb-4">&larr; Volver al Proyecto</button>
+                <h1 id="item-name-header" class="text-3xl font-bold text-gray-700"></h1>
+                <p id="item-summary-header" class="text-gray-500 mt-1"></p>
+            </header>
+            <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left text-gray-500">
+                        <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3">N°</th><th class="px-6 py-3">Lugar de Instalación</th><th class="px-6 py-3">Fabricante</th><th class="px-6 py-3">Instalador</th>
+                                <th class="px-6 py-3">Fecha de Instalación</th><th class="px-6 py-3 text-center">Estado</th><th class="px-6 py-3 text-center">Evidencia</th><th class="px-6 py-3 text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sub-items-table-body"></tbody>
+                    </table>
+                    <div id="loading-sub-items" class="text-center py-10"><p class="text-gray-500">Cargando detalles...</p></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="main-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop"><div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6"><h3 id="modal-title" class="text-xl font-bold mb-4"></h3><form id="modal-form"><div id="modal-body"></div><div class="mt-6 flex justify-end gap-3"><button type="button" id="modal-cancel-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button><button type="submit" id="modal-confirm-btn" class="text-white font-bold py-2 px-4 rounded-lg"></button></div></form></div></div>
+    <div id="progress-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop"><div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6"><h3 id="progress-modal-title" class="text-xl font-bold mb-4">Registrar Avance</h3><form id="progress-modal-form"><div class="space-y-4"><div><label for="sub-item-location" class="block text-sm font-medium text-gray-700">Lugar de Instalación</label><input type="text" id="sub-item-location" class="mt-1 block w-full px-3 py-2 border rounded-md"></div><div><label for="sub-item-manufacturer" class="block text-sm font-medium text-gray-700">Fabricante</label><select id="sub-item-manufacturer" class="mt-1 block w-full px-3 py-2 border rounded-md bg-white"></select></div><div><label for="sub-item-installer" class="block text-sm font-medium text-gray-700">Instalador</label><select id="sub-item-installer" class="mt-1 block w-full px-3 py-2 border rounded-md bg-white"></select></div><div><label for="sub-item-date" class="block text-sm font-medium text-gray-700">Fecha de Instalación</label><input type="date" id="sub-item-date" class="mt-1 block w-full px-3 py-2 border rounded-md"></div><div><label for="sub-item-photo" class="block text-sm font-medium text-gray-700">Foto de Evidencia</label><input type="file" id="sub-item-photo" accept="image/*,application/pdf" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"><div id="photo-preview" class="mt-2"></div></div></div><p id="progress-feedback" class="text-sm mt-4 text-center"></p><div class="mt-6 flex justify-end gap-3"><button type="button" id="progress-modal-cancel-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button><button type="submit" id="progress-modal-confirm-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Guardar</button></div></form></div></div>
+    <div id="import-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop"><div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-lg mx-auto p-6"><h3 class="text-xl font-bold mb-4">Importar Ítems</h3><p class="text-sm text-gray-600 mb-4">Selecciona un archivo .xlsx con: 'nombre', 'cantidad', 'ancho', 'alto'.</p><div class="flex justify-between items-center mb-4"><input type="file" id="excel-file-input" accept=".xlsx, .xls" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/><button id="download-template-btn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg text-sm">Plantilla</button></div><div id="import-feedback" class="text-sm mt-2"></div><div class="mt-6 flex justify-end gap-3"><button type="button" id="import-modal-cancel-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cerrar</button><button type="button" id="import-modal-confirm-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Importar</button></div></div></div>
+    <div id="confirm-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop"><div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6"><h3 id="confirm-modal-title" class="text-xl font-bold mb-4">Confirmar Acción</h3><p id="confirm-modal-body" class="mb-6 text-gray-600"></p><div class="flex justify-end gap-3"><button type="button" id="confirm-modal-cancel-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button><button type="button" id="confirm-modal-confirm-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Confirmar</button></div></div></div>
+    <div id="image-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop p-4"><div class="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-auto p-4 relative"><button id="image-modal-close-btn" class="absolute -top-2 -right-2 bg-white rounded-full p-1 text-gray-600 hover:text-gray-900"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button><img id="modal-image" src="" alt="Evidencia de instalación" class="max-w-full max-h-[85vh] mx-auto"></div></div>
+    <div id="register-success-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop"><div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6"><h3 class="text-xl font-bold mb-4">Registro Exitoso</h3><p class="mb-6 text-gray-600">Solicite al administrador del sistema la activación del usuario.</p><div class="flex justify-end gap-3"><button type="button" id="register-success-accept-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Aceptar</button></div></div></div>
+    
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

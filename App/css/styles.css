@@ -1,0 +1,35 @@
+body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+.modal-backdrop { background-color: rgba(0,0,0,0.5); }
+.transition-all { transition: all 0.3s ease-in-out; }
+.hidden { display: none; }
+.progress-bar-bg { background-color: #e5e7eb; }
+.progress-bar-fg { background-color: #3b82f6; transition: width 0.5s ease-in-out; }
+
+/* Estilos para la pantalla de carga */
+.loader {
+    border: 8px solid #f3f4f6; /* Gris claro */
+    border-top: 8px solid #3b82f6; /* Azul */
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+.tab-button.active {
+    border-color: #3b82f6;
+    color: #3b82f6;
+    font-weight: 600;
+}
+.sortable-header {
+    cursor: pointer;
+}
+.sort-indicator {
+    display: inline-block;
+    margin-left: 5px;
+    opacity: 0.5;
+}
