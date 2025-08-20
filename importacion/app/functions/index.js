@@ -1,0 +1,1220 @@
+// index.js (en tu carpeta /functions)
+const functions = require("firebase-functions");
+const admin = require("firebase-admin");
+const sgMail = require("@sendgrid/mail");
+const { jsPDF } = require("jspdf");
+require("jspdf-autotable");
+const axios = require("axios");
+const { getStorage } = require("firebase-admin/storage");
+const { PDFDocument, rgb, StandardFonts, PageSizes } = require("pdf-lib");
+const cors = require("cors")({ origin: true });
+
+
+admin.initializeApp();
+const db = admin.firestore();
+
+// Configurar SendGrid
+const SENDGRID_API_KEY = functions.config().sendgrid.key;
+const FROM_EMAIL = functions.config().sendgrid.from_email;
+sgMail.setApiKey(SENDGRID_API_KEY);
+
+const WHATSAPP_TOKEN = functions.config().whatsapp.token;
+const WHATSAPP_PHONE_NUMBER_ID = functions.config().whatsapp.phone_number_id;
+
+const BUCKET_NAME = "importadorave-7d1a0.firebasestorage.app";
+
+// **** INICIO DE LA NUEVA FUNCIÓN ****
+/**
+ * Se activa cuando un nuevo usuario se crea en Firebase Authentication.
+ * Revisa si es el primer usuario y, si es así, le asigna el rol de 'admin' y lo activa.
+ */
+exports.onUserCreate = functions.auth.user().onCreate(async (user) => {
+    const usersCollection = admin.firestore().collection("users");
+
+    // Revisa cuántos documentos hay en la colección de usuarios.
+    const snapshot = await usersCollection.limit(2).get();
+
+    // Si solo hay 1 documento (el que se acaba de crear en el app.js), es el primer usuario.
+    if (snapshot.size === 1) {
+        functions.logger.log(`Asignando rol de 'admin' y estado 'active' al primer usuario: ${user.uid}`);
+        // Actualiza el documento del usuario para cambiar su rol y estado.
+        return usersCollection.doc(user.uid).update({
+            role: "admin",
+            status: "active",
+            "permissions.facturacion": true,
+            "permissions.clientes": true,
+            "permissions.items": true,
+            "permissions.colores": true,
+            "permissions.gastos": true,
+            "permissions.proveedores": true,
+            "permissions.empleados": true,
+        });
+    }
+
+    functions.logger.log(`El nuevo usuario ${user.uid} se ha registrado con rol 'planta' y estado 'pending'.`);
+    return null; // No hace nada para los siguientes usuarios.
+});
+
+/**
+ * Formatea un número como moneda colombiana (COP).
+ * @param {number} value El valor numérico a formatear.
+ * @return {string} El valor formateado como moneda.
+ */
+function formatCurrency(value) {
+    return new Intl.NumberFormat("es-CO", {
+        style: "currency",
+        currency: "COP",
+        minimumFractionDigits: 0,
+    }).format(value || 0);
+}
+
+// Función HTTP que devuelve la configuración de Firebase del lado del cliente.
+exports.getFirebaseConfig = functions.https.onRequest((request, response) => {
+    // Usamos cors para permitir que tu página web llame a esta función.
+    cors(request, response, () => {
+        // Verifica que la configuración exista antes de enviarla.
+        if (!functions.config().prisma) {
+            return response.status(500).json({
+                error: "La configuración de Firebase no está definida en el servidor.",
+            });
+        }
+        // Envía la configuración como una respuesta JSON.
+        return response.status(200).json(functions.config().prisma);
+    });
+});
+
+/**
+ * --- NUEVO: Formatea un número de teléfono de Colombia al formato E.164. ---
+ * @param {string} phone El número de teléfono.
+ * @return {string|null} El número formateado o null si es inválido.
+ */
+function formatColombianPhone(phone) {
+    if (!phone || typeof phone !== "string") {
+        return null;
+    }
+    let cleanPhone = phone.replace(/[\s-()]/g, "");
+    if (cleanPhone.startsWith("57")) {
+        return cleanPhone;
+    }
+    if (cleanPhone.length === 10) {
+        return `57${cleanPhone}`;
+    }
+    return null;
+}
+
+/**
+ * --- VERSIÓN CORREGIDA Y ROBUSTA ---
+ * Envía un mensaje de plantilla de WhatsApp con un documento.
+ * AÑADIDO: .trim() para limpiar espacios en blanco en las variables de texto.
+ * @param {string} toPhoneNumber Número del destinatario en formato E.164.
+ * @param {string} customerName Nombre del cliente para la plantilla.
+ * @param {string} remisionNumber Número de la remisión.
+ * @param {string} status Estado actual de la remisión.
+ * @param {string} pdfUrl URL pública del PDF a enviar.
+ * @return {Promise<object>} La respuesta de la API de Meta.
+ */
+async function sendWhatsAppRemision(toPhoneNumber, customerName, remisionNumber, status, pdfUrl) {
+    const formattedPhone = formatColombianPhone(toPhoneNumber);
+    if (!formattedPhone) {
+        functions.logger.error(`Número de teléfono inválido o no se pudo formatear a E.164: ${toPhoneNumber}`);
+        return;
+    }
+
+    const API_VERSION = "v19.0";
+    const url = `https://graph.facebook.com/${API_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
+
+    const payload = {
+        messaging_product: "whatsapp",
+        to: formattedPhone,
+        type: "template",
+        template: {
+            name: "envio_remision",
+            language: { code: "es" },
+            components: [
+                {
+                    type: "header",
+                    parameters: [{
+                        type: "document",
+                        document: { link: pdfUrl, filename: `Remision-${String(remisionNumber)}.pdf` },
+                    }],
+                },
+                {
+                    type: "body",
+                    parameters: [
+                        { type: "text", text: String(customerName) },
+                        { type: "text", text: String(remisionNumber) },
+                        { type: "text", text: String(status) },
+                    ],
+                },
+            ],
+        },
+    };
+
+    const headers = {
+        "Authorization": `Bearer ${WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json",
+    };
+
+    try {
+        // --- LÍNEA DE DIAGNÓSTICO AÑADIDA ---
+        // Esto nos mostrará el paquete de datos completo que se envía a Meta.
+        functions.logger.info("Enviando el siguiente payload a WhatsApp:", JSON.stringify(payload, null, 2));
+
+        await axios.post(url, payload, { headers });
+        functions.logger.info(`Solicitud de envío a WhatsApp para ${formattedPhone} fue aceptada por Meta.`);
+    } catch (error) {
+        if (error.response) {
+            functions.logger.error(`WhatsApp API Error Detallado para ${formattedPhone}:`, JSON.stringify(error.response.data, null, 2));
+        }
+        throw new Error(`Falló el envío de WhatsApp a ${formattedPhone}: ${error.message}`);
+    }
+}
+
+/**
+ * --- VERSIÓN FINAL Y DEFINITIVA ---
+ * 1.  Corrige el error de la firma repetida, asegurando que la sección
+ * "Firma y Sello" aparezca UNA SOLA VEZ en la última página del documento.
+ * 2.  Mantiene todas las demás funcionalidades intactas.
+ * @param {object} remision El objeto con los datos de la remisión.
+ * @return {Buffer} El PDF como un buffer de datos.
+ */
+function generarPDFCliente(remision) {
+    const { jsPDF } = require("jspdf");
+    require("jspdf-autotable");
+
+    const doc = new jsPDF();
+    const pageHeight = doc.internal.pageSize.height;
+    const headerHeight = 85;
+    const footerMargin = 20; // Espacio solo para el número de página
+
+    const addHeader = () => {
+        doc.setFont("helvetica", "bold").setFontSize(18).text("Remisión de Servicio", 105, 20, { align: "center" });
+        doc.setFontSize(10).setFont("helvetica", "bold").text("IMPORTADORA VIDRIOS EXITO", 105, 28, { align: "center" });
+        doc.setFont("helvetica", "normal").text("Tels: 311 8109893 - 310 2557543", 105, 33, { align: "center" });
+        doc.text("Cra 27 No 67-58", 105, 38, { align: "center" });
+        doc.setFontSize(14).setFont("helvetica", "bold").text(`Remisión N°: ${remision.numeroRemision}`, 190, 45, { align: "right" });
+    };
+
+    // --- LÓGICA DE PIE DE PÁGINA CORREGIDA ---
+    const addPageNumber = (data) => {
+        doc.setFontSize(8);
+        doc.text(`Página ${data.pageNumber} de ${data.pageCount}`, 105, pageHeight - 10, { align: 'center' });
+    };
+
+    const addFinalSignature = () => {
+        const footerY = pageHeight - 45;
+        doc.line(40, footerY, 120, footerY); // Línea de Firma
+        doc.setFontSize(10).setFont("helvetica", "normal").text("Firma y Sello de Recibido", 75, footerY + 5, { align: "center" });
+        doc.setLineCap(2).line(20, footerY + 20, 190, footerY + 20);
+        doc.setFontSize(8).setFont("helvetica", "bold");
+        doc.text("NO SE ENTREGA TRABAJO SINO HA SIDO CANCELADO.", 105, footerY + 25, { align: "center" });
+        doc.text("DESPUES DE 8 DIAS NO SE RESPONDE POR MERCANCIA.", 105, footerY + 29, { align: "center" });
+    };
+
+    const headColumns = [['Referencia', 'Descripción', 'Cant.', 'Vlr. Unit.', 'Subtotal']];
+    const bodyRows = [];
+    remision.items.forEach(item => {
+        const desc = item.tipo === 'Cortada' ? `${item.descripcion} (Cortes)` : item.descripcion;
+        bodyRows.push([item.referencia, desc, item.cantidad, formatCurrency(item.valorUnitario), formatCurrency(item.valorTotal)]);
+    });
+    if (remision.cargosAdicionales && remision.cargosAdicionales.length > 0) {
+        remision.cargosAdicionales.forEach(cargo => {
+            bodyRows.push(['N/A', cargo.descripcion, 1, formatCurrency(cargo.valorUnitario), formatCurrency(cargo.valorTotal)]);
+        });
+    }
+
+    doc.autoTable({
+        head: headColumns,
+        body: bodyRows,
+        startY: headerHeight,
+        theme: 'grid',
+        headStyles: { fillColor: [22, 160, 133] },
+        margin: { top: 50, bottom: footerMargin },
+        didDrawPage: function (data) {
+            addHeader();
+            addPageNumber(data); // Solo el número de página se dibuja aquí
+
+            if (data.pageNumber === 1) {
+                doc.setFontSize(11).setFont("helvetica", "bold").text("Cliente:", 20, 60).setFont("helvetica", "normal").text(remision.clienteNombre, 55, 60);
+                doc.setFont("helvetica", "bold").text("Correo:", 20, 66).setFont("helvetica", "normal").text(remision.clienteEmail || 'N/A', 55, 66);
+                doc.setFont("helvetica", "bold").text("Teléfono:", 20, 72).setFont("helvetica", "normal").text(remision.clienteTelefono || 'N/A', 55, 72);
+                doc.setFont("helvetica", "bold").text("Fecha Recibido:", 120, 60).setFont("helvetica", "normal").text(remision.fechaRecibido, 160, 60);
+                doc.setFont("helvetica", "bold").text("Fecha Entrega:", 120, 66).setFont("helvetica", "normal").text(remision.fechaEntrega || "Pendiente", 160, 66);
+                doc.setFont("helvetica", "bold").text("Forma de Pago:", 120, 72).setFont("helvetica", "normal").text(remision.formaPago, 160, 72);
+                doc.setFont("helvetica", "bold").text("Estado:", 120, 78).setFont("helvetica", "normal").text(remision.estado, 160, 78);
+            }
+        }
+    });
+
+    const finalY = doc.lastAutoTable.finalY;
+    const pageCount = doc.internal.getNumberOfPages();
+    doc.setPage(pageCount);
+    let yPos = finalY + 15;
+    const spaceNeeded = 80; // Espacio para totales y firma
+
+    if (yPos > pageHeight - spaceNeeded) {
+        doc.addPage();
+        addHeader();
+        addPageNumber({ pageNumber: pageCount + 1, pageCount: pageCount + 1 });
+        yPos = headerHeight;
+    }
+
+    doc.setFontSize(12).setFont("helvetica", "bold").text("Subtotal:", 130, yPos);
+    doc.setFont("helvetica", "normal").text(formatCurrency(remision.subtotal), 190, yPos, { align: "right" });
+    yPos += 7;
+    if (remision.discount && remision.discount.amount > 0) {
+        doc.setFont("helvetica", "bold").text("Descuento:", 130, yPos);
+        doc.setFont("helvetica", "normal").text(`-${formatCurrency(remision.discount.amount)}`, 190, yPos, { align: "right" });
+        yPos += 7;
+    }
+    if (remision.incluyeIVA) {
+        doc.setFont("helvetica", "bold").text("IVA (19%):", 130, yPos);
+        doc.setFont("helvetica", "normal").text(formatCurrency(remision.valorIVA), 190, yPos, { align: "right" });
+        yPos += 7;
+    }
+    doc.setFont("helvetica", "bold").text("TOTAL:", 130, yPos);
+    doc.text(formatCurrency(remision.valorTotal), 190, yPos, { align: "right" });
+
+    // Se llama a la función de la firma UNA SOLA VEZ, al final de todo.
+    addFinalSignature();
+
+    if (remision.estado === "Anulada") {
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= totalPages; i++) {
+            doc.setPage(i);
+            doc.setFontSize(80).setTextColor(255, 0, 0);
+            doc.text("ANULADA", 105, 160, { align: "center", angle: 45, opacity: 0.4 });
+            doc.setTextColor(0, 0, 0);
+        }
+    }
+
+    return Buffer.from(doc.output("arraybuffer"));
+}
+
+/**
+ * --- VERSIÓN FINAL Y DEFINITIVA ---
+ * Genera la ORDEN DE PRODUCCIÓN MULTI-PÁGINA completa para uso interno.
+ * 1.  Corrige el problema de sobreposición de texto, asegurando que el bloque
+ * de totales y la firma aparezcan UNA SOLA VEZ, al final de la tabla de ítems.
+ * 2.  El parámetro `isForPlanta` solo controla la visibilidad de los precios.
+ * 3.  Mantiene todas las demás funcionalidades intactas (anexos, planos 2D, etc.).
+ * @param {object} remision El objeto con los datos de la remisión.
+ * @param {boolean} isForPlanta Indica si el PDF es para el rol de planta.
+ * @return {Buffer} El PDF como un buffer de datos.
+ */
+async function generarPDF(remision, isForPlanta = false) {
+    const { PDFDocument, rgb, StandardFonts, PageSizes } = require("pdf-lib");
+    const { jsPDF } = require("jspdf");
+    require("jspdf-autotable");
+    const db = admin.firestore();
+
+    const pdfDocFinal = await PDFDocument.create();
+    const font = await pdfDocFinal.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDocFinal.embedFont(StandardFonts.HelveticaBold);
+
+    // --- FUNCIÓN REUTILIZABLE PARA AÑADIR ENCABEZADOS A CADA PÁGINA ---
+    const addHeader = (doc, title) => {
+        doc.setFont("helvetica", "bold").setFontSize(18).text(title, 105, 20, { align: "center" });
+        if (remision.estado === "Anulada") {
+            doc.setFontSize(80).setTextColor(255, 0, 0);
+            doc.text("ANULADA", 105, 160, { align: "center", angle: 45 });
+            doc.setTextColor(0, 0, 0);
+        }
+        if (!title.toLowerCase().includes("anexo")) {
+            doc.setFontSize(10).setFont("helvetica", "bold").text("IMPORTADORA VIDRIOS EXITO", 105, 28, { align: "center" });
+            doc.setFont("helvetica", "normal").text("Tels: 311 8109893 - 310 2557543", 105, 33, { align: "center" });
+            doc.text("Cra 27 No 67-58", 105, 38, { align: "center" });
+        }
+        doc.setFontSize(14).setFont("helvetica", "bold").text(`Remisión N°: ${remision.numeroRemision}`, 190, 45, { align: "right" });
+    };
+
+    // --- FUNCIÓN REUTILIZABLE PARA AÑADIR PIE DE PÁGINA ---
+    const addFooter = (doc, pageNumber, pageCount) => {
+        const pageHeight = doc.internal.pageSize.height;
+        doc.setFontSize(8);
+        doc.text(`Página ${pageNumber} de ${pageCount}`, 105, pageHeight - 10, { align: 'center' });
+    };
+    
+    // --- PÁGINA(S) 1: RESUMEN DE MATERIALES ---
+    const paginaResumen = new jsPDF();
+    const headerHeight = 85;
+    const footerHeight = 20; // Espacio solo para el número de página
+
+    const headColumns = [['Referencia', 'Descripción del Material', 'Cant. Láminas']];
+    if (!isForPlanta) {
+        headColumns[0].push('Vlr. Unit.', 'Subtotal');
+    }
+
+    const bodyRows = [];
+    remision.items.forEach(item => {
+        const row = [item.referencia, item.descripcion, item.cantidad];
+        if (!isForPlanta) {
+            row.push(formatCurrency(item.valorUnitario), formatCurrency(item.valorTotal));
+        }
+        bodyRows.push(row);
+    });
+
+    if (!isForPlanta && remision.cargosAdicionales) {
+        remision.cargosAdicionales.forEach(cargo => {
+            bodyRows.push(['N/A', cargo.descripcion, 1, formatCurrency(cargo.valorUnitario), formatCurrency(cargo.valorTotal)]);
+        });
+    }
+
+    paginaResumen.autoTable({
+        head: headColumns,
+        body: bodyRows,
+        startY: headerHeight,
+        theme: 'grid',
+        headStyles: { fillColor: [22, 160, 133] },
+        margin: { top: 50, bottom: footerHeight },
+        didDrawPage: function (data) {
+            addHeader(paginaResumen, isForPlanta ? "Orden de Producción" : "Remisión de Servicio");
+            addFooter(paginaResumen, data.pageNumber, data.pageCount);
+
+            if (data.pageNumber === 1) {
+                paginaResumen.setFontSize(11).setFont("helvetica", "bold").text("Cliente:", 20, 60).setFont("helvetica", "normal").text(remision.clienteNombre, 55, 60);
+                paginaResumen.setFont("helvetica", "bold").text("Fecha Recibido:", 120, 60).setFont("helvetica", "normal").text(remision.fechaRecibido, 160, 60);
+                if (!isForPlanta) {
+                    paginaResumen.setFont("helvetica", "bold").text("Teléfono:", 20, 66).setFont("helvetica", "normal").text(remision.clienteTelefono || 'N/A', 55, 66);
+                }
+            }
+        }
+    });
+
+    // --- CORRECCIÓN DEFINITIVA PARA EL BLOQUE DE TOTALES Y FIRMA ---
+    if (!isForPlanta) {
+        const finalY = paginaResumen.lastAutoTable.finalY;
+        const pageCount = paginaResumen.internal.getNumberOfPages();
+        paginaResumen.setPage(pageCount);
+
+        let yPos = finalY + 15;
+        const spaceNeededForTotalsAndSignature = 80;
+
+        if (yPos > paginaResumen.internal.pageSize.height - spaceNeededForTotalsAndSignature) {
+            paginaResumen.addPage();
+            addHeader(paginaResumen, "Remisión de Servicio");
+            addFooter(paginaResumen, pageCount + 1, pageCount + 1);
+            yPos = headerHeight;
+        }
+
+        paginaResumen.setFontSize(12).setFont("helvetica", "bold").text("Subtotal:", 130, yPos);
+        paginaResumen.setFont("helvetica", "normal").text(formatCurrency(remision.subtotal), 190, yPos, { align: "right" });
+        yPos += 7;
+        if (remision.discount && remision.discount.amount > 0) {
+            paginaResumen.setFont("helvetica", "bold").text("Descuento:", 130, yPos);
+            paginaResumen.setFont("helvetica", "normal").text(`-${formatCurrency(remision.discount.amount)}`, 190, yPos, { align: "right" });
+            yPos += 7;
+        }
+        if (remision.incluyeIVA) {
+            paginaResumen.setFont("helvetica", "bold").text("IVA (19%):", 130, yPos);
+            paginaResumen.setFont("helvetica", "normal").text(formatCurrency(remision.valorIVA), 190, yPos, { align: "right" });
+            yPos += 7;
+        }
+        paginaResumen.setFont("helvetica", "bold").text("TOTAL:", 130, yPos);
+        paginaResumen.text(formatCurrency(remision.valorTotal), 190, yPos, { align: "right" });
+        
+        // Dibuja la firma y notas legales en la última página, después de los totales
+        const pageHeight = paginaResumen.internal.pageSize.height;
+        const signatureY = pageHeight - 45;
+        paginaResumen.line(40, signatureY, 120, signatureY);
+        paginaResumen.setFontSize(10).setFont("helvetica", "normal").text("Firma y Sello de Recibido", 75, signatureY + 5, { align: "center" });
+        paginaResumen.setLineCap(2).line(20, signatureY + 20, 190, signatureY + 20);
+        paginaResumen.setFontSize(8).setFont("helvetica", "bold");
+        paginaResumen.text("NO SE ENTREGA TRABAJO SINO HA SIDO CANCELADO.", 105, signatureY + 25, { align: "center" });
+        paginaResumen.text("DESPUES DE 8 DIAS NO SE RESPONDE POR MERCANCIA.", 105, signatureY + 29, { align: "center" });
+    }
+
+    const resumenPdfBytes = await PDFDocument.load(paginaResumen.output('arraybuffer'));
+    for (let i = 0; i < resumenPdfBytes.getPageCount(); i++) {
+        const [copiedPage] = await pdfDocFinal.copyPages(resumenPdfBytes, [i]);
+        pdfDocFinal.addPage(copiedPage);
+    }
+    
+    const itemsCortados = remision.items.filter(item => item.tipo === 'Cortada' && item.planoDespiece && item.planoDespiece.length > 0);
+    if (itemsCortados.length > 0) {
+        // --- ANEXO DE PRODUCCIÓN (4 COLUMNAS) ---
+        const paginaAnexo = new jsPDF();
+        addHeader(paginaAnexo, "Anexo: Despiece Detallado");
+        
+        const allCortes = [];
+        let corteIdGlobal = 1;
+        itemsCortados.forEach(item => {
+            (item.cortes || []).forEach(corte => {
+                for (let i = 0; i < corte.cantidad; i++) {
+                    allCortes.push({ id: corteIdGlobal++, material: item.descripcion, medida: `${corte.ancho} x ${corte.alto} mm` });
+                }
+            });
+        });
+
+        const margenSuperior = 60, margenInferior = 20, margenLateral = 15, espacioEntreColumnas = 5;
+        const numColumnas = 4, altoTarjeta = 22;
+        const anchoColumna = (paginaAnexo.internal.pageSize.width - (margenLateral * 2) - (espacioEntreColumnas * (numColumnas - 1))) / numColumnas;
+        let yActual = margenSuperior, columnaActual = 0;
+
+        allCortes.forEach((corte) => {
+            if (yActual + altoTarjeta > paginaAnexo.internal.pageSize.height - margenInferior) {
+                columnaActual++;
+                yActual = margenSuperior;
+                if (columnaActual >= numColumnas) {
+                    paginaAnexo.addPage();
+                    addHeader(paginaAnexo, "Anexo: Despiece (Continuación)");
+                    columnaActual = 0;
+                    yActual = margenSuperior;
+                }
+            }
+            const xActual = margenLateral + (columnaActual * (anchoColumna + espacioEntreColumnas));
+            paginaAnexo.setDrawColor(200, 200, 200).rect(xActual, yActual, anchoColumna, altoTarjeta);
+            paginaAnexo.setFontSize(16).setFont("helvetica", "bold").text(`${corte.id}`, xActual + 3, yActual + 8);
+            paginaAnexo.setFontSize(7).setFont("helvetica", "normal").text(corte.medida, xActual + 3, yActual + 13);
+            paginaAnexo.text(corte.material, xActual + 3, yActual + 18, { maxWidth: anchoColumna - 4 }); 
+            yActual += altoTarjeta + 3;
+        });
+
+        const anexoPdfBytes = await PDFDocument.load(paginaAnexo.output('arraybuffer'));
+        for (let i = 0; i < anexoPdfBytes.getPageCount(); i++) {
+            const [copiedPage] = await pdfDocFinal.copyPages(anexoPdfBytes, [i]);
+            pdfDocFinal.addPage(copiedPage);
+        }
+
+        // --- PLANOS 2D (VERTICALES Y SIN DESPERDICIO) ---
+        let planoCorteId = 1;
+        for (const item of itemsCortados) {
+            const itemDataSnap = await db.collection('items').doc(item.itemId).get();
+            if (!itemDataSnap.exists) continue;
+            const itemData = itemDataSnap.data();
+            const anchoMaestra = itemData.ancho, altoMaestra = itemData.alto;
+
+            for (const lamina of item.planoDespiece) {
+                const page = pdfDocFinal.addPage(PageSizes.A4);
+                const { width, height } = page.getSize();
+                
+                page.drawText(`Plano de Corte - Lámina ${lamina.numero} de ${item.planoDespiece.length}`, { x: 50, y: height - 40, font: fontBold, size: 16 });
+                page.drawText(`Remisión N°: ${remision.numeroRemision}`, { x: width - 200, y: height - 40, font: fontBold, size: 12 });
+                page.drawText(`Material: ${item.descripcion} (${anchoMaestra}x${altoMaestra}mm)`, { x: 50, y: height - 60, font, size: 10 });
+                const nombreEstrategia = (item.estrategia || 'minimo_desperdicio') === 'minimo_desperdicio' ? 'Mínimo Desperdicio' : 'Prioridad Vertical';
+                page.drawText(`Estrategia: ${nombreEstrategia}`, { x: 50, y: height - 75, font, size: 10, color: rgb(0.3, 0.3, 0.3) });
+
+                const escala = (width - 120) / anchoMaestra;
+                const xOffset = 60, yOffset = height - 95 - (altoMaestra * escala);
+                
+                page.drawRectangle({ x: xOffset, y: yOffset, width: anchoMaestra * escala, height: altoMaestra * escala, borderColor: rgb(0.5, 0.5, 0.5), borderWidth: 1 });
+                
+                (lamina.cortes || []).forEach(corte => {
+                    page.drawRectangle({
+                        x: xOffset + corte.x * escala,
+                        y: yOffset + ((altoMaestra - corte.y - corte.alto) * escala),
+                        width: corte.ancho * escala,
+                        height: corte.alto * escala,
+                        borderColor: rgb(0, 0, 0),
+                        borderWidth: 0.5,
+                        color: rgb(0.2, 0.6, 0.8),
+                        opacity: 0.2
+                    });
+                    const centroX = xOffset + (corte.x + corte.ancho / 2) * escala;
+                    const centroY = yOffset + ((altoMaestra - corte.y - corte.alto / 2) * escala);
+                    page.drawText(`${planoCorteId}`, { x: centroX - 4, y: centroY + 4, font: fontBold, size: 10, color: rgb(0, 0, 0) });
+                    page.drawText(corte.descripcion.replace(' (R)', 'R'), { x: centroX - 15, y: centroY - 8, font, size: 7, color: rgb(0, 0, 0) });
+                    planoCorteId++;
+                });
+            }
+        }
+    }
+    
+    const finalPdfBytes = await pdfDocFinal.save();
+    return Buffer.from(finalPdfBytes);
+}
+
+// AGREGA ESTA NUEVA FUNCIÓN
+exports.getSignedUrlForPath = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "El usuario no está autenticado.");
+    }
+    const filePath = data.path;
+    if (!filePath) {
+        throw new functions.https.HttpsError("invalid-argument", "La ruta del archivo es requerida.");
+    }
+
+    try {
+        const bucket = getStorage().bucket(BUCKET_NAME);
+        const file = bucket.file(filePath);
+        const [url] = await file.getSignedUrl({
+            action: "read",
+            expires: Date.now() + 15 * 60 * 1000, // La URL expira en 15 minutos
+        });
+        return { url: url };
+    } catch (error) {
+        functions.logger.error(`Error al generar URL para ${filePath}:`, error);
+        throw new functions.https.HttpsError("internal", "No se pudo obtener la URL del archivo.");
+    }
+});
+
+exports.onRemisionCreate = functions.region("us-central1").firestore
+    .document("remisiones/{remisionId}")
+    .onCreate(async (snap, context) => {
+        sgMail.setApiKey(functions.config().sendgrid.key);
+        const FROM_EMAIL = functions.config().sendgrid.from_email;
+        const remisionData = snap.data();
+        const remisionId = context.params.remisionId;
+        const log = (message) => functions.logger.log(`[${remisionId}] ${message}`);
+
+        log("Iniciando creación de remisión y notificaciones...");
+
+        let emailStatus = "pending";
+        let whatsappStatus = "pending";
+
+        try {
+            const pdfBufferCliente = await generarPDFCliente(remisionData);
+            const pdfBufferAdmin = await generarPDF(remisionData, false);
+            const pdfBufferPlanta = await generarPDF(remisionData, true);
+
+            const bucket = admin.storage().bucket(BUCKET_NAME);
+            const filePathAdmin = `remisiones/${remisionData.numeroRemision}.pdf`;
+            const fileAdmin = bucket.file(filePathAdmin);
+            await fileAdmin.save(pdfBufferAdmin);
+
+            const filePathPlanta = `remisiones/planta-${remisionData.numeroRemision}.pdf`;
+            const filePlanta = bucket.file(filePathPlanta);
+            await filePlanta.save(pdfBufferPlanta);
+
+            const [urlAdmin] = await fileAdmin.getSignedUrl({ action: 'read', expires: '03-09-2491' });
+            const [urlPlanta] = await filePlanta.getSignedUrl({ action: 'read', expires: '03-09-2491' });
+            
+            await snap.ref.update({
+                pdfUrl: urlAdmin,
+                pdfPlantaUrl: urlPlanta,
+            });
+
+            try {
+                const msg = {
+                    to: remisionData.clienteEmail,
+                    from: FROM_EMAIL,
+                    subject: `Confirmación de Remisión N° ${remisionData.numeroRemision}`,
+                    html: `<p>Hola ${remisionData.clienteNombre},</p><p>Hemos recibido tu orden y adjuntamos la remisión de servicio.</p><p>El estado actual es: <strong>${remisionData.estado}</strong>.</p><p>Gracias por confiar en nosotros.</p><p><strong>Importadora Vidrios Exito</strong></p>`,
+                    attachments: [{
+                        content: pdfBufferCliente.toString("base64"),
+                        filename: `Remision-${remisionData.numeroRemision}.pdf`,
+                        type: "application/pdf",
+                        disposition: "attachment",
+                    }],
+                };
+                await sgMail.send(msg);
+                emailStatus = "sent";
+            } catch (emailError) {
+                functions.logger.error(`Error detallado al enviar correo al cliente:`, JSON.stringify(emailError, null, 2));
+                emailStatus = "error";
+            }
+            
+            try {
+                const printerMsg = {
+                    to: "oficinavidriosexito@print.brother.com",
+                    from: FROM_EMAIL,
+                    subject: `Imprimir Remisión N° ${remisionData.numeroRemision}`,
+                    html: `<p>Se ha generado la remisión N° ${remisionData.numeroRemision} para el cliente ${remisionData.clienteNombre}. Adjunto para impresión.</p>`,
+                    attachments: [{
+                        content: pdfBufferCliente.toString("base64"),
+                        filename: `Remision-${remisionData.numeroRemision}.pdf`,
+                        type: "application/pdf",
+                        disposition: "attachment",
+                    }],
+                };
+                await sgMail.send(printerMsg);
+                log("Copia de remisión enviada a la impresora.");
+            } catch (printerError) {
+                functions.logger.error("Error detallado al enviar a la impresora:", JSON.stringify(printerError, null, 2));
+            }
+
+            // --- INICIO DE LA CORRECCIÓN DE WHATSAPP ---
+            try {
+                const clienteDoc = await admin.firestore().collection("clientes").doc(remisionData.idCliente).get();
+                if (clienteDoc.exists) {
+                    const clienteData = clienteDoc.data();
+                    const telefonos = [clienteData.telefono1, clienteData.telefono2].filter(Boolean);
+
+                    if (telefonos.length > 0) {
+                        let successfulSends = 0;
+                        // Usamos un bucle for...of para enviar los mensajes uno por uno
+                        for (const telefono of telefonos) {
+                            try {
+                                await sendWhatsAppRemision(
+                                    telefono,
+                                    remisionData.clienteNombre,
+                                    remisionData.numeroRemision.toString(),
+                                    remisionData.estado,
+                                    urlAdmin // Usamos la URL permanente
+                                );
+                                successfulSends++;
+                            } catch (e) {
+                                functions.logger.error(`Falló el envío de WhatsApp a ${telefono}:`, e.message);
+                            }
+                        }
+
+                        if (successfulSends > 0) whatsappStatus = "sent_partial";
+                        if (successfulSends === telefonos.length) whatsappStatus = "sent_all";
+                        if (successfulSends === 0) whatsappStatus = "error";
+                    } else {
+                        log("El cliente no tiene números de teléfono registrados.");
+                        whatsappStatus = "no_phone";
+                    }
+                } else {
+                    log("No se encontró el documento del cliente para obtener el teléfono.");
+                    whatsappStatus = "client_not_found";
+                }
+            } catch (whatsappError) {
+                functions.logger.error(`Error general en el proceso de WhatsApp:`, whatsappError);
+                whatsappStatus = "error";
+            }
+            // --- FIN DE LA CORRECCIÓN DE WHATSAPP ---
+
+            return snap.ref.update({ emailStatus, whatsappStatus });
+
+        } catch (error) {
+            functions.logger.error(`[${remisionId}] Error General en onRemisionCreate:`, error);
+            return snap.ref.update({
+                emailStatus: "error",
+                whatsappStatus: "error",
+                errorLog: error.message,
+            });
+        }
+    });
+
+exports.onRemisionUpdate = functions.region("us-central1").firestore
+    .document("remisiones/{remisionId}")
+    .onUpdate(async (change, context) => {
+        sgMail.setApiKey(functions.config().sendgrid.key);
+        const FROM_EMAIL = functions.config().sendgrid.from_email;
+        const beforeData = change.before.data();
+        const afterData = change.after.data();
+        const remisionId = context.params.remisionId;
+        const log = (message) => {
+            functions.logger.log(`[Actualización ${remisionId}] ${message}`);
+        };
+
+        const sendNotifications = async (motivo, pdfUrlToSend) => {
+            try {
+                const clienteDoc = await admin.firestore().collection("clientes").doc(afterData.idCliente).get();
+                if (!clienteDoc.exists) {
+                    log(`Cliente ${afterData.idCliente} no encontrado para notificar (${motivo}).`);
+                    return;
+                }
+
+                const clienteData = clienteDoc.data();
+                const telefonos = [clienteData.telefono1, clienteData.telefono2].filter(Boolean);
+
+                if (telefonos.length === 0) {
+                    log(`El cliente no tiene números para notificar (${motivo}).`);
+                    return;
+                }
+
+                log(`Iniciando envío de notificaciones (${motivo}) a ${telefonos.join(", ")}`);
+
+                // --- INICIO DE LA CORRECCIÓN DE WHATSAPP ---
+                // Usamos un bucle for...of para enviar los mensajes uno por uno
+                for (const telefono of telefonos) {
+                    try {
+                        await sendWhatsAppRemision(
+                            telefono,
+                            afterData.clienteNombre,
+                            afterData.numeroRemision.toString(),
+                            afterData.estado,
+                            pdfUrlToSend
+                        );
+                    } catch (e) {
+                        functions.logger.error(`Falló envío de notificación (${motivo}) a ${telefono}:`, e.message);
+                    }
+                }
+                // --- FIN DE LA CORRECCIÓN DE WHATSAPP ---
+
+            } catch (error) {
+                functions.logger.error(`Error crítico en la función sendNotifications (${motivo}):`, error);
+            }
+        };
+
+        const estadoCambio = beforeData.estado !== afterData.estado;
+        const totalPagadoAntes = (beforeData.payments || []).filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
+        const totalPagadoDespues = (afterData.payments || []).filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
+        const pagoFinalizado = totalPagadoAntes < afterData.valorTotal && totalPagadoDespues >= afterData.valorTotal;
+
+        if (estadoCambio || pagoFinalizado) {
+            log("Detectado cambio relevante. Regenerando todos los PDFs y notificando.");
+            
+            try {
+                const remisionParaPdf = pagoFinalizado ? { ...afterData, formaPago: "Cancelado" } : afterData;
+                
+                const pdfBufferCliente = await generarPDFCliente(remisionParaPdf);
+                const pdfBufferAdmin = await generarPDF(remisionParaPdf, false);
+                const pdfBufferPlanta = await generarPDF(remisionParaPdf, true);
+                
+                const bucket = admin.storage().bucket(BUCKET_NAME);
+                const filePathAdmin = `remisiones/${afterData.numeroRemision}.pdf`;
+                const fileAdmin = bucket.file(filePathAdmin);
+                await fileAdmin.save(pdfBufferAdmin);
+
+                const filePathPlanta = `remisiones/planta-${afterData.numeroRemision}.pdf`;
+                const filePlanta = bucket.file(filePathPlanta);
+                await filePlanta.save(pdfBufferPlanta);
+                
+                const [urlAdmin] = await fileAdmin.getSignedUrl({ action: 'read', expires: '03-09-2491' });
+                const [urlPlanta] = await filePlanta.getSignedUrl({ action: 'read', expires: '03-09-2491' });
+                
+                const updateData = {
+                    pdfUrl: urlAdmin,
+                    pdfPlantaUrl: urlPlanta
+                };
+                if (pagoFinalizado) {
+                    updateData.formaPago = "Cancelado";
+                }
+                await change.after.ref.update(updateData);
+                log("URLs de PDFs de Admin y Planta actualizadas en Firestore.");
+
+                if (afterData.estado === "Anulada") {
+                    const msg = { /* ... */ };
+                    await sgMail.send(msg);
+                    await sendNotifications("Anulación", urlAdmin);
+                } else if (afterData.estado === "Entregado") {
+                    const msg = { /* ... */ };
+                    await sgMail.send(msg);
+                    await sendNotifications("Entrega", urlAdmin);
+                } else if (pagoFinalizado) {
+                    const msg = { /* ... */ };
+                    await sgMail.send(msg);
+                }
+
+            } catch (error) {
+                log("Error al procesar actualización de remisión:", error);
+            }
+        }
+        
+        return null;
+    });
+
+// Función HTTP invocable que devuelve la configuración de Firebase del lado del cliente.
+exports.getFirebaseConfig = functions.https.onCall((data, context) => {
+    // Asegurarse de que el usuario esté autenticado para solicitar la configuración es una buena práctica.
+    if (!context.auth) {
+        throw new functions.https.HttpsError(
+            "unauthenticated",
+            "El usuario debe estar autenticado para solicitar la configuración."
+        );
+    }
+
+    // Devuelve la configuración guardada en el entorno.
+    return functions.config().prisma;
+});
+
+exports.applyDiscount = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "El usuario no está autenticado.");
+    }
+
+    const { remisionId, discountPercentage } = data;
+    if (!remisionId || discountPercentage === undefined) {
+        throw new functions.https.HttpsError("invalid-argument", "Faltan datos (remisionId, discountPercentage).");
+    }
+
+    if (discountPercentage < 0 || discountPercentage > 5.0001) { // Allow for small floating point inaccuracies
+        throw new functions.https.HttpsError("out-of-range", "El descuento debe estar entre 0 y 5%.");
+    }
+
+    const remisionRef = admin.firestore().collection("remisiones").doc(remisionId);
+
+    try {
+        const remisionDoc = await remisionRef.get();
+        const docExists = remisionDoc && (typeof remisionDoc.exists === "function" ? remisionDoc.exists() : remisionDoc.exists);
+        if (!docExists) {
+            throw new functions.https.HttpsError("not-found", "La remisión no existe.");
+        }
+
+        const remisionData = remisionDoc.data();
+        const subtotal = remisionData.subtotal;
+        const discountAmount = subtotal * (discountPercentage / 100);
+        const subtotalWithDiscount = subtotal - discountAmount;
+        const newIva = remisionData.incluyeIVA ? subtotalWithDiscount * 0.19 : 0;
+        const newTotal = subtotalWithDiscount + newIva;
+
+        const updatedData = {
+            valorTotal: newTotal,
+            valorIVA: newIva,
+            discount: {
+                percentage: discountPercentage,
+                amount: discountAmount,
+                appliedBy: context.auth.uid,
+                appliedAt: new Date(),
+            },
+        };
+
+        await remisionRef.update(updatedData);
+
+        const finalRemisionData = { ...remisionData, ...updatedData };
+        const pdfBuffer = generarPDF(finalRemisionData, false);
+        const pdfPlantaBuffer = generarPDF(finalRemisionData, true);
+
+        const bucket = admin.storage().bucket(BUCKET_NAME);
+        const filePath = `remisiones/${finalRemisionData.numeroRemision}.pdf`;
+        const file = bucket.file(filePath);
+        await file.save(pdfBuffer, { metadata: { contentType: "application/pdf" } });
+
+        const filePathPlanta = `remisiones/planta-${finalRemisionData.numeroRemision}.pdf`;
+        const filePlanta = bucket.file(filePathPlanta);
+        await filePlanta.save(pdfPlantaBuffer, { metadata: { contentType: "application/pdf" } });
+
+        const [url] = await file.getSignedUrl({ action: "read", expires: "03-09-2491" });
+        const [urlPlanta] = await filePlanta.getSignedUrl({ action: "read", expires: "03-09-2491" });
+
+        await remisionRef.update({ pdfUrl: url, pdfPlantaUrl: urlPlanta });
+
+        const msg = {
+            to: finalRemisionData.clienteEmail,
+            from: FROM_EMAIL,
+            subject: `Descuento aplicado a tu Remisión N° ${finalRemisionData.numeroRemision}`,
+            html: `<p>Hola ${finalRemisionData.clienteNombre},</p>
+                   <p>Se ha aplicado un descuento del <strong>${discountPercentage.toFixed(2)}%</strong> a tu remisión N° ${finalRemisionData.numeroRemision}.</p>
+                   <p>El nuevo total es: <strong>${formatCurrency(newTotal)}</strong>.</p>
+                   <p>Adjuntamos la remisión actualizada.</p>
+                   <p><strong>Importadora Vidrios Exito</strong></p>`,
+            attachments: [{
+                content: pdfBuffer.toString("base64"),
+                filename: `Remision-Actualizada-${finalRemisionData.numeroRemision}.pdf`,
+                type: "application/pdf",
+                disposition: "attachment",
+            }],
+        };
+
+        await sgMail.send(msg);
+
+        return { success: true, message: "Descuento aplicado y correo enviado." };
+
+    } catch (error) {
+        functions.logger.error(`Error al aplicar descuento para ${remisionId}:`, error);
+        throw new functions.https.HttpsError("internal", "No se pudo aplicar el descuento.");
+    }
+});
+
+exports.onResendEmailRequest = functions.region("us-central1").firestore
+    .document("resendQueue/{queueId}")
+    .onCreate(async (snap, context) => {
+        const request = snap.data();
+        const remisionId = request.remisionId;
+        const log = (message) => {
+            functions.logger.log(`[Reenvío ${remisionId}] ${message}`);
+        };
+        log("Iniciando reenvío de correo.");
+
+        try {
+            const remisionDoc = await admin.firestore()
+                .collection("remisiones").doc(remisionId).get();
+            const docExists = remisionDoc && (typeof remisionDoc.exists === "function" ? remisionDoc.exists() : remisionDoc.exists);
+            if (!docExists) {
+                log("La remisión no existe.");
+                return snap.ref.delete();
+            }
+            const remisionData = remisionDoc.data();
+
+            const bucket = admin.storage().bucket(BUCKET_NAME);
+            const filePath = `remisiones/${remisionData.numeroRemision}.pdf`;
+            const [pdfBuffer] = await bucket.file(filePath).download();
+            log("PDF descargado desde Storage.");
+
+            const msg = {
+                to: remisionData.clienteEmail,
+                from: FROM_EMAIL,
+                subject: `[Reenvío] Remisión N° ${remisionData.numeroRemision}`,
+                html: `<p>Hola ${remisionData.clienteNombre},</p>
+          <p>Como solicitaste, aquí tienes una copia de tu remisión.</p>`,
+                attachments: [{
+                    content: pdfBuffer.toString("base64"),
+                    filename: `Remision-${remisionData.numeroRemision}.pdf`,
+                    type: "application/pdf",
+                    disposition: "attachment",
+                }],
+            };
+            await sgMail.send(msg);
+            log(`Correo reenviado a ${remisionData.clienteEmail}.`);
+
+            return snap.ref.delete();
+        } catch (error) {
+            log("Error en el reenvío:", error);
+            return snap.ref.update({ status: "error", error: error.message });
+        }
+    });
+
+/**
+ * NUEVA FUNCIÓN: Actualiza el documento de un empleado con la URL de un archivo.
+ * Se invoca desde el cliente después de subir un archivo a Firebase Storage.
+ */
+exports.updateEmployeeDocument = functions.https.onCall(async (data, context) => {
+    // 1. Autenticación y Verificación de Permisos
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "El usuario no está autenticado.");
+    }
+
+    const uid = context.auth.uid;
+    const userDoc = await admin.firestore().collection("users").doc(uid).get();
+    const userData = userDoc.data();
+
+    if (userData.role !== "admin") {
+        throw new functions.https.HttpsError("permission-denied", "El usuario no tiene permisos de administrador.");
+    }
+
+    // 2. Validación de Datos de Entrada
+    const { employeeId, docType, fileUrl } = data;
+    if (!employeeId || !docType || !fileUrl) {
+        throw new functions.https.HttpsError("invalid-argument", "Faltan datos (employeeId, docType, fileUrl).");
+    }
+
+    // 3. Lógica de Actualización
+    try {
+        const employeeDocRef = admin.firestore().collection("users").doc(employeeId);
+
+        // Usamos notación de punto para actualizar un campo dentro de un mapa.
+        // Esto crea el mapa 'documentos' si no existe.
+        const updatePayload = {
+            [`documentos.${docType}`]: fileUrl
+        };
+
+        await employeeDocRef.update(updatePayload);
+
+        return { success: true, message: `Documento '${docType}' actualizado para el empleado ${employeeId}.` };
+    } catch (error) {
+        functions.logger.error(`Error al actualizar documento para ${employeeId}:`, error);
+        throw new functions.https.HttpsError("internal", "No se pudo actualizar el documento del empleado.");
+    }
+});
+
+/**
+ * Se activa cuando se actualiza una importación (ej. al añadir un abono).
+ * Registra el abono como un gasto en COP.
+ */
+exports.onImportacionUpdate = functions.firestore
+    .document("importaciones/{importacionId}")
+    .onUpdate(async (change, context) => {
+        const beforeData = change.before.data();
+        const afterData = change.after.data();
+        const importacionId = context.params.importacionId;
+        const log = (message) => functions.logger.log(`[Imp Update ${importacionId}] ${message}`);
+
+        const gastosAntes = beforeData.gastosNacionalizacion || {};
+        const gastosDespues = afterData.gastosNacionalizacion || {};
+
+        // Iterar sobre cada tipo de gasto (naviera, puerto, etc.)
+        for (const tipoGasto of Object.keys(gastosDespues)) {
+            const facturasAntes = gastosAntes[tipoGasto]?.facturas || [];
+            const facturasDespues = gastosDespues[tipoGasto].facturas || [];
+
+            // Iterar sobre cada factura de ese tipo de gasto
+            facturasDespues.forEach((factura, index) => {
+                const facturaAnterior = facturasAntes.find(f => f.id === factura.id);
+                const abonosAntes = facturaAnterior?.abonos || [];
+                const abonosDespues = factura.abonos || [];
+
+                // Si se añadió un nuevo abono a esta factura
+                if (abonosDespues.length > abonosAntes.length) {
+                    const nuevoAbono = abonosDespues[abonosDespues.length - 1];
+                    log(`Nuevo abono de ${nuevoAbono.valor} para factura ${factura.numeroFactura} de ${tipoGasto}`);
+                    
+                    const nuevoGastoDoc = {
+                        fecha: nuevoAbono.fecha,
+                        proveedorNombre: `${factura.proveedorNombre} (Imp. ${afterData.numeroImportacion})`,
+                        proveedorId: factura.proveedorId,
+                        numeroFactura: factura.numeroFactura,
+                        valorTotal: nuevoAbono.valor,
+                        fuentePago: nuevoAbono.formaPago,
+                        registradoPor: nuevoAbono.registradoPor,
+                        timestamp: new Date(),
+                        isImportacionGasto: true,
+                        isAbono: true,
+                        importacionId: importacionId,
+                        gastoTipo: tipoGasto,
+                        facturaId: factura.id
+                    };
+                    
+                    // Crear el documento en la colección de gastos
+                    admin.firestore().collection("gastos").add(nuevoGastoDoc)
+                        .then(() => log("Gasto por abono registrado con éxito."))
+                        .catch(err => functions.logger.error("Error al registrar gasto por abono:", err));
+                }
+            });
+        }
+        return null;
+    });
+
+
+// Reemplaza la función setMyUserAsAdmin con esta versión más explícita
+exports.setMyUserAsAdmin = functions.https.onRequest(async (req, res) => {
+    // --- INICIO DE LA LÓGICA MANUAL DE PERMISOS (CORS) ---
+    // Le decimos al navegador que confiamos en cualquier origen (para desarrollo)
+    res.set('Access-Control-Allow-Origin', '*');
+
+    // Manejar la solicitud de "inspección" (preflight) que hace el navegador
+    if (req.method === 'OPTIONS') {
+        res.set('Access-Control-Allow-Methods', 'POST');
+        res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+        res.status(204).send('');
+        return;
+    }
+    // --- FIN DE LA LÓGICA MANUAL DE PERMISOS (CORS) ---
+
+    // El resto de la lógica para verificar y asignar el permiso de admin
+    const idToken = req.headers.authorization?.split('Bearer ')[1];
+    if (!idToken) {
+        return res.status(401).send({ error: 'Unauthorized: No se proporcionó token.' });
+    }
+
+    try {
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const userId = decodedToken.uid;
+        await admin.auth().setCustomUserClaims(userId, { admin: true });
+        
+        console.log(`Permiso de 'admin' OTORGADO al usuario ${userId}.`);
+        return res.status(200).send({ data: { message: `¡Éxito! El usuario ${userId} ahora tiene permisos de admin.` } });
+
+    } catch (error) {
+        console.error("Error al establecer permisos de administrador:", error);
+        return res.status(500).send({ error: 'Error interno del servidor.' });
+    }
+});
+
+
+    /**
+ * NUEVA FUNCIÓN: Cambia el estado de un usuario (active, inactive).
+ * Invocable solo por administradores.
+ */
+exports.setUserStatus = functions.https.onCall(async (data, context) => {
+    // 1. Verificar que el que llama es un administrador
+    if (!context.auth || !context.auth.token.admin) {
+        throw new functions.https.HttpsError(
+            "permission-denied",
+            "Solo los administradores pueden cambiar el estado de un usuario."
+        );
+    }
+
+    // 2. Validar los datos de entrada
+    const { userId, newStatus } = data;
+    if (!userId || !['active', 'inactive', 'pending'].includes(newStatus)) {
+        throw new functions.https.HttpsError(
+            "invalid-argument",
+            "Faltan datos o el nuevo estado no es válido (userId, newStatus)."
+        );
+    }
+
+    try {
+        // 3. Actualizar el documento del usuario en Firestore
+        const userRef = admin.firestore().collection("users").doc(userId);
+        await userRef.update({ status: newStatus });
+
+        return { success: true, message: `Estado del usuario ${userId} actualizado a ${newStatus}.` };
+    } catch (error) {
+        functions.logger.error(`Error al actualizar estado para ${userId}:`, error);
+        throw new functions.https.HttpsError(
+            "internal",
+            "No se pudo actualizar el estado del usuario."
+        );
+    }
+});
+/**
+ * NUEVA FUNCIÓN: Se activa cuando se escribe en un documento de usuario.
+ * Sincroniza el rol de Firestore con un "custom claim" en Firebase Auth.
+ * Esto permite que otras Cloud Functions verifiquen de forma segura si un usuario es admin.
+ */
+exports.onUserRoleChange = functions.firestore
+    .document('users/{userId}')
+    .onWrite(async (change, context) => {
+        const userId = context.params.userId;
+        const afterData = change.after.exists ? change.after.data() : null;
+        const beforeData = change.before.exists ? change.before.data() : null;
+
+        const newRole = afterData ? afterData.role : null;
+        const oldRole = beforeData ? beforeData.role : null;
+
+        // Si el rol no cambió o el usuario fue eliminado, no hacer nada.
+        if (newRole === oldRole) {
+            return null;
+        }
+
+        try {
+            if (newRole === 'admin') {
+                // Si el nuevo rol es admin, establecer la estampa de administrador.
+                await admin.auth().setCustomUserClaims(userId, { admin: true });
+                console.log(`Permiso de 'admin' OTORGADO al usuario ${userId}.`);
+            } else if (oldRole === 'admin' && newRole !== 'admin') {
+                // Si el usuario dejó de ser admin, remover la estampa.
+                await admin.auth().setCustomUserClaims(userId, { admin: false });
+                console.log(`Permiso de 'admin' REVOCADO al usuario ${userId}.`);
+            }
+        } catch (error) {
+            console.error(`Error al establecer permisos para ${userId}:`, error);
+        }
+        return null;
+    });
+
+
+    /**
+ * --- FUNCIÓN DE DEPURACIÓN ---
+ * Permite a un usuario autenticado verificar los permisos (custom claims)
+ * que están presentes en su token de sesión actual.
+ */
+exports.checkMyClaims = functions.https.onRequest((req, res) => {
+    // Usa el middleware de CORS para manejar los permisos del navegador.
+    cors(req, res, async () => {
+        try {
+            // Obtener el token del encabezado de la solicitud
+            const idToken = req.headers.authorization?.split("Bearer ")[1];
+            if (!idToken) {
+                console.log("No se proporcionó token de autorización.");
+                return res.status(401).send({ error: "No autenticado." });
+            }
+
+            // Verificar el token usando el Admin SDK
+            const decodedToken = await admin.auth().verifyIdToken(idToken);
+            
+            console.log(`Revisando claims para el UID: ${decodedToken.uid}`);
+            console.log("Claims completos en el token del servidor:", decodedToken);
+            
+            // Devolver los claims al cliente
+            return res.status(200).send({ data: { claims: decodedToken } });
+
+        } catch (error) {
+            console.error("Error al verificar el token:", error);
+            return res.status(500).send({ error: "Error interno al procesar la solicitud." });
+        }
+    });
+});
+
+/**
+ * --- NUEVA FUNCIÓN ---
+ * Guarda o actualiza los saldos iniciales de las cuentas.
+ * Solo puede ser llamada por un administrador.
+ */
+exports.setInitialBalances = functions.https.onCall(async (data, context) => {
+    // 1. Verificar que el que llama es un administrador
+    if (!context.auth || !context.auth.token.admin) {
+        throw new functions.https.HttpsError(
+            "permission-denied",
+            "Solo los administradores pueden establecer los saldos iniciales."
+        );
+    }
+
+    // 2. Validar que los datos son números
+    const balances = data;
+    for (const key in balances) {
+        if (typeof balances[key] !== 'number') {
+            throw new functions.https.HttpsError(
+                "invalid-argument",
+                `El valor para "${key}" no es un número.`
+            );
+        }
+    }
+
+    try {
+        // 3. Guardar los datos en un documento específico en Firestore
+        const balanceDocRef = admin.firestore().collection("saldosIniciales").doc("current");
+        await balanceDocRef.set(balances, { merge: true }); // 'merge: true' actualiza los campos sin borrar los existentes
+
+        return { success: true, message: "Saldos iniciales guardados correctamente." };
+    } catch (error) {
+        functions.logger.error("Error al guardar saldos iniciales:", error);
+        throw new functions.https.HttpsError(
+            "internal",
+            "No se pudo guardar la información en la base de datos."
+        );
+    }
+});

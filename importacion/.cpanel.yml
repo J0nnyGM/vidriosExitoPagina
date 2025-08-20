@@ -1,0 +1,5 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home4/jonat148/vidriosexito/importacion
+    - /bin/cp -R * $DEPLOYPATH
