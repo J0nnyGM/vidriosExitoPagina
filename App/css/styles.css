@@ -33,3 +33,291 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
     margin-left: 5px;
     opacity: 0.5;
 }
+
+/* Estilos para la nueva barra de navegación */
+#main-nav .nav-link.active {
+    background-color: #4a5568; /* gray-700 */
+    font-weight: 600;
+}
+
+/* Overlay para cuando el menú móvil está abierto */
+#sidebar-overlay {
+    background-color: rgba(0, 0, 0, 0.5);
+    transition: opacity 0.3s ease-in-out;
+}
+
+/* Estilos para el menú lateral plegable */
+#sidebar.collapsed {
+    width: 5rem; /* 80px */
+}
+
+/* Oculta el contenido superior cuando está plegado */
+#sidebar.collapsed .sidebar-content {
+    display: none;
+}
+
+/* Oculta solo el texto del botón de despliegue */
+#sidebar.collapsed #sidebar-toggle-btn .sidebar-text {
+    display: none;
+}
+
+/* Gira el icono y elimina su margen derecho */
+#sidebar.collapsed #sidebar-toggle-btn svg {
+    transform: rotate(180deg);
+    margin-right: 0;
+}
+
+/* Centra el icono en el botón cuando está plegado */
+#sidebar.collapsed #sidebar-toggle-btn {
+    justify-content: center;
+}
+
+/* Ajuste del contenido principal cuando el menú está plegado */
+#main-content.sidebar-collapsed {
+    margin-left: 5rem; /* Mismo ancho que la sidebar plegada */
+}
+
+/* Estilos para las nuevas tarjetas de proyecto */
+.project-card {
+    transition: box-shadow 0.3s ease-in-out, transform 0.3s ease-in-out;
+}
+
+.project-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* Estilos para el buscador de municipios personalizado */
+.municipality-search-results {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #d1d5db; /* gray-300 */
+    border-top: none;
+    border-radius: 0 0 0.375rem 0.375rem; /* rounded-b-md */
+    background-color: #ffffff;
+    position: absolute;
+    width: 100%;
+    z-index: 10;
+}
+
+.municipality-item {
+    padding: 0.75rem 1rem; /* py-3 px-4 */
+    cursor: pointer;
+}
+
+.municipality-item:hover {
+    background-color: #f3f4f6; /* gray-100 */
+}
+
+/* Estilos para las pestañas de proyectos activos/archivados */
+.tab-button {
+    border-color: transparent;
+    color: #6b7280; /* gray-500 */
+}
+
+.tab-button:hover {
+    border-color: #d1d5db; /* gray-300 */
+    color: #4b5563; /* gray-600 */
+}
+
+.tab-button.active {
+    border-color: #3b82f6; /* blue-500 */
+    color: #3b82f6; /* blue-500 */
+}
+
+/* Estilos para la nueva sección de documentos */
+.document-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem;
+    border: 1px solid #e5e7eb; /* gray-200 */
+    border-radius: 0.5rem; /* rounded-lg */
+    background-color: #f9fafb; /* gray-50 */
+    transition: box-shadow 0.2s ease-in-out;
+}
+
+.document-card:hover {
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* shadow-sm */
+}
+
+.document-card .doc-icon {
+    flex-shrink: 0;
+    width: 2.5rem; /* w-10 */
+    height: 2.5rem; /* h-10 */
+    background-color: #e5e7eb; /* gray-200 */
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.document-card .doc-info {
+    flex-grow: 1;
+    margin-left: 0.75rem;
+    margin-right: 0.75rem;
+    overflow: hidden;
+}
+
+.document-card .doc-name {
+    font-weight: 500;
+    color: #1f2937; /* gray-800 */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.document-card .doc-status {
+    font-size: 0.75rem; /* text-xs */
+    color: #6b7280; /* gray-500 */
+}
+
+.document-card .doc-actions button {
+    font-size: 0.875rem; /* text-sm */
+    padding: 0.25rem 0.75rem;
+}
+
+/* Estilos para campos de fecha editables */
+.editable-date-input {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 0.375rem; /* rounded-md */
+    padding: 0.25rem 0.5rem;
+    transition: border-color 0.2s ease-in-out;
+}
+
+.editable-date-input:hover {
+    border-color: #d1d5db; /* gray-300 */
+}
+
+/* Estilos para las tarjetas de categorías de documentos */
+.document-category-card {
+    display: flex;
+    align-items: center;
+    padding: 1rem;
+    border: 1px solid #e5e7eb; /* gray-200 */
+    border-radius: 0.5rem; /* rounded-lg */
+    background-color: white;
+    transition: all 0.2s ease-in-out;
+}
+
+.document-category-card.clickable:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-md */
+    cursor: pointer;
+}
+
+.document-category-card .doc-icon {
+    flex-shrink: 0;
+    width: 2.5rem; /* w-10 */
+    height: 2.5rem; /* h-10 */
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.document-category-card.uploaded .doc-icon {
+    background-color: #d1fae5; /* green-100 */
+    color: #065f46; /* green-800 */
+}
+
+.document-category-card.pending .doc-icon {
+    background-color: #fee2e2; /* red-100 */
+    color: #991b1b; /* red-800 */
+}
+
+/* Estilos para el botón de cierre del modal de documentos */
+#document-viewer-close-btn {
+    font-size: 2rem; /* Aumenta el tamaño del icono '×' */
+    line-height: 1;
+    padding: 0 0.5rem;
+    font-weight: bold;
+    color: #6b7280; /* gray-500 */
+    transition: color 0.2s ease-in-out;
+}
+
+#document-viewer-close-btn:hover {
+    color: #1f2937; /* gray-800 */
+}
+
+/* --- Estilos para Responsividad --- */
+
+/* Regla global para prevenir desbordamientos accidentales */
+body, #app-container {
+    overflow-x: hidden;
+}
+
+/* Flexbox wrapping para la cabecera principal */
+#main-content > header {
+    flex-wrap: wrap;
+    gap: 0.5rem; /* Espacio entre elementos si se van a la siguiente línea */
+}
+
+/* Flexbox wrapping para la cabecera de la vista de proyectos */
+#dashboard-view > .flex {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+/* Se aplica a pantallas de 768px o menos */
+@media (max-width: 768px) {
+    /* Ocultamos las cabeceras de las tablas */
+    .responsive-table thead {
+        display: none;
+    }
+
+    /* Cada fila se convierte en un bloque independiente */
+    .responsive-table tr {
+        display: block;
+        margin-bottom: 1.5rem;
+        border-radius: 0.5rem;
+        border: 1px solid #e5e7eb;
+        padding: 0.75rem;
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    }
+
+    /* Convertimos la celda en un contenedor flexbox */
+    .responsive-table td {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        text-align: right;
+        padding: 0.75rem 0.25rem;
+        border-bottom: 1px solid #f3f4f6;
+    }
+
+    .responsive-table tr:last-child td:last-child {
+        border-bottom: none;
+    }
+    
+    /* La etiqueta (label) generada por CSS */
+    .responsive-table td:before {
+        content: attr(data-label);
+        font-weight: 600;
+        text-align: left;
+        color: #374151;
+        margin-right: 1rem;
+        flex-shrink: 0; /* Evita que la etiqueta se encoja */
+    }
+
+    /* Aseguramos que el contenido de la celda se ajuste */
+    .responsive-table td > * {
+        flex-shrink: 1;
+        min-width: 0;
+    }
+
+    /* Aseguramos que los botones se vean bien y no se desborden */
+    .responsive-table td .flex {
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 0.5rem; /* Espacio entre botones si se van a la siguiente línea */
+    }
+}
+
+/* Estilo para la opción activa en el menú desplegable */
+.dropdown-item.active {
+    background-color: #eef2ff; /* indigo-50 */
+    font-weight: 600;
+    color: #374151; /* gray-700 */
+}
