@@ -1,4 +1,4 @@
 node_modules/
 *.local
 subirjs/
-app/.firebaserc
+importacion/.firebaserc
