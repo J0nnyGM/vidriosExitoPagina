@@ -4007,7 +4007,7 @@ function showEditProviderModal(provider) { const modalContentWrapper = document.
 function showPdfModal(pdfUrl, title) {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
     
-    // 1. Construimos el HTML del modal pero SIN el iframe todavía.
+    // Creamos el esqueleto del modal sin el visor
     modalContentWrapper.innerHTML = `
         <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl mx-auto flex flex-col" style="height: 80vh;">
             <div class="flex justify-between items-center p-4 border-b">
@@ -4018,20 +4018,22 @@ function showPdfModal(pdfUrl, title) {
                 </div>
         </div>`;
         
-    // 2. Creamos el iframe dinámicamente con JavaScript.
-    const iframe = document.createElement('iframe');
-    iframe.id = 'pdf-iframe';
-    iframe.className = 'w-full h-full';
-    iframe.frameBorder = '0';
-    iframe.allow = 'fullscreen';
-    
-    // 3. (PASO CLAVE) Asignamos la URL DESPUÉS de crear el elemento.
-    iframe.src = pdfUrl;
+    // --- INICIO DE LA CORRECCIÓN CLAVE ---
 
-    // 4. Lo añadimos al contenedor. Esto fuerza a iOS a cargarlo correctamente.
+    // 1. Se añade un parámetro único a la URL para "engañar" a la caché de iOS
+    const cacheBustedUrl = `${pdfUrl}?cache_bust=${new Date().getTime()}`;
+
+    // 2. Se crea el visor (iframe) dinámicamente con JavaScript
+    const iframe = document.createElement('iframe');
+    iframe.className = 'w-full h-full';
+    iframe.src = cacheBustedUrl; // Se usa la nueva URL anti-caché
+
+    // 3. Se añade el visor al contenedor (esto fuerza la carga correcta en iOS)
     document.getElementById('pdf-container').appendChild(iframe);
+
+    // --- FIN DE LA CORRECCIÓN CLAVE ---
     
-    // 5. Mostramos el modal.
+    // Se muestra el modal
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('close-pdf-modal').addEventListener('click', hideModal);
 }
