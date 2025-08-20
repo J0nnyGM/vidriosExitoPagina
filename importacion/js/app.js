@@ -746,52 +746,52 @@ function setupEventListeners() {
     document.getElementById('view-all-loans-btn').addEventListener('click', () => { showAllLoansModal(allPendingLoans); });
 
 
-const debugBtn = document.getElementById('debug-claims-btn');
-if (debugBtn) {
-    debugBtn.addEventListener('click', async () => {
-        if (!auth.currentUser) {
-            return alert("Debes iniciar sesión primero.");
-        }
-        if (!confirm("Esto revisará tus permisos de sesión actuales. ¿Continuar?")) return;
+    const debugBtn = document.getElementById('debug-claims-btn');
+    if (debugBtn) {
+        debugBtn.addEventListener('click', async () => {
+            if (!auth.currentUser) {
+                return alert("Debes iniciar sesión primero.");
+            }
+            if (!confirm("Esto revisará tus permisos de sesión actuales. ¿Continuar?")) return;
 
-        console.log("Llamando a la función de depuración 'checkMyClaims'...");
-        alert("Revisando permisos... por favor, abre la consola del navegador para ver el resultado.");
+            console.log("Llamando a la función de depuración 'checkMyClaims'...");
+            alert("Revisando permisos... por favor, abre la consola del navegador para ver el resultado.");
 
-        try {
-            // Obtenemos el token de la sesión actual del usuario
-            const idToken = await auth.currentUser.getIdToken(true);
+            try {
+                // Obtenemos el token de la sesión actual del usuario
+                const idToken = await auth.currentUser.getIdToken(true);
 
-            // Hacemos una llamada HTTP estándar con el token en los encabezados
-            const response = await fetch('https://us-central1-importadorave-7d1a0.cloudfunctions.net/checkMyClaims', {
-                method: 'POST', // Puede ser POST o GET, pero POST es común para acciones
-                headers: {
-                    'Authorization': `Bearer ${idToken}`,
-                    'Content-Type': 'application/json'
+                // Hacemos una llamada HTTP estándar con el token en los encabezados
+                const response = await fetch('https://us-central1-importadorave-7d1a0.cloudfunctions.net/checkMyClaims', {
+                    method: 'POST', // Puede ser POST o GET, pero POST es común para acciones
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`El servidor respondió con un error: ${response.status}`);
                 }
-            });
 
-            if (!response.ok) {
-                throw new Error(`El servidor respondió con un error: ${response.status}`);
+                const result = await response.json();
+                const claims = result.data.claims;
+
+                console.log("--- RESULTADO DEL SERVIDOR ---");
+                console.log("El servidor reporta que tus permisos son:", claims);
+
+                if (claims && claims.admin === true) {
+                    alert("¡Éxito! El servidor confirma que tu sesión SÍ tiene permisos de administrador.");
+                } else {
+                    alert("¡PROBLEMA ENCONTRADO! El servidor confirma que tu sesión NO tiene permisos de administrador. Revisa la consola.");
+                }
+
+            } catch (error) {
+                console.error("Error al llamar la función de depuración:", error);
+                alert("Ocurrió un error al verificar los permisos. Revisa la consola.");
             }
-
-            const result = await response.json();
-            const claims = result.data.claims;
-
-            console.log("--- RESULTADO DEL SERVIDOR ---");
-            console.log("El servidor reporta que tus permisos son:", claims);
-
-            if (claims && claims.admin === true) {
-                alert("¡Éxito! El servidor confirma que tu sesión SÍ tiene permisos de administrador.");
-            } else {
-                alert("¡PROBLEMA ENCONTRADO! El servidor confirma que tu sesión NO tiene permisos de administrador. Revisa la consola.");
-            }
-
-        } catch (error) {
-            console.error("Error al llamar la función de depuración:", error);
-            alert("Ocurrió un error al verificar los permisos. Revisa la consola.");
-        }
-    });
-}
+        });
+    }
 }
 
 function switchView(viewName, tabs, views) {
@@ -1282,17 +1282,17 @@ function renderRemisiones() {
             }
         }
 
-        const pdfUrl = isPlanta ? remision.pdfPlantaUrl : remision.pdfUrl;
+        const pdfUrl = remision.pdfUrl;
         const pdfButton = pdfUrl
             ? `<button data-pdf-url="${pdfUrl}" data-remision-num="${remision.numeroRemision}" class="view-pdf-btn w-full bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition text-center">Ver Remisión</button>`
             : `<button class="w-full bg-gray-400 text-white px-4 py-2 rounded-lg text-sm font-semibold btn-disabled" title="El PDF para esta remisión aún no está disponible.">Generando PDF...</button>`;
-        
+
         const anularButton = (esAnulada || esEntregada || isPlanta || (remision.payments && remision.payments.length > 0)) ? '' : `<button data-remision-id="${remision.id}" class="anular-btn w-full bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-600 transition">Anular</button>`;
         const pagosButton = esAnulada || isPlanta ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="payment-btn w-full bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 transition">Pagos (${formatCurrency(saldoPendiente)})</button>`;
-        
+
         // --- LÓGICA DE DESCUENTO RESTAURADA ---
         const descuentoButton = (esAnulada || esEntregada || isPlanta || remision.discount) ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="discount-btn w-full bg-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-cyan-600 transition">Descuento</button>`;
-        
+
         let discountInfo = '';
         if (remision.discount && remision.discount.percentage > 0) {
             discountInfo = `<span class="text-xs font-semibold bg-cyan-100 text-cyan-800 px-2 py-1 rounded-full">DTO ${remision.discount.percentage.toFixed(2)}%</span>`;
@@ -1308,7 +1308,7 @@ function renderRemisiones() {
             const nextStatus = ESTADOS_REMISION[currentIndex + 1];
             statusButton = `<button data-remision-id="${remision.id}" data-current-status="${remision.estado}" class="status-update-btn w-full bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-600 transition">Mover a ${nextStatus}</button>`;
         }
-        
+
         el.innerHTML = `
             <div class="flex-grow">
                 <div class="flex items-center gap-3 flex-wrap">
@@ -1507,7 +1507,7 @@ function renderImportaciones() {
             const logisticaStatus = getImportacionStatus(imp); // Obtiene el estado logístico/financiero
             const documentosSubidos = Object.keys(imp.documentos || {}).length;
             const documentosRequeridos = DOCUMENTOS_IMPORTACION.length;
-            
+
             let docStatusHTML = '';
             if (imp.estadoLogistico !== 'En Bodega') { // Solo muestra el estado de documentos si no ha llegado a bodega
                 if (documentosSubidos === documentosRequeridos) {
@@ -1614,7 +1614,7 @@ function renderDocumentosSection(importacion) {
         if (existingDoc) {
             fileInfoHTML = `<a href="${existingDoc.url}" target="_blank" class="text-sm text-blue-600 hover:underline break-all" title="${existingDoc.name}">${existingDoc.name}</a>`;
         }
-        
+
         docCard.innerHTML = `
             <div class="doc-card-main">
                 <div class="doc-card-icon" id="doc-icon-${docId}">${getIcon(existingDoc ? 'complete' : 'pending')}</div>
@@ -2712,12 +2712,12 @@ async function handleImportacionSubmit(e) {
 
         showModalMessage("Guardando datos de la importación...", true);
         const importacionRef = isEditing ? doc(db, "importaciones", existingImportationId) : doc(collection(db, 'importaciones'));
-        
+
         // --- PASO 2: GUARDAR TODO DENTRO DE UNA TRANSACCIÓN ATÓMICA ---
         await runTransaction(db, async (transaction) => {
             const importacionActualDoc = isEditing ? await transaction.get(importacionRef) : null;
             const importacionActual = importacionActualDoc?.exists() ? importacionActualDoc.data() : null;
-            
+
             let numeroImportacion = importacionActual?.numeroImportacion;
             if (!isEditing) {
                 const counterRef = doc(db, "counters", "importacionCounter");
@@ -2728,7 +2728,7 @@ async function handleImportacionSubmit(e) {
 
             const totalItemsUSD = itemsData.reduce((sum, item) => sum + item.valorTotalItemUSD, 0);
             const totalChinaUSD = totalItemsUSD + fleteUSD + seguroUSD;
-            
+
             const dataFinal = {
                 numeroImportacion, fechaPedido, naviera, numeroBl, fleteMaritimoUSD: fleteUSD, seguroUSD: seguroUSD,
                 items: itemsData, totalChinaUSD, trmLiquidacion: trm,
@@ -2740,7 +2740,7 @@ async function handleImportacionSubmit(e) {
                 totalNacionalizacionCOP: importacionActual?.totalNacionalizacionCOP || 0,
                 lastUpdated: new Date()
             };
-            
+
             dataFinal.granTotalCOP = (dataFinal.totalChinaUSD * dataFinal.trmLiquidacion) + (dataFinal.totalNacionalizacionCOP || 0);
 
             transaction.set(importacionRef, dataFinal, { merge: true });
@@ -4006,7 +4006,7 @@ function showEditProviderModal(provider) { const modalContentWrapper = document.
 // UBICADA DENTRO DE /importacion/js/app.js
 function showPdfModal(pdfUrl, title) {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
-    
+
     // Creamos el esqueleto del modal
     modalContentWrapper.innerHTML = `
         <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl mx-auto flex flex-col" style="height: 80vh;">
@@ -4014,26 +4014,21 @@ function showPdfModal(pdfUrl, title) {
                 <h2 class="text-xl font-semibold">Visor: ${title}</h2>
                 <button id="close-pdf-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
             </div>
-            <div id="pdf-container" class="flex-grow p-2 bg-gray-200">
-                </div>
+            <div id="pdf-container" class="flex-grow p-2 bg-gray-200"></div>
         </div>`;
-        
-    // --- INICIO DE LA CORRECCIÓN CLAVE ---
 
-    // 1. (CORREGIDO) Verificamos si la URL ya tiene parámetros para añadir el nuestro de forma segura.
+    // 1. Añadimos un parámetro anti-caché a la URL de forma segura
     const separator = pdfUrl.includes('?') ? '&' : '?';
     const cacheBustedUrl = `${pdfUrl}${separator}cache_bust=${new Date().getTime()}`;
 
-    // 2. Creamos el visor (iframe) dinámicamente.
+    // 2. Creamos el visor (iframe) dinámicamente
     const iframe = document.createElement('iframe');
     iframe.className = 'w-full h-full';
-    iframe.src = cacheBustedUrl; // Usamos la nueva URL, ahora construida de forma segura.
+    iframe.src = cacheBustedUrl; // Usamos la nueva URL anti-caché
 
-    // 3. Lo añadimos al DOM para forzar la carga correcta en iOS.
+    // 3. Lo añadimos al DOM (esto fuerza la carga correcta en iOS)
     document.getElementById('pdf-container').appendChild(iframe);
 
-    // --- FIN DE LA CORRECCIÓN CLAVE ---
-    
     // Mostramos el modal
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('close-pdf-modal').addEventListener('click', hideModal);
@@ -4305,12 +4300,12 @@ async function updateDashboard(year, month) {
     const totalCartera = allRemisiones.filter(r => r.estado !== 'Anulada').reduce((sum, r) => { const totalPagado = (r.payments || []).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
     document.getElementById('summary-cartera-total').textContent = formatCurrency(totalCartera);
 
-    const accountBalances = { 
-        Efectivo: initialBalances.Efectivo || 0, 
-        Nequi: initialBalances.Nequi || 0, 
-        Davivienda: initialBalances.Davivienda || 0, 
-        Bancolombia: initialBalances.Bancolombia || 0, 
-        Consignacion: initialBalances.Consignacion || 0 
+    const accountBalances = {
+        Efectivo: initialBalances.Efectivo || 0,
+        Nequi: initialBalances.Nequi || 0,
+        Davivienda: initialBalances.Davivienda || 0,
+        Bancolombia: initialBalances.Bancolombia || 0,
+        Consignacion: initialBalances.Consignacion || 0
     };
 
     allRemisiones.forEach(r => (r.payments || []).forEach(p => {
@@ -6510,7 +6505,7 @@ async function handleViewPdf(filePath, remisionNum) {
  */
 async function showInitialBalanceModal() {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
-    
+
     // Cargar los saldos actuales para pre-llenar el formulario
     const balanceDocRef = doc(db, "saldosIniciales", "current");
     const balanceDoc = await getDoc(balanceDocRef);
@@ -6565,14 +6560,14 @@ async function handleInitialBalanceSubmit(e) {
 
     // PASO 2: Ahora sí, mostrar el mensaje de carga.
     showModalMessage("Guardando saldos...", true);
-    
+
     try {
         const setInitialBalances = httpsCallable(functions, 'setInitialBalances');
         await setInitialBalances(newBalances);
 
         // Actualizamos la variable global para uso inmediato
         initialBalances = newBalances;
-        
+
         hideModal(); // Cierra el modal de carga/saldos
         showTemporaryMessage("Saldos iniciales guardados.", "success");
 
@@ -6580,7 +6575,7 @@ async function handleInitialBalanceSubmit(e) {
         const yearSelect = document.getElementById('summary-year');
         const monthSelect = document.getElementById('summary-month');
         if (yearSelect && monthSelect) {
-             await updateDashboard(
+            await updateDashboard(
                 parseInt(yearSelect.value),
                 parseInt(monthSelect.value)
             );
