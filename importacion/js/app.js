@@ -1232,14 +1232,17 @@ function renderRemisiones() {
     const remisionesListEl = document.getElementById('remisiones-list');
     if (!remisionesListEl) return;
 
-    const isPlanta = currentUserData && currentUserData.role === 'planta';
+    // Se obtiene el rol del usuario de forma segura
+    const userRole = currentUserData ? currentUserData.role : null;
+    
     const month = document.getElementById('filter-remisiones-month').value;
     const year = document.getElementById('filter-remisiones-year').value;
     const searchTerm = document.getElementById('search-remisiones').value.toLowerCase();
 
     let filtered = allRemisiones;
 
-    if (isPlanta) {
+    // El filtrado para el rol 'planta' se mantiene igual
+    if (userRole === 'planta') {
         const allowedStates = ['Recibido', 'En Proceso', 'Procesado'];
         filtered = filtered.filter(r => allowedStates.includes(r.estado));
     }
@@ -1282,22 +1285,29 @@ function renderRemisiones() {
             }
         }
 
-        const pdfUrl = remision.pdfUrl;
+        // --- INICIO DE LA LÓGICA CORREGIDA Y EXPLÍCITA ---
+        let pdfUrl = ''; // Se inicializa vacía
+        if (userRole === 'planta') {
+            // Si el rol es 'planta', se asigna la URL de planta.
+            pdfUrl = remision.pdfPlantaUrl;
+        } else {
+            // Para CUALQUIER OTRO ROL (incluyendo 'admin'), se asigna la URL de servicio/admin.
+            pdfUrl = remision.pdfUrl;
+        }
+        // --- FIN DE LA LÓGICA CORREGIDA ---
+        
         const pdfButton = pdfUrl
             ? `<button data-pdf-url="${pdfUrl}" data-remision-num="${remision.numeroRemision}" class="view-pdf-btn w-full bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition text-center">Ver Remisión</button>`
             : `<button class="w-full bg-gray-400 text-white px-4 py-2 rounded-lg text-sm font-semibold btn-disabled" title="El PDF para esta remisión aún no está disponible.">Generando PDF...</button>`;
-
-        const anularButton = (esAnulada || esEntregada || isPlanta || (remision.payments && remision.payments.length > 0)) ? '' : `<button data-remision-id="${remision.id}" class="anular-btn w-full bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-600 transition">Anular</button>`;
-        const pagosButton = esAnulada || isPlanta ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="payment-btn w-full bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 transition">Pagos (${formatCurrency(saldoPendiente)})</button>`;
-
-        // --- LÓGICA DE DESCUENTO RESTAURADA ---
-        const descuentoButton = (esAnulada || esEntregada || isPlanta || remision.discount) ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="discount-btn w-full bg-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-cyan-600 transition">Descuento</button>`;
-
+        
+        const anularButton = (esAnulada || esEntregada || userRole === 'planta' || (remision.payments && remision.payments.length > 0)) ? '' : `<button data-remision-id="${remision.id}" class="anular-btn w-full bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-600 transition">Anular</button>`;
+        const pagosButton = esAnulada || userRole === 'planta' ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="payment-btn w-full bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 transition">Pagos (${formatCurrency(saldoPendiente)})</button>`;
+        const descuentoButton = (esAnulada || esEntregada || userRole === 'planta' || remision.discount) ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="discount-btn w-full bg-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-cyan-600 transition">Descuento</button>`;
+        
         let discountInfo = '';
         if (remision.discount && remision.discount.percentage > 0) {
             discountInfo = `<span class="text-xs font-semibold bg-cyan-100 text-cyan-800 px-2 py-1 rounded-full">DTO ${remision.discount.percentage.toFixed(2)}%</span>`;
         }
-        // --- FIN DE LA RESTAURACIÓN ---
 
         const statusClasses = { 'Recibido': 'status-recibido', 'En Proceso': 'status-en-proceso', 'Procesado': 'status-procesado', 'Entregado': 'status-entregado' };
         const statusBadge = `<span class="status-badge ${statusClasses[remision.estado] || ''}">${remision.estado}</span>`;
@@ -1308,7 +1318,7 @@ function renderRemisiones() {
             const nextStatus = ESTADOS_REMISION[currentIndex + 1];
             statusButton = `<button data-remision-id="${remision.id}" data-current-status="${remision.estado}" class="status-update-btn w-full bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-600 transition">Mover a ${nextStatus}</button>`;
         }
-
+        
         el.innerHTML = `
             <div class="flex-grow">
                 <div class="flex items-center gap-3 flex-wrap">
@@ -1320,7 +1330,7 @@ function renderRemisiones() {
                     ${esAnulada ? '<span class="px-2 py-1 bg-red-200 text-red-800 text-xs font-bold rounded-full">ANULADA</span>' : ''}
                 </div>
                 <p class="text-sm text-gray-600 mt-1">Recibido: ${remision.fechaRecibido} &bull; ${remision.fechaEntrega ? `Entregado: ${remision.fechaEntrega}` : 'Entrega: Pendiente'}</p>
-                ${!isPlanta ? `<p class="text-sm text-gray-600 mt-1">Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>` : ''}
+                ${userRole !== 'planta' ? `<p class="text-sm text-gray-600 mt-1">Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>` : ''}
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-shrink-0 w-full sm:max-w-xs">
                 ${statusButton}
@@ -1332,7 +1342,6 @@ function renderRemisiones() {
         remisionesListEl.appendChild(el);
     });
 
-    // Reasignar listeners
     document.querySelectorAll('.view-pdf-btn').forEach(button => button.addEventListener('click', (e) => {
         const pdfUrl = e.currentTarget.dataset.pdfUrl;
         const remisionNum = e.currentTarget.dataset.remisionNum;
@@ -1345,7 +1354,6 @@ function renderRemisiones() {
     document.querySelectorAll('.anular-btn').forEach(button => button.addEventListener('click', (e) => { const remisionId = e.currentTarget.dataset.remisionId; if (confirm(`¿Estás seguro de que quieres ANULAR esta remisión?`)) { handleAnularRemision(remisionId); } }));
     document.querySelectorAll('.status-update-btn').forEach(button => button.addEventListener('click', (e) => { const remisionId = e.currentTarget.dataset.remisionId; const currentStatus = e.currentTarget.dataset.currentStatus; handleStatusUpdate(remisionId, currentStatus); }));
     document.querySelectorAll('.payment-btn').forEach(button => button.addEventListener('click', (e) => { const remision = JSON.parse(e.currentTarget.dataset.remisionJson); showPaymentModal(remision); }));
-    // Listener para el botón de descuento restaurado
     document.querySelectorAll('.discount-btn').forEach(button => button.addEventListener('click', (e) => { const remision = JSON.parse(e.currentTarget.dataset.remisionJson); showDiscountModal(remision); }));
 }
 function loadGastos() {
@@ -4004,10 +4012,12 @@ function calcularCostoDeCortes(totalCortes) {
 function showEditClientModal(client) { const modalContentWrapper = document.getElementById('modal-content-wrapper'); modalContentWrapper.innerHTML = `<div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-auto text-center"><h2 class="text-xl font-semibold mb-4">Editar Cliente</h2><form id="edit-client-form" class="space-y-4 text-left"><input type="hidden" id="edit-client-id" value="${client.id}"><div><label for="edit-client-name" class="block text-sm font-medium text-gray-700">Nombre</label><input type="text" id="edit-client-name" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${client.nombre}" required></div><div><label for="edit-client-email" class="block text-sm font-medium text-gray-700">Correo</label><input type="email" id="edit-client-email" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${client.email}" required></div><div><label for="edit-client-phone1" class="block text-sm font-medium text-gray-700">Teléfono 1</label><input type="tel" id="edit-client-phone1" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${client.telefono1 || ''}" required></div><div><label for="edit-client-phone2" class="block text-sm font-medium text-gray-700">Teléfono 2</label><input type="tel" id="edit-client-phone2" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${client.telefono2 || ''}"></div><div><label for="edit-client-nit" class="block text-sm font-medium text-gray-700">NIT</label><input type="text" id="edit-client-nit" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${client.nit || ''}"></div><div class="flex gap-4 justify-end pt-4"><button type="button" id="cancel-edit-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-semibold">Cancelar</button><button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold">Guardar Cambios</button></div></form></div>`; document.getElementById('modal').classList.remove('hidden'); document.getElementById('cancel-edit-btn').addEventListener('click', hideModal); document.getElementById('edit-client-form').addEventListener('submit', async (e) => { e.preventDefault(); const clientId = document.getElementById('edit-client-id').value; const updatedData = { nombre: document.getElementById('edit-client-name').value, email: document.getElementById('edit-client-email').value, telefono1: document.getElementById('edit-client-phone1').value, telefono2: document.getElementById('edit-client-phone2').value, nit: document.getElementById('edit-client-nit').value, }; showModalMessage("Actualizando cliente...", true); try { await updateDoc(doc(db, "clientes", clientId), updatedData); hideModal(); showModalMessage("¡Cliente actualizado!", false, 2000); } catch (error) { console.error("Error al actualizar cliente:", error); showModalMessage("Error al actualizar."); } }); }
 function showEditProviderModal(provider) { const modalContentWrapper = document.getElementById('modal-content-wrapper'); modalContentWrapper.innerHTML = `<div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-auto text-center"><h2 class="text-xl font-semibold mb-4">Editar Proveedor</h2><form id="edit-provider-form" class="space-y-4 text-left"><input type="hidden" id="edit-provider-id" value="${provider.id}"><div><label for="edit-provider-name" class="block text-sm font-medium text-gray-700">Nombre</label><input type="text" id="edit-provider-name" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${provider.nombre}" required></div><div><label for="edit-provider-contact" class="block text-sm font-medium text-gray-700">Contacto</label><input type="text" id="edit-provider-contact" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${provider.contacto || ''}"></div><div><label for="edit-provider-phone" class="block text-sm font-medium text-gray-700">Teléfono</label><input type="tel" id="edit-provider-phone" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${provider.telefono || ''}"></div><div><label for="edit-provider-email" class="block text-sm font-medium text-gray-700">Correo</label><input type="email" id="edit-provider-email" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${provider.email || ''}"></div><div class="flex gap-4 justify-end pt-4"><button type="button" id="cancel-edit-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-semibold">Cancelar</button><button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold">Guardar Cambios</button></div></form></div>`; document.getElementById('modal').classList.remove('hidden'); document.getElementById('cancel-edit-btn').addEventListener('click', hideModal); document.getElementById('edit-provider-form').addEventListener('submit', async (e) => { e.preventDefault(); const providerId = document.getElementById('edit-provider-id').value; const updatedData = { nombre: document.getElementById('edit-provider-name').value, contacto: document.getElementById('edit-provider-contact').value, telefono: document.getElementById('edit-provider-phone').value, email: document.getElementById('edit-provider-email').value, }; showModalMessage("Actualizando proveedor...", true); try { await updateDoc(doc(db, "proveedores", providerId), updatedData); hideModal(); showModalMessage("¡Proveedor actualizado!", false, 2000); } catch (error) { console.error("Error al actualizar proveedor:", error); showModalMessage("Error al actualizar."); } }); }
 // UBICADA DENTRO DE /importacion/js/app.js
+// ---> ESTA ES LA SOLUCIÓN FINAL Y DEFINITIVA PARA EL ERROR DE CACHÉ EN IOS <---
+
+
 function showPdfModal(pdfUrl, title) {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
 
-    // Creamos el esqueleto del modal
     modalContentWrapper.innerHTML = `
         <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl mx-auto flex flex-col" style="height: 80vh;">
             <div class="flex justify-between items-center p-4 border-b">
@@ -4017,22 +4027,19 @@ function showPdfModal(pdfUrl, title) {
             <div id="pdf-container" class="flex-grow p-2 bg-gray-200"></div>
         </div>`;
 
-    // 1. Añadimos un parámetro anti-caché a la URL de forma segura
     const separator = pdfUrl.includes('?') ? '&' : '?';
     const cacheBustedUrl = `${pdfUrl}${separator}cache_bust=${new Date().getTime()}`;
 
-    // 2. Creamos el visor (iframe) dinámicamente
     const iframe = document.createElement('iframe');
     iframe.className = 'w-full h-full';
-    iframe.src = cacheBustedUrl; // Usamos la nueva URL anti-caché
+    iframe.src = cacheBustedUrl;
 
-    // 3. Lo añadimos al DOM (esto fuerza la carga correcta en iOS)
     document.getElementById('pdf-container').appendChild(iframe);
 
-    // Mostramos el modal
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('close-pdf-modal').addEventListener('click', hideModal);
 }
+
 function showPaymentModal(remision) {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
     const totalConfirmado = (remision.payments || []).filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
