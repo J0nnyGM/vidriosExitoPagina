@@ -4016,6 +4016,8 @@ function showEditProviderModal(provider) { const modalContentWrapper = document.
 
 
 function showPdfModal(pdfUrl, title) {
+        alert("URL que se está abriendo:\n\n" + pdfUrl);
+
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
 
     modalContentWrapper.innerHTML = `
