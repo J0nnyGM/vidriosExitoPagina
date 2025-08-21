@@ -1228,21 +1228,23 @@ function loadRemisiones() {
         renderClientes();
     });
 }
+/**
+ * --- VERSIÓN COMPLETA Y CORREGIDA ---
+ * Renderiza la lista de remisiones y maneja la visualización de PDFs de
+ * forma diferente para escritorio y dispositivos móviles.
+ */
 function renderRemisiones() {
     const remisionesListEl = document.getElementById('remisiones-list');
     if (!remisionesListEl) return;
 
-    // Se obtiene el rol del usuario de forma segura
-    const userRole = currentUserData ? currentUserData.role : null;
-    
+    const isPlanta = currentUserData && currentUserData.role === 'planta';
     const month = document.getElementById('filter-remisiones-month').value;
     const year = document.getElementById('filter-remisiones-year').value;
     const searchTerm = document.getElementById('search-remisiones').value.toLowerCase();
 
     let filtered = allRemisiones;
 
-    // El filtrado para el rol 'planta' se mantiene igual
-    if (userRole === 'planta') {
+    if (isPlanta) {
         const allowedStates = ['Recibido', 'En Proceso', 'Procesado'];
         filtered = filtered.filter(r => allowedStates.includes(r.estado));
     }
@@ -1285,24 +1287,14 @@ function renderRemisiones() {
             }
         }
 
-        // --- INICIO DE LA LÓGICA CORREGIDA Y EXPLÍCITA ---
-        let pdfUrl = ''; // Se inicializa vacía
-        if (userRole === 'planta') {
-            // Si el rol es 'planta', se asigna la URL de planta.
-            pdfUrl = remision.pdfPlantaUrl;
-        } else {
-            // Para CUALQUIER OTRO ROL (incluyendo 'admin'), se asigna la URL de servicio/admin.
-            pdfUrl = remision.pdfUrl;
-        }
-        // --- FIN DE LA LÓGICA CORREGIDA ---
-        
+        const pdfUrl = isPlanta ? remision.pdfPlantaUrl : remision.pdfUrl;
         const pdfButton = pdfUrl
             ? `<button data-pdf-url="${pdfUrl}" data-remision-num="${remision.numeroRemision}" class="view-pdf-btn w-full bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition text-center">Ver Remisión</button>`
             : `<button class="w-full bg-gray-400 text-white px-4 py-2 rounded-lg text-sm font-semibold btn-disabled" title="El PDF para esta remisión aún no está disponible.">Generando PDF...</button>`;
         
-        const anularButton = (esAnulada || esEntregada || userRole === 'planta' || (remision.payments && remision.payments.length > 0)) ? '' : `<button data-remision-id="${remision.id}" class="anular-btn w-full bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-600 transition">Anular</button>`;
-        const pagosButton = esAnulada || userRole === 'planta' ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="payment-btn w-full bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 transition">Pagos (${formatCurrency(saldoPendiente)})</button>`;
-        const descuentoButton = (esAnulada || esEntregada || userRole === 'planta' || remision.discount) ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="discount-btn w-full bg-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-cyan-600 transition">Descuento</button>`;
+        const anularButton = (esAnulada || esEntregada || isPlanta || (remision.payments && remision.payments.length > 0)) ? '' : `<button data-remision-id="${remision.id}" class="anular-btn w-full bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-600 transition">Anular</button>`;
+        const pagosButton = esAnulada || isPlanta ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="payment-btn w-full bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 transition">Pagos (${formatCurrency(saldoPendiente)})</button>`;
+        const descuentoButton = (esAnulada || esEntregada || isPlanta || remision.discount) ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="discount-btn w-full bg-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-cyan-600 transition">Descuento</button>`;
         
         let discountInfo = '';
         if (remision.discount && remision.discount.percentage > 0) {
@@ -1330,7 +1322,7 @@ function renderRemisiones() {
                     ${esAnulada ? '<span class="px-2 py-1 bg-red-200 text-red-800 text-xs font-bold rounded-full">ANULADA</span>' : ''}
                 </div>
                 <p class="text-sm text-gray-600 mt-1">Recibido: ${remision.fechaRecibido} &bull; ${remision.fechaEntrega ? `Entregado: ${remision.fechaEntrega}` : 'Entrega: Pendiente'}</p>
-                ${userRole !== 'planta' ? `<p class="text-sm text-gray-600 mt-1">Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>` : ''}
+                ${!isPlanta ? `<p class="text-sm text-gray-600 mt-1">Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>` : ''}
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-shrink-0 w-full sm:max-w-xs">
                 ${statusButton}
@@ -1342,6 +1334,7 @@ function renderRemisiones() {
         remisionesListEl.appendChild(el);
     });
 
+    // Reasignar listeners
     document.querySelectorAll('.view-pdf-btn').forEach(button => button.addEventListener('click', (e) => {
         const pdfUrl = e.currentTarget.dataset.pdfUrl;
         const remisionNum = e.currentTarget.dataset.remisionNum;
@@ -1349,8 +1342,20 @@ function renderRemisiones() {
             showModalMessage("El PDF para esta remisión aún no está disponible.");
             return;
         }
-        showPdfModal(pdfUrl, `Remisión N° ${remisionNum}`);
+
+        // --- INICIO DE LA LÓGICA CORREGIDA ---
+        if (isMobileDevice()) {
+            // Si es un dispositivo móvil (iOS o Android), abre el PDF en una nueva pestaña.
+            const separator = pdfUrl.includes('?') ? '&' : '?';
+            const uniqueUrl = `${pdfUrl}${separator}cache_bust=${new Date().getTime()}`;
+            window.open(uniqueUrl, '_blank');
+        } else {
+            // Si es un navegador de escritorio, usa el modal como antes.
+            showPdfModal(pdfUrl, `Remisión N° ${remisionNum}`);
+        }
+        // --- FIN DE LA LÓGICA CORREGIDA ---
     }));
+    
     document.querySelectorAll('.anular-btn').forEach(button => button.addEventListener('click', (e) => { const remisionId = e.currentTarget.dataset.remisionId; if (confirm(`¿Estás seguro de que quieres ANULAR esta remisión?`)) { handleAnularRemision(remisionId); } }));
     document.querySelectorAll('.status-update-btn').forEach(button => button.addEventListener('click', (e) => { const remisionId = e.currentTarget.dataset.remisionId; const currentStatus = e.currentTarget.dataset.currentStatus; handleStatusUpdate(remisionId, currentStatus); }));
     document.querySelectorAll('.payment-btn').forEach(button => button.addEventListener('click', (e) => { const remision = JSON.parse(e.currentTarget.dataset.remisionJson); showPaymentModal(remision); }));
@@ -4016,7 +4021,6 @@ function showEditProviderModal(provider) { const modalContentWrapper = document.
 
 
 function showPdfModal(pdfUrl, title) {
-        alert("URL que se está abriendo:\n\n" + pdfUrl);
 
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
 
@@ -4631,6 +4635,14 @@ function hideModal() {
     if (modal) {
         modal.classList.add('hidden');
     }
+}
+
+/**
+ * Detecta si el usuario está en un dispositivo móvil (iOS o Android).
+ * @returns {boolean} - Devuelve 'true' si es un móvil, 'false' si no lo es.
+ */
+function isMobileDevice() {
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
 function loadScript(url) {
