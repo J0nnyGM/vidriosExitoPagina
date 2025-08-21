@@ -7,8 +7,6 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstati
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js";
 
-
-
 // --- INICIALIZACIÓN Y CONFIGURACIÓN ---
 const firebaseConfig = {
     apiKey: "AIzaSyC3cAvG47JSR7fNc5YbBisG7BxJhfLQxRg",

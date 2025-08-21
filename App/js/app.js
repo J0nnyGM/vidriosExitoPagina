@@ -582,8 +582,9 @@ function switchProjectTab(tabName) {
         document.getElementById('project-details-executedM2').textContent = `${stats.executedM2.toFixed(2)}m² / ${stats.totalM2.toFixed(2)}m²`;
         
         // --- Cargar datos para las otras pestañas ---
-        renderDocumentCards(project.id);
-        loadItems(project.id);
+    renderInteractiveDocumentCards(project.id); // <--- Llama a la nueva función
+    loadItems(project.id);
+
 
         // Activar la primera pestaña por defecto
         switchProjectTab('info-general');
@@ -944,14 +945,19 @@ async function deleteProjectDocument(projectId, docId) {
     }
 }
 
-function renderDocumentCards(projectId) {
-    const container = document.getElementById('documents-summary-container');
-    const docTypes = ['contrato', 'cotizacion', 'polizas', 'pago_polizas', 'otros_si'];
+function renderInteractiveDocumentCards(projectId) {
+    const container = document.getElementById('document-cards-container');
+    const docTypes = [
+        { id: 'contrato', title: 'Contrato' },
+        { id: 'cotizacion', title: 'Cotización' },
+        { id: 'polizas', title: 'Pólizas' },
+        { id: 'pago_polizas', title: 'Pago de Pólizas' },
+        { id: 'otros_si', title: 'Otro Sí' }
+    ];
 
     const q = query(collection(db, "projects", projectId, "documents"));
     onSnapshot(q, (snapshot) => {
-        currentProjectDocs.clear(); // Limpiar caché
-        // Agrupar documentos por tipo
+        currentProjectDocs.clear();
         snapshot.forEach(doc => {
             const data = doc.data();
             if (!currentProjectDocs.has(data.type)) {
@@ -960,30 +966,25 @@ function renderDocumentCards(projectId) {
             currentProjectDocs.get(data.type).push(data);
         });
 
-        container.innerHTML = ''; // Limpiar contenedor
+        container.innerHTML = '';
         docTypes.forEach(type => {
-            const docs = currentProjectDocs.get(type);
+            const docs = currentProjectDocs.get(type.id);
             const isUploaded = docs && docs.length > 0;
             const count = isUploaded ? docs.length : 0;
 
             const card = document.createElement('div');
-            card.className = `document-category-card ${isUploaded ? 'clickable uploaded' : 'pending'}`;
-            if (isUploaded) {
-                card.dataset.action = 'view-documents'; // Acción para el event listener
-                card.dataset.docType = type;
-            }
+            card.className = `document-upload-card ${isUploaded ? 'uploaded' : ''}`;
+            card.dataset.action = "upload-doc"; // Acción para subir archivo
+            card.dataset.docType = type.id;
 
             card.innerHTML = `
+                ${isUploaded ? `<button data-action="view-documents" data-doc-type="${type.id}" class="view-docs-btn">Ver</button>` : ''}
                 <div class="doc-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                 </div>
-                <div class="doc-info">
-                    <p class="doc-name">${type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</p>
-                    <p class="doc-status">
-                        ${isUploaded ? `${count} archivo(s) cargado(s)` : 'Pendiente'}
-                    </p>
-                </div>
-                ${isUploaded ? '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" /></svg>' : ''}
+                <p class="doc-title">${type.title}</p>
+                <p class="doc-status">${isUploaded ? `${count} archivo(s) cargado(s)` : 'Clic para subir'}</p>
+                <input type="file" class="hidden" data-doc-type="${type.id}">
             `;
             container.appendChild(card);
         });

@@ -701,6 +701,14 @@ exports.onRemisionCreate = functions.region("us-central1").firestore
         }
     });
 
+/**
+ * --- VERSIÓN FINAL CON RESTAURACIÓN DE INVENTARIO ---
+ * 1.  Detecta cuando una remisión cambia su estado a "Anulada" y devuelve
+ * las láminas al inventario de forma automática y segura.
+ * 2.  Regenera todos los PDFs (simple para cliente, completos para la app)
+ * cuando hay un cambio de estado relevante.
+ * 3.  Envía las notificaciones actualizadas al cliente por correo y WhatsApp.
+ */
 exports.onRemisionUpdate = functions.region("us-central1").firestore
     .document("remisiones/{remisionId}")
     .onUpdate(async (change, context) => {
@@ -731,8 +739,6 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
 
                 log(`Iniciando envío de notificaciones (${motivo}) a ${telefonos.join(", ")}`);
 
-                // --- INICIO DE LA CORRECCIÓN DE WHATSAPP ---
-                // Usamos un bucle for...of para enviar los mensajes uno por uno
                 for (const telefono of telefonos) {
                     try {
                         await sendWhatsAppRemision(
@@ -746,7 +752,6 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                         functions.logger.error(`Falló envío de notificación (${motivo}) a ${telefono}:`, e.message);
                     }
                 }
-                // --- FIN DE LA CORRECCIÓN DE WHATSAPP ---
 
             } catch (error) {
                 functions.logger.error(`Error crítico en la función sendNotifications (${motivo}):`, error);
@@ -758,9 +763,58 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
         const totalPagadoDespues = (afterData.payments || []).filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
         const pagoFinalizado = totalPagadoAntes < afterData.valorTotal && totalPagadoDespues >= afterData.valorTotal;
 
-        if (estadoCambio || pagoFinalizado) {
-            log("Detectado cambio relevante. Regenerando todos los PDFs y notificando.");
-            
+        // --- INICIO DE LA LÓGICA DE ACTUALIZACIÓN ---
+        // Se activa si el estado cambia a "Anulada"
+        if (beforeData.estado !== "Anulada" && afterData.estado === "Anulada") {
+            log("Detectada anulación. Restaurando inventario y notificando...");
+            try {
+                // Restaurar inventario
+                const batch = admin.firestore().batch();
+                const itemsToRestore = afterData.items || [];
+                itemsToRestore.forEach(item => {
+                    if (item.itemId && item.cantidad > 0) {
+                        const itemRef = db.collection("items").doc(item.itemId);
+                        batch.update(itemRef, { stock: admin.firestore.FieldValue.increment(item.cantidad) });
+                        log(`Programando devolución de ${item.cantidad} unidades al stock del ítem ${item.itemId}.`);
+                    }
+                });
+                await batch.commit();
+                log("Inventario restaurado exitosamente.");
+
+                // Regenerar PDFs y enviar notificaciones (el resto de la lógica)
+                const pdfBufferCliente = await generarPDFCliente(afterData);
+                const pdfBufferAdmin = await generarPDF(afterData, false);
+                const pdfBufferPlanta = await generarPDF(afterData, true);
+                
+                const bucket = admin.storage().bucket(BUCKET_NAME);
+                const filePathAdmin = `remisiones/${afterData.numeroRemision}.pdf`;
+                const fileAdmin = bucket.file(filePathAdmin);
+                await fileAdmin.save(pdfBufferAdmin);
+
+                const filePathPlanta = `remisiones/planta-${afterData.numeroRemision}.pdf`;
+                const filePlanta = bucket.file(filePathPlanta);
+                await filePlanta.save(pdfBufferPlanta);
+                
+                const [urlAdmin] = await fileAdmin.getSignedUrl({ action: 'read', expires: '03-09-2491' });
+                const [urlPlanta] = await filePlanta.getSignedUrl({ action: 'read', expires: '03-09-2491' });
+                
+                await change.after.ref.update({ pdfUrl: urlAdmin, pdfPlantaUrl: urlPlanta });
+                
+                const msg = {
+                    to: afterData.clienteEmail, from: FROM_EMAIL, subject: `Anulación de Remisión N° ${afterData.numeroRemision}`,
+                    html: `<p>Hola ${afterData.clienteNombre},</p><p>Te informamos que la remisión N° <strong>${afterData.numeroRemision}</strong> ha sido <strong>ANULADA</strong>.</p>`,
+                    attachments: [{ content: pdfBufferCliente.toString("base64"), filename: `Remision-ANULADA-${afterData.numeroRemision}.pdf` }],
+                };
+                await sgMail.send(msg);
+                await sendNotifications("Anulación", urlAdmin);
+
+            } catch (error) {
+                log("Error al procesar anulación:", error);
+            }
+        } 
+        // Se activa para otros cambios de estado relevantes o pago final
+        else if ((estadoCambio && afterData.estado !== "Anulada") || pagoFinalizado) {
+            log("Detectado cambio de estado o pago final. Regenerando PDFs y notificando.");
             try {
                 const remisionParaPdf = pagoFinalizado ? { ...afterData, formaPago: "Cancelado" } : afterData;
                 
@@ -780,31 +834,31 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 const [urlAdmin] = await fileAdmin.getSignedUrl({ action: 'read', expires: '03-09-2491' });
                 const [urlPlanta] = await filePlanta.getSignedUrl({ action: 'read', expires: '03-09-2491' });
                 
-                const updateData = {
-                    pdfUrl: urlAdmin,
-                    pdfPlantaUrl: urlPlanta
-                };
+                const updateData = { pdfUrl: urlAdmin, pdfPlantaUrl: urlPlanta };
                 if (pagoFinalizado) {
                     updateData.formaPago = "Cancelado";
                 }
                 await change.after.ref.update(updateData);
-                log("URLs de PDFs de Admin y Planta actualizadas en Firestore.");
-
-                if (afterData.estado === "Anulada") {
-                    const msg = { /* ... */ };
-                    await sgMail.send(msg);
-                    await sendNotifications("Anulación", urlAdmin);
-                } else if (afterData.estado === "Entregado") {
-                    const msg = { /* ... */ };
+                
+                if (afterData.estado === "Entregado") {
+                    const msg = {
+                        to: afterData.clienteEmail, from: FROM_EMAIL, subject: `Tu orden N° ${afterData.numeroRemision} ha sido entregada`,
+                        html: `<p>Hola ${afterData.clienteNombre},</p><p>Te informamos que tu orden N° <strong>${afterData.numeroRemision}</strong> ha sido completada y marcada como <strong>ENTREGADA</strong>.</p>`,
+                        attachments: [{ content: pdfBufferCliente.toString("base64"), filename: `Remision-ENTREGADA-${afterData.numeroRemision}.pdf` }],
+                    };
                     await sgMail.send(msg);
                     await sendNotifications("Entrega", urlAdmin);
                 } else if (pagoFinalizado) {
-                    const msg = { /* ... */ };
+                    const msg = {
+                        to: afterData.clienteEmail, from: FROM_EMAIL, subject: `Confirmación de Pago Total - Remisión N° ${afterData.numeroRemision}`,
+                        html: `<p>Hola ${afterData.clienteNombre},</p><p>Hemos recibido el pago final para tu remisión N° <strong>${afterData.numeroRemision}</strong>.</p>`,
+                        attachments: [{ content: pdfBufferCliente.toString("base64"), filename: `Remision-CANCELADA-${afterData.numeroRemision}.pdf` }],
+                    };
                     await sgMail.send(msg);
                 }
 
             } catch (error) {
-                log("Error al procesar actualización de remisión:", error);
+                log("Error al procesar actualización:", error);
             }
         }
         

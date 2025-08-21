@@ -190,41 +190,72 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
     border-color: #d1d5db; /* gray-300 */
 }
 
-/* Estilos para las tarjetas de categorías de documentos */
-.document-category-card {
-    display: flex;
-    align-items: center;
-    padding: 1rem;
-    border: 1px solid #e5e7eb; /* gray-200 */
-    border-radius: 0.5rem; /* rounded-lg */
-    background-color: white;
+/* --- Estilos para Tarjetas de Documentos Interactivas --- */
+.document-upload-card {
+    position: relative;
+    border: 2px dashed #d1d5db; /* gray-300 */
+    border-radius: 0.75rem; /* rounded-xl */
+    padding: 1.5rem;
+    text-align: center;
+    background-color: #f9fafb; /* gray-50 */
     transition: all 0.2s ease-in-out;
-}
-
-.document-category-card.clickable:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-md */
     cursor: pointer;
 }
 
-.document-category-card .doc-icon {
-    flex-shrink: 0;
-    width: 2.5rem; /* w-10 */
-    height: 2.5rem; /* h-10 */
+.document-upload-card:hover {
+    border-color: #3b82f6; /* blue-500 */
+    background-color: #eff6ff; /* blue-50 */
+}
+
+.document-upload-card.uploaded {
+    border-style: solid;
+    border-color: #10b981; /* green-500 */
+    background-color: #f0fdf4; /* green-50 */
+}
+
+.document-upload-card .doc-icon {
+    margin: 0 auto 0.75rem auto;
+    width: 3rem; /* w-12 */
+    height: 3rem; /* h-12 */
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
+    background-color: #e5e7eb; /* gray-200 */
+    color: #4b5563; /* gray-600 */
 }
 
-.document-category-card.uploaded .doc-icon {
-    background-color: #d1fae5; /* green-100 */
-    color: #065f46; /* green-800 */
+.document-upload-card.uploaded .doc-icon {
+    background-color: #a7f3d0; /* green-200 */
+    color: #047857; /* green-700 */
 }
 
-.document-category-card.pending .doc-icon {
-    background-color: #fee2e2; /* red-100 */
-    color: #991b1b; /* red-800 */
+.document-upload-card .doc-title {
+    font-weight: 600;
+    color: #1f2937; /* gray-800 */
+}
+
+.document-upload-card .doc-status {
+    font-size: 0.875rem; /* text-sm */
+    color: #6b7280; /* gray-500 */
+    min-height: 1.25rem; /* Evita que la tarjeta cambie de tamaño */
+}
+
+.document-upload-card .view-docs-btn {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    background-color: white;
+    border: 1px solid #d1d5db;
+    border-radius: 9999px; /* rounded-full */
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #3b82f6;
+}
+
+.document-upload-card .view-docs-btn:hover {
+    background-color: #f3f4f6;
 }
 
 /* Estilos para el botón de cierre del modal de documentos */
@@ -321,3 +352,4 @@ body, #app-container {
     font-weight: 600;
     color: #374151; /* gray-700 */
 }
+
