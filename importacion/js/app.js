@@ -292,6 +292,10 @@ function loadViewTemplates() {
                         <option value="Bancolombia">Bancolombia</option>
                         <option value="Consignacion">Consignación</option>
                     </select>
+                    <div>
+                        <label for="remision-observaciones" class="block text-sm font-medium text-gray-700">Observaciones</label>
+                        <textarea id="remision-observaciones" rows="3" class="w-full p-3 border border-gray-300 rounded-lg mt-1" placeholder="Añade aquí cualquier nota o instrucción especial..."></textarea>
+                    </div>
                     <div class="bg-gray-50 p-4 rounded-lg space-y-2">
                         <div class="flex justify-between items-center"><span class="font-medium">Subtotal:</span><span id="subtotal" class="font-bold text-lg">$ 0</span></div>
                         <div class="flex justify-between items-center"><label for="incluir-iva" class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="incluir-iva" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"><span>Incluir IVA (19%)</span></label><span id="valor-iva" class="font-medium text-gray-600">$ 0</span></div>
@@ -1291,11 +1295,11 @@ function renderRemisiones() {
         const pdfButton = pdfUrl
             ? `<button data-pdf-url="${pdfUrl}" data-remision-num="${remision.numeroRemision}" class="view-pdf-btn w-full bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition text-center">Ver Remisión</button>`
             : `<button class="w-full bg-gray-400 text-white px-4 py-2 rounded-lg text-sm font-semibold btn-disabled" title="El PDF para esta remisión aún no está disponible.">Generando PDF...</button>`;
-        
+
         const anularButton = (esAnulada || esEntregada || isPlanta || (remision.payments && remision.payments.length > 0)) ? '' : `<button data-remision-id="${remision.id}" class="anular-btn w-full bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-600 transition">Anular</button>`;
         const pagosButton = esAnulada || isPlanta ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="payment-btn w-full bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 transition">Pagos (${formatCurrency(saldoPendiente)})</button>`;
         const descuentoButton = (esAnulada || esEntregada || isPlanta || remision.discount) ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="discount-btn w-full bg-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-cyan-600 transition">Descuento</button>`;
-        
+
         let discountInfo = '';
         if (remision.discount && remision.discount.percentage > 0) {
             discountInfo = `<span class="text-xs font-semibold bg-cyan-100 text-cyan-800 px-2 py-1 rounded-full">DTO ${remision.discount.percentage.toFixed(2)}%</span>`;
@@ -1310,7 +1314,7 @@ function renderRemisiones() {
             const nextStatus = ESTADOS_REMISION[currentIndex + 1];
             statusButton = `<button data-remision-id="${remision.id}" data-current-status="${remision.estado}" class="status-update-btn w-full bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-600 transition">Mover a ${nextStatus}</button>`;
         }
-        
+
         el.innerHTML = `
             <div class="flex-grow">
                 <div class="flex items-center gap-3 flex-wrap">
@@ -1355,7 +1359,7 @@ function renderRemisiones() {
         }
         // --- FIN DE LA LÓGICA CORREGIDA ---
     }));
-    
+
     document.querySelectorAll('.anular-btn').forEach(button => button.addEventListener('click', (e) => { const remisionId = e.currentTarget.dataset.remisionId; if (confirm(`¿Estás seguro de que quieres ANULAR esta remisión?`)) { handleAnularRemision(remisionId); } }));
     document.querySelectorAll('.status-update-btn').forEach(button => button.addEventListener('click', (e) => { const remisionId = e.currentTarget.dataset.remisionId; const currentStatus = e.currentTarget.dataset.currentStatus; handleStatusUpdate(remisionId, currentStatus); }));
     document.querySelectorAll('.payment-btn').forEach(button => button.addEventListener('click', (e) => { const remision = JSON.parse(e.currentTarget.dataset.remisionJson); showPaymentModal(remision); }));
@@ -3337,6 +3341,7 @@ async function handleItemSubmit(e) {
  * - Calcula cargos por corte por lámina y desglosa el IVA correctamente.
  * - Guarda la remisión y actualiza el stock de forma atómica.
  */
+
 async function handleRemisionSubmit(e) {
     e.preventDefault();
     const clienteId = document.getElementById('cliente-id-hidden').value;
@@ -3476,14 +3481,19 @@ async function handleRemisionSubmit(e) {
             return newNumber;
         });
 
+        // --- INICIO DE LA CORRECCIÓN CLAVE ---
+        // Leemos el valor del nuevo campo de observaciones
+        const observaciones = document.getElementById('remision-observaciones').value;
+
         const nuevaRemision = {
             numeroRemision: newRemisionNumber,
             idCliente: clienteId,
             clienteNombre: cliente.nombre,
             clienteEmail: cliente.email,
-            clienteTelefono: cliente.telefono1 || cliente.telefono2 || 'N/A', // Guarda el teléfono
+            clienteTelefono: cliente.telefono1 || cliente.telefono2 || 'N/A',
             fechaRecibido: document.getElementById('fecha-recibido').value,
             formaPago: document.getElementById('forma-pago').value,
+            observaciones: observaciones, // Y lo añadimos aquí
             incluyeIVA,
             items: itemsParaGuardar,
             cargosAdicionales,
@@ -3494,6 +3504,7 @@ async function handleRemisionSubmit(e) {
             timestamp: new Date(),
             estado: 'Recibido',
         };
+        // --- FIN DE LA CORRECCIÓN CLAVE ---
 
         const batch = writeBatch(db);
         const remisionRef = doc(collection(db, "remisiones"));

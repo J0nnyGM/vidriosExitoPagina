@@ -292,20 +292,14 @@ function generarPDFCliente(remision) {
 }
 
 /**
- * --- VERSIÓN FINAL Y DEFINITIVA ---
- * Genera la ORDEN DE PRODUCCIÓN MULTI-PÁGINA completa para uso interno.
- * 1.  Corrige el problema de sobreposición de texto, asegurando que el bloque
- * de totales y la firma aparezcan UNA SOLA VEZ, al final de la tabla de ítems.
- * 2.  El parámetro `isForPlanta` solo controla la visibilidad de los precios.
- * 3.  Mantiene todas las demás funcionalidades intactas (anexos, planos 2D, etc.).
+ * --- VERSIÓN COMPLETA Y FINAL BASADA EN TU CÓDIGO ---
+ * Integra el campo de "observaciones" en tu lógica de generación de PDF existente.
+ * Mantiene intacta toda la funcionalidad de anexos, planos de corte y manejo de multi-páginas.
  * @param {object} remision El objeto con los datos de la remisión.
  * @param {boolean} isForPlanta Indica si el PDF es para el rol de planta.
  * @return {Buffer} El PDF como un buffer de datos.
  */
 async function generarPDF(remision, isForPlanta = false) {
-    const { PDFDocument, rgb, StandardFonts, PageSizes } = require("pdf-lib");
-    const { jsPDF } = require("jspdf");
-    require("jspdf-autotable");
     const db = admin.firestore();
 
     const pdfDocFinal = await PDFDocument.create();
@@ -338,7 +332,7 @@ async function generarPDF(remision, isForPlanta = false) {
     // --- PÁGINA(S) 1: RESUMEN DE MATERIALES ---
     const paginaResumen = new jsPDF();
     const headerHeight = 85;
-    const footerHeight = 20; // Espacio solo para el número de página
+    const footerHeight = 20;
 
     const headColumns = [['Referencia', 'Descripción del Material', 'Cant. Láminas']];
     if (!isForPlanta) {
@@ -380,10 +374,40 @@ async function generarPDF(remision, isForPlanta = false) {
             }
         }
     });
+    
+    // --- OBTENER POSICIÓN FINAL DE LA TABLA ---
+    let finalY = paginaResumen.lastAutoTable.finalY;
+    const pageCountAfterTable = paginaResumen.internal.getNumberOfPages();
+    paginaResumen.setPage(pageCountAfterTable);
 
-    // --- CORRECCIÓN DEFINITIVA PARA EL BLOQUE DE TOTALES Y FIRMA ---
+    // ▼▼▼ INICIO DE LA MODIFICACIÓN CLAVE ▼▼▼
+    // Dibuja las observaciones DESPUÉS de la tabla de ítems
+    if (remision.observaciones && remision.observaciones.trim() !== '') {
+        finalY += 7; // Añadir un pequeño espacio
+        
+        // Comprobar si hay espacio suficiente en la página actual
+        if (finalY > paginaResumen.internal.pageSize.height - 40) { // 40 es un margen de seguridad
+            paginaResumen.addPage();
+            addHeader(paginaResumen, isForPlanta ? "Orden de Producción" : "Remisión de Servicio");
+            // Se actualiza el número de página en el pie de la nueva página
+            addFooter(paginaResumen, pageCountAfterTable + 1, pageCountAfterTable + 1);
+            finalY = headerHeight - 20; // Posición inicial en la nueva página
+        }
+
+        paginaResumen.setFontSize(10).setFont("helvetica", "bold").text("Observaciones:", 20, finalY);
+        finalY += 5;
+
+        // Dibuja el texto de las observaciones con saltos de línea automáticos
+        const observacionesText = paginaResumen.setFont("helvetica", "normal").setFontSize(9).splitTextToSize(remision.observaciones, 170); // 170 es el ancho del cuadro de texto
+        paginaResumen.text(observacionesText, 20, finalY);
+
+        // Actualiza la posición 'y' final después de añadir las observaciones
+        finalY += (observacionesText.length * 4); // 4 es un estimado de la altura de línea
+    }
+    // ▲▲▲ FIN DE LA MODIFICACIÓN CLAVE ▲▲▲
+
+    // --- DIBUJAR TOTALES Y FIRMA ---
     if (!isForPlanta) {
-        const finalY = paginaResumen.lastAutoTable.finalY;
         const pageCount = paginaResumen.internal.getNumberOfPages();
         paginaResumen.setPage(pageCount);
 
@@ -413,7 +437,6 @@ async function generarPDF(remision, isForPlanta = false) {
         paginaResumen.setFont("helvetica", "bold").text("TOTAL:", 130, yPos);
         paginaResumen.text(formatCurrency(remision.valorTotal), 190, yPos, { align: "right" });
         
-        // Dibuja la firma y notas legales en la última página, después de los totales
         const pageHeight = paginaResumen.internal.pageSize.height;
         const signatureY = pageHeight - 45;
         paginaResumen.line(40, signatureY, 120, signatureY);
@@ -430,6 +453,7 @@ async function generarPDF(remision, isForPlanta = false) {
         pdfDocFinal.addPage(copiedPage);
     }
     
+    // --- LÓGICA DE ANEXOS Y PLANOS DE CORTE (SIN CAMBIOS) ---
     const itemsCortados = remision.items.filter(item => item.tipo === 'Cortada' && item.planoDespiece && item.planoDespiece.length > 0);
     if (itemsCortados.length > 0) {
         // --- ANEXO DE PRODUCCIÓN (4 COLUMNAS) ---
