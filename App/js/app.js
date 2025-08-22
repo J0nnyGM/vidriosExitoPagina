@@ -474,7 +474,7 @@ function createUserRow(user) {
         `;
     }
 
-     row.innerHTML = `
+    row.innerHTML = `
    
         <td class="px-6 py-4 font-medium text-gray-900" data-label="Nombre">${user.firstName} ${user.lastName}</td>
         <td class="px-6 py-4" data-label="Correo">${user.email}</td>
@@ -530,65 +530,120 @@ async function deleteUser(uid) {
     console.warn(`Usuario ${uid} eliminado de Firestore. Se requiere una Cloud Function para eliminarlo de Authentication.`);
 }
 
+/**
+ * Configura el menú desplegable para la vista móvil y lo sincroniza.
+ */
+function setupResponsiveTabs() {
+    const desktopButtons = document.querySelectorAll('#project-details-tabs .tab-button');
+    const dropdownMenuContainer = document.getElementById('dropdown-menu-items');
+
+    if (!dropdownMenuContainer || !desktopButtons.length) return;
+
+    // Llena el menú con las opciones basadas en los botones de escritorio.
+    dropdownMenuContainer.innerHTML = '';
+    desktopButtons.forEach(button => {
+        const menuItem = document.createElement('a');
+        menuItem.href = '#';
+        menuItem.dataset.tab = button.dataset.tab;
+        menuItem.textContent = button.textContent;
+        // Estas clases son de TailwindCSS para dar estilo a cada opción del menú
+        menuItem.className = 'block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100';
+        dropdownMenuContainer.appendChild(menuItem);
+    });
+}
+
+
+/**
+ * Sincroniza el estado visual de los botones y el texto del menú desplegable.
+ * @param {string} tabName - El nombre de la pestaña activa.
+ */
+function syncTabsState(tabName) {
+    const dropdownButtonText = document.getElementById('dropdown-btn-text');
+    let activeTabText = '';
+
+    // Sincroniza los botones de escritorio
+    document.querySelectorAll('#project-details-tabs .tab-button').forEach(button => {
+        const isActive = button.dataset.tab === tabName;
+        button.classList.toggle('active', isActive);
+        if (isActive) {
+            // Guarda el texto de la pestaña activa para ponerlo en el botón móvil
+            activeTabText = button.textContent;
+        }
+    });
+
+    // Actualiza el texto del botón del menú desplegable
+    if (dropdownButtonText) {
+        dropdownButtonText.textContent = activeTabText;
+    }
+}
+
+
+/**
+ * Cambia la vista de la pestaña activa.
+ * @param {string} tabName - El nombre de la pestaña a mostrar.
+ */
 function switchProjectTab(tabName) {
-    // Ocultar todos los contenidos
+    // Oculta todos los contenidos
     document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.add('hidden');
     });
-    // Desactivar todos los botones de las pestañas
-    document.querySelectorAll('#project-details-tabs .tab-button').forEach(button => {
-        button.classList.remove('active');
-    });
 
-    // Mostrar el contenido y activar el botón de la pestaña seleccionada
-    document.getElementById(`${tabName}-content`).classList.remove('hidden');
-    document.querySelector(`#project-details-tabs .tab-button[data-tab="${tabName}"]`).classList.add('active');
+    // Muestra el contenido de la pestaña seleccionada
+    const activeContent = document.getElementById(`${tabName}-content`);
+    if (activeContent) {
+        activeContent.classList.remove('hidden');
+    }
+
+    // Sincroniza el estado visual de los botones y el menú
+    syncTabsState(tabName);
 }
 
 // --- LÓGICA DE DETALLES DEL PROYECTO ---
- async function showProjectDetails(project) {
-        currentProject = project;
-        showView('projectDetails');
+async function showProjectDetails(project) {
+    currentProject = project;
+    showView('projectDetails');
+    setupResponsiveTabs();
 
-        // Llenar datos de la cabecera
-        document.getElementById('project-details-name').textContent = project.name;
-        document.getElementById('project-details-builder').textContent = project.builderName || 'Constructora no especificada';
 
-        // --- Llenar datos de la pestaña "Información General" ---
-        const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
-        document.getElementById('project-details-value').textContent = currencyFormatter.format(project.value || 0);
-        document.getElementById('project-details-advance').textContent = currencyFormatter.format(project.advance || 0);
-        document.getElementById('project-details-startDate').textContent = project.startDate ? new Date(project.startDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A';
-        
-        // Lógica para fechas editables
-        const kickoffInput = document.getElementById('project-kickoffDate');
-        const endInput = document.getElementById('project-endDate');
-        kickoffInput.value = project.kickoffDate || '';
-        endInput.value = project.endDate || '';
-        // ... (resto de la lógica para el botón de guardar fechas)
+    // Llenar datos de la cabecera
+    document.getElementById('project-details-name').textContent = project.name;
+    document.getElementById('project-details-builder').textContent = project.builderName || 'Constructora no especificada';
 
-        // --- CALCULAR Y MOSTRAR MÉTRICAS DE AVANCE ---
-        // Limpiar métricas anteriores
-        document.getElementById('project-details-executedValue').textContent = 'Calculando...';
-        document.getElementById('project-details-installedItems').textContent = 'Calculando...';
-        document.getElementById('project-details-executedM2').textContent = 'Calculando...';
+    // --- Llenar datos de la pestaña "Información General" ---
+    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+    document.getElementById('project-details-value').textContent = currencyFormatter.format(project.value || 0);
+    document.getElementById('project-details-advance').textContent = currencyFormatter.format(project.advance || 0);
+    document.getElementById('project-details-startDate').textContent = project.startDate ? new Date(project.startDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A';
 
-        // Volver a calcular las estadísticas para este proyecto específico
-        const statsMap = await calculateAllProjectsProgress([project.id]);
-        const stats = statsMap.get(project.id) || { executedValue: 0, executedItems: 0, totalItems: 0, executedM2: 0, totalM2: 0 };
+    // Lógica para fechas editables
+    const kickoffInput = document.getElementById('project-kickoffDate');
+    const endInput = document.getElementById('project-endDate');
+    kickoffInput.value = project.kickoffDate || '';
+    endInput.value = project.endDate || '';
+    // ... (resto de la lógica para el botón de guardar fechas)
 
-        document.getElementById('project-details-executedValue').textContent = currencyFormatter.format(stats.executedValue);
-        document.getElementById('project-details-installedItems').textContent = `${stats.executedItems} / ${stats.totalItems}`;
-        document.getElementById('project-details-executedM2').textContent = `${stats.executedM2.toFixed(2)}m² / ${stats.totalM2.toFixed(2)}m²`;
-        
-        // --- Cargar datos para las otras pestañas ---
+    // --- CALCULAR Y MOSTRAR MÉTRICAS DE AVANCE ---
+    // Limpiar métricas anteriores
+    document.getElementById('project-details-executedValue').textContent = 'Calculando...';
+    document.getElementById('project-details-installedItems').textContent = 'Calculando...';
+    document.getElementById('project-details-executedM2').textContent = 'Calculando...';
+
+    // Volver a calcular las estadísticas para este proyecto específico
+    const statsMap = await calculateAllProjectsProgress([project.id]);
+    const stats = statsMap.get(project.id) || { executedValue: 0, executedItems: 0, totalItems: 0, executedM2: 0, totalM2: 0 };
+
+    document.getElementById('project-details-executedValue').textContent = currencyFormatter.format(stats.executedValue);
+    document.getElementById('project-details-installedItems').textContent = `${stats.executedItems} / ${stats.totalItems}`;
+    document.getElementById('project-details-executedM2').textContent = `${stats.executedM2.toFixed(2)}m² / ${stats.totalM2.toFixed(2)}m²`;
+
+    // --- Cargar datos para las otras pestañas ---
     renderInteractiveDocumentCards(project.id); // <--- Llama a la nueva función
     loadItems(project.id);
 
 
-        // Activar la primera pestaña por defecto
-        switchProjectTab('info-general');
-    }
+    // Activar la primera pestaña por defecto
+    switchProjectTab('info-general');
+}
 
 function calculateItemUnitPrice(item) {
     let unitPrice = 0;
@@ -872,6 +927,35 @@ function closeDocumentsModal() {
 
 let currentProjectDocs = new Map(); // Caché para los documentos del proyecto actual
 
+/**
+ * Revisa si el dispositivo es considerado móvil basado en el ancho de la pantalla.
+ * @returns {boolean} - Devuelve true si es móvil, false si es escritorio.
+ */
+function isMobileDevice() {
+    return window.innerWidth <= 768;
+}
+
+/**
+ * Abre un documento, ya sea en un modal (escritorio) or en una nueva pestaña (móvil).
+ * @param {string} url - La URL del documento a mostrar.
+ * @param {string} name - El nombre del documento para mostrarlo en el título.
+ */
+function viewDocument(url, name = 'Documento') {
+    if (isMobileDevice()) {
+        // En móvil, abre una nueva pestaña.
+        window.open(url, '_blank');
+    } else {
+        // En escritorio, abre el modal.
+        const modal = document.getElementById('document-display-modal');
+        const iframe = document.getElementById('document-iframe');
+        const title = document.getElementById('document-display-title');
+
+        iframe.src = url;
+        title.textContent = name;
+        modal.style.display = 'flex';
+    }
+}
+
 function openDocumentViewerModal(docType, docs) {
     const modal = document.getElementById('document-viewer-modal');
     const title = document.getElementById('document-viewer-title');
@@ -881,16 +965,30 @@ function openDocumentViewerModal(docType, docs) {
     list.innerHTML = '';
 
     if (!docs || docs.length === 0) {
-        list.innerHTML = '<p class="text-gray-500">No hay documentos disponibles para esta categoría.</p>';
+        list.innerHTML = '<p class="text-gray-500 text-center py-8">No hay documentos disponibles para esta categoría.</p>';
     } else {
+        let tableHTML = '<div class="space-y-2">';
         docs.forEach(docData => {
-            const docElement = document.createElement('a');
-            docElement.href = docData.url;
-            docElement.target = "_blank";
-            docElement.className = "block p-2 rounded hover:bg-gray-100 text-blue-600";
-            docElement.textContent = docData.name;
-            list.appendChild(docElement);
+            const isPdf = docData.url.toLowerCase().includes('.pdf');
+            const iconSVG = isPdf
+                ? `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>`
+                : `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>`;
+
+            tableHTML += `
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                    <div class="flex items-center space-x-3 flex-grow truncate">
+                        <div class="flex-shrink-0">${iconSVG}</div>
+                        <span class="text-gray-800 font-medium truncate" title="${docData.name}">${docData.name}</span>
+                    </div>
+                    <div class="flex items-center space-x-4 flex-shrink-0 ml-4">
+                        <button data-action="view-doc" data-url="${docData.url}" data-name="${docData.name}" class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-2 px-4 rounded-lg transition-colors">Ver</button>
+                        <button data-action="delete-doc" data-doc-id="${docData.id}" data-doc-name="${docData.name}" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-2 px-4 rounded-lg transition-colors">Eliminar</button>
+                    </div>
+                </div>
+            `;
         });
+        tableHTML += '</div>';
+        list.innerHTML = tableHTML;
     }
     modal.style.display = 'flex';
 }
@@ -923,73 +1021,221 @@ async function uploadProjectDocument(projectId, file, docType) {
 }
 
 async function deleteProjectDocument(projectId, docId) {
+    console.log(`Iniciando eliminación. Proyecto ID: ${projectId}, Documento ID: ${docId}`);
+
+    // Verificación de seguridad para asegurar que tenemos los datos necesarios
+    if (!projectId || !docId) {
+        console.error("Error: Faltan el ID del proyecto o del documento para eliminar.");
+        alert("Error: No se pudo obtener la información necesaria para la eliminación.");
+        return;
+    }
+
     try {
-        // Obtener la referencia al documento para saber la URL del archivo
         const docRef = doc(db, "projects", projectId, "documents", docId);
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
+            console.log("Documento encontrado en Firestore. Procediendo a eliminar de Storage...");
             const fileUrl = docSnap.data().url;
-            // 1. Borrar el archivo de Firebase Storage
+
+            // 1. Borrar el archivo físico de Firebase Storage
             const fileStorageRef = ref(storage, fileUrl);
             await deleteObject(fileStorageRef);
+            console.log("Archivo eliminado de Storage con éxito.");
 
             // 2. Borrar el registro de la base de datos de Firestore
             await deleteDoc(docRef);
+            console.log("Documento eliminado de Firestore con éxito.");
 
-            console.log("Documento eliminado con éxito.");
+            // No es necesario un 'alert' de éxito porque la lista se actualizará sola, 
+            // pero cerramos el visor de documentos para mostrar el cambio.
+            closeDocumentViewerModal();
+
+        } else {
+            console.error("Error: El documento con ID", docId, "no fue encontrado en la base de datos.");
+            alert("Error: No se pudo encontrar el registro del documento para eliminarlo.");
         }
     } catch (error) {
-        console.error("Error al eliminar el documento:", error);
-        alert("No se pudo eliminar el documento.");
+        console.error("ERROR COMPLETO al eliminar el documento:", error);
+
+        // Mensaje de error más útil para el usuario
+        if (error.code === 'storage/object-not-found') {
+            alert("Error: El archivo ya no existe en el almacenamiento, pero el registro sí. Eliminando solo el registro...");
+            // Si el archivo no existe pero el registro sí, eliminamos el registro para limpiar.
+            await deleteDoc(doc(db, "projects", projectId, "documents", docId));
+        } else if (error.code === 'storage/unauthorized') {
+            alert("Error de permisos. No tienes autorización para eliminar este archivo. Contacta al administrador.");
+        } else {
+            alert("Ocurrió un error inesperado al eliminar el documento. Revisa la consola para más detalles.");
+        }
     }
 }
 
+/**
+ * Sube un archivo a Firebase Storage y guarda su URL en Firestore.
+ * @param {string} proyectoId - El ID del proyecto al que pertenece el documento.
+ * @param {File} file - El archivo que el usuario ha seleccionado.
+ * @param {string} tipo - El tipo de documento (ej: 'cedula', 'contrato').
+ */
+function subirDocumento(proyectoId, file, tipo) {
+    // 1. Define la ruta donde se guardará el archivo en Firebase Storage.
+    // Esto crea una ruta organizada, ej: "proyectos/ID_DEL_PROYECTO/cedula/nombre_del_archivo.pdf"
+    const filePath = `proyectos/${proyectoId}/${tipo}/${file.name}`;
+    const fileRef = ref(storage, filePath);
+
+    // 2. Inicia la tarea de subida del archivo.
+    // Usamos uploadBytes que es la función moderna en v9+
+    uploadBytes(fileRef, file).then((snapshot) => {
+
+        console.log(`¡Archivo '${tipo}' subido con éxito!`);
+
+        // 3. Una vez subido, obtenemos la URL pública de descarga.
+        getDownloadURL(snapshot.ref).then((downloadURL) => {
+
+            // 4. Preparamos el objeto para actualizar la base de datos.
+            // Usamos la notación de punto para actualizar un campo dentro de un objeto.
+            // Ej: { 'documentos.cedula': 'url_del_archivo' }
+            const updateData = {};
+            updateData[`documentos.${tipo}`] = downloadURL;
+
+            // 5. Actualizamos el documento del proyecto en Firestore con la nueva URL.
+            const projectDocRef = doc(db, "projects", projectId);
+            updateDoc(projectDocRef, updateData)
+                .then(() => {
+                    console.log("Referencia del documento guardada en Firestore.");
+                    // La vista se actualizará automáticamente gracias a onSnapshot.
+                })
+                .catch(error => {
+                    console.error("Error al guardar la URL en Firestore:", error);
+                    alert("Error al guardar la referencia del documento.");
+                });
+        });
+
+    }).catch((error) => {
+        // Manejo de errores durante la subida del archivo.
+        console.error("Error al subir el archivo a Storage:", error);
+        alert("Hubo un error al subir el documento.");
+    });
+}
+
+function setupDocumentos(proyectoId, documentosDelProyecto) {
+    const container = document.getElementById('document-cards-container');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    const documentosRequeridos = [
+        { id: 'cedula', nombre: 'Cédula', descripcion: 'Documento de identidad.' },
+        { id: 'contrato', nombre: 'Contrato', descripcion: 'Contrato de servicio firmado.' }
+    ];
+
+    let cardsHTML = '';
+    documentosRequeridos.forEach(docInfo => {
+        const docExiste = documentosDelProyecto && documentosDelProyecto[docInfo.id];
+        const docURL = docExiste ? documentosDelProyecto[docInfo.id] : '#';
+
+        cardsHTML += `
+            <div id="card-${docInfo.id}" data-tipo="${docInfo.id}" 
+                 class="bg-gray-100 p-4 rounded-lg shadow ${!docExiste ? 'cursor-pointer hover:bg-gray-200' : ''}">
+                <h4 class="font-bold text-gray-700">${docInfo.nombre}</h4>
+                <p class="text-sm text-gray-600 mb-2">${docInfo.descripcion}</p>
+                ${docExiste
+                ? `<a href="${docURL}" target="_blank" class="font-bold text-blue-600 hover:underline">Ver Documento</a>`
+                : '<span class="text-sm text-blue-500">Haz clic para subir</span>'
+            }
+                <input type="file" id="file-input-${docInfo.id}" class="hidden" accept="application/pdf,image/*">
+            </div>
+        `;
+    });
+    container.innerHTML = cardsHTML;
+
+    documentosRequeridos.forEach(docInfo => {
+        const docExiste = documentosDelProyecto && documentosDelProyecto[docInfo.id];
+        if (!docExiste) {
+            const card = document.getElementById(`card-${docInfo.id}`);
+            const fileInput = document.getElementById(`file-input-${docInfo.id}`);
+            if (card && fileInput) {
+                card.onclick = () => fileInput.click();
+                fileInput.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        card.querySelector('span').textContent = 'Subiendo...';
+                        subirDocumento(proyectoId, file, docInfo.id);
+                    }
+                };
+            }
+        }
+    });
+}
+
+// ====================================================================
+//      INICIO: FUNCIÓN renderInteractiveDocumentCards MEJORADA
+// ====================================================================
 function renderInteractiveDocumentCards(projectId) {
     const container = document.getElementById('document-cards-container');
+
+    // 1. Definimos los documentos y sus reglas (si permiten múltiples archivos)
     const docTypes = [
-        { id: 'contrato', title: 'Contrato' },
-        { id: 'cotizacion', title: 'Cotización' },
-        { id: 'polizas', title: 'Pólizas' },
-        { id: 'pago_polizas', title: 'Pago de Pólizas' },
-        { id: 'otros_si', title: 'Otro Sí' }
+        { id: 'contrato', title: 'Contrato', multiple: false },
+        { id: 'cotizacion', title: 'Cotización', multiple: false },
+        { id: 'polizas', title: 'Pólizas', multiple: true }
     ];
 
     const q = query(collection(db, "projects", projectId, "documents"));
     onSnapshot(q, (snapshot) => {
         currentProjectDocs.clear();
         snapshot.forEach(doc => {
-            const data = doc.data();
+            const data = { id: doc.id, ...doc.data() };
             if (!currentProjectDocs.has(data.type)) {
                 currentProjectDocs.set(data.type, []);
             }
             currentProjectDocs.get(data.type).push(data);
         });
 
-        container.innerHTML = '';
+        container.innerHTML = ''; // Limpiamos el contenedor
         docTypes.forEach(type => {
             const docs = currentProjectDocs.get(type.id);
             const isUploaded = docs && docs.length > 0;
             const count = isUploaded ? docs.length : 0;
 
+            // 2. Lógica para decidir si se puede subir otro archivo
+            const canUpload = type.multiple || !isUploaded;
+
             const card = document.createElement('div');
-            card.className = `document-upload-card ${isUploaded ? 'uploaded' : ''}`;
-            card.dataset.action = "upload-doc"; // Acción para subir archivo
+            // 3. Añadimos clases para deshabilitar la tarjeta visualmente si no se puede subir más
+            card.className = `document-upload-card ${isUploaded ? 'uploaded' : ''} ${!canUpload ? 'opacity-60 cursor-not-allowed' : ''}`;
+
+            // Solo permitimos la acción de subir si 'canUpload' es verdadero
+            if (canUpload) {
+                card.dataset.action = "upload-doc";
+            }
             card.dataset.docType = type.id;
 
+            // 4. Lógica para el texto de estado
+            let statusText = 'Clic para subir';
+            if (isUploaded) {
+                statusText = type.multiple ? `${count} archivo(s) cargados` : 'Archivo cargado';
+            }
+            if (!canUpload) {
+                statusText = 'Archivo cargado';
+            }
+
             card.innerHTML = `
-                ${isUploaded ? `<button data-action="view-documents" data-doc-type="${type.id}" class="view-docs-btn">Ver</button>` : ''}
+                ${isUploaded ? `<button data-action="view-documents" data-doc-type="${type.id}" class="view-docs-btn bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-1 px-3 rounded-full transition-colors">Ver</button>` : ''}
                 <div class="doc-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                 </div>
                 <p class="doc-title">${type.title}</p>
-                <p class="doc-status">${isUploaded ? `${count} archivo(s) cargado(s)` : 'Clic para subir'}</p>
-                <input type="file" class="hidden" data-doc-type="${type.id}">
+                <p class="doc-status">${statusText}</p>
+                ${canUpload ? `<input type="file" class="hidden" data-doc-type="${type.id}" ${type.multiple ? 'multiple' : ''}>` : ''}
             `;
             container.appendChild(card);
         });
     });
 }
+// ====================================================================
+//      FIN: FUNCIÓN MEJORADA
+// ====================================================================
 
 function loadProjectDocuments(projectId) {
     const listContainer = document.getElementById('documents-list');
@@ -1196,8 +1442,22 @@ function openMainModal(type, data = {}) {
                 });
                 // Ocultar resultados si se hace clic fuera
                 document.addEventListener('click', (e) => {
-                    if (!e.target.closest('#project-location') && !e.target.closest('#municipalities-results')) {
-                        resultsContainer.classList.add('hidden');
+                    const dropdownBtn = document.getElementById('project-tabs-dropdown-btn');
+                    const dropdownMenu = document.getElementById('project-tabs-dropdown-menu');
+
+                    // Si se hace clic en el botón, muestra/oculta el menú
+                    if (dropdownBtn && dropdownBtn.contains(e.target)) {
+                        dropdownMenu.classList.toggle('hidden');
+                    }
+                    // Si se hace clic en una opción del menú...
+                    else if (dropdownMenu && dropdownMenu.contains(e.target) && e.target.dataset.tab) {
+                        e.preventDefault();
+                        switchProjectTab(e.target.dataset.tab); // Cambia la pestaña
+                        dropdownMenu.classList.add('hidden'); // Cierra el menú
+                    }
+                    // Si se hace clic en cualquier otro lugar, cierra el menú
+                    else if (dropdownMenu) {
+                        dropdownMenu.classList.add('hidden');
                     }
                 });
                 // --- NUEVA LÓGICA PARA FORMATEO DE MONEDA ---
@@ -1554,9 +1814,14 @@ const confirmModalBody = document.getElementById('confirm-modal-body');
 const confirmModalCancelBtn = document.getElementById('confirm-modal-cancel-btn');
 const confirmModalConfirmBtn = document.getElementById('confirm-modal-confirm-btn');
 let onConfirmCallback = () => { };
+// ESTA ES LA FUNCIÓN MEJORADA
 function openConfirmModal(message, callback) {
     confirmModalBody.textContent = message;
     onConfirmCallback = callback;
+
+    // LÍNEA AÑADIDA: Le damos la prioridad más alta
+    confirmModal.style.zIndex = 60;
+
     confirmModal.style.display = 'flex';
 }
 function closeConfirmModal() { confirmModal.style.display = 'none'; }
@@ -1939,6 +2204,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const button = target.closest('button');
         const docCard = target.closest('.document-category-card.clickable');
 
+        const uploadCard = target.closest('.document-upload-card');
+        if (uploadCard && uploadCard.dataset.action === 'upload-doc') {
+            // Si la tarjeta NO tiene un documento subido...
+            if (!uploadCard.classList.contains('uploaded')) {
+                // ...buscamos el input de tipo 'file' que está DENTRO de la tarjeta y lo activamos.
+                const fileInput = uploadCard.querySelector('input[type="file"]');
+                if (fileInput) {
+                    fileInput.click(); // Esto abre el selector de archivos del sistema.
+                }
+            }
+        }
         // Lógica para clics en tarjetas de documentos
         if (docCard) {
             const docType = docCard.dataset.docType;
@@ -1946,6 +2222,20 @@ document.addEventListener('DOMContentLoaded', () => {
             openDocumentViewerModal(docType, docs);
             return; // Detiene la ejecución para no procesar botones
         }
+
+        // ======================================================
+        //      INICIO: CÓDIGO AÑADIDO PARA EL BOTÓN "VER"
+        // ======================================================
+        if (button && button.dataset.action === 'view-documents') {
+            const docType = button.dataset.docType;
+            const docs = currentProjectDocs.get(docType) || [];
+            openDocumentViewerModal(docType, docs);
+            return; // Detenemos la ejecución aquí para que no interfiera con otros clics
+        }
+        // ======================================================
+        //      FIN: CÓDIGO AÑADIDO
+        // ======================================================
+
 
         // NUEVA LÓGICA PARA LAS PESTAÑAS DE DETALLES DEL PROYECTO
         const tabButton = e.target.closest('#project-details-tabs .tab-button');
@@ -2109,6 +2399,80 @@ document.addEventListener('DOMContentLoaded', () => {
                 uploadProjectDocument(currentProject.id, file, docType);
                 e.target.value = '';
             }
+        }
+    });
+
+    document.getElementById('main-content').addEventListener('change', (e) => {
+        // Si el elemento que cambió es un input de archivo dentro de una tarjeta de documento...
+        const fileInput = e.target.closest('.document-upload-card input[type="file"]');
+        if (fileInput) {
+            const file = fileInput.files[0];
+            const docType = fileInput.dataset.docType;
+
+            if (file && currentProject) {
+                // Actualizamos la tarjeta para mostrar que se está subiendo
+                const card = fileInput.closest('.document-upload-card');
+                const statusP = card.querySelector('.doc-status');
+                if (statusP) statusP.textContent = 'Subiendo...';
+
+                // Llamamos a la función que sube el archivo
+                uploadProjectDocument(currentProject.id, file, docType);
+            }
+        }
+    });
+
+    const documentDisplayModal = document.getElementById('document-display-modal');
+
+    // Función centralizada para cerrar el modal
+    function closeDocumentDisplayModal() {
+        const iframe = document.getElementById('document-iframe');
+        documentDisplayModal.style.display = 'none';
+        iframe.src = 'about:blank'; // Limpiamos el iframe para liberar memoria
+    }
+
+    // 1. Cierra el modal al hacer clic en el botón [X]
+    document.getElementById('document-display-close-btn').addEventListener('click', closeDocumentDisplayModal);
+
+    // 2. Cierra el modal al hacer clic FUERA del contenido (en el fondo oscuro)
+    documentDisplayModal.addEventListener('click', (e) => {
+        // Si el elemento clickeado (e.target) es el fondo del modal...
+        if (e.target === documentDisplayModal) {
+            closeDocumentDisplayModal();
+        }
+    });
+
+    document.getElementById('document-viewer-list').addEventListener('click', (e) => {
+        const button = e.target.closest('button');
+        if (!button || !button.dataset.action) return;
+
+        const action = button.dataset.action;
+
+        if (action === 'view-doc') {
+            const url = button.dataset.url;
+            const name = button.dataset.name;
+            viewDocument(url, name);
+        }
+
+        if (action === 'delete-doc') {
+            const docId = button.dataset.docId;
+            const docName = button.dataset.docName;
+
+            // Llamamos a tu modal de confirmación existente
+            openConfirmModal(
+                `¿Estás seguro de que quieres eliminar el documento "${docName}"? Esta acción no se puede deshacer.`,
+                () => {
+                    // Esta función se ejecutará solo si el usuario confirma
+                    deleteProjectDocument(currentProject.id, docId);
+                }
+            );
+        }
+    });
+
+    document.addEventListener('change', (e) => {
+        // Si el elemento que cambió es el menú con ID 'tabs'...
+        if (e.target && e.target.id === 'tabs') {
+            // ...entonces cambiamos la pestaña a la que el usuario seleccionó.
+            switchProjectTab(e.target.value);
         }
     });
 });
