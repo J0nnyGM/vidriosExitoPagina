@@ -87,6 +87,21 @@ const views = {
     subItems: document.getElementById('sub-items-view'),
 };
 
+// ====================================================================
+//      INICIO: FUNCIÓN AÑADIDA PARA CERRAR EL MENÚ LATERAL
+// ====================================================================
+/**
+ * Cierra el menú lateral (sidebar) de forma segura.
+ */
+function closeSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar) {
+        sidebar.classList.add('-translate-x-full');
+    }
+}
+// ====================================================================
+//      FIN: FUNCIÓN AÑADIDA
+// ====================================================================
 
 
 // --- MANEJO DE VISTAS ---
@@ -358,7 +373,11 @@ function createProjectCard(project, progress, stats) {
                     </div>
                     <div class="flex items-center space-x-2">
                         <button data-action="view-details" class="text-blue-600 hover:text-blue-800 font-semibold py-2 px-4 rounded-lg bg-blue-100 hover:bg-blue-200 transition-colors">Ver Detalles</button>
-                        ${actionButton}
+
+                        ${project.status === 'active'
+            ? `<button data-action="archive" class="text-yellow-600 hover:text-yellow-800 font-semibold py-2 px-4 rounded-lg bg-yellow-100 hover:bg-yellow-200 transition-colors">Archivar</button>`
+            : `<button data-action="restore" class="text-green-600 hover:text-green-800 font-semibold py-2 px-4 rounded-lg bg-green-100 hover:bg-green-200 transition-colors">Restaurar</button>`}
+                        
                         ${currentUserRole === 'admin' ? `<button data-action="delete" class="text-red-600 hover:text-red-800 font-semibold py-2 px-4 rounded-lg bg-red-100 hover:bg-red-200 transition-colors">Eliminar</button>` : ''}
                     </div>
                 </div>
@@ -1168,21 +1187,236 @@ function setupDocumentos(proyectoId, documentosDelProyecto) {
     });
 }
 
+let unsubscribeOtroSi = null;
+
+function openOtroSiModal() {
+    const modal = document.getElementById('otro-si-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        document.getElementById('otro-si-form').reset();
+        loadOtroSiList(currentProject.id);
+    }
+}
+
+function closeOtroSiModal() {
+    const modal = document.getElementById('otro-si-modal');
+    if (modal) {
+        modal.style.display = 'none';
+        if (unsubscribeOtroSi) unsubscribeOtroSi();
+    }
+}
+
+async function handleOtroSiSubmit(e) {
+    e.preventDefault();
+    const concept = document.getElementById('otro-si-concept').value;
+    const file = document.getElementById('otro-si-file').files[0];
+    const submitBtn = document.getElementById('otro-si-submit-btn');
+
+    if (!concept || !file) {
+        alert("Por favor, completa el concepto y selecciona un archivo.");
+        return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Guardando...';
+
+    try {
+        const filePath = `projects/${currentProject.id}/otrosSi/${Date.now()}_${file.name}`;
+        const fileRef = ref(storage, filePath);
+        const snapshot = await uploadBytes(fileRef, file);
+        const downloadURL = await getDownloadURL(snapshot.ref);
+
+        const otroSiCollection = collection(db, "projects", currentProject.id, "otrosSi");
+        await addDoc(otroSiCollection, {
+            concept: concept,
+            fileURL: downloadURL,
+            fileName: file.name,
+            createdAt: new Date()
+        });
+
+        document.getElementById('otro-si-form').reset();
+    } catch (error) {
+        console.error("Error al guardar el 'Otro Sí':", error);
+        alert("Ocurrió un error al guardar.");
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Guardar Otro Sí';
+    }
+}
+
+function loadOtroSiList(projectId) {
+    const listContainer = document.getElementById('otro-si-list-container');
+    const q = query(collection(db, "projects", projectId, "otrosSi"), orderBy("createdAt", "desc"));
+
+    if (unsubscribeOtroSi) unsubscribeOtroSi();
+
+    unsubscribeOtroSi = onSnapshot(q, (snapshot) => {
+        if (!listContainer) return;
+        listContainer.innerHTML = '';
+        if (snapshot.empty) {
+            listContainer.innerHTML = '<p class="text-gray-500 text-center">No se han añadido otrosí al contrato.</p>';
+            return;
+        }
+        snapshot.forEach(doc => {
+            const data = { id: doc.id, ...doc.data() };
+            const item = document.createElement('div');
+            item.className = 'p-3 bg-gray-50 rounded-lg border flex justify-between items-start';
+            item.innerHTML = `
+                <div class="flex-grow pr-4">
+                    <p class="text-sm text-gray-800 font-semibold">${data.concept}</p>
+                    <a href="${data.fileURL}" target="_blank" class="text-xs text-blue-600 hover:underline truncate">Ver Archivo: ${data.fileName}</a>
+                </div>
+                <button data-action="delete-otro-si" data-id="${data.id}" class="text-red-500 hover:text-red-700 text-xs font-semibold">Eliminar</button>
+            `;
+            listContainer.appendChild(item);
+        });
+    });
+}
+
+async function deleteOtroSi(otroSiId) {
+    try {
+        const docRef = doc(db, "projects", currentProject.id, "otrosSi", otroSiId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            const fileURL = docSnap.data().fileURL;
+            if (fileURL) {
+                const fileRef = ref(storage, fileURL);
+                await deleteObject(fileRef);
+            }
+            await deleteDoc(docRef);
+        }
+    } catch (error) {
+        console.error("Error al eliminar 'Otro Sí':", error);
+        alert("No se pudo eliminar el registro.");
+    }
+}
+
+// ====================================================================
+//      INICIO: FUNCIONES PARA GESTIONAR "VARIOS"
+// ====================================================================
+let unsubscribeVarios = null;
+
+function openVariosModal() {
+    document.getElementById('varios-modal').style.display = 'flex';
+    document.getElementById('varios-form').reset();
+    loadVariosList(currentProject.id);
+}
+
+function closeVariosModal() {
+    document.getElementById('varios-modal').style.display = 'none';
+    if (unsubscribeVarios) unsubscribeVarios();
+}
+
+async function handleVariosSubmit(e) {
+    e.preventDefault();
+    const concept = document.getElementById('varios-concept').value;
+    const file = document.getElementById('varios-file').files[0];
+    const submitBtn = document.getElementById('varios-submit-btn');
+
+    if (!concept || !file) {
+        alert("Por favor, completa el concepto y selecciona un archivo.");
+        return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Guardando...';
+
+    try {
+        const filePath = `projects/${currentProject.id}/varios/${Date.now()}_${file.name}`;
+        const fileRef = ref(storage, filePath);
+        const snapshot = await uploadBytes(fileRef, file);
+        const downloadURL = await getDownloadURL(snapshot.ref);
+
+        const variosCollection = collection(db, "projects", currentProject.id, "varios");
+        await addDoc(variosCollection, {
+            concept: concept,
+            fileURL: downloadURL,
+            fileName: file.name,
+            createdAt: new Date()
+        });
+
+        document.getElementById('varios-form').reset();
+    } catch (error) {
+        console.error("Error al guardar el documento 'Varios':", error);
+        alert("Ocurrió un error al guardar.");
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Guardar Documento';
+    }
+}
+
+function loadVariosList(projectId) {
+    const listContainer = document.getElementById('varios-list-container');
+    const q = query(collection(db, "projects", projectId, "varios"), orderBy("createdAt", "desc"));
+
+    if (unsubscribeVarios) unsubscribeVarios();
+
+    unsubscribeVarios = onSnapshot(q, (snapshot) => {
+        if (!listContainer) return;
+        listContainer.innerHTML = '';
+        if (snapshot.empty) {
+            listContainer.innerHTML = '<p class="text-gray-500 text-center">No se han añadido documentos varios.</p>';
+            return;
+        }
+        snapshot.forEach(doc => {
+            const data = { id: doc.id, ...doc.data() };
+            const item = document.createElement('div');
+            item.className = 'p-3 bg-gray-50 rounded-lg border flex justify-between items-start';
+            item.innerHTML = `
+                <div class="flex-grow pr-4">
+                    <p class="text-sm text-gray-800 font-semibold">${data.concept}</p>
+                    <a href="${data.fileURL}" target="_blank" class="text-xs text-blue-600 hover:underline truncate">Ver Archivo: ${data.fileName}</a>
+                </div>
+                <button data-action="delete-varios" data-id="${data.id}" class="text-red-500 hover:text-red-700 text-xs font-semibold">Eliminar</button>
+            `;
+            listContainer.appendChild(item);
+        });
+    });
+}
+
+async function deleteVarios(variosId) {
+    try {
+        const docRef = doc(db, "projects", currentProject.id, "varios", variosId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            const fileURL = docSnap.data().fileURL;
+            if (fileURL) {
+                const fileRef = ref(storage, fileURL);
+                await deleteObject(fileRef);
+            }
+            await deleteDoc(docRef);
+        }
+    } catch (error) {
+        console.error("Error al eliminar 'Varios':", error);
+        alert("No se pudo eliminar el registro.");
+    }
+}
+// ====================================================================
+//      FIN: FUNCIONES
+// ====================================================================
+
 // ====================================================================
 //      INICIO: FUNCIÓN renderInteractiveDocumentCards MEJORADA
 // ====================================================================
 function renderInteractiveDocumentCards(projectId) {
     const container = document.getElementById('document-cards-container');
+    if (!container) return;
 
-    // 1. Definimos los documentos y sus reglas (si permiten múltiples archivos)
     const docTypes = [
         { id: 'contrato', title: 'Contrato', multiple: false },
         { id: 'cotizacion', title: 'Cotización', multiple: false },
-        { id: 'polizas', title: 'Pólizas', multiple: true }
+        { id: 'polizas', title: 'Pólizas', multiple: true },
+        { id: 'pago_polizas', title: 'Pago de Pólizas', multiple: true },
+        { id: 'otro_si', title: 'Otro Sí', action: 'open-otro-si-modal' },
+        // AÑADE ESTA LÍNEA
+        { id: 'varios', title: 'Varios', action: 'open-varios-modal' }
     ];
 
     const q = query(collection(db, "projects", projectId, "documents"));
     onSnapshot(q, (snapshot) => {
+        const currentContainer = document.getElementById('document-cards-container');
+        if (!currentContainer) return;
+
         currentProjectDocs.clear();
         snapshot.forEach(doc => {
             const data = { id: doc.id, ...doc.data() };
@@ -1192,44 +1426,56 @@ function renderInteractiveDocumentCards(projectId) {
             currentProjectDocs.get(data.type).push(data);
         });
 
-        container.innerHTML = ''; // Limpiamos el contenedor
+        currentContainer.innerHTML = '';
         docTypes.forEach(type => {
             const docs = currentProjectDocs.get(type.id);
             const isUploaded = docs && docs.length > 0;
-            const count = isUploaded ? docs.length : 0;
-
-            // 2. Lógica para decidir si se puede subir otro archivo
             const canUpload = type.multiple || !isUploaded;
-
             const card = document.createElement('div');
-            // 3. Añadimos clases para deshabilitar la tarjeta visualmente si no se puede subir más
-            card.className = `document-upload-card ${isUploaded ? 'uploaded' : ''} ${!canUpload ? 'opacity-60 cursor-not-allowed' : ''}`;
 
-            // Solo permitimos la acción de subir si 'canUpload' es verdadero
-            if (canUpload) {
-                card.dataset.action = "upload-doc";
-            }
-            card.dataset.docType = type.id;
-
-            // 4. Lógica para el texto de estado
             let statusText = 'Clic para subir';
             if (isUploaded) {
-                statusText = type.multiple ? `${count} archivo(s) cargados` : 'Archivo cargado';
+                statusText = type.multiple ? `${docs.length} archivo(s) cargados` : 'Archivo cargado';
             }
             if (!canUpload) {
                 statusText = 'Archivo cargado';
             }
 
-            card.innerHTML = `
-                ${isUploaded ? `<button data-action="view-documents" data-doc-type="${type.id}" class="view-docs-btn bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-1 px-3 rounded-full transition-colors">Ver</button>` : ''}
-                <div class="doc-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                </div>
-                <p class="doc-title">${type.title}</p>
-                <p class="doc-status">${statusText}</p>
-                ${canUpload ? `<input type="file" class="hidden" data-doc-type="${type.id}" ${type.multiple ? 'multiple' : ''}>` : ''}
-            `;
-            container.appendChild(card);
+            // --- LÓGICA DEL COLOR VERDE AÑADIDA AQUÍ ---
+            const bgColorClass = isUploaded ? 'bg-green-50' : 'bg-white';
+
+            if (type.action) {
+                // Lógica para la tarjeta "Otro Sí"
+                card.className = `document-upload-card p-4 cursor-pointer bg-white`;
+                card.dataset.action = type.action;
+                card.innerHTML = `
+                    <div class="doc-icon mt-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </div>
+                    <p class="doc-title text-center font-bold">${type.title}</p>
+                    <p class="doc-status text-center text-sm text-gray-600">Añadir o gestionar</p>
+                `;
+            } else {
+                // LÓGICA UNIFICADA PARA TODAS LAS TARJETAS DE DOCUMENTOS
+                card.className = `document-upload-card p-4 flex flex-col items-center justify-center rounded-lg shadow ${bgColorClass} ${canUpload ? 'cursor-pointer' : 'cursor-default'}`;
+                if (canUpload) {
+                    card.dataset.action = "upload-doc";
+                }
+                card.dataset.docType = type.id;
+
+                let buttonText = type.multiple ? "Ver Documentos" : "Ver Documento";
+
+                card.innerHTML = `
+                    ${isUploaded ? `<div class="mb-2"><button data-action="view-documents" data-doc-type="${type.id}" class="view-docs-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm">${buttonText}</button></div>` : ''}
+                    <div class="doc-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    </div>
+                    <p class="doc-title font-bold">${type.title}</p>
+                    <p class="doc-status text-sm text-gray-600">${statusText}</p>
+                    <input type="file" class="hidden" data-doc-type="${type.id}" ${type.multiple ? 'multiple' : ''}>
+                `;
+            }
+            currentContainer.appendChild(card);
         });
     });
 }
@@ -2184,37 +2430,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Navegación principal en la barra lateral
-    document.getElementById('main-nav').addEventListener('click', (e) => {
-        if (e.target.classList.contains('nav-link')) {
-            e.preventDefault();
-            const viewName = e.target.dataset.view;
-            if (viewName === 'adminPanel') {
-                showView('adminPanel');
-                loadUsers('active');
-            } else {
-                showView(viewName);
-            }
-        }
-    });
+
 
     // MANEJADOR DE EVENTOS CENTRALIZADO para el contenido principal
     document.getElementById('main-content').addEventListener('click', async (e) => {
         const target = e.target;
+
+        const uploadCard = e.target.closest('.document-upload-card[data-action="upload-doc"]');
+        // LA CONDICIÓN AÑADIDA ES: !e.target.closest('button')
+        if (uploadCard && !e.target.closest('button')) {
+            // Busca el input de archivo oculto DENTRO de la tarjeta y lo activa
+            const fileInput = uploadCard.querySelector('input[type="file"]');
+            if (fileInput) {
+                fileInput.click();
+            }
+            return; // Detenemos la ejecución para no interferir con otros clics
+        }
+
         const button = target.closest('button');
         const docCard = target.closest('.document-category-card.clickable');
 
-        const uploadCard = target.closest('.document-upload-card');
-        if (uploadCard && uploadCard.dataset.action === 'upload-doc') {
-            // Si la tarjeta NO tiene un documento subido...
-            if (!uploadCard.classList.contains('uploaded')) {
-                // ...buscamos el input de tipo 'file' que está DENTRO de la tarjeta y lo activamos.
-                const fileInput = uploadCard.querySelector('input[type="file"]');
-                if (fileInput) {
-                    fileInput.click(); // Esto abre el selector de archivos del sistema.
-                }
-            }
+        // ====================================================================
+        //      INICIO: CÓDIGO AÑADIDO PARA LA TARJETA "OTRO SÍ"
+        // ====================================================================
+        const otroSiCard = e.target.closest('.document-upload-card[data-action="open-otro-si-modal"]');
+        if (otroSiCard) {
+            openOtroSiModal();
+            return; // Detiene la ejecución para no interferir con otros clics
         }
+        // ====================================================================
+        //      FIN: CÓDIGO AÑADIDO
+        // ====================================================================
+
         // Lógica para clics en tarjetas de documentos
         if (docCard) {
             const docType = docCard.dataset.docType;
@@ -2475,4 +2722,188 @@ document.addEventListener('DOMContentLoaded', () => {
             switchProjectTab(e.target.value);
         }
     });
+
+    document.addEventListener('click', (e) => {
+        if (e.target && e.target.id === 'otro-si-modal-close-btn') {
+            closeOtroSiModal();
+        }
+    });
+
+    const otroSiForm = document.getElementById('otro-si-form');
+    if (otroSiForm) {
+        otroSiForm.addEventListener('submit', handleOtroSiSubmit);
+    }
+
+    const otroSiListContainer = document.getElementById('otro-si-list-container');
+    if (otroSiListContainer) {
+        otroSiListContainer.addEventListener('click', (e) => {
+            const button = e.target.closest('button[data-action="delete-otro-si"]');
+            if (button) {
+                const otroSiId = button.dataset.id;
+                openConfirmModal(
+                    "¿Estás seguro de eliminar este 'Otro Sí'? Esta acción es permanente.",
+                    () => deleteOtroSi(otroSiId)
+                );
+            }
+        });
+    }
+
+    // ====================================================================
+    //      INICIO: EVENTOS PARA EL MODAL "VARIOS"
+    // ====================================================================
+    document.addEventListener('click', (e) => {
+        // Para el botón de cerrar
+        if (e.target && e.target.id === 'varios-modal-close-btn') {
+            closeVariosModal();
+        }
+        // Para la tarjeta que abre el modal
+        const card = e.target.closest('.document-upload-card[data-action="open-varios-modal"]');
+        if (card) {
+            openVariosModal();
+        }
+    });
+
+    const variosForm = document.getElementById('varios-form');
+    if (variosForm) {
+        variosForm.addEventListener('submit', handleVariosSubmit);
+    }
+
+    const variosListContainer = document.getElementById('varios-list-container');
+    if (variosListContainer) {
+        variosListContainer.addEventListener('click', (e) => {
+            const button = e.target.closest('button[data-action="delete-varios"]');
+            if (button) {
+                const variosId = button.dataset.id;
+                openConfirmModal(
+                    "¿Estás seguro de eliminar este documento? Esta acción es permanente.",
+                    () => deleteVarios(variosId)
+                );
+            }
+        });
+    }
+    // ====================================================================
+    //      FIN: EVENTOS
+    // ====================================================================
+
+    // ====================================================================
+    //      INICIO: LÓGICA PARA BOTONES DE LA CABECERA (PERFIL Y NOTIFICACIONES)
+    // ====================================================================
+    const notificationsBtn = document.getElementById('notifications-btn');
+    const notificationsDropdown = document.getElementById('notifications-dropdown');
+    const profileBtn = document.getElementById('profile-btn');
+
+    // Manejar clic en el botón de Notificaciones
+    if (notificationsBtn) {
+        notificationsBtn.addEventListener('click', () => {
+            notificationsDropdown.classList.toggle('hidden');
+        });
+    }
+
+    // Manejar clic en el botón de Perfil
+    if (profileBtn) {
+        profileBtn.addEventListener('click', () => {
+            if (currentUser && usersMap.has(currentUser.uid)) {
+                const userData = usersMap.get(currentUser.uid);
+                openMainModal('editProfile', userData);
+            }
+        });
+    }
+
+    // Cerrar el menú de notificaciones si se hace clic fuera
+    document.addEventListener('click', (e) => {
+        if (notificationsDropdown && !notificationsBtn.contains(e.target) && !notificationsDropdown.contains(e.target)) {
+            notificationsDropdown.classList.add('hidden');
+        }
+    });
+    // ====================================================================
+    //      FIN: LÓGICA PARA BOTONES DE LA CABECERA
+    // ====================================================================
+
+// ====================================================================
+//      INICIO: LÓGICA FINAL Y UNIFICADA PARA EL MENÚ LATERAL (SIDEBAR)
+// ====================================================================
+const sidebar = document.getElementById('sidebar');
+const mainContent = document.getElementById('main-content');
+const menuToggleBtn = document.getElementById('menu-toggle-btn'); // Botón hamburguesa (móvil)
+const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn'); // Botón Ocultar/Mostrar (dentro del menú)
+const mainNav = document.getElementById('main-nav');
+
+// --- Función para inicializar el estado del menú en Desktop ---
+function initializeDesktopSidebar() {
+    if (window.innerWidth >= 768 && sidebar && mainContent) {
+        // Por defecto, el menú empieza colapsado mostrando solo los iconos.
+        mainContent.classList.add('is-shifted');
+        sidebar.classList.add('is-collapsed');
+    }
+}
+
+// --- Lógica de hover para expandir en Desktop ---
+if (window.innerWidth >= 768 && sidebar) {
+    sidebar.addEventListener('mouseenter', () => {
+        // Solo se expande al pasar el mouse si está en modo colapsado.
+        if (sidebar.classList.contains('is-collapsed')) {
+            sidebar.classList.add('is-expanded-hover');
+        }
+    });
+    sidebar.addEventListener('mouseleave', () => {
+        sidebar.classList.remove('is-expanded-hover');
+    });
+}
+
+// --- Lógica de clics para cambiar de módulo ---
+if (mainNav) {
+    mainNav.addEventListener('click', (e) => {
+        const link = e.target.closest('.nav-link');
+        if (link) {
+            e.preventDefault();
+            const viewName = link.dataset.view;
+            if (viewName === 'adminPanel') {
+                showView('adminPanel');
+                loadUsers('active');
+            } else {
+                showView(viewName);
+            }
+            // En móvil, sí cerramos el menú después de hacer clic.
+            if (window.innerWidth < 768) {
+                sidebar.classList.add('-translate-x-full');
+            }
+        }
+    });
+}
+
+// --- Lógica para los botones de control ---
+// Botón de hamburguesa (móvil)
+if (menuToggleBtn) {
+    menuToggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sidebar.classList.toggle('-translate-x-full');
+    });
+}
+// Botón Ocultar/Mostrar (dentro del menú)
+if (sidebarToggleBtn) {
+    sidebarToggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (window.innerWidth >= 768) { // Escritorio: Colapsa/Expande permanentemente
+            mainContent.classList.toggle('is-shifted');
+            sidebar.classList.toggle('is-collapsed');
+        } else { // Móvil: Solo cierra
+            sidebar.classList.add('-translate-x-full');
+        }
+    });
+}
+
+// --- Lógica para cerrar al hacer clic fuera (móvil) ---
+if (mainContent) {
+    mainContent.addEventListener('click', () => {
+        if (window.innerWidth < 768 && sidebar && !sidebar.classList.contains('-translate-x-full')) {
+            sidebar.classList.add('-translate-x-full');
+        }
+    });
+}
+
+// --- Inicializar estado al cargar la página ---
+initializeDesktopSidebar();
+// ====================================================================
+//      FIN: LÓGICA FINAL
+// ====================================================================
 });

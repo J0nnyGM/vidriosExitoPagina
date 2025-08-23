@@ -353,3 +353,53 @@ body, #app-container {
     color: #374151; /* gray-700 */
 }
 
+/* ==================================================================== */
+/* INICIO: ESTILOS RESTAURADOS PARA MENÚ LATERAL FLOTANTE */
+/* ==================================================================== */
+
+/* Transiciones suaves para el menú y el contenido */
+#sidebar, #main-content {
+    transition: all 0.3s ease-in-out;
+}
+
+/* --- ESTADO COLAPSADO (SOLO ICONOS) --- */
+/* Se aplica solo en pantallas de escritorio (md y superiores) */
+@media (min-width: 768px) {
+    #sidebar {
+        width: 5rem; /* 80px */
+    }
+
+    #sidebar .nav-link span,
+    #sidebar .sidebar-text {
+        display: none; /* Oculta el texto por defecto */
+    }
+    
+    #sidebar .nav-link {
+        justify-content: center; /* Centra el ícono */
+    }
+
+    #sidebar .nav-link svg {
+        margin-right: 0; /* Quita el margen del ícono */
+    }
+
+    #main-content {
+        margin-left: 5rem; /* Mantiene el espacio para el menú colapsado */
+    }
+}
+
+/* --- ESTADO EXPANDIDO (AL PASAR EL MOUSE) --- */
+#sidebar.is-expanded-hover {
+    width: 16rem; /* 256px */
+    position: fixed; /* Lo hacemos flotante para que no empuje el contenido */
+    z-index: 40;     /* Se asegura que esté por encima del contenido */
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* Sombra opcional */
+}
+
+#sidebar.is-expanded-hover .nav-link span,
+#sidebar.is-expanded-hover .sidebar-text {
+    display: inline; /* Muestra el texto cuando está expandido */
+}
+
+#sidebar.is-expanded-hover .nav-link {
+    justify-content: flex-start; /* Alinea el ícono y texto a la izquierda */
+}
