@@ -23,6 +23,7 @@ const auth = getAuth(app);
 const storage = getStorage(app);
 const messaging = getMessaging(app);
 
+let activeListeners = [];
 let currentUser = null;
 let currentUserRole = null;
 let usersMap = new Map();
@@ -137,11 +138,11 @@ onAuthStateChanged(auth, async (user) => {
             await signOut(auth);
         }
     } else {
+        showView('auth-view'); // <--- ESTA ES LA CORRECCIÓN
         currentUser = null;
         currentUserRole = null;
         authContainer.classList.remove('hidden');
         appContainer.classList.add('hidden');
-        showAuthView('login');
     }
     loadingOverlay.classList.add('hidden');
 });
@@ -206,8 +207,20 @@ async function handleRegister(e) {
     }
 }
 
-function handleLogout() {
-    signOut(auth);
+async function handleLogout() {
+    try {
+        // 1. Desconecta todos los listeners de Firestore que estén activos.
+        //    (Esto previene el error de permisos).
+        activeListeners.forEach(unsubscribe => unsubscribe());
+        activeListeners = []; // Limpia el array para la próxima sesión.
+
+        // 2. Cierra la sesión del usuario de forma segura.
+        await signOut(auth);
+        console.log('Usuario cerró sesión exitosamente');
+
+    } catch (error) {
+        console.error('Error al cerrar sesión: ', error);
+    }
 }
 
 // --- LÓGICA DE DATOS ---
