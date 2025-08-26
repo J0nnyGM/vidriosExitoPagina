@@ -384,15 +384,15 @@ function createProjectCard(project, progress, stats) {
                         <p class="text-sm text-gray-500 font-semibold">${project.builderName || 'Constructora no especificada'}</p>
                         <p class="text-sm text-gray-500">${project.location} - ${project.address}</p>
                     </div>
-                    <div class="flex items-center space-x-2">
-                        <button data-action="view-details" class="text-blue-600 hover:text-blue-800 font-semibold py-2 px-4 rounded-lg bg-blue-100 hover:bg-blue-200 transition-colors">Ver Detalles</button>
-
-                        ${project.status === 'active'
+                <div class="flex items-center space-x-2">
+                    <button data-action="view-details" class="text-blue-600 hover:text-blue-800 font-semibold py-2 px-4 rounded-lg bg-blue-100 hover:bg-blue-200 transition-colors">Ver Detalles</button>
+    
+                    ${project.status === 'active'
             ? `<button data-action="archive" class="text-yellow-600 hover:text-yellow-800 font-semibold py-2 px-4 rounded-lg bg-yellow-100 hover:bg-yellow-200 transition-colors">Archivar</button>`
             : `<button data-action="restore" class="text-green-600 hover:text-green-800 font-semibold py-2 px-4 rounded-lg bg-green-100 hover:bg-green-200 transition-colors">Restaurar</button>`}
-                        
-                        ${currentUserRole === 'admin' ? `<button data-action="delete" class="text-red-600 hover:text-red-800 font-semibold py-2 px-4 rounded-lg bg-red-100 hover:bg-red-200 transition-colors">Eliminar</button>` : ''}
-                    </div>
+
+                    ${currentUserRole === 'admin' ? `<button data-action="delete" class="text-red-600 hover:text-red-800 font-semibold py-2 px-4 rounded-lg bg-red-100 hover:bg-red-200 transition-colors">Eliminar</button>` : ''}
+                </div>
                 </div>
                 <div class="mb-4">
                     <div class="flex justify-between mb-1">
@@ -630,74 +630,647 @@ function switchProjectTab(tabName) {
     syncTabsState(tabName);
 }
 
+/**
+ * Activa o desactiva el modo de edición para la información general del proyecto.
+ * @param {boolean} isEditing - True para activar el modo edición, false para desactivarlo.
+ */
+function toggleInfoEditMode(isEditing) {
+    const viewMode = document.getElementById('info-view-mode');
+    const editMode = document.getElementById('info-edit-mode');
+    const editBtn = document.getElementById('edit-info-btn');
+    const saveBtn = document.getElementById('save-info-btn');
+    const cancelBtn = document.getElementById('cancel-edit-btn');
+    if (!viewMode || !editMode || !editBtn || !saveBtn || !cancelBtn) return;
+    viewMode.classList.toggle('hidden', isEditing);
+    editMode.classList.toggle('hidden', !isEditing);
+    editBtn.classList.toggle('hidden', isEditing);
+    saveBtn.classList.toggle('hidden', !isEditing);
+    cancelBtn.classList.toggle('hidden', !isEditing);
+    if (isEditing) {
+        document.getElementById('edit-project-name').value = currentProject.name || '';
+        document.getElementById('edit-project-builder').value = currentProject.builderName || '';
+        document.getElementById('edit-project-value').value = currentProject.value || 0;
+        document.getElementById('edit-project-advance').value = currentProject.advance || 0;
+        document.getElementById('edit-project-startDate').value = currentProject.startDate || '';
+        document.getElementById('edit-project-kickoffDate').value = currentProject.kickoffDate || '';
+        document.getElementById('edit-project-endDate').value = currentProject.endDate || '';
+    }
+}
+async function saveProjectInfoChanges() {
+    const updatedData = {
+        name: document.getElementById('edit-project-name').value,
+        builderName: document.getElementById('edit-project-builder').value,
+        value: parseFloat(document.getElementById('edit-project-value').value) || 0,
+        advance: parseFloat(document.getElementById('edit-project-advance').value) || 0,
+        startDate: document.getElementById('edit-project-startDate').value,
+        kickoffDate: document.getElementById('edit-project-kickoffDate').value,
+        endDate: document.getElementById('edit-project-endDate').value,
+    };
+    try {
+        const projectRef = doc(db, "projects", currentProject.id);
+        await updateDoc(projectRef, updatedData);
+        toggleInfoEditMode(false);
+    } catch (error) {
+        console.error("Error al actualizar la información del proyecto:", error);
+        alert("Hubo un error al guardar los cambios.");
+    }
+}
+
 // --- LÓGICA DE DETALLES DEL PROYECTO ---
 async function showProjectDetails(project) {
     currentProject = project;
     showView('projectDetails');
     setupResponsiveTabs();
 
+    const safeSetText = (id, text) => {
+        const element = document.getElementById(id);
+        if (element) element.textContent = text;
+        else console.warn(`Elemento con id '${id}' no encontrado.`);
+    };
 
-    // Llenar datos de la cabecera
-    document.getElementById('project-details-name').textContent = project.name;
-    document.getElementById('project-details-builder').textContent = project.builderName || 'Constructora no especificada';
+    safeSetText('project-details-name', project.name);
+    safeSetText('project-details-builder', project.builderName || 'Constructora no especificada');
 
-    // --- Llenar datos de la pestaña "Información General" ---
     const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
-    document.getElementById('project-details-value').textContent = currencyFormatter.format(project.value || 0);
-    document.getElementById('project-details-advance').textContent = currencyFormatter.format(project.advance || 0);
-    document.getElementById('project-details-startDate').textContent = project.startDate ? new Date(project.startDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A';
 
-    // Lógica para fechas editables
-    const kickoffInput = document.getElementById('project-kickoffDate');
-    const endInput = document.getElementById('project-endDate');
-    kickoffInput.value = project.kickoffDate || '';
-    endInput.value = project.endDate || '';
-    // ... (resto de la lógica para el botón de guardar fechas)
+    // Rellenar datos estáticos del contrato
+    safeSetText('project-details-value', currencyFormatter.format(project.value || 0));
+    safeSetText('project-details-advance', currencyFormatter.format(project.advance || 0));
+    safeSetText('project-details-startDate', project.startDate ? new Date(project.startDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A');
+    safeSetText('project-kickoffDate', project.kickoffDate ? new Date(project.kickoffDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A');
+    safeSetText('project-endDate', project.endDate ? new Date(project.endDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A');
 
-    // --- CALCULAR Y MOSTRAR MÉTRICAS DE AVANCE ---
-    // Limpiar métricas anteriores
-    document.getElementById('project-details-executedValue').textContent = 'Calculando...';
-    document.getElementById('project-details-installedItems').textContent = 'Calculando...';
-    document.getElementById('project-details-executedM2').textContent = 'Calculando...';
+    toggleInfoEditMode(false);
 
-    // Volver a calcular las estadísticas para este proyecto específico
-    const statsMap = await calculateAllProjectsProgress([project.id]);
+    // --- CÁLCULO Y VISUALIZACIÓN DE MÉTRICAS DINÁMICAS ---
+    safeSetText('project-details-contractedValue', 'Calculando...');
+    safeSetText('project-details-executedValue', 'Calculando...');
+    safeSetText('project-details-installedItems', 'Calculando...');
+    safeSetText('project-details-executedM2', 'Calculando...');
+
+    // Llamamos a las dos funciones de cálculo en paralelo
+    const [contractedValue, statsMap] = await Promise.all([
+        calculateProjectContractedValue(project.id),
+        calculateAllProjectsProgress([project.id])
+    ]);
+
     const stats = statsMap.get(project.id) || { executedValue: 0, executedItems: 0, totalItems: 0, executedM2: 0, totalM2: 0 };
 
-    document.getElementById('project-details-executedValue').textContent = currencyFormatter.format(stats.executedValue);
-    document.getElementById('project-details-installedItems').textContent = `${stats.executedItems} / ${stats.totalItems}`;
-    document.getElementById('project-details-executedM2').textContent = `${stats.executedM2.toFixed(2)}m² / ${stats.totalM2.toFixed(2)}m²`;
+    // Mostramos los resultados
+    safeSetText('project-details-contractedValue', currencyFormatter.format(contractedValue));
+    safeSetText('project-details-executedValue', currencyFormatter.format(stats.executedValue));
+    safeSetText('project-details-installedItems', `${stats.executedItems} / ${stats.totalItems}`);
+    safeSetText('project-details-executedM2', `${stats.executedM2.toFixed(2)}m² / ${stats.totalM2.toFixed(2)}m²`);
 
     // --- Cargar datos para las otras pestañas ---
-    renderInteractiveDocumentCards(project.id); // <--- Llama a la nueva función
+    renderInteractiveDocumentCards(project.id);
     loadItems(project.id);
-
+    loadCortes(project.id);
 
     // Activar la primera pestaña por defecto
     switchProjectTab('info-general');
 }
 
+// ====================================================================
+//      INICIO: FUNCIONES PARA GESTIONAR CORTES DE OBRA
+// ====================================================================
+let unsubscribeCortes = null;
+
+/**
+ * Carga y muestra la lista de cortes de obra para un proyecto.
+ * @param {string} projectId - El ID del proyecto.
+ */
+function loadCortes(projectId) {
+    const container = document.getElementById('cortes-list-container');
+    if (!container) return;
+
+    const q = query(collection(db, "projects", projectId, "cortes"), orderBy("createdAt", "desc"));
+    if (unsubscribeCortes) unsubscribeCortes();
+
+    unsubscribeCortes = onSnapshot(q, (snapshot) => {
+        container.innerHTML = '';
+        if (snapshot.empty) {
+            container.innerHTML = '<p class="text-gray-500 text-center py-4">No se han creado cortes para este proyecto.</p>';
+            return;
+        }
+
+        const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+        snapshot.forEach(doc => {
+            const corte = { id: doc.id, ...doc.data() };
+            const corteCard = document.createElement('div');
+
+            let statusColor, statusText;
+            switch (corte.status) {
+                case 'aprobado':
+                    statusColor = 'bg-green-100 text-green-800';
+                    statusText = 'Aprobado';
+                    break;
+                case 'denegado': // Aunque se borran, dejamos la lógica por si cambia en el futuro
+                    statusColor = 'bg-red-100 text-red-800';
+                    statusText = 'Denegado';
+                    break;
+                default:
+                    statusColor = 'bg-yellow-100 text-yellow-800';
+                    statusText = 'Preliminar';
+                    break;
+            }
+
+            corteCard.className = 'p-4 bg-gray-50 rounded-lg border';
+            corteCard.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="font-bold text-gray-800">Corte #${corte.corteNumber || 'N/A'}</p>
+                        <p class="text-sm text-gray-600">Creado el: ${corte.createdAt.toDate().toLocaleDateString('es-CO')}</p>
+                        <p class="text-xs text-gray-500">Tipo: ${corte.type === 'obra' ? 'Realizado por Obra' : 'Realizado por Nosotros'}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-lg font-semibold text-green-600">${currencyFormatter.format(corte.totalValue || 0)}</p>
+                        <p class="text-xs text-gray-500">${corte.itemsCount || 0} ítems incluidos</p>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center mt-2 pt-2 border-t">
+                    <span class="text-xs font-medium px-2.5 py-0.5 rounded-full ${statusColor}">${statusText}</span>
+                    ${corte.status === 'preliminar' ? `
+                        <div class="flex space-x-2">
+                            <button data-action="approve-corte" data-id="${corte.id}" class="bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-1 px-2 rounded">Aprobar</button>
+                            <button data-action="deny-corte" data-id="${corte.id}" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-1 px-2 rounded">Denegar</button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            container.appendChild(corteCard);
+        });
+    });
+}
+
+// ====================================================================
+//      INICIO: NUEVAS FUNCIONES PARA GESTIONAR CORTES
+// ====================================================================
+
+/**
+ * Carga los ítems del proyecto en la sub-ventana de "Corte por Obra".
+ */
+function loadItemsForObraCorte() {
+    const container = document.getElementById('corte-obra-items-list');
+    if (!container) return;
+
+    container.innerHTML = '<p class="text-gray-500">Cargando ítems...</p>';
+
+    const q = query(collection(db, "items"), where("projectId", "==", currentProject.id));
+    getDocs(q).then(snapshot => {
+        container.innerHTML = '';
+        if (snapshot.empty) {
+            container.innerHTML = '<p class="text-gray-500">No hay ítems en este proyecto.</p>';
+            return;
+        }
+
+        snapshot.forEach(doc => {
+            const item = { id: doc.id, ...doc.data() };
+            const itemElement = document.createElement('div');
+            itemElement.className = 'grid grid-cols-3 items-center gap-4 py-1';
+            itemElement.innerHTML = `
+                <span class="col-span-2 text-sm text-gray-800">${item.name} (Total: ${item.quantity})</span>
+                <input type="number" data-item-id="${item.id}" min="0" max="${item.quantity}" class="obra-corte-qty border rounded-md p-1 w-full text-sm" placeholder="Cant.">
+            `;
+            container.appendChild(itemElement);
+        });
+    });
+}
+
+/**
+ * Genera un corte preliminar basado en las cantidades ingresadas por la obra.
+ */
+async function generateObraCorte() {
+    const inputs = document.querySelectorAll('.obra-corte-qty');
+    const itemsForCorte = [];
+    let hasItems = false;
+
+    inputs.forEach(input => {
+        const qty = parseInt(input.value);
+        if (qty > 0) {
+            hasItems = true;
+            itemsForCorte.push({
+                itemId: input.dataset.itemId,
+                quantity: qty,
+                maxQuantity: parseInt(input.max)
+            });
+        }
+    });
+
+    if (!hasItems) {
+        alert("Por favor, ingresa la cantidad para al menos un ítem.");
+        return;
+    }
+
+    openConfirmModal(
+        "Se creará un nuevo corte preliminar con las cantidades especificadas. ¿Deseas continuar?",
+        async () => {
+            loadingOverlay.classList.remove('hidden');
+            try {
+                const itemIds = itemsForCorte.map(i => i.itemId);
+                const itemsQuery = query(collection(db, "items"), where("__name__", "in", itemIds));
+                const itemsSnapshot = await getDocs(itemsQuery);
+                const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, d.data()]));
+
+                let totalValue = 0;
+                const itemsDataForCorte = [];
+
+                itemsForCorte.forEach(corteItem => {
+                    const parentItem = itemsMap.get(corteItem.itemId);
+                    if (parentItem) {
+                        const itemTotalValue = calculateItemTotal(parentItem);
+                        const unitPrice = itemTotalValue / parentItem.quantity;
+                        totalValue += unitPrice * corteItem.quantity;
+                        itemsDataForCorte.push({
+                            itemId: corteItem.itemId,
+                            name: parentItem.name,
+                            quantity: corteItem.quantity,
+                            unitPrice: unitPrice
+                        });
+                    }
+                });
+
+                const cortesQuery = query(collection(db, "projects", currentProject.id, "cortes"));
+                const cortesSnapshot = await getDocs(cortesQuery);
+                const newCorteNumber = cortesSnapshot.size + 1;
+
+                const newCorte = {
+                    corteNumber: newCorteNumber,
+                    createdAt: new Date(),
+                    items: itemsDataForCorte,
+                    itemsCount: itemsDataForCorte.reduce((acc, item) => acc + item.quantity, 0),
+                    totalValue: totalValue,
+                    projectId: currentProject.id,
+                    status: 'preliminar',
+                    type: 'obra'
+                };
+
+                await addDoc(collection(db, "projects", currentProject.id, "cortes"), newCorte);
+
+                alert(`¡Corte preliminar #${newCorteNumber} creado con éxito!`);
+                document.getElementById('corte-obra-view').classList.add('hidden');
+
+            } catch (error) {
+                console.error("Error al crear el corte de obra:", error);
+                alert("Ocurrió un error al crear el corte.");
+            } finally {
+                loadingOverlay.classList.add('hidden');
+            }
+        }
+    );
+}
+
+/**
+ * Aprueba un corte, cambiando su estado a 'aprobado'.
+ * @param {string} corteId - El ID del corte a aprobar.
+ */
+async function approveCorte(corteId) {
+    const corteRef = doc(db, "projects", currentProject.id, "cortes", corteId);
+    await updateDoc(corteRef, { status: 'aprobado' });
+}
+
+/**
+ * Deniega un corte, eliminándolo de la base de datos.
+ * @param {string} corteId - El ID del corte a denegar.
+ */
+async function denyCorte(corteId) {
+    const corteRef = doc(db, "projects", currentProject.id, "cortes", corteId);
+    await deleteDoc(corteRef);
+    alert("El corte ha sido denegado y eliminado.");
+}
+
+// ====================================================================
+//      FIN: NUEVAS FUNCIONES
+// ====================================================================
+
+// ====================================================================
+//      INICIO: FUNCIONES FINALES PARA "CORTE REALIZADO POR NOSOTROS"
+// ====================================================================
+
+async function loadItemsForNosotrosCorte() {
+    const nosotrosView = document.getElementById('corte-nosotros-view');
+    const suministroContainer = document.getElementById('corte-nosotros-suministro-list');
+    const instalacionContainer = document.getElementById('corte-nosotros-instalacion-list');
+    const suministroTitle = suministroContainer.previousElementSibling;
+    const instalacionTitle = instalacionContainer.previousElementSibling;
+
+    // Desmarcar "Seleccionar Todos" al cargar
+    const selectAllCheckbox = document.getElementById('select-all-nosotros-corte');
+    if (selectAllCheckbox) selectAllCheckbox.checked = false;
+
+    if (!suministroContainer || !instalacionContainer) return;
+
+    suministroContainer.innerHTML = '<p class="text-xs text-gray-500">Buscando ítems...</p>';
+    instalacionContainer.innerHTML = '<p class="text-xs text-gray-500"></p>';
+
+    try {
+        const subItemsQuery = query(collection(db, "subItems"), where("projectId", "==", currentProject.id), where("status", "==", "Instalado"));
+        const subItemsSnapshot = await getDocs(subItemsQuery);
+        const allInstalledSubItems = subItemsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        const cortesQuery = query(collection(db, "projects", currentProject.id, "cortes"), where("status", "==", "aprobado"));
+        const cortesSnapshot = await getDocs(cortesQuery);
+        const subItemsInCortes = new Set();
+        cortesSnapshot.forEach(corteDoc => {
+            if (corteDoc.data().subItemIds) {
+                corteDoc.data().subItemIds.forEach(id => subItemsInCortes.add(id));
+            }
+        });
+
+        const newSubItems = allInstalledSubItems.filter(subItem => !subItemsInCortes.has(subItem.id));
+
+        if (newSubItems.length === 0) {
+            suministroContainer.innerHTML = '<p class="text-xs text-gray-500">No hay ítems nuevos para corte.</p>';
+            instalacionContainer.innerHTML = '<p class="text-xs text-gray-500"></p>';
+            instalacionTitle.classList.add('hidden');
+            return;
+        }
+
+        const itemsToProcess = new Map();
+        newSubItems.forEach(si => {
+            if (!itemsToProcess.has(si.itemId)) {
+                itemsToProcess.set(si.itemId, { subItemIds: [], count: 0 });
+            }
+            itemsToProcess.get(si.itemId).subItemIds.push(si.id);
+            itemsToProcess.get(si.itemId).count++;
+        });
+
+        const itemIds = Array.from(itemsToProcess.keys());
+        if (itemIds.length === 0) return;
+
+        const itemsQuery = query(collection(db, "items"), where("__name__", "in", itemIds));
+        const itemsSnapshot = await getDocs(itemsQuery);
+
+        suministroContainer.innerHTML = '';
+        instalacionContainer.innerHTML = '';
+
+        const projectPricingModel = currentProject.pricingModel || 'separado';
+
+        if (projectPricingModel === 'incluido') {
+            suministroTitle.textContent = 'Ítems Completos';
+            instalacionTitle.classList.add('hidden');
+            instalacionContainer.classList.add('hidden');
+            nosotrosView.querySelector('.grid').classList.remove('md:grid-cols-2');
+
+            itemsSnapshot.forEach(itemDoc => {
+                const item = { id: itemDoc.id, ...itemDoc.data() };
+                const { subItemIds, count } = itemsToProcess.get(item.id);
+                const subItemIdsStr = subItemIds.join(',');
+                suministroContainer.innerHTML += `
+                    <label class="flex items-center space-x-2 text-sm p-1 rounded hover:bg-gray-100">
+                        <input type="checkbox" class="nosotros-corte-checkbox rounded" data-type="incluido" data-subitem-ids="${subItemIdsStr}" data-item-id="${item.id}">
+                        <span>${item.name} (${count} un.)</span>
+                    </label>
+                `;
+            });
+        } else {
+            suministroTitle.textContent = 'Ítems Suministrados';
+            instalacionTitle.classList.remove('hidden');
+            instalacionContainer.classList.remove('hidden');
+            nosotrosView.querySelector('.grid').classList.add('md:grid-cols-2');
+
+            itemsSnapshot.forEach(itemDoc => {
+                const item = { id: itemDoc.id, ...itemDoc.data() };
+                const { subItemIds, count } = itemsToProcess.get(item.id);
+                const subItemIdsStr = subItemIds.join(',');
+
+                suministroContainer.innerHTML += `
+                    <label class="flex items-center space-x-2 text-sm p-1 rounded hover:bg-gray-100">
+                        <input type="checkbox" class="nosotros-corte-checkbox rounded" data-type="suministro" data-subitem-ids="${subItemIdsStr}" data-item-id="${item.id}">
+                        <span>${item.name} (${count} un.)</span>
+                    </label>
+                `;
+                instalacionContainer.innerHTML += `
+                    <label class="flex items-center space-x-2 text-sm p-1 rounded hover:bg-gray-100">
+                        <input type="checkbox" class="nosotros-corte-checkbox rounded" data-type="instalacion" data-subitem-ids="${subItemIdsStr}" data-item-id="${item.id}">
+                        <span>${item.name} (${count} un.)</span>
+                    </label>
+                `;
+            });
+        }
+        if (suministroContainer.innerHTML === '') suministroContainer.innerHTML = '<p class="text-xs text-gray-500">No hay ítems disponibles.</p>';
+        if (instalacionContainer.innerHTML === '') instalacionContainer.innerHTML = '<p class="text-xs text-gray-500">No hay ítems disponibles.</p>';
+
+    } catch (error) {
+        console.error("Error al cargar ítems para corte:", error);
+    }
+}
+
+// REEMPLAZA tu función generateNosotrosCorte con esta:
+async function generateNosotrosCorte() {
+    const checkboxes = document.querySelectorAll('.nosotros-corte-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert("Por favor, selecciona al menos un ítem para generar el corte.");
+        return;
+    }
+
+    openConfirmModal(
+        `Se creará un nuevo corte preliminar con los ${checkboxes.length} ítems seleccionados. ¿Deseas continuar?`,
+        async () => {
+            loadingOverlay.classList.remove('hidden');
+            try {
+                let totalValue = 0;
+                const allSubItemIds = new Set();
+                const itemsForCorte = [];
+                const itemIdsToFetch = new Set();
+                checkboxes.forEach(cb => itemIdsToFetch.add(cb.dataset.itemId));
+
+                const itemsQuery = query(collection(db, "items"), where("__name__", "in", Array.from(itemIdsToFetch)));
+                const itemsSnapshot = await getDocs(itemsQuery);
+                const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+
+                checkboxes.forEach(checkbox => {
+                    const itemId = checkbox.dataset.itemId;
+                    const type = checkbox.dataset.type;
+                    const subItemIds = checkbox.dataset.subitemIds.split(',');
+                    const parentItem = itemsMap.get(itemId);
+
+                    if (parentItem) {
+                        let valuePortion = 0;
+                        if (type === 'suministro') {
+                            const tempItem = { ...parentItem, itemType: 'suministro_instalacion' }; // Lógica para calcular solo suministro
+                            valuePortion = calculateItemTotal({ ...tempItem, installationDetails: { unitPrice: 0 } });
+                        } else if (type === 'instalacion') {
+                            const tempItem = { ...parentItem, itemType: 'suministro_instalacion' }; // Lógica para calcular solo instalación
+                            valuePortion = calculateItemTotal({ ...tempItem, supplyDetails: { unitPrice: 0 } });
+                        } else { // incluido
+                            valuePortion = calculateItemTotal(parentItem);
+                        }
+
+                        const valuePerSubItem = valuePortion / parentItem.quantity;
+                        totalValue += valuePerSubItem * subItemIds.length;
+
+                        subItemIds.forEach(id => allSubItemIds.add(id));
+                        itemsForCorte.push({
+                            itemId: itemId, name: parentItem.name, type: type,
+                            quantity: subItemIds.length, value: valuePerSubItem * subItemIds.length
+                        });
+                    }
+                });
+
+                const cortesQuery = query(collection(db, "projects", currentProject.id, "cortes"));
+                const cortesSnapshot = await getDocs(cortesQuery);
+                const newCorteNumber = cortesSnapshot.size + 1;
+
+                const newCorte = {
+                    corteNumber: newCorteNumber,
+                    createdAt: new Date(),
+                    subItemIds: Array.from(allSubItemIds),
+                    items: itemsForCorte,
+                    itemsCount: allSubItemIds.size,
+                    totalValue: totalValue,
+                    projectId: currentProject.id,
+                    status: 'preliminar',
+                    type: 'nosotros'
+                };
+
+                await addDoc(collection(db, "projects", currentProject.id, "cortes"), newCorte);
+
+                alert(`¡Corte preliminar #${newCorteNumber} creado con éxito!`);
+                document.getElementById('corte-nosotros-view').classList.add('hidden');
+
+            } catch (error) {
+                console.error("Error al generar el corte:", error);
+                alert("Ocurrió un error al generar el corte.");
+            } finally {
+                loadingOverlay.classList.add('hidden');
+            }
+        }
+    );
+}
+// ====================================================================
+//      FIN: FUNCIONES
+// ====================================================================
+
+/**
+ * Maneja la creación de un nuevo corte de obra.
+ */
+async function handleCreateCorte() {
+    openConfirmModal(
+        "Se creará un nuevo corte con todos los ítems instalados que no estén en cortes anteriores. ¿Deseas continuar?",
+        async () => {
+            loadingOverlay.classList.remove('hidden');
+            try {
+                // 1. Obtener todos los sub-ítems instalados de este proyecto
+                const subItemsQuery = query(collection(db, "subItems"),
+                    where("projectId", "==", currentProject.id),
+                    where("status", "==", "Instalado")
+                );
+                const subItemsSnapshot = await getDocs(subItemsQuery);
+                const allInstalledSubItems = subItemsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                // 2. Obtener los IDs de los sub-ítems que ya están en otros cortes
+                const cortesQuery = query(collection(db, "projects", currentProject.id, "cortes"));
+                const cortesSnapshot = await getDocs(cortesQuery);
+                const subItemsInCortes = new Set();
+                cortesSnapshot.forEach(corteDoc => {
+                    corteDoc.data().subItemIds.forEach(id => subItemsInCortes.add(id));
+                });
+
+                // 3. Filtrar para obtener solo los nuevos sub-ítems a incluir
+                const newSubItemsForCorte = allInstalledSubItems.filter(subItem => !subItemsInCortes.has(subItem.id));
+
+                if (newSubItemsForCorte.length === 0) {
+                    alert("No hay nuevos ítems instalados para añadir a un corte.");
+                    loadingOverlay.classList.add('hidden');
+                    return;
+                }
+
+                // 4. Calcular el valor total de los nuevos sub-ítems
+                const itemIds = [...new Set(newSubItemsForCorte.map(si => si.itemId))];
+                const itemsQuery = query(collection(db, "items"), where("__name__", "in", itemIds));
+                const itemsSnapshot = await getDocs(itemsQuery);
+                const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, d.data()]));
+
+                let totalValue = 0;
+                newSubItemsForCorte.forEach(subItem => {
+                    const parentItem = itemsMap.get(subItem.itemId);
+                    if (parentItem) {
+                        const itemTotalValue = calculateItemTotal(parentItem);
+                        const subItemValue = itemTotalValue / parentItem.quantity;
+                        totalValue += subItemValue;
+                    }
+                });
+
+                // 5. Crear el nuevo documento de corte
+                const newCorteNumber = cortesSnapshot.size + 1;
+                const newCorte = {
+                    corteNumber: newCorteNumber,
+                    createdAt: new Date(),
+                    subItemIds: newSubItemsForCorte.map(si => si.id),
+                    itemsCount: newSubItemsForCorte.length,
+                    totalValue: totalValue,
+                    projectId: currentProject.id
+                };
+
+                await addDoc(collection(db, "projects", currentProject.id, "cortes"), newCorte);
+
+                alert(`¡Corte #${newCorteNumber} creado con éxito!`);
+
+            } catch (error) {
+                console.error("Error al crear el corte:", error);
+                alert("Ocurrió un error al crear el corte.");
+            } finally {
+                loadingOverlay.classList.add('hidden');
+            }
+        }
+    );
+}
+
+// ====================================================================
+//      INICIO: FUNCIÓN PARA CALCULAR EL VALOR TOTAL DE ÍTEMS
+// ====================================================================
+/**
+ * Calcula la suma del valor total de todos los ítems de un proyecto.
+ * @param {string} projectId - El ID del proyecto.
+ * @returns {Promise<number>} - El valor total contratado.
+ */
+async function calculateProjectContractedValue(projectId) {
+    let totalValue = 0;
+    const itemsQuery = query(collection(db, "items"), where("projectId", "==", projectId));
+    const querySnapshot = await getDocs(itemsQuery);
+
+    querySnapshot.forEach(doc => {
+        const item = doc.data();
+        totalValue += calculateItemTotal(item);
+    });
+
+    return totalValue;
+}
+// ====================================================================
+//      FIN: FUNCIÓN
+// ====================================================================
+
+// ====================================================================
+//      INICIO: FUNCIONES DE CÁLCULO DE PRECIO CORREGIDAS
+// ====================================================================
+
+// REEMPLAZA tu función calculateItemUnitPrice con esta:
 function calculateItemUnitPrice(item) {
     let unitPrice = 0;
-    if (item.itemType === 'supply_only' || item.itemType === 'supply_install') {
-        // El ?. es un operador opcional para evitar errores si 'supplyDetails' no existe
-        unitPrice += item.supplyDetails?.unitPrice || 0;
-    }
-    if (item.itemType === 'install_only' || item.itemType === 'supply_install') {
-        unitPrice += item.installationDetails?.unitPrice || 0;
+    // Lógica nueva: revisa primero si es de tipo "incluido"
+    if (item.itemType === 'suministro_instalacion_incluido') {
+        unitPrice = item.includedDetails?.unitPrice || 0;
+    } else {
+        // Lógica anterior para los otros tipos
+        if (item.itemType === 'suministro_instalacion') { // Asumiendo que este es el tipo para precios separados
+            unitPrice += item.supplyDetails?.unitPrice || 0;
+            unitPrice += item.installationDetails?.unitPrice || 0;
+        }
+        // Aquí podrías añadir lógica para 'solo suministro' o 'solo instalación' si existieran
     }
     return unitPrice;
 }
 
+// REEMPLAZA tu función calculateItemTotal con esta:
 function calculateItemTotal(item) {
     let total = 0;
 
-    // Función auxiliar para calcular el valor de una parte (suministro o instalación)
-    const calculatePartTotal = (details) => {
+    const calculatePartTotal = (details, quantity) => {
         if (!details || !details.unitPrice) {
             return 0;
         }
-        const subtotal = details.unitPrice * item.quantity;
+        const subtotal = details.unitPrice * quantity;
         if (details.taxType === 'aiu') {
             const admin = subtotal * (details.aiuA / 100 || 0);
             const imprev = subtotal * (details.aiuI / 100 || 0);
@@ -710,15 +1283,20 @@ function calculateItemTotal(item) {
         return subtotal;
     };
 
-    if (item.itemType === 'supply_only' || item.itemType === 'supply_install') {
-        total += calculatePartTotal(item.supplyDetails);
-    }
-    if (item.itemType === 'install_only' || item.itemType === 'supply_install') {
-        total += calculatePartTotal(item.installationDetails);
+    // Lógica nueva: revisa primero si es de tipo "incluido"
+    if (item.itemType === 'suministro_instalacion_incluido') {
+        total = calculatePartTotal(item.includedDetails, item.quantity);
+    } else {
+        // Lógica anterior para precios separados
+        total += calculatePartTotal(item.supplyDetails, item.quantity);
+        total += calculatePartTotal(item.installationDetails, item.quantity);
     }
 
     return total;
 }
+// ====================================================================
+//      FIN: FUNCIONES CORREGIDAS
+// ====================================================================
 
 function loadItems(projectId) {
     const itemsTableBody = document.getElementById('items-table-body');
@@ -853,34 +1431,59 @@ function createItemRow(item, executedCount) {
     return row;
 }
 
+// ====================================================================
+//      INICIO: FUNCIONES createItem Y updateItem CORREGIDAS
+// ====================================================================
+
+// REEMPLAZA TU FUNCIÓN createItem CON ESTA:
 async function createItem(data) {
+    // 1. Leemos el modelo de precios del proyecto actual
+    const projectPricingModel = currentProject.pricingModel || 'separado';
+
     const newItem = {
         name: data.name,
         quantity: parseInt(data.quantity),
         width: parseFloat(data.width),
         height: parseFloat(data.height),
-        itemType: data.itemType,
-        supplyDetails: {
-            unitPrice: parseFloat(data.supply_unitPrice?.replace(/[$. ]/g, '')) || 0,
-            taxType: data.supply_taxType || 'none',
-            aiuA: parseFloat(data.supply_aiuA) || 0,
-            aiuI: parseFloat(data.supply_aiuI) || 0,
-            aiuU: parseFloat(data.supply_aiuU) || 0
-        },
-        installationDetails: {
-            unitPrice: parseFloat(data.installation_unitPrice?.replace(/[$. ]/g, '')) || 0,
-            taxType: data.installation_taxType || 'none',
-            aiuA: parseFloat(data.installation_aiuA) || 0,
-            aiuI: parseFloat(data.installation_aiuI) || 0,
-            aiuU: parseFloat(data.installation_aiuU) || 0
-        },
+        // 2. Asignamos el itemType basado en el modelo del proyecto, no del formulario
+        itemType: projectPricingModel === 'incluido' ? 'suministro_instalacion_incluido' : 'suministro_instalacion',
         projectId: currentProject.id,
         ownerId: currentUser.uid,
         createdAt: new Date()
     };
 
+    // 3. Guardamos los detalles de precio correctos
+    if (projectPricingModel === 'incluido') {
+        newItem.includedDetails = {
+            unitPrice: parseFloat(data.included_unitPrice?.replace(/[$. ]/g, '')) || 0,
+            taxType: data.included_taxType || 'none',
+            aiuA: parseFloat(data.included_aiuA) || 0,
+            aiuI: parseFloat(data.included_aiuI) || 0,
+            aiuU: parseFloat(data.included_aiuU) || 0
+        };
+        newItem.supplyDetails = {};
+        newItem.installationDetails = {};
+    } else {
+        newItem.supplyDetails = {
+            unitPrice: parseFloat(data.supply_unitPrice?.replace(/[$. ]/g, '')) || 0,
+            taxType: data.supply_taxType || 'none',
+            aiuA: parseFloat(data.supply_aiuA) || 0,
+            aiuI: parseFloat(data.supply_aiuI) || 0,
+            aiuU: parseFloat(data.supply_aiuU) || 0
+        };
+        newItem.installationDetails = {
+            unitPrice: parseFloat(data.installation_unitPrice?.replace(/[$. ]/g, '')) || 0,
+            taxType: data.installation_taxType || 'none',
+            aiuA: parseFloat(data.installation_aiuA) || 0,
+            aiuI: parseFloat(data.installation_aiuI) || 0,
+            aiuU: parseFloat(data.installation_aiuU) || 0
+        };
+        newItem.includedDetails = {};
+    }
+
     const itemRef = await addDoc(collection(db, "items"), newItem);
 
+    // La lógica para crear sub-ítems no cambia
     const batch = writeBatch(db);
     for (let i = 1; i <= newItem.quantity; i++) {
         const subItemRef = doc(collection(db, "subItems"));
@@ -898,32 +1501,50 @@ async function createItem(data) {
 }
 
 async function updateItem(itemId, data) {
-    // This object now correctly structures the data from the form
+    const projectPricingModel = currentProject.pricingModel || 'separado';
+
     const updatedData = {
         name: data.name,
-        // The quantity is read-only, so we don't update it
         width: parseFloat(data.width),
         height: parseFloat(data.height),
-        itemType: data.itemType,
-        supplyDetails: {
+        // LÍNEA CORREGIDA: Asignamos el tipo basado en el modelo del proyecto
+        itemType: projectPricingModel === 'incluido' ? 'suministro_instalacion_incluido' : 'suministro_instalacion',
+    };
+
+    if (projectPricingModel === 'incluido') {
+        updatedData.includedDetails = {
+            unitPrice: parseFloat(data.included_unitPrice?.replace(/[$. ]/g, '')) || 0,
+            taxType: data.included_taxType || 'none',
+            aiuA: parseFloat(data.included_aiuA) || 0,
+            aiuI: parseFloat(data.included_aiuI) || 0,
+            aiuU: parseFloat(data.included_aiuU) || 0
+        };
+        updatedData.supplyDetails = {};
+        updatedData.installationDetails = {};
+    } else {
+        updatedData.supplyDetails = {
             unitPrice: parseFloat(data.supply_unitPrice?.replace(/[$. ]/g, '')) || 0,
             taxType: data.supply_taxType || 'none',
             aiuA: parseFloat(data.supply_aiuA) || 0,
             aiuI: parseFloat(data.supply_aiuI) || 0,
             aiuU: parseFloat(data.supply_aiuU) || 0
-        },
-        installationDetails: {
+        };
+        updatedData.installationDetails = {
             unitPrice: parseFloat(data.installation_unitPrice?.replace(/[$. ]/g, '')) || 0,
             taxType: data.installation_taxType || 'none',
             aiuA: parseFloat(data.installation_aiuA) || 0,
             aiuI: parseFloat(data.installation_aiuI) || 0,
             aiuU: parseFloat(data.installation_aiuU) || 0
-        }
-    };
+        };
+        updatedData.includedDetails = {};
+    }
 
     await updateDoc(doc(db, "items", itemId), updatedData);
     closeMainModal();
 }
+// ====================================================================
+//      FIN: FUNCIONES CORREGIDAS
+// ====================================================================
 
 async function deleteItem(itemId) {
     const batch = writeBatch(db);
@@ -1618,18 +2239,32 @@ function openMainModal(type, data = {}) {
             btnText = 'Crear Proyecto';
             btnClass = 'bg-blue-500 hover:bg-blue-600';
             bodyHtml = `
-                    <div class="space-y-4">
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label for="project-name" class="block text-sm font-medium">Nombre del Proyecto</label>
-                                <input type="text" id="project-name" name="name" required class="mt-1 w-full border rounded-md p-2">
-                            </div>
-                            <div>
-                                <label for="project-builder" class="block text-sm font-medium">Constructora</label>
-                                <input type="text" id="project-builder" name="builderName" required class="mt-1 w-full border rounded-md p-2">
-                            </div>
-                        </div>
-                        <div class="relative">
+    <div class="space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label for="project-name" class="block text-sm font-medium">Nombre del Proyecto</label>
+                <input type="text" id="project-name" name="name" required class="mt-1 w-full border rounded-md p-2">
+            </div>
+            <div>
+                <label for="project-builder" class="block text-sm font-medium">Constructora</label>
+                <input type="text" id="project-builder" name="builderName" required class="mt-1 w-full border rounded-md p-2">
+            </div>
+        </div>
+
+        <div class="border-t pt-4">
+            <label class="block text-sm font-medium text-gray-700">Modelo de Contrato</label>
+            <div class="mt-2 flex space-x-4">
+                <label class="flex items-center">
+                    <input type="radio" name="pricingModel" value="separado" class="mr-2" checked>
+                    <span>Suministro e Instalación (Separado)</span>
+                </label>
+                <label class="flex items-center">
+                    <input type="radio" name="pricingModel" value="incluido" class="mr-2">
+                    <span>Suministro e Instalación (Incluido)</span>
+                </label>
+            </div>
+        </div>
+        <div class="relative">
                             <label for="project-location" class="block text-sm font-medium">Ubicación (Municipio)</label>
                             <input type="text" id="project-location" name="location" required class="mt-1 w-full border rounded-md p-2" autocomplete="off" placeholder="Escribe para buscar...">
                             <div id="municipalities-results" class="municipality-search-results hidden"></div>
@@ -1745,101 +2380,104 @@ function openMainModal(type, data = {}) {
             btnText = isEditing ? 'Guardar Cambios' : 'Añadir Ítem';
             btnClass = isEditing ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600';
 
-            // Plantilla para una sección de costo (Suministro o Instalación)
-            const costSectionTemplate = (section, title, data = {}) => `
-                    <div class="border rounded-lg p-3 mt-2">
-                        <p class="font-semibold">${title}</p>
-                        <div class="grid grid-cols-2 gap-4 mt-2">
-                            <div>
-                                <label for="item-${section}-unitPrice" class="block text-xs font-medium">Precio Unitario</label>
-                                <input type="text" id="item-${section}-unitPrice" name="${section}_unitPrice" class="mt-1 w-full border rounded-md p-2" value="${data.unitPrice || ''}">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium">Impuesto</label>
-                                <div class="mt-2 flex space-x-2">
-                                    <label class="flex items-center text-xs"><input type="radio" name="${section}_taxType" value="iva" class="mr-1" ${data.taxType === 'iva' ? 'checked' : ''}> IVA</label>
-                                    <label class="flex items-center text-xs"><input type="radio" name="${section}_taxType" value="aiu" class="mr-1" ${data.taxType === 'aiu' ? 'checked' : ''}> AIU</label>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="${section}-aiu-fields" class="hidden space-y-2 mt-3">
-                            <div class="grid grid-cols-3 gap-2">
-                                <div><label for="${section}-aiu-a" class="block text-xs">A(%)</label><input type="number" id="${section}-aiu-a" name="${section}_aiuA" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuA || ''}"></div>
-                                <div><label for="${section}-aiu-i" class="block text-xs">I(%)</label><input type="number" id="${section}-aiu-i" name="${section}_aiuI" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuI || ''}"></div>
-                                <div><label for="${section}-aiu-u" class="block text-xs">U(%)</label><input type="number" id="${section}-aiu-u" name="${section}_aiuU" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuU || ''}"></div>
-                            </div>
-                        </div>
-                    </div>`;
+            // Plantilla para la sección de costo SEPARADO
+            const costSectionSeparated = (section, title, data = {}) => `
+        <div class="border rounded-lg p-3 mt-2">
+            <p class="font-semibold">${title}</p>
+            <div class="grid grid-cols-2 gap-4 mt-2">
+                <div>
+                    <label class="block text-xs font-medium">Precio Unitario</label>
+                    <input type="text" name="${section}_unitPrice" class="currency-input mt-1 w-full border rounded-md p-2" value="${data.unitPrice || ''}">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium">Impuesto</label>
+                    <div class="mt-2 flex space-x-2">
+                        <label class="flex items-center text-xs"><input type="radio" name="${section}_taxType" value="iva" class="mr-1 tax-type-radio" ${data.taxType === 'iva' ? 'checked' : ''}> IVA</label>
+                        <label class="flex items-center text-xs"><input type="radio" name="${section}_taxType" value="aiu" class="mr-1 tax-type-radio" ${data.taxType === 'aiu' ? 'checked' : ''}> AIU</label>
+                    </div>
+                </div>
+            </div>
+            <div class="aiu-fields hidden space-y-2 mt-3">
+                <div class="grid grid-cols-3 gap-2">
+                    <div><label class="block text-xs">A(%)</label><input type="number" name="${section}_aiuA" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuA || ''}"></div>
+                    <div><label class="block text-xs">I(%)</label><input type="number" name="${section}_aiuI" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuI || ''}"></div>
+                    <div><label class="block text-xs">U(%)</label><input type="number" name="${section}_aiuU" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuU || ''}"></div>
+                </div>
+            </div>
+        </div>`;
+
+            // Plantilla para la sección de costo INCLUIDO
+            const costSectionIncluded = (data = {}) => `
+        <div class="border rounded-lg p-3 mt-2">
+            <p class="font-semibold">Precio Total Incluido</p>
+            <div class="grid grid-cols-2 gap-4 mt-2">
+                <div>
+                    <label class="block text-xs font-medium">Precio Unitario Total</label>
+                    <input type="text" name="included_unitPrice" class="currency-input mt-1 w-full border rounded-md p-2" value="${data.unitPrice || ''}">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium">Impuesto</label>
+                    <div class="mt-2 flex space-x-2">
+                        <label class="flex items-center text-xs"><input type="radio" name="included_taxType" value="iva" class="mr-1 tax-type-radio" ${data.taxType === 'iva' ? 'checked' : ''}> IVA</label>
+                        <label class="flex items-center text-xs"><input type="radio" name="included_taxType" value="aiu" class="mr-1 tax-type-radio" ${data.taxType === 'aiu' ? 'checked' : ''}> AIU</label>
+                    </div>
+                </div>
+            </div>
+            <div class="aiu-fields hidden space-y-2 mt-3">
+                <div class="grid grid-cols-3 gap-2">
+                    <div><label class="block text-xs">A(%)</label><input type="number" name="included_aiuA" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuA || ''}"></div>
+                    <div><label class="block text-xs">I(%)</label><input type="number" name="included_aiuI" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuI || ''}"></div>
+                    <div><label class="block text-xs">U(%)</label><input type="number" name="included_aiuU" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuU || ''}"></div>
+                </div>
+            </div>
+        </div>`;
+
+            // --- LÓGICA PRINCIPAL: Decide qué formulario mostrar ---
+            let pricingModelHtml = '';
+            const projectPricingModel = currentProject.pricingModel || 'separado'; // 'separado' por defecto
+
+            if (projectPricingModel === 'incluido') {
+                pricingModelHtml = costSectionIncluded(isEditing ? data.includedDetails : {});
+            } else {
+                pricingModelHtml = `
+            ${costSectionSeparated('supply', 'Detalles de Suministro', isEditing ? data.supplyDetails : {})}
+            ${costSectionSeparated('installation', 'Detalles de Instalación', isEditing ? data.installationDetails : {})}
+        `;
+            }
 
             bodyHtml = `
-                    <div class="space-y-4">
-                        <div>
-                            <label for="item-name" class="block text-sm font-medium">Nombre</label>
-                            <input type="text" id="item-name" name="name" required class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.name : ''}">
-                        </div>
-                        <div class="grid grid-cols-3 gap-4">
-                            <div><label for="item-quantity" class="block text-sm font-medium">Cantidad</label><input type="number" id="item-quantity" name="quantity" required min="1" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.quantity : ''}" ${isEditing ? 'readonly' : ''}></div>
-                            <div><label for="item-width" class="block text-sm font-medium">Ancho (m)</label><input type="number" id="item-width" name="width" required step="0.01" min="0" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.width : ''}"></div>
-                            <div><label for="item-height" class="block text-sm font-medium">Alto (m)</label><input type="number" id="item-height" name="height" required step="0.01" min="0" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.height : ''}"></div>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium">Tipo de Ítem</label>
-                            <div class="mt-2 flex space-x-4">
-                                <label class="flex items-center"><input type="radio" name="itemType" value="supply_install" class="mr-2" ${!isEditing || data.itemType === 'supply_install' ? 'checked' : ''}> Suministro e Instalación</label>
-                                <label class="flex items-center"><input type="radio" name="itemType" value="supply_only" class="mr-2" ${isEditing && data.itemType === 'supply_only' ? 'checked' : ''}> Solo Suministro</label>
-                                <label class="flex items-center"><input type="radio" name="itemType" value="install_only" class="mr-2" ${isEditing && data.itemType === 'install_only' ? 'checked' : ''}> Solo Instalación</label>
-                            </div>
-                        </div>
-                        <div id="supply-section">${costSectionTemplate('supply', 'Detalles de Suministro', isEditing ? data.supplyDetails : {})}</div>
-                        <div id="installation-section">${costSectionTemplate('installation', 'Detalles de Instalación', isEditing ? data.installationDetails : {})}</div>
-                    </div>`;
+        <div class="space-y-4">
+            <div><label class="block text-sm font-medium">Nombre</label><input type="text" name="name" required class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.name : ''}"></div>
+            <div class="grid grid-cols-3 gap-4">
+                <div><label class="block text-sm font-medium">Cantidad</label><input type="number" name="quantity" required min="1" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.quantity : ''}" ${isEditing ? 'readonly' : ''}></div>
+                <div><label class="block text-sm font-medium">Ancho (m)</label><input type="number" name="width" required step="0.01" min="0" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.width : ''}"></div>
+                <div><label class="block text-sm font-medium">Alto (m)</label><input type="number" name="height" required step="0.01" min="0" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.height : ''}"></div>
+            </div>
+            ${pricingModelHtml}
+        </div>`;
 
             setTimeout(() => {
-                const setupCostSection = (section, data = {}) => {
-                    const aiuFields = document.getElementById(`${section}-aiu-fields`);
-                    const priceInput = document.getElementById(`item-${section}-unitPrice`);
-                    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+                const modalContent = document.getElementById('modal-body');
+                const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
-                    // Lógica para mostrar/ocultar campos AIU
-                    document.querySelectorAll(`input[name="${section}_taxType"]`).forEach(radio => {
-                        radio.addEventListener('change', (e) => aiuFields.classList.toggle('hidden', e.target.value !== 'aiu'));
-                        if (radio.checked && radio.value === 'aiu') aiuFields.classList.remove('hidden');
-                    });
-
-                    // LÓGICA PARA FORMATEO DE MONEDA
-                    const formatCurrencyInput = (e) => {
+                modalContent.querySelectorAll('.currency-input').forEach(input => {
+                    const formatCurrency = (e) => {
                         let value = e.target.value.replace(/[$. ]/g, '');
-                        if (!isNaN(value) && value) {
-                            e.target.value = currencyFormatter.format(value).replace(/\s/g, ' ');
-                        } else {
-                            e.target.value = '';
-                        }
+                        if (!isNaN(value) && value) e.target.value = currencyFormatter.format(value).replace(/\s/g, ' ');
+                        else e.target.value = '';
                     };
-
-                    priceInput.addEventListener('input', formatCurrencyInput);
-
-                    // Formatear el valor inicial si se está editando
-                    if (isEditing && data.unitPrice) {
-                        priceInput.value = currencyFormatter.format(data.unitPrice).replace(/\s/g, ' ');
-                    }
-                };
-
-                // Lógica para mostrar/ocultar secciones de Suministro/Instalación
-                const supplySection = document.getElementById('supply-section');
-                const installSection = document.getElementById('installation-section');
-                const toggleSections = (type) => {
-                    supplySection.classList.toggle('hidden', type === 'install_only');
-                    installSection.classList.toggle('hidden', type === 'supply_only');
-                };
-
-                document.querySelectorAll('input[name="itemType"]').forEach(radio => {
-                    radio.addEventListener('change', (e) => toggleSections(e.target.value));
-                    if (radio.checked) toggleSections(radio.value);
+                    input.addEventListener('input', formatCurrency);
+                    if (input.value) formatCurrency({ target: input });
                 });
 
-                // Llama a la configuración para cada sección, pasando los datos si se está editando
-                setupCostSection('supply', isEditing ? data.supplyDetails : {});
-                setupCostSection('installation', isEditing ? data.installationDetails : {});
+                modalContent.querySelectorAll('.tax-type-radio').forEach(radio => {
+                    const aiuFields = radio.closest('.border').querySelector('.aiu-fields');
+                    if (aiuFields) {
+                        const toggleAiu = () => aiuFields.classList.toggle('hidden', radio.value !== 'aiu');
+                        radio.addEventListener('change', toggleAiu);
+                        if (radio.checked) toggleAiu();
+                    }
+                });
             }, 100);
             break;
         }
@@ -1891,10 +2529,11 @@ modalForm.addEventListener('submit', async (e) => {
                 address: data.address,
                 value: parseFloat(data.value.replace(/[$. ]/g, '')) || 0,
                 advance: parseFloat(data.advance.replace(/[$. ]/g, '')) || 0,
-                // AÑADE ESTOS CAMPOS
                 startDate: data.startDate,
                 kickoffDate: data.kickoffDate,
                 endDate: data.endDate,
+                // AÑADE ESTA LÍNEA
+                pricingModel: data.pricingModel, // <-- 'separado' o 'incluido'
                 status: 'active'
             };
             await createProject(projectData);
@@ -1928,7 +2567,9 @@ modalForm.addEventListener('submit', async (e) => {
             break;
     }
     closeMainModal();
+
 });
+
 
 const progressModal = document.getElementById('progress-modal');
 const progressForm = document.getElementById('progress-modal-form');
@@ -2156,47 +2797,72 @@ document.getElementById('download-template-btn').addEventListener('click', () =>
         ["Cantidad", "Número total de unidades de este ítem. Ej: 5"],
         ["Ancho (m)", "Ancho en metros. Usar punto (.) para decimales. Ej: 1.5"],
         ["Alto (m)", "Alto en metros. Usar punto (.) para decimales. Ej: 2.2"],
-        ["Tipo de Ítem", "Opciones válidas: Suministro e Instalacion, Solo Suministro, Solo Instalacion"],
-        ["Precio Suministro (Unitario)", "Costo del material por unidad, SIN impuestos. Si es 'Solo Instalacion', dejar en 0."],
-        ["Impuesto Suministro", "Opciones válidas: IVA, AIU, Ninguno"],
-        ["AIU ... % (Suministro)", "Llenar solo si el impuesto es AIU. Ingresar solo el número (sin %). Ej: 10"],
-        ["Precio Instalación (Unitario)", "Costo de mano de obra por unidad, SIN impuestos. Si es 'Solo Suministro', dejar en 0."],
-        ["Impuesto Instalación", "Opciones válidas: IVA, AIU, Ninguno"],
-        ["AIU ... % (Instalación)", "Llenar solo si el impuesto es AIU. Ingresar solo el número (sin %). Ej: 5"]
     ];
+    // Se añadirán más instrucciones dependiendo del modelo del proyecto
+
+    // --- HOJA 2: PLANTILLA PARA LLENAR (DINÁMICA) ---
+    let exampleData = [];
+    const projectPricingModel = currentProject.pricingModel || 'separado';
+
+    if (projectPricingModel === 'incluido') {
+        // --- Plantilla para Modelo INCLUIDO ---
+        instructions.push(
+            ["Precio Unitario (Incluido)", "Costo total por unidad, SIN impuestos. Ej: 200000"],
+            ["Impuesto", "Opciones válidas: IVA, AIU, Ninguno"],
+            ["AIU ... %", "Llenar solo si el impuesto es AIU. Ingresar solo el número (sin %). Ej: 10"]
+        );
+
+        exampleData = [{
+            'Nombre del Ítem': "Ventana Fija Baño",
+            'Cantidad': 2,
+            'Ancho (m)': 0.8,
+            'Alto (m)': 0.6,
+            'Precio Unitario (Incluido)': 200000,
+            'Impuesto': "IVA",
+            'AIU Admin %': null,
+            'AIU Imprev %': null,
+            'AIU Utilidad %': null
+        }];
+
+    } else {
+        // --- Plantilla para Modelo SEPARADO ---
+        instructions.push(
+            ["Precio Suministro (Unitario)", "Costo del material por unidad, SIN impuestos."],
+            ["Impuesto Suministro", "Opciones válidas: IVA, AIU, Ninguno"],
+            ["AIU ... % (Suministro)", "Llenar solo si el impuesto es AIU."],
+            ["Precio Instalación (Unitario)", "Costo de mano de obra por unidad, SIN impuestos."],
+            ["Impuesto Instalación", "Opciones válidas: IVA, AIU, Ninguno"],
+            ["AIU ... % (Instalación)", "Llenar solo si el impuesto es AIU."]
+        );
+
+        exampleData = [{
+            'Nombre del Ítem': "Ventana Corrediza Sala",
+            'Cantidad': 5,
+            'Ancho (m)': 1.5,
+            'Alto (m)': 1.2,
+            'Precio Suministro (Unitario)': 150000,
+            'Impuesto Suministro': "AIU",
+            'AIU Admin % (Suministro)': 5,
+            'AIU Imprev % (Suministro)': 2,
+            'AIU Utilidad % (Suministro)': 10,
+            'Precio Instalación (Unitario)': 50000,
+            'Impuesto Instalación': "IVA",
+            'AIU Admin % (Instalación)': null,
+            'AIU Imprev % (Instalación)': null,
+            'AIU Utilidad % (Instalación)': null
+        }];
+    }
+
+    // --- Creación del archivo Excel ---
     const wsInstructions = XLSX.utils.aoa_to_sheet(instructions);
-    // Ajustar ancho de columnas
     wsInstructions['!cols'] = [{ wch: 30 }, { wch: 80 }];
     XLSX.utils.book_append_sheet(wb, wsInstructions, "Instrucciones");
 
-    // --- HOJA 2: PLANTILLA PARA LLENAR ---
-    const exampleData = [{
-        'Nombre del Ítem': "Ventana Corrediza Sala",
-        'Cantidad': 5,
-        'Ancho (m)': 1.5,
-        'Alto (m)': 1.2,
-        'Tipo de Ítem': "Suministro e Instalacion",
-        'Precio Suministro (Unitario)': 150000,
-        'Impuesto Suministro': "AIU",
-        'AIU Admin % (Suministro)': 5,
-        'AIU Imprev % (Suministro)': 2,
-        'AIU Utilidad % (Suministro)': 10,
-        'Precio Instalación (Unitario)': 50000,
-        'Impuesto Instalación': "IVA",
-        'AIU Admin % (Instalación)': null,
-        'AIU Imprev % (Instalación)': null,
-        'AIU Utilidad % (Instalación)': null
-    }];
     const wsData = XLSX.utils.json_to_sheet(exampleData);
-    // Añadir comentarios a las celdas de encabezado
-    wsData['E1'].c = [{ a: "Usuario", t: "Opciones: Suministro e Instalacion, Solo Suministro, Solo Instalacion" }];
-    wsData['G1'].c = [{ a: "Usuario", t: "Opciones: IVA, AIU, Ninguno" }];
-    wsData['L1'].c = [{ a: "Usuario", t: "Opciones: IVA, AIU, Ninguno" }];
-    wsData['!cols'] = Array(15).fill({ wch: 25 }); // Ajustar ancho de todas las columnas
-
+    wsData['!cols'] = Array(Object.keys(exampleData[0]).length).fill({ wch: 25 });
     XLSX.utils.book_append_sheet(wb, wsData, "Plantilla Items");
 
-    XLSX.writeFile(wb, "Plantilla_Items_VidriosExito.xlsx");
+    XLSX.writeFile(wb, `Plantilla_Items_${currentProject.name.replace(/\s/g, '_')}.xlsx`);
 });
 document.getElementById('import-modal-confirm-btn').addEventListener('click', () => {
     const fileInput = document.getElementById('excel-file-input');
@@ -2214,56 +2880,45 @@ document.getElementById('import-modal-confirm-btn').addEventListener('click', ()
             const json = XLSX.utils.sheet_to_json(workbook.Sheets["Plantilla Items"]);
 
             feedbackDiv.textContent = `Importando ${json.length} ítems...`;
+            const projectPricingModel = currentProject.pricingModel || 'separado';
 
             for (const row of json) {
-                // Mapeo de los nuevos nombres de columna a los nombres internos
-                const newRow = {
-                    nombre_item: row['Nombre del Ítem'],
-                    cantidad: row['Cantidad'],
-                    ancho: row['Ancho (m)'],
-                    alto: row['Alto (m)'],
-                    tipo_item: row['Tipo de Ítem'],
-                    precio_unitario_suministro: row['Precio Suministro (Unitario)'],
-                    impuesto_suministro: row['Impuesto Suministro'],
-                    'aiu_admin_suministro_%': row['AIU Admin % (Suministro)'],
-                    'aiu_imprev_suministro_%': row['AIU Imprev % (Suministro)'],
-                    'aiu_utilidad_suministro_%': row['AIU Utilidad % (Suministro)'],
-                    precio_unitario_instalacion: row['Precio Instalación (Unitario)'],
-                    impuesto_instalacion: row['Impuesto Instalación'],
-                    'aiu_admin_instalacion_%': row['AIU Admin % (Instalación)'],
-                    'aiu_imprev_instalacion_%': row['AIU Imprev % (Instalación)'],
-                    'aiu_utilidad_instalacion_%': row['AIU Utilidad % (Instalación)']
-                };
-
-                if (!newRow.nombre_item || !newRow.cantidad || !newRow.ancho || !newRow.alto) {
-                    console.warn("Fila omitida por falta de datos básicos:", newRow);
+                // Verificación básica de que la fila tiene datos
+                if (!row['Nombre del Ítem'] || !row['Cantidad'] || !row['Ancho (m)'] || !row['Alto (m)']) {
+                    console.warn("Fila omitida por falta de datos básicos:", row);
                     continue;
                 }
 
-                let itemType = 'supply_install';
-                if (newRow.tipo_item) {
-                    const typeLower = newRow.tipo_item.toLowerCase();
-                    if (typeLower.includes('solo suministro')) itemType = 'supply_only';
-                    if (typeLower.includes('solo instalacion')) itemType = 'install_only';
-                }
-
+                // Construimos el objeto de datos que espera la función createItem
                 const itemData = {
-                    name: newRow.nombre_item,
-                    quantity: newRow.cantidad,
-                    width: newRow.ancho,
-                    height: newRow.alto,
-                    itemType: itemType,
-                    supply_unitPrice: String(newRow.precio_unitario_suministro || 0),
-                    supply_taxType: (newRow.impuesto_suministro || 'none').toLowerCase(),
-                    supply_aiuA: newRow['aiu_admin_suministro_%'] || 0,
-                    supply_aiuI: newRow['aiu_imprev_suministro_%'] || 0,
-                    supply_aiuU: newRow['aiu_utilidad_suministro_%'] || 0,
-                    installation_unitPrice: String(newRow.precio_unitario_instalacion || 0),
-                    installation_taxType: (newRow.impuesto_instalacion || 'none').toLowerCase(),
-                    installation_aiuA: newRow['aiu_admin_instalacion_%'] || 0,
-                    installation_aiuI: newRow['aiu_imprev_instalacion_%'] || 0,
-                    installation_aiuU: newRow['aiu_utilidad_instalacion_%'] || 0
+                    name: row['Nombre del Ítem'],
+                    quantity: row['Cantidad'],
+                    width: row['Ancho (m)'],
+                    height: row['Alto (m)'],
                 };
+
+                if (projectPricingModel === 'incluido') {
+                    // Lógica para modelo INCLUIDO
+                    itemData.itemType = 'suministro_instalacion_incluido';
+                    itemData.included_unitPrice = String(row['Precio Unitario (Incluido)'] || 0);
+                    itemData.included_taxType = (row['Impuesto'] || 'none').toLowerCase();
+                    itemData.included_aiuA = row['AIU Admin %'] || 0;
+                    itemData.included_aiuI = row['AIU Imprev %'] || 0;
+                    itemData.included_aiuU = row['AIU Utilidad %'] || 0;
+                } else {
+                    // Lógica para modelo SEPARADO
+                    itemData.itemType = 'suministro_instalacion';
+                    itemData.supply_unitPrice = String(row['Precio Suministro (Unitario)'] || 0);
+                    itemData.supply_taxType = (row['Impuesto Suministro'] || 'none').toLowerCase();
+                    itemData.supply_aiuA = row['AIU Admin % (Suministro)'] || 0;
+                    itemData.supply_aiuI = row['AIU Imprev % (Suministro)'] || 0;
+                    itemData.supply_aiuU = row['AIU Utilidad % (Suministro)'] || 0;
+                    itemData.installation_unitPrice = String(row['Precio Instalación (Unitario)'] || 0);
+                    itemData.installation_taxType = (row['Impuesto Instalación'] || 'none').toLowerCase();
+                    itemData.installation_aiuA = row['AIU Admin % (Instalación)'] || 0;
+                    itemData.installation_aiuI = row['AIU Imprev % (Instalación)'] || 0;
+                    itemData.installation_aiuU = row['AIU Utilidad % (Instalación)'] || 0;
+                }
 
                 await createItem(itemData);
             }
@@ -2551,6 +3206,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     case 'delete-item':
                         openConfirmModal(`¿Seguro que quieres eliminar el ítem "${itemData.name}"?`, () => deleteItem(itemId));
                         break;
+
                 }
                 return;
             }
@@ -2574,6 +3230,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 case 'export-pdf':
                     exportProjectToPDF();
                     break;
+
+                case 'edit-info':
+                    toggleInfoEditMode(true);
+                    break;
+                case 'save-info':
+                    saveProjectInfoChanges();
+                    break;
+                case 'cancel-edit':
+                    toggleInfoEditMode(false);
+                    break;
+
                 case 'manage-documents': openDocumentsModal(currentProject); break;
                 case 'save-dates':
                     const kickoffDate = document.getElementById('project-kickoffDate').value;
@@ -2581,8 +3248,50 @@ document.addEventListener('DOMContentLoaded', () => {
                     await updateDoc(doc(db, "projects", currentProject.id), { kickoffDate, endDate });
                     document.getElementById('save-dates-btn').classList.add('hidden');
                     break;
+                // REEMPLAZA el 'case set-corte-type' con este bloque completo
+                case 'set-corte-type': {
+                    const type = button.dataset.type;
+                    const obraView = document.getElementById('corte-obra-view');
+                    const nosotrosView = document.getElementById('corte-nosotros-view');
+
+                    document.querySelectorAll('.corte-type-btn').forEach(btn => {
+                        const isSelected = btn.dataset.type === type;
+                        btn.classList.toggle('bg-blue-500', isSelected);
+                        btn.classList.toggle('text-white', isSelected);
+                        btn.classList.toggle('bg-gray-200', !isSelected);
+                        btn.classList.toggle('text-gray-700', !isSelected);
+                    });
+
+                    obraView.classList.toggle('hidden', type !== 'obra');
+                    nosotrosView.classList.toggle('hidden', type !== 'nosotros');
+
+                    if (type === 'nosotros') {
+                        loadItemsForNosotrosCorte();
+                    } else if (type === 'obra') {
+                        loadItemsForObraCorte();
+                    }
+                    break;
+                }
+                case 'generate-obra-corte':
+                    generateObraCorte();
+                    break;
+                case 'generate-nosotros-corte':
+                    generateNosotrosCorte();
+                    break;
+                case 'approve-corte': {
+                    const corteId = button.dataset.id;
+                    openConfirmModal("¿Estás seguro de que quieres aprobar este corte? Esta acción es final.", () => approveCorte(corteId));
+                    break;
+                }
+                case 'deny-corte': {
+                    const corteId = button.dataset.id;
+                    openConfirmModal("¿Estás seguro de que quieres denegar y eliminar este corte? No se podrá recuperar.", () => denyCorte(corteId));
+                    break;
+
+                }
             }
         }
+
     });
 
     // Pestañas de Proyectos y Usuarios
@@ -2832,91 +3541,100 @@ document.addEventListener('DOMContentLoaded', () => {
     //      FIN: LÓGICA PARA BOTONES DE LA CABECERA
     // ====================================================================
 
-// ====================================================================
-//      INICIO: LÓGICA FINAL Y UNIFICADA PARA EL MENÚ LATERAL (SIDEBAR)
-// ====================================================================
-const sidebar = document.getElementById('sidebar');
-const mainContent = document.getElementById('main-content');
-const menuToggleBtn = document.getElementById('menu-toggle-btn'); // Botón hamburguesa (móvil)
-const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn'); // Botón Ocultar/Mostrar (dentro del menú)
-const mainNav = document.getElementById('main-nav');
+    // ====================================================================
+    //      INICIO: LÓGICA FINAL Y UNIFICADA PARA EL MENÚ LATERAL (SIDEBAR)
+    // ====================================================================
+    const sidebar = document.getElementById('sidebar');
+    const mainContent = document.getElementById('main-content');
+    const menuToggleBtn = document.getElementById('menu-toggle-btn'); // Botón hamburguesa (móvil)
+    const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn'); // Botón Ocultar/Mostrar (dentro del menú)
+    const mainNav = document.getElementById('main-nav');
 
-// --- Función para inicializar el estado del menú en Desktop ---
-function initializeDesktopSidebar() {
-    if (window.innerWidth >= 768 && sidebar && mainContent) {
-        // Por defecto, el menú empieza colapsado mostrando solo los iconos.
-        mainContent.classList.add('is-shifted');
-        sidebar.classList.add('is-collapsed');
-    }
-}
-
-// --- Lógica de hover para expandir en Desktop ---
-if (window.innerWidth >= 768 && sidebar) {
-    sidebar.addEventListener('mouseenter', () => {
-        // Solo se expande al pasar el mouse si está en modo colapsado.
-        if (sidebar.classList.contains('is-collapsed')) {
-            sidebar.classList.add('is-expanded-hover');
+    // --- Función para inicializar el estado del menú en Desktop ---
+    function initializeDesktopSidebar() {
+        if (window.innerWidth >= 768 && sidebar && mainContent) {
+            // Por defecto, el menú empieza colapsado mostrando solo los iconos.
+            mainContent.classList.add('is-shifted');
+            sidebar.classList.add('is-collapsed');
         }
-    });
-    sidebar.addEventListener('mouseleave', () => {
-        sidebar.classList.remove('is-expanded-hover');
-    });
-}
+    }
 
-// --- Lógica de clics para cambiar de módulo ---
-if (mainNav) {
-    mainNav.addEventListener('click', (e) => {
-        const link = e.target.closest('.nav-link');
-        if (link) {
-            e.preventDefault();
-            const viewName = link.dataset.view;
-            if (viewName === 'adminPanel') {
-                showView('adminPanel');
-                loadUsers('active');
-            } else {
-                showView(viewName);
+    // --- Lógica de hover para expandir en Desktop ---
+    if (window.innerWidth >= 768 && sidebar) {
+        sidebar.addEventListener('mouseenter', () => {
+            // Solo se expande al pasar el mouse si está en modo colapsado.
+            if (sidebar.classList.contains('is-collapsed')) {
+                sidebar.classList.add('is-expanded-hover');
             }
-            // En móvil, sí cerramos el menú después de hacer clic.
-            if (window.innerWidth < 768) {
+        });
+        sidebar.addEventListener('mouseleave', () => {
+            sidebar.classList.remove('is-expanded-hover');
+        });
+    }
+
+    // --- Lógica de clics para cambiar de módulo ---
+    if (mainNav) {
+        mainNav.addEventListener('click', (e) => {
+            const link = e.target.closest('.nav-link');
+            if (link) {
+                e.preventDefault();
+                const viewName = link.dataset.view;
+                if (viewName === 'adminPanel') {
+                    showView('adminPanel');
+                    loadUsers('active');
+                } else {
+                    showView(viewName);
+                }
+                // En móvil, sí cerramos el menú después de hacer clic.
+                if (window.innerWidth < 768) {
+                    sidebar.classList.add('-translate-x-full');
+                }
+            }
+        });
+    }
+
+    // --- Lógica para los botones de control ---
+    // Botón de hamburguesa (móvil)
+    if (menuToggleBtn) {
+        menuToggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            sidebar.classList.toggle('-translate-x-full');
+        });
+    }
+    // Botón Ocultar/Mostrar (dentro del menú)
+    if (sidebarToggleBtn) {
+        sidebarToggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (window.innerWidth >= 768) { // Escritorio: Colapsa/Expande permanentemente
+                mainContent.classList.toggle('is-shifted');
+                sidebar.classList.toggle('is-collapsed');
+            } else { // Móvil: Solo cierra
                 sidebar.classList.add('-translate-x-full');
             }
-        }
-    });
-}
+        });
+    }
 
-// --- Lógica para los botones de control ---
-// Botón de hamburguesa (móvil)
-if (menuToggleBtn) {
-    menuToggleBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        sidebar.classList.toggle('-translate-x-full');
-    });
-}
-// Botón Ocultar/Mostrar (dentro del menú)
-if (sidebarToggleBtn) {
-    sidebarToggleBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (window.innerWidth >= 768) { // Escritorio: Colapsa/Expande permanentemente
-            mainContent.classList.toggle('is-shifted');
-            sidebar.classList.toggle('is-collapsed');
-        } else { // Móvil: Solo cierra
-            sidebar.classList.add('-translate-x-full');
-        }
-    });
-}
+    // --- Lógica para cerrar al hacer clic fuera (móvil) ---
+    if (mainContent) {
+        mainContent.addEventListener('click', () => {
+            if (window.innerWidth < 768 && sidebar && !sidebar.classList.contains('-translate-x-full')) {
+                sidebar.classList.add('-translate-x-full');
+            }
+        });
+    }
 
-// --- Lógica para cerrar al hacer clic fuera (móvil) ---
-if (mainContent) {
-    mainContent.addEventListener('click', () => {
-        if (window.innerWidth < 768 && sidebar && !sidebar.classList.contains('-translate-x-full')) {
-            sidebar.classList.add('-translate-x-full');
-        }
-    });
-}
-
-// --- Inicializar estado al cargar la página ---
-initializeDesktopSidebar();
-// ====================================================================
-//      FIN: LÓGICA FINAL
-// ====================================================================
+    // --- Inicializar estado al cargar la página ---
+    initializeDesktopSidebar();
+    // ====================================================================
+    //      FIN: LÓGICA FINAL
+    // ====================================================================
+    const selectAllCheckbox = document.getElementById('select-all-nosotros-corte');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            document.querySelectorAll('.nosotros-corte-checkbox').forEach(checkbox => {
+                checkbox.checked = isChecked;
+            });
+        });
+    }
 });
