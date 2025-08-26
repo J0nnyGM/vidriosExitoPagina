@@ -543,378 +543,418 @@
                             </div>
                         </div>
                     </div>
-<div id="cortes-content" class="tab-content hidden">
-    <div class="space-y-6">
-        <div class="bg-white p-6 rounded-lg shadow-md">
-            <h3 class="text-xl font-bold text-gray-800 mb-4">Generar Nuevo Corte de Obra</h3>
-            
-            <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-2">¿Quién realiza el corte?</label>
-                <div class="flex space-x-4">
-                    <button data-action="set-corte-type" data-type="nosotros" class="corte-type-btn flex-1 bg-blue-500 text-white font-bold py-2 px-4 rounded-lg">
-                        Lo realizo yo
-                    </button>
-                    <button data-action="set-corte-type" data-type="obra" class="corte-type-btn flex-1 bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg">
-                        Lo realiza la obra
-                    </button>
-                </div>
-            </div>
+                    <div id="cortes-content" class="tab-content hidden">
+                        <div class="space-y-6">
+                            <div class="bg-white p-6 rounded-lg shadow-md">
+                                <h3 class="text-xl font-bold text-gray-800 mb-4">Generar Nuevo Corte de Obra</h3>
 
-            <div id="corte-items-selection-view" class="hidden mt-4 border-t pt-4">
-                <p id="corte-selection-description" class="text-sm text-gray-600 mb-4"></p>
-                <div id="corte-items-accordion" class="space-y-2 max-h-80 overflow-y-auto">
-                    </div>
-                <div class="text-right mt-4">
-                    <button data-action="generate-corte" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">
-                        Generar Corte Preliminar
-                    </button>
-                </div>
-            </div>
-        </div>
+                                <div class="mb-4">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">¿Quién realiza el
+                                        corte?</label>
+                                    <div class="flex space-x-4">
+                                        <button data-action="set-corte-type" data-type="nosotros"
+                                            class="corte-type-btn flex-1 bg-blue-500 text-white font-bold py-2 px-4 rounded-lg">
+                                            Lo realizo yo
+                                        </button>
+                                        <button data-action="set-corte-type" data-type="obra"
+                                            class="corte-type-btn flex-1 bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg">
+                                            Lo realiza la obra
+                                        </button>
+                                    </div>
+                                </div>
 
-        <div class="bg-white p-6 rounded-lg shadow-md">
-            <h3 class="text-xl font-bold text-gray-800 mb-4">Historial de Cortes</h3>
-            <div id="cortes-list-container" class="space-y-4">
-                </div>
-        </div>
-    </div>
-</div>
-                    <div id="pagos-content" class="tab-content hidden">
-                        <div class="bg-white p-6 rounded-lg shadow-md">
-                            <h3 class="text-xl font-bold text-gray-800">Gestión de Pagos</h3>
+                                <div id="corte-items-selection-view" class="hidden mt-4 border-t pt-4">
+                                    <p id="corte-selection-description" class="text-sm text-gray-600 mb-4"></p>
+
+                                    <div id="corte-items-accordion" class="space-y-2 max-h-80 overflow-y-auto">
+                                    </div>
+
+                                    <div id="corte-financial-options" class="mt-4 pt-4 border-t space-y-4">
+                                        <div class="flex items-center">
+                                            <input type="checkbox" id="corte-amortizar-anticipo"
+                                                class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                                            <label for="corte-amortizar-anticipo"
+                                                class="ml-2 block text-sm font-medium text-gray-700">Amortizar Anticipo
+                                                en este corte</label>
+                                        </div>
+
+                                        <div class="flex items-center">
+                                            <input type="checkbox" id="corte-es-final"
+                                                class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                                            <label for="corte-es-final"
+                                                class="ml-2 block text-sm font-medium text-gray-700">Marcar como Corte
+                                                Final</label>
+                                        </div>
+
+                                        <div id="corte-descuentos-section"
+                                            class="hidden pl-6 space-y-2 border-l-2 border-gray-200">
+                                            <label class="block text-sm font-medium text-gray-700">Otros
+                                                Descuentos</label>
+                                            <div>
+                                                <input type="text" id="corte-descuento-concepto"
+                                                    placeholder="Concepto del descuento"
+                                                    class="w-full border rounded-md p-2 text-sm">
+                                            </div>
+                                            <div>
+                                                <input type="text" id="corte-descuento-valor"
+                                                    placeholder="Valor del descuento"
+                                                    class="currency-input w-full border rounded-md p-2 text-sm">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="text-right mt-4">
+                                        <button data-action="generate-corte"
+                                            class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">
+                                            Generar Corte Preliminar
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="bg-white p-6 rounded-lg shadow-md">
+                                    <h3 class="text-xl font-bold text-gray-800 mb-4">Historial de Cortes</h3>
+                                    <div id="cortes-list-container" class="space-y-4">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="documentos-content" class="tab-content hidden">
+                            <div class="bg-white p-6 rounded-lg shadow-md">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-xl font-bold text-gray-800">Documentos</h3><button
+                                        data-action="manage-documents"
+                                        class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Gestionar</button>
+                                </div>
+                                <div id="documents-summary-container"
+                                    class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="items-content" class="tab-content hidden">
+                            <div class="bg-white p-6 rounded-lg shadow-md">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-xl font-bold text-gray-800">Ítems</h3>
+                                    <div id="project-actions" class="flex flex-wrap gap-2">
+                                        <button data-action="add-item"
+                                            class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md">Añadir
+                                            Ítem</button>
+                                        <button data-action="import-items"
+                                            class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg shadow-md">Importar
+                                            Ítems</button>
+                                        <button data-action="export-pdf"
+                                            class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg shadow-md">Exportar
+                                            a PDF</button>
+                                    </div>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-sm text-left text-gray-500 responsive-table">
+                                        <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                            <tr>
+                                                <th class="px-6 py-3 cursor-pointer hover:bg-gray-100 sortable-header"
+                                                    data-sort="name">
+                                                    Objeto <span class="sort-indicator"></span></th>
+                                                <th class="px-6 py-3 text-center">Cant.</th>
+                                                <th class="px-6 py-3 text-center">Ancho (m)</th>
+                                                <th class="px-6 py-3 text-center">Alto (m)</th>
+                                                <th class="px-6 py-3 text-center">Vlr. Unitario</th>
+                                                <th class="px-6 py-3 text-center">Vlr. Total</th>
+                                                <th class="px-6 py-3 text-center cursor-pointer hover:bg-gray-100 sortable-header"
+                                                    data-sort="status">Estado <span class="sort-indicator"></span></th>
+                                                <th class="px-6 py-3 text-center">Acciones</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="items-table-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="sub-items-view" class="hidden">
+                            <header class="mb-6">
+                                <button data-action="back-to-project"
+                                    class="text-blue-600 hover:text-blue-800 font-semibold mb-2 flex items-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20"
+                                        fill="currentColor">
+                                        <path fill-rule="evenodd"
+                                            d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                                            clip-rule="evenodd" />
+                                    </svg>
+                                    Volver al Proyecto
+                                </button>
+                                <h1 id="item-name-header" class="text-3xl font-bold text-gray-700"></h1>
+                                <p id="item-summary-header" class="text-gray-500 mt-1"></p>
+                            </header>
+
+                            <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-sm text-left text-gray-500 responsive-table">
+                                        <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                            <tr>
+                                                <th class="px-6 py-3">N°</th>
+                                                <th class="px-6 py-3">Lugar de Instalación</th>
+                                                <th class="px-6 py-3">Fabricante</th>
+                                                <th class="px-6 py-3">Instalador</th>
+                                                <th class="px-6 py-3">Fecha de Instalación</th>
+                                                <th class="px-6 py-3 text-center">Estado</th>
+                                                <th class="px-6 py-3 text-center">Evidencia</th>
+                                                <th class="px-6 py-3 text-center">Acciones</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="sub-items-table-body"></tbody>
+                                    </table>
+                                    <div id="loading-sub-items" class="text-center py-10">
+                                        <p class="text-gray-500">Cargando detalles...</p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
+
             </div>
-            <div id="documentos-content" class="tab-content hidden">
-                <div class="bg-white p-6 rounded-lg shadow-md">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-xl font-bold text-gray-800">Documentos</h3><button
-                            data-action="manage-documents"
-                            class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Gestionar</button>
+        </div>
+
+
+
+        <div id="documents-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+            <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto p-6 max-h-[90vh] flex flex-col">
+                <h3 id="documents-modal-title" class="text-xl font-bold mb-4">Gestionar Documentos</h3>
+                <div id="documents-modal-body" class="overflow-y-auto space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="block text-sm font-medium">Contrato</label><input type="file"
+                                data-doc-type="contrato" class="document-upload-input mt-1 w-full text-sm"></div>
+                        <div><label class="block text-sm font-medium">Cotización</label><input type="file"
+                                data-doc-type="cotizacion" class="document-upload-input mt-1 w-full text-sm"></div>
+                        <div><label class="block text-sm font-medium">Pólizas</label><input type="file"
+                                data-doc-type="polizas" class="document-upload-input mt-1 w-full text-sm"></div>
+                        <div><label class="block text-sm font-medium">Pago de Pólizas</label><input type="file"
+                                data-doc-type="pago_polizas" class="document-upload-input mt-1 w-full text-sm"></div>
                     </div>
-                    <div id="documents-summary-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="border-t pt-4"><label class="block text-sm font-medium">Añadir "Otro Sí"</label><input
+                            type="file" data-doc-type="otros_si" class="document-upload-input mt-1 w-full text-sm">
+                    </div>
+                    <div id="documents-list-container" class="border-t pt-4">
+                        <p class="font-semibold mb-2">Documentos Cargados</p>
+                        <div id="documents-list" class="space-y-2"></div>
                     </div>
                 </div>
-            </div>
-            <div id="items-content" class="tab-content hidden">
-                <div class="bg-white p-6 rounded-lg shadow-md">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-xl font-bold text-gray-800">Ítems</h3>
-                        <div id="project-actions" class="flex flex-wrap gap-2">
-                            <button data-action="add-item"
-                                class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md">Añadir
-                                Ítem</button>
-                            <button data-action="import-items"
-                                class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg shadow-md">Importar
-                                Ítems</button>
-                            <button data-action="export-pdf"
-                                class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg shadow-md">Exportar
-                                a PDF</button>
-                        </div>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm text-left text-gray-500 responsive-table">
-                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
-                                <tr>
-                                    <th class="px-6 py-3 cursor-pointer hover:bg-gray-100 sortable-header"
-                                        data-sort="name">
-                                        Objeto <span class="sort-indicator"></span></th>
-                                    <th class="px-6 py-3 text-center">Cant.</th>
-                                    <th class="px-6 py-3 text-center">Ancho (m)</th>
-                                    <th class="px-6 py-3 text-center">Alto (m)</th>
-                                    <th class="px-6 py-3 text-center">Vlr. Unitario</th>
-                                    <th class="px-6 py-3 text-center">Vlr. Total</th>
-                                    <th class="px-6 py-3 text-center cursor-pointer hover:bg-gray-100 sortable-header"
-                                        data-sort="status">Estado <span class="sort-indicator"></span></th>
-                                    <th class="px-6 py-3 text-center">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody id="items-table-body"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div id="sub-items-view" class="hidden">
-                <header class="mb-6">
-                    <button data-action="back-to-project"
-                        class="text-blue-600 hover:text-blue-800 font-semibold mb-2 flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20"
-                            fill="currentColor">
-                            <path fill-rule="evenodd"
-                                d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                                clip-rule="evenodd" />
-                        </svg>
-                        Volver al Proyecto
-                    </button>
-                    <h1 id="item-name-header" class="text-3xl font-bold text-gray-700"></h1>
-                    <p id="item-summary-header" class="text-gray-500 mt-1"></p>
-                </header>
-
-                <div class="bg-white rounded-lg shadow-lg overflow-hidden">
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm text-left text-gray-500 responsive-table">
-                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
-                                <tr>
-                                    <th class="px-6 py-3">N°</th>
-                                    <th class="px-6 py-3">Lugar de Instalación</th>
-                                    <th class="px-6 py-3">Fabricante</th>
-                                    <th class="px-6 py-3">Instalador</th>
-                                    <th class="px-6 py-3">Fecha de Instalación</th>
-                                    <th class="px-6 py-3 text-center">Estado</th>
-                                    <th class="px-6 py-3 text-center">Evidencia</th>
-                                    <th class="px-6 py-3 text-center">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody id="sub-items-table-body"></tbody>
-                        </table>
-                        <div id="loading-sub-items" class="text-center py-10">
-                            <p class="text-gray-500">Cargando detalles...</p>
-                        </div>
-                    </div>
+                <div class="mt-6 flex justify-end gap-3"><button type="button" id="documents-modal-close-btn"
+                        class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cerrar</button>
                 </div>
             </div>
         </div>
-    </div>
 
-    </div>
-    </div>
-
-
-
-    <div id="documents-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto p-6 max-h-[90vh] flex flex-col">
-            <h3 id="documents-modal-title" class="text-xl font-bold mb-4">Gestionar Documentos</h3>
-            <div id="documents-modal-body" class="overflow-y-auto space-y-4">
-                <div class="grid grid-cols-2 gap-4">
-                    <div><label class="block text-sm font-medium">Contrato</label><input type="file"
-                            data-doc-type="contrato" class="document-upload-input mt-1 w-full text-sm"></div>
-                    <div><label class="block text-sm font-medium">Cotización</label><input type="file"
-                            data-doc-type="cotizacion" class="document-upload-input mt-1 w-full text-sm"></div>
-                    <div><label class="block text-sm font-medium">Pólizas</label><input type="file"
-                            data-doc-type="polizas" class="document-upload-input mt-1 w-full text-sm"></div>
-                    <div><label class="block text-sm font-medium">Pago de Pólizas</label><input type="file"
-                            data-doc-type="pago_polizas" class="document-upload-input mt-1 w-full text-sm"></div>
-                </div>
-                <div class="border-t pt-4"><label class="block text-sm font-medium">Añadir "Otro Sí"</label><input
-                        type="file" data-doc-type="otros_si" class="document-upload-input mt-1 w-full text-sm"></div>
-                <div id="documents-list-container" class="border-t pt-4">
-                    <p class="font-semibold mb-2">Documentos Cargados</p>
-                    <div id="documents-list" class="space-y-2"></div>
-                </div>
-            </div>
-            <div class="mt-6 flex justify-end gap-3"><button type="button" id="documents-modal-close-btn"
-                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cerrar</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="main-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
-            <h3 id="modal-title" class="text-xl font-bold mb-4"></h3>
-            <form id="modal-form">
-                <div id="modal-body"></div>
-                <div class="mt-6 flex justify-end gap-3"><button type="button" id="modal-cancel-btn"
-                        data-action="modal-cancel"
-                        class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button><button
-                        type="submit" id="modal-confirm-btn" class="text-white font-bold py-2 px-4 rounded-lg"></button>
-                </div>
-            </form>
-        </div>
-    </div>
-    <div id="progress-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
-            <h3 id="progress-modal-title" class="text-xl font-bold mb-4">Registrar Avance</h3>
-            <form id="progress-modal-form">
-                <div class="space-y-4">
-                    <div><label for="sub-item-location" class="block text-sm font-medium text-gray-700">Lugar de
-                            Instalación</label><input type="text" id="sub-item-location"
-                            class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
-                    <div><label for="sub-item-manufacturer"
-                            class="block text-sm font-medium text-gray-700">Fabricante</label><select
-                            id="sub-item-manufacturer"
-                            class="mt-1 block w-full px-3 py-2 border rounded-md bg-white"></select></div>
-                    <div><label for="sub-item-installer"
-                            class="block text-sm font-medium text-gray-700">Instalador</label><select
-                            id="sub-item-installer"
-                            class="mt-1 block w-full px-3 py-2 border rounded-md bg-white"></select></div>
-                    <div><label for="sub-item-date" class="block text-sm font-medium text-gray-700">Fecha de
-                            Instalación</label><input type="date" id="sub-item-date"
-                            class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
-                    <div><label for="sub-item-photo" class="block text-sm font-medium text-gray-700">Foto de
-                            Evidencia</label><input type="file" id="sub-item-photo" accept="image/*,application/pdf"
-                            class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-                        <div id="photo-preview" class="mt-2"></div>
-                    </div>
-                </div>
-                <p id="progress-feedback" class="text-sm mt-4 text-center"></p>
-                <div class="mt-6 flex justify-end gap-3"><button type="button" id="progress-modal-cancel-btn"
-                        class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button><button
-                        type="submit" id="progress-modal-confirm-btn"
-                        class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Guardar</button>
-                </div>
-            </form>
-        </div>
-    </div>
-    <div id="import-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-lg mx-auto p-6">
-            <h3 class="text-xl font-bold mb-4">Importar Ítems</h3>
-            <p class="text-sm text-gray-600 mb-4">Selecciona un archivo .xlsx con: 'nombre', 'cantidad', 'ancho',
-                'alto'.</p>
-            <div class="flex justify-between items-center mb-4"><input type="file" id="excel-file-input"
-                    accept=".xlsx, .xls"
-                    class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" /><button
-                    id="download-template-btn"
-                    class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg text-sm">Plantilla</button>
-            </div>
-            <div id="import-feedback" class="text-sm mt-2"></div>
-            <div class="mt-6 flex justify-end gap-3"><button type="button" id="import-modal-cancel-btn"
-                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cerrar</button><button
-                    type="button" id="import-modal-confirm-btn"
-                    class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Importar</button>
-            </div>
-        </div>
-    </div>
-    <div id="confirm-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
-            <h3 id="confirm-modal-title" class="text-xl font-bold mb-4">Confirmar Acción</h3>
-            <p id="confirm-modal-body" class="mb-6 text-gray-600"></p>
-            <div class="flex justify-end gap-3"><button type="button" id="confirm-modal-cancel-btn"
-                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button><button
-                    type="button" id="confirm-modal-confirm-btn"
-                    class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Confirmar</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="image-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop p-4">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-auto p-4 relative"><button
-                id="image-modal-close-btn"
-                class="absolute -top-2 -right-2 bg-white rounded-full p-1 text-gray-600 hover:text-gray-900"><svg
-                    xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
-                    stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg></button><img id="modal-image" src="" alt="Evidencia de instalación"
-                class="max-w-full max-h-[85vh] mx-auto"></div>
-    </div>
-    <div id="register-success-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
-            <h3 class="text-xl font-bold mb-4">Registro Exitoso</h3>
-            <p class="mb-6 text-gray-600">Solicite al administrador del sistema la activación del usuario.</p>
-            <div class="flex justify-end gap-3"><button type="button" id="register-success-accept-btn"
-                    class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Aceptar</button>
-            </div>
-        </div>
-    </div>
-    <div id="documents-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop"> ... </div>
-
-
-    <div id="document-viewer-modal"
-        class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-            <div class="flex justify-between items-center p-4 border-b">
-                <h3 id="document-viewer-title" class="text-xl font-bold text-gray-800"></h3>
-                <button id="document-viewer-close-btn" class="text-gray-500 hover:text-gray-800">&times;</button>
-            </div>
-
-            <div id="document-viewer-list" class="p-6 overflow-y-auto">
-            </div>
-        </div>
-    </div>
-
-    <div id="document-display-modal"
-        class="fixed inset-0 bg-black bg-opacity-75 hidden items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center p-3 border-b bg-gray-50 rounded-t-lg">
-                <h3 id="document-display-title" class="text-lg font-bold text-gray-800 truncate pr-4">Vista Previa</h3>
-                <button id="document-display-close-btn"
-                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
-            </div>
-            <div class="flex-grow p-1 bg-gray-200">
-                <iframe id="document-iframe" src="about:blank" class="w-full h-full border-0"
-                    title="Vista previa del documento"></iframe>
-            </div>
-        </div>
-    </div>
-
-    <div id="otro-si-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center p-4 border-b">
-                <h3 class="text-xl font-bold text-gray-800">Gestionar "Otro Sí" del Contrato</h3>
-                <button id="otro-si-modal-close-btn"
-                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
-            </div>
-
-            <div class="p-6 border-b">
-                <form id="otro-si-form" class="space-y-4">
-                    <div>
-                        <label for="otro-si-concept" class="block text-sm font-medium text-gray-700">Concepto o
-                            Descripción</label>
-                        <textarea id="otro-si-concept" rows="3" required class="mt-1 w-full border rounded-md p-2"
-                            placeholder="Ej: Adición de presupuesto para fachada sur..."></textarea>
-                    </div>
-                    <div>
-                        <label for="otro-si-file" class="block text-sm font-medium text-gray-700">Archivo del "Otro Sí"
-                            (PDF, Imagen, etc.)</label>
-                        <input type="file" id="otro-si-file" required
-                            class="mt-1 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
-                    </div>
-                    <div class="text-right">
-                        <button type="submit" id="otro-si-submit-btn"
-                            class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Guardar
-                            Otro Sí</button>
+        <div id="main-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+            <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
+                <h3 id="modal-title" class="text-xl font-bold mb-4"></h3>
+                <form id="modal-form">
+                    <div id="modal-body"></div>
+                    <div class="mt-6 flex justify-end gap-3"><button type="button" id="modal-cancel-btn"
+                            data-action="modal-cancel"
+                            class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button><button
+                            type="submit" id="modal-confirm-btn"
+                            class="text-white font-bold py-2 px-4 rounded-lg"></button>
                     </div>
                 </form>
             </div>
-
-            <div class="p-6 overflow-y-auto flex-grow">
-                <h4 class="text-lg font-semibold text-gray-700 mb-4">Historial de "Otro Sí"</h4>
-                <div id="otro-si-list-container" class="space-y-3">
-                </div>
-            </div>
         </div>
-    </div>
-
-    <div id="varios-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center p-4 border-b">
-                <h3 class="text-xl font-bold text-gray-800">Gestionar Documentos Varios</h3>
-                <button id="varios-modal-close-btn"
-                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
-            </div>
-
-            <div class="p-6 border-b">
-                <form id="varios-form" class="space-y-4">
-                    <div>
-                        <label for="varios-concept" class="block text-sm font-medium text-gray-700">Concepto o
-                            Descripción</label>
-                        <textarea id="varios-concept" rows="3" required class="mt-1 w-full border rounded-md p-2"
-                            placeholder="Ej: Factura de materiales extra..."></textarea>
+        <div id="progress-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+            <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
+                <h3 id="progress-modal-title" class="text-xl font-bold mb-4">Registrar Avance</h3>
+                <form id="progress-modal-form">
+                    <div class="space-y-4">
+                        <div><label for="sub-item-location" class="block text-sm font-medium text-gray-700">Lugar de
+                                Instalación</label><input type="text" id="sub-item-location"
+                                class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
+                        <div><label for="sub-item-manufacturer"
+                                class="block text-sm font-medium text-gray-700">Fabricante</label><select
+                                id="sub-item-manufacturer"
+                                class="mt-1 block w-full px-3 py-2 border rounded-md bg-white"></select></div>
+                        <div><label for="sub-item-installer"
+                                class="block text-sm font-medium text-gray-700">Instalador</label><select
+                                id="sub-item-installer"
+                                class="mt-1 block w-full px-3 py-2 border rounded-md bg-white"></select></div>
+                        <div><label for="sub-item-date" class="block text-sm font-medium text-gray-700">Fecha de
+                                Instalación</label><input type="date" id="sub-item-date"
+                                class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
+                        <div><label for="sub-item-photo" class="block text-sm font-medium text-gray-700">Foto de
+                                Evidencia</label><input type="file" id="sub-item-photo" accept="image/*,application/pdf"
+                                class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                            <div id="photo-preview" class="mt-2"></div>
+                        </div>
                     </div>
-                    <div>
-                        <label for="varios-file" class="block text-sm font-medium text-gray-700">Archivo (PDF, Imagen,
-                            etc.)</label>
-                        <input type="file" id="varios-file" required
-                            class="mt-1 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
-                    </div>
-                    <div class="text-right">
-                        <button type="submit" id="varios-submit-btn"
-                            class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Guardar
-                            Documento</button>
+                    <p id="progress-feedback" class="text-sm mt-4 text-center"></p>
+                    <div class="mt-6 flex justify-end gap-3"><button type="button" id="progress-modal-cancel-btn"
+                            class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button><button
+                            type="submit" id="progress-modal-confirm-btn"
+                            class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Guardar</button>
                     </div>
                 </form>
             </div>
-
-            <div class="p-6 overflow-y-auto flex-grow">
-                <h4 class="text-lg font-semibold text-gray-700 mb-4">Historial de Documentos Varios</h4>
-                <div id="varios-list-container" class="space-y-3">
+        </div>
+        <div id="import-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+            <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-lg mx-auto p-6">
+                <h3 class="text-xl font-bold mb-4">Importar Ítems</h3>
+                <p class="text-sm text-gray-600 mb-4">Selecciona un archivo .xlsx con: 'nombre', 'cantidad', 'ancho',
+                    'alto'.</p>
+                <div class="flex justify-between items-center mb-4"><input type="file" id="excel-file-input"
+                        accept=".xlsx, .xls"
+                        class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" /><button
+                        id="download-template-btn"
+                        class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg text-sm">Plantilla</button>
+                </div>
+                <div id="import-feedback" class="text-sm mt-2"></div>
+                <div class="mt-6 flex justify-end gap-3"><button type="button" id="import-modal-cancel-btn"
+                        class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cerrar</button><button
+                        type="button" id="import-modal-confirm-btn"
+                        class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Importar</button>
                 </div>
             </div>
         </div>
-    </div>
+        <div id="confirm-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+            <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
+                <h3 id="confirm-modal-title" class="text-xl font-bold mb-4">Confirmar Acción</h3>
+                <p id="confirm-modal-body" class="mb-6 text-gray-600"></p>
+                <div class="flex justify-end gap-3"><button type="button" id="confirm-modal-cancel-btn"
+                        class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button><button
+                        type="button" id="confirm-modal-confirm-btn"
+                        class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Confirmar</button>
+                </div>
+            </div>
+        </div>
 
-    <script type="module" src="js/app.js"></script>
+        <div id="image-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop p-4">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-auto p-4 relative"><button
+                    id="image-modal-close-btn"
+                    class="absolute -top-2 -right-2 bg-white rounded-full p-1 text-gray-600 hover:text-gray-900"><svg
+                        xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg></button><img id="modal-image" src="" alt="Evidencia de instalación"
+                    class="max-w-full max-h-[85vh] mx-auto"></div>
+        </div>
+        <div id="register-success-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+            <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
+                <h3 class="text-xl font-bold mb-4">Registro Exitoso</h3>
+                <p class="mb-6 text-gray-600">Solicite al administrador del sistema la activación del usuario.</p>
+                <div class="flex justify-end gap-3"><button type="button" id="register-success-accept-btn"
+                        class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Aceptar</button>
+                </div>
+            </div>
+        </div>
+        <div id="documents-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop"> ...
+        </div>
+
+
+        <div id="document-viewer-modal"
+            class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+                <div class="flex justify-between items-center p-4 border-b">
+                    <h3 id="document-viewer-title" class="text-xl font-bold text-gray-800"></h3>
+                    <button id="document-viewer-close-btn" class="text-gray-500 hover:text-gray-800">&times;</button>
+                </div>
+
+                <div id="document-viewer-list" class="p-6 overflow-y-auto">
+                </div>
+            </div>
+        </div>
+
+        <div id="document-display-modal"
+            class="fixed inset-0 bg-black bg-opacity-75 hidden items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[90vh] flex flex-col">
+                <div class="flex justify-between items-center p-3 border-b bg-gray-50 rounded-t-lg">
+                    <h3 id="document-display-title" class="text-lg font-bold text-gray-800 truncate pr-4">Vista Previa
+                    </h3>
+                    <button id="document-display-close-btn"
+                        class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
+                </div>
+                <div class="flex-grow p-1 bg-gray-200">
+                    <iframe id="document-iframe" src="about:blank" class="w-full h-full border-0"
+                        title="Vista previa del documento"></iframe>
+                </div>
+            </div>
+        </div>
+
+        <div id="otro-si-modal"
+            class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+                <div class="flex justify-between items-center p-4 border-b">
+                    <h3 class="text-xl font-bold text-gray-800">Gestionar "Otro Sí" del Contrato</h3>
+                    <button id="otro-si-modal-close-btn"
+                        class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
+                </div>
+
+                <div class="p-6 border-b">
+                    <form id="otro-si-form" class="space-y-4">
+                        <div>
+                            <label for="otro-si-concept" class="block text-sm font-medium text-gray-700">Concepto o
+                                Descripción</label>
+                            <textarea id="otro-si-concept" rows="3" required class="mt-1 w-full border rounded-md p-2"
+                                placeholder="Ej: Adición de presupuesto para fachada sur..."></textarea>
+                        </div>
+                        <div>
+                            <label for="otro-si-file" class="block text-sm font-medium text-gray-700">Archivo del "Otro
+                                Sí"
+                                (PDF, Imagen, etc.)</label>
+                            <input type="file" id="otro-si-file" required
+                                class="mt-1 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                        </div>
+                        <div class="text-right">
+                            <button type="submit" id="otro-si-submit-btn"
+                                class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Guardar
+                                Otro Sí</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="p-6 overflow-y-auto flex-grow">
+                    <h4 class="text-lg font-semibold text-gray-700 mb-4">Historial de "Otro Sí"</h4>
+                    <div id="otro-si-list-container" class="space-y-3">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="varios-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+                <div class="flex justify-between items-center p-4 border-b">
+                    <h3 class="text-xl font-bold text-gray-800">Gestionar Documentos Varios</h3>
+                    <button id="varios-modal-close-btn"
+                        class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
+                </div>
+
+                <div class="p-6 border-b">
+                    <form id="varios-form" class="space-y-4">
+                        <div>
+                            <label for="varios-concept" class="block text-sm font-medium text-gray-700">Concepto o
+                                Descripción</label>
+                            <textarea id="varios-concept" rows="3" required class="mt-1 w-full border rounded-md p-2"
+                                placeholder="Ej: Factura de materiales extra..."></textarea>
+                        </div>
+                        <div>
+                            <label for="varios-file" class="block text-sm font-medium text-gray-700">Archivo (PDF,
+                                Imagen,
+                                etc.)</label>
+                            <input type="file" id="varios-file" required
+                                class="mt-1 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                        </div>
+                        <div class="text-right">
+                            <button type="submit" id="varios-submit-btn"
+                                class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Guardar
+                                Documento</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="p-6 overflow-y-auto flex-grow">
+                    <h4 class="text-lg font-semibold text-gray-700 mb-4">Historial de Documentos Varios</h4>
+                    <div id="varios-list-container" class="space-y-3">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script type="module" src="js/app.js"></script>
 </body>
 
 </html>
