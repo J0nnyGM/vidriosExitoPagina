@@ -732,13 +732,13 @@ async function showProjectDetails(project) {
 }
 
 // ====================================================================
-//      INICIO: FUNCIONES PARA GESTIONAR CORTES DE OBRA
+//      INICIO: LÓGICA REPLANTEADA PARA GESTIÓN DE CORTES
 // ====================================================================
 let unsubscribeCortes = null;
+let currentCorteType = 'nosotros'; // 'nosotros' o 'obra'
 
 /**
  * Carga y muestra la lista de cortes de obra para un proyecto.
- * @param {string} projectId - El ID del proyecto.
  */
 function loadCortes(projectId) {
     const container = document.getElementById('cortes-list-container');
@@ -765,10 +765,6 @@ function loadCortes(projectId) {
                     statusColor = 'bg-green-100 text-green-800';
                     statusText = 'Aprobado';
                     break;
-                case 'denegado': // Aunque se borran, dejamos la lógica por si cambia en el futuro
-                    statusColor = 'bg-red-100 text-red-800';
-                    statusText = 'Denegado';
-                    break;
                 default:
                     statusColor = 'bg-yellow-100 text-yellow-800';
                     statusText = 'Preliminar';
@@ -785,108 +781,146 @@ function loadCortes(projectId) {
                     </div>
                     <div class="text-right">
                         <p class="text-lg font-semibold text-green-600">${currencyFormatter.format(corte.totalValue || 0)}</p>
-                        <p class="text-xs text-gray-500">${corte.itemsCount || 0} ítems incluidos</p>
+                        <p class="text-xs text-gray-500">${corte.subItemIds?.length || 0} sub-ítems incluidos</p>
                     </div>
                 </div>
+                ${corte.status === 'preliminar' ? `
                 <div class="flex justify-between items-center mt-2 pt-2 border-t">
                     <span class="text-xs font-medium px-2.5 py-0.5 rounded-full ${statusColor}">${statusText}</span>
-                    ${corte.status === 'preliminar' ? `
-                        <div class="flex space-x-2">
-                            <button data-action="approve-corte" data-id="${corte.id}" class="bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-1 px-2 rounded">Aprobar</button>
-                            <button data-action="deny-corte" data-id="${corte.id}" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-1 px-2 rounded">Denegar</button>
-                        </div>
-                    ` : ''}
+                    <div class="flex space-x-2">
+                        <button data-action="approve-corte" data-id="${corte.id}" class="bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-1 px-2 rounded">Aprobar</button>
+                        <button data-action="deny-corte" data-id="${corte.id}" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-1 px-2 rounded">Denegar</button>
+                    </div>
                 </div>
+                ` : `<div class="mt-2 pt-2 border-t"><span class="text-xs font-medium px-2.5 py-0.5 rounded-full ${statusColor}">${statusText}</span></div>`}
             `;
             container.appendChild(corteCard);
         });
     });
 }
 
-// ====================================================================
-//      INICIO: NUEVAS FUNCIONES PARA GESTIONAR CORTES
-// ====================================================================
 
 /**
- * Carga los ítems del proyecto en la sub-ventana de "Corte por Obra".
+ * Prepara la vista de selección de ítems para un nuevo corte.
+ * @param {string} type - El tipo de corte ('nosotros' u 'obra').
  */
-function loadItemsForObraCorte() {
-    const container = document.getElementById('corte-obra-items-list');
-    if (!container) return;
+async function setupCorteSelection(type) {
+    currentCorteType = type;
+    const selectionView = document.getElementById('corte-items-selection-view');
+    const description = document.getElementById('corte-selection-description');
+    const accordionContainer = document.getElementById('corte-items-accordion');
 
-    container.innerHTML = '<p class="text-gray-500">Cargando ítems...</p>';
+    selectionView.classList.remove('hidden');
+    accordionContainer.innerHTML = '<p class="text-gray-500">Buscando ítems disponibles...</p>';
 
-    const q = query(collection(db, "items"), where("projectId", "==", currentProject.id));
-    getDocs(q).then(snapshot => {
-        container.innerHTML = '';
-        if (snapshot.empty) {
-            container.innerHTML = '<p class="text-gray-500">No hay ítems en este proyecto.</p>';
+    // Define qué estados de sub-ítems buscar
+    const validStates = type === 'nosotros'
+        ? ['Instalado', 'Suministrado'] // Asumimos que quieres poder facturar ambos
+        : ['Instalado']; // La obra solo paga por lo instalado
+
+    description.textContent = type === 'nosotros'
+        ? "Selecciona los sub-ítems suministrados o instalados para incluir en el corte."
+        : "Selecciona los sub-ítems que la obra va a pagar en este corte.";
+
+    try {
+        // 1. Obtener todos los sub-ítems en los estados válidos
+        const subItemsQuery = query(collection(db, "subItems"), where("projectId", "==", currentProject.id), where("status", "in", validStates));
+        const subItemsSnapshot = await getDocs(subItemsQuery);
+        const allValidSubItems = subItemsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // 2. Obtener sub-ítems que ya están en cortes aprobados
+        const cortesQuery = query(collection(db, "projects", currentProject.id, "cortes"), where("status", "==", "aprobado"));
+        const cortesSnapshot = await getDocs(cortesQuery);
+        const subItemsInCortes = new Set();
+        cortesSnapshot.forEach(corteDoc => {
+            corteDoc.data().subItemIds?.forEach(id => subItemsInCortes.add(id));
+        });
+
+        // 3. Filtrar para obtener solo sub-ítems nuevos
+        const availableSubItems = allValidSubItems.filter(subItem => !subItemsInCortes.has(subItem.id));
+
+        if (availableSubItems.length === 0) {
+            accordionContainer.innerHTML = '<p class="text-gray-500 text-center">No hay nuevos sub-ítems disponibles para este tipo de corte.</p>';
             return;
         }
 
-        snapshot.forEach(doc => {
-            const item = { id: doc.id, ...doc.data() };
-            const itemElement = document.createElement('div');
-            itemElement.className = 'grid grid-cols-3 items-center gap-4 py-1';
-            itemElement.innerHTML = `
-                <span class="col-span-2 text-sm text-gray-800">${item.name} (Total: ${item.quantity})</span>
-                <input type="number" data-item-id="${item.id}" min="0" max="${item.quantity}" class="obra-corte-qty border rounded-md p-1 w-full text-sm" placeholder="Cant.">
-            `;
-            container.appendChild(itemElement);
+        // 4. Agrupar sub-ítems por su ítem padre (V-01, V-02, etc.)
+        const groupedByItem = new Map();
+        availableSubItems.forEach(si => {
+            if (!groupedByItem.has(si.itemId)) {
+                groupedByItem.set(si.itemId, []);
+            }
+            groupedByItem.get(si.itemId).push(si);
         });
-    });
+
+        // 5. Obtener los datos de los ítems padres
+        const itemIds = Array.from(groupedByItem.keys());
+        if (itemIds.length === 0) return;
+        const itemsQuery = query(collection(db, "items"), where("__name__", "in", itemIds));
+        const itemsSnapshot = await getDocs(itemsQuery);
+        const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, d.data()]));
+
+        // 6. Construir el acordeón
+        accordionContainer.innerHTML = '';
+        itemsMap.forEach((item, itemId) => {
+            const subItems = groupedByItem.get(itemId);
+            const accordionItem = document.createElement('div');
+            accordionItem.className = 'border rounded-lg';
+            accordionItem.innerHTML = `
+                <div class="accordion-header flex items-center justify-between p-3 bg-gray-100 cursor-pointer">
+                    <label class="flex items-center space-x-2 font-semibold">
+                        <input type="checkbox" class="corte-item-select-all rounded">
+                        <span>${item.name} (${subItems.length} disponibles)</span>
+                    </label>
+                    <svg class="h-5 w-5 transition-transform" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                </div>
+                <div class="accordion-content hidden p-3 border-t space-y-2">
+                    ${subItems.map(si => `
+                        <label class="flex items-center space-x-2 text-sm">
+                            <input type="checkbox" class="corte-subitem-checkbox rounded" data-subitem-id="${si.id}" data-item-id="${si.itemId}">
+                            <span>#${si.number} - ${si.location || 'Sin ubicación'} (${si.status})</span>
+                        </label>
+                    `).join('')}
+                </div>
+            `;
+            accordionContainer.appendChild(accordionItem);
+        });
+
+    } catch (error) {
+        console.error("Error al preparar la selección de corte:", error);
+    }
 }
 
 /**
- * Genera un corte preliminar basado en las cantidades ingresadas por la obra.
+ * Genera el corte preliminar a partir de la selección del usuario.
  */
-async function generateObraCorte() {
-    const inputs = document.querySelectorAll('.obra-corte-qty');
-    const itemsForCorte = [];
-    let hasItems = false;
-
-    inputs.forEach(input => {
-        const qty = parseInt(input.value);
-        if (qty > 0) {
-            hasItems = true;
-            itemsForCorte.push({
-                itemId: input.dataset.itemId,
-                quantity: qty,
-                maxQuantity: parseInt(input.max)
-            });
-        }
-    });
-
-    if (!hasItems) {
-        alert("Por favor, ingresa la cantidad para al menos un ítem.");
+async function generateCorte() {
+    const selectedSubItems = document.querySelectorAll('.corte-subitem-checkbox:checked');
+    if (selectedSubItems.length === 0) {
+        alert("Por favor, selecciona al menos un sub-ítem para generar el corte.");
         return;
     }
 
     openConfirmModal(
-        "Se creará un nuevo corte preliminar con las cantidades especificadas. ¿Deseas continuar?",
+        `Se creará un nuevo corte preliminar con los ${selectedSubItems.length} sub-ítems seleccionados. ¿Deseas continuar?`,
         async () => {
             loadingOverlay.classList.remove('hidden');
             try {
-                const itemIds = itemsForCorte.map(i => i.itemId);
+                const subItemIds = Array.from(selectedSubItems).map(cb => cb.dataset.subitemId);
+
+                const itemIds = [...new Set(Array.from(selectedSubItems).map(cb => cb.dataset.itemId))];
                 const itemsQuery = query(collection(db, "items"), where("__name__", "in", itemIds));
                 const itemsSnapshot = await getDocs(itemsQuery);
                 const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, d.data()]));
 
                 let totalValue = 0;
-                const itemsDataForCorte = [];
-
-                itemsForCorte.forEach(corteItem => {
-                    const parentItem = itemsMap.get(corteItem.itemId);
+                subItemIds.forEach(subItemId => {
+                    const checkbox = document.querySelector(`[data-subitem-id="${subItemId}"]`);
+                    const parentItem = itemsMap.get(checkbox.dataset.itemId);
                     if (parentItem) {
                         const itemTotalValue = calculateItemTotal(parentItem);
-                        const unitPrice = itemTotalValue / parentItem.quantity;
-                        totalValue += unitPrice * corteItem.quantity;
-                        itemsDataForCorte.push({
-                            itemId: corteItem.itemId,
-                            name: parentItem.name,
-                            quantity: corteItem.quantity,
-                            unitPrice: unitPrice
-                        });
+                        const subItemValue = itemTotalValue / parentItem.quantity;
+                        totalValue += subItemValue;
                     }
                 });
 
@@ -897,237 +931,17 @@ async function generateObraCorte() {
                 const newCorte = {
                     corteNumber: newCorteNumber,
                     createdAt: new Date(),
-                    items: itemsDataForCorte,
-                    itemsCount: itemsDataForCorte.reduce((acc, item) => acc + item.quantity, 0),
+                    subItemIds: subItemIds,
                     totalValue: totalValue,
                     projectId: currentProject.id,
                     status: 'preliminar',
-                    type: 'obra'
+                    type: currentCorteType
                 };
 
                 await addDoc(collection(db, "projects", currentProject.id, "cortes"), newCorte);
 
                 alert(`¡Corte preliminar #${newCorteNumber} creado con éxito!`);
-                document.getElementById('corte-obra-view').classList.add('hidden');
-
-            } catch (error) {
-                console.error("Error al crear el corte de obra:", error);
-                alert("Ocurrió un error al crear el corte.");
-            } finally {
-                loadingOverlay.classList.add('hidden');
-            }
-        }
-    );
-}
-
-/**
- * Aprueba un corte, cambiando su estado a 'aprobado'.
- * @param {string} corteId - El ID del corte a aprobar.
- */
-async function approveCorte(corteId) {
-    const corteRef = doc(db, "projects", currentProject.id, "cortes", corteId);
-    await updateDoc(corteRef, { status: 'aprobado' });
-}
-
-/**
- * Deniega un corte, eliminándolo de la base de datos.
- * @param {string} corteId - El ID del corte a denegar.
- */
-async function denyCorte(corteId) {
-    const corteRef = doc(db, "projects", currentProject.id, "cortes", corteId);
-    await deleteDoc(corteRef);
-    alert("El corte ha sido denegado y eliminado.");
-}
-
-// ====================================================================
-//      FIN: NUEVAS FUNCIONES
-// ====================================================================
-
-// ====================================================================
-//      INICIO: FUNCIONES FINALES PARA "CORTE REALIZADO POR NOSOTROS"
-// ====================================================================
-
-async function loadItemsForNosotrosCorte() {
-    const nosotrosView = document.getElementById('corte-nosotros-view');
-    const suministroContainer = document.getElementById('corte-nosotros-suministro-list');
-    const instalacionContainer = document.getElementById('corte-nosotros-instalacion-list');
-    const suministroTitle = suministroContainer.previousElementSibling;
-    const instalacionTitle = instalacionContainer.previousElementSibling;
-
-    // Desmarcar "Seleccionar Todos" al cargar
-    const selectAllCheckbox = document.getElementById('select-all-nosotros-corte');
-    if (selectAllCheckbox) selectAllCheckbox.checked = false;
-
-    if (!suministroContainer || !instalacionContainer) return;
-
-    suministroContainer.innerHTML = '<p class="text-xs text-gray-500">Buscando ítems...</p>';
-    instalacionContainer.innerHTML = '<p class="text-xs text-gray-500"></p>';
-
-    try {
-        const subItemsQuery = query(collection(db, "subItems"), where("projectId", "==", currentProject.id), where("status", "==", "Instalado"));
-        const subItemsSnapshot = await getDocs(subItemsQuery);
-        const allInstalledSubItems = subItemsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-
-        const cortesQuery = query(collection(db, "projects", currentProject.id, "cortes"), where("status", "==", "aprobado"));
-        const cortesSnapshot = await getDocs(cortesQuery);
-        const subItemsInCortes = new Set();
-        cortesSnapshot.forEach(corteDoc => {
-            if (corteDoc.data().subItemIds) {
-                corteDoc.data().subItemIds.forEach(id => subItemsInCortes.add(id));
-            }
-        });
-
-        const newSubItems = allInstalledSubItems.filter(subItem => !subItemsInCortes.has(subItem.id));
-
-        if (newSubItems.length === 0) {
-            suministroContainer.innerHTML = '<p class="text-xs text-gray-500">No hay ítems nuevos para corte.</p>';
-            instalacionContainer.innerHTML = '<p class="text-xs text-gray-500"></p>';
-            instalacionTitle.classList.add('hidden');
-            return;
-        }
-
-        const itemsToProcess = new Map();
-        newSubItems.forEach(si => {
-            if (!itemsToProcess.has(si.itemId)) {
-                itemsToProcess.set(si.itemId, { subItemIds: [], count: 0 });
-            }
-            itemsToProcess.get(si.itemId).subItemIds.push(si.id);
-            itemsToProcess.get(si.itemId).count++;
-        });
-
-        const itemIds = Array.from(itemsToProcess.keys());
-        if (itemIds.length === 0) return;
-
-        const itemsQuery = query(collection(db, "items"), where("__name__", "in", itemIds));
-        const itemsSnapshot = await getDocs(itemsQuery);
-
-        suministroContainer.innerHTML = '';
-        instalacionContainer.innerHTML = '';
-
-        const projectPricingModel = currentProject.pricingModel || 'separado';
-
-        if (projectPricingModel === 'incluido') {
-            suministroTitle.textContent = 'Ítems Completos';
-            instalacionTitle.classList.add('hidden');
-            instalacionContainer.classList.add('hidden');
-            nosotrosView.querySelector('.grid').classList.remove('md:grid-cols-2');
-
-            itemsSnapshot.forEach(itemDoc => {
-                const item = { id: itemDoc.id, ...itemDoc.data() };
-                const { subItemIds, count } = itemsToProcess.get(item.id);
-                const subItemIdsStr = subItemIds.join(',');
-                suministroContainer.innerHTML += `
-                    <label class="flex items-center space-x-2 text-sm p-1 rounded hover:bg-gray-100">
-                        <input type="checkbox" class="nosotros-corte-checkbox rounded" data-type="incluido" data-subitem-ids="${subItemIdsStr}" data-item-id="${item.id}">
-                        <span>${item.name} (${count} un.)</span>
-                    </label>
-                `;
-            });
-        } else {
-            suministroTitle.textContent = 'Ítems Suministrados';
-            instalacionTitle.classList.remove('hidden');
-            instalacionContainer.classList.remove('hidden');
-            nosotrosView.querySelector('.grid').classList.add('md:grid-cols-2');
-
-            itemsSnapshot.forEach(itemDoc => {
-                const item = { id: itemDoc.id, ...itemDoc.data() };
-                const { subItemIds, count } = itemsToProcess.get(item.id);
-                const subItemIdsStr = subItemIds.join(',');
-
-                suministroContainer.innerHTML += `
-                    <label class="flex items-center space-x-2 text-sm p-1 rounded hover:bg-gray-100">
-                        <input type="checkbox" class="nosotros-corte-checkbox rounded" data-type="suministro" data-subitem-ids="${subItemIdsStr}" data-item-id="${item.id}">
-                        <span>${item.name} (${count} un.)</span>
-                    </label>
-                `;
-                instalacionContainer.innerHTML += `
-                    <label class="flex items-center space-x-2 text-sm p-1 rounded hover:bg-gray-100">
-                        <input type="checkbox" class="nosotros-corte-checkbox rounded" data-type="instalacion" data-subitem-ids="${subItemIdsStr}" data-item-id="${item.id}">
-                        <span>${item.name} (${count} un.)</span>
-                    </label>
-                `;
-            });
-        }
-        if (suministroContainer.innerHTML === '') suministroContainer.innerHTML = '<p class="text-xs text-gray-500">No hay ítems disponibles.</p>';
-        if (instalacionContainer.innerHTML === '') instalacionContainer.innerHTML = '<p class="text-xs text-gray-500">No hay ítems disponibles.</p>';
-
-    } catch (error) {
-        console.error("Error al cargar ítems para corte:", error);
-    }
-}
-
-// REEMPLAZA tu función generateNosotrosCorte con esta:
-async function generateNosotrosCorte() {
-    const checkboxes = document.querySelectorAll('.nosotros-corte-checkbox:checked');
-    if (checkboxes.length === 0) {
-        alert("Por favor, selecciona al menos un ítem para generar el corte.");
-        return;
-    }
-
-    openConfirmModal(
-        `Se creará un nuevo corte preliminar con los ${checkboxes.length} ítems seleccionados. ¿Deseas continuar?`,
-        async () => {
-            loadingOverlay.classList.remove('hidden');
-            try {
-                let totalValue = 0;
-                const allSubItemIds = new Set();
-                const itemsForCorte = [];
-                const itemIdsToFetch = new Set();
-                checkboxes.forEach(cb => itemIdsToFetch.add(cb.dataset.itemId));
-
-                const itemsQuery = query(collection(db, "items"), where("__name__", "in", Array.from(itemIdsToFetch)));
-                const itemsSnapshot = await getDocs(itemsQuery);
-                const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
-
-                checkboxes.forEach(checkbox => {
-                    const itemId = checkbox.dataset.itemId;
-                    const type = checkbox.dataset.type;
-                    const subItemIds = checkbox.dataset.subitemIds.split(',');
-                    const parentItem = itemsMap.get(itemId);
-
-                    if (parentItem) {
-                        let valuePortion = 0;
-                        if (type === 'suministro') {
-                            const tempItem = { ...parentItem, itemType: 'suministro_instalacion' }; // Lógica para calcular solo suministro
-                            valuePortion = calculateItemTotal({ ...tempItem, installationDetails: { unitPrice: 0 } });
-                        } else if (type === 'instalacion') {
-                            const tempItem = { ...parentItem, itemType: 'suministro_instalacion' }; // Lógica para calcular solo instalación
-                            valuePortion = calculateItemTotal({ ...tempItem, supplyDetails: { unitPrice: 0 } });
-                        } else { // incluido
-                            valuePortion = calculateItemTotal(parentItem);
-                        }
-
-                        const valuePerSubItem = valuePortion / parentItem.quantity;
-                        totalValue += valuePerSubItem * subItemIds.length;
-
-                        subItemIds.forEach(id => allSubItemIds.add(id));
-                        itemsForCorte.push({
-                            itemId: itemId, name: parentItem.name, type: type,
-                            quantity: subItemIds.length, value: valuePerSubItem * subItemIds.length
-                        });
-                    }
-                });
-
-                const cortesQuery = query(collection(db, "projects", currentProject.id, "cortes"));
-                const cortesSnapshot = await getDocs(cortesQuery);
-                const newCorteNumber = cortesSnapshot.size + 1;
-
-                const newCorte = {
-                    corteNumber: newCorteNumber,
-                    createdAt: new Date(),
-                    subItemIds: Array.from(allSubItemIds),
-                    items: itemsForCorte,
-                    itemsCount: allSubItemIds.size,
-                    totalValue: totalValue,
-                    projectId: currentProject.id,
-                    status: 'preliminar',
-                    type: 'nosotros'
-                };
-
-                await addDoc(collection(db, "projects", currentProject.id, "cortes"), newCorte);
-
-                alert(`¡Corte preliminar #${newCorteNumber} creado con éxito!`);
-                document.getElementById('corte-nosotros-view').classList.add('hidden');
+                document.getElementById('corte-items-selection-view').classList.add('hidden');
 
             } catch (error) {
                 console.error("Error al generar el corte:", error);
@@ -1138,84 +952,28 @@ async function generateNosotrosCorte() {
         }
     );
 }
-// ====================================================================
-//      FIN: FUNCIONES
-// ====================================================================
+
 
 /**
- * Maneja la creación de un nuevo corte de obra.
+ * Aprueba un corte, cambiando su estado a 'aprobado'.
  */
-async function handleCreateCorte() {
-    openConfirmModal(
-        "Se creará un nuevo corte con todos los ítems instalados que no estén en cortes anteriores. ¿Deseas continuar?",
-        async () => {
-            loadingOverlay.classList.remove('hidden');
-            try {
-                // 1. Obtener todos los sub-ítems instalados de este proyecto
-                const subItemsQuery = query(collection(db, "subItems"),
-                    where("projectId", "==", currentProject.id),
-                    where("status", "==", "Instalado")
-                );
-                const subItemsSnapshot = await getDocs(subItemsQuery);
-                const allInstalledSubItems = subItemsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-
-                // 2. Obtener los IDs de los sub-ítems que ya están en otros cortes
-                const cortesQuery = query(collection(db, "projects", currentProject.id, "cortes"));
-                const cortesSnapshot = await getDocs(cortesQuery);
-                const subItemsInCortes = new Set();
-                cortesSnapshot.forEach(corteDoc => {
-                    corteDoc.data().subItemIds.forEach(id => subItemsInCortes.add(id));
-                });
-
-                // 3. Filtrar para obtener solo los nuevos sub-ítems a incluir
-                const newSubItemsForCorte = allInstalledSubItems.filter(subItem => !subItemsInCortes.has(subItem.id));
-
-                if (newSubItemsForCorte.length === 0) {
-                    alert("No hay nuevos ítems instalados para añadir a un corte.");
-                    loadingOverlay.classList.add('hidden');
-                    return;
-                }
-
-                // 4. Calcular el valor total de los nuevos sub-ítems
-                const itemIds = [...new Set(newSubItemsForCorte.map(si => si.itemId))];
-                const itemsQuery = query(collection(db, "items"), where("__name__", "in", itemIds));
-                const itemsSnapshot = await getDocs(itemsQuery);
-                const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, d.data()]));
-
-                let totalValue = 0;
-                newSubItemsForCorte.forEach(subItem => {
-                    const parentItem = itemsMap.get(subItem.itemId);
-                    if (parentItem) {
-                        const itemTotalValue = calculateItemTotal(parentItem);
-                        const subItemValue = itemTotalValue / parentItem.quantity;
-                        totalValue += subItemValue;
-                    }
-                });
-
-                // 5. Crear el nuevo documento de corte
-                const newCorteNumber = cortesSnapshot.size + 1;
-                const newCorte = {
-                    corteNumber: newCorteNumber,
-                    createdAt: new Date(),
-                    subItemIds: newSubItemsForCorte.map(si => si.id),
-                    itemsCount: newSubItemsForCorte.length,
-                    totalValue: totalValue,
-                    projectId: currentProject.id
-                };
-
-                await addDoc(collection(db, "projects", currentProject.id, "cortes"), newCorte);
-
-                alert(`¡Corte #${newCorteNumber} creado con éxito!`);
-
-            } catch (error) {
-                console.error("Error al crear el corte:", error);
-                alert("Ocurrió un error al crear el corte.");
-            } finally {
-                loadingOverlay.classList.add('hidden');
-            }
-        }
-    );
+async function approveCorte(corteId) {
+    const corteRef = doc(db, "projects", currentProject.id, "cortes", corteId);
+    await updateDoc(corteRef, { status: 'aprobado' });
 }
+
+/**
+ * Deniega un corte, eliminándolo de la base de datos.
+ */
+async function denyCorte(corteId) {
+    const corteRef = doc(db, "projects", currentProject.id, "cortes", corteId);
+    await deleteDoc(corteRef);
+    alert("El corte ha sido denegado y eliminado.");
+}
+
+// ====================================================================
+//      FIN: LÓGICA REPLANTEADA
+// ====================================================================
 
 // ====================================================================
 //      INICIO: FUNCIÓN PARA CALCULAR EL VALOR TOTAL DE ÍTEMS
@@ -3251,9 +3009,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 // REEMPLAZA el 'case set-corte-type' con este bloque completo
                 case 'set-corte-type': {
                     const type = button.dataset.type;
-                    const obraView = document.getElementById('corte-obra-view');
-                    const nosotrosView = document.getElementById('corte-nosotros-view');
-
                     document.querySelectorAll('.corte-type-btn').forEach(btn => {
                         const isSelected = btn.dataset.type === type;
                         btn.classList.toggle('bg-blue-500', isSelected);
@@ -3261,22 +3016,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         btn.classList.toggle('bg-gray-200', !isSelected);
                         btn.classList.toggle('text-gray-700', !isSelected);
                     });
-
-                    obraView.classList.toggle('hidden', type !== 'obra');
-                    nosotrosView.classList.toggle('hidden', type !== 'nosotros');
-
-                    if (type === 'nosotros') {
-                        loadItemsForNosotrosCorte();
-                    } else if (type === 'obra') {
-                        loadItemsForObraCorte();
-                    }
+                    setupCorteSelection(type);
                     break;
                 }
-                case 'generate-obra-corte':
-                    generateObraCorte();
-                    break;
-                case 'generate-nosotros-corte':
-                    generateNosotrosCorte();
+                case 'generate-corte':
+                    generateCorte();
                     break;
                 case 'approve-corte': {
                     const corteId = button.dataset.id;
@@ -3287,7 +3031,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     const corteId = button.dataset.id;
                     openConfirmModal("¿Estás seguro de que quieres denegar y eliminar este corte? No se podrá recuperar.", () => denyCorte(corteId));
                     break;
-
                 }
             }
         }
@@ -3637,4 +3380,23 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
+
+    document.getElementById('corte-items-accordion').addEventListener('click', (e) => {
+        const header = e.target.closest('.accordion-header');
+        if (header) {
+            const content = header.nextElementSibling;
+            const icon = header.querySelector('svg');
+            content.classList.toggle('hidden');
+            icon.classList.toggle('rotate-180');
+        }
+
+        const selectAllCheckbox = e.target.closest('.corte-item-select-all');
+        if (selectAllCheckbox) {
+            const content = selectAllCheckbox.closest('.accordion-header').nextElementSibling;
+            content.querySelectorAll('.corte-subitem-checkbox').forEach(cb => {
+                cb.checked = selectAllCheckbox.checked;
+            });
+        }
+    });
+
 });
