@@ -72,21 +72,7 @@ async function fetchMunicipalities() {
 const loadingOverlay = document.getElementById('loading-overlay');
 const authContainer = document.getElementById('auth-container');
 const appContainer = document.getElementById('app-container');
-const loginView = document.getElementById('login-view');
-const registerView = document.getElementById('register-view');
-
-const views = {
-    proyectos: document.getElementById('dashboard-view'),
-    tareas: document.getElementById('tareas-view'),
-    herramienta: document.getElementById('herramienta-view'),
-    dotacion: document.getElementById('dotacion-view'),
-    cartera: document.getElementById('cartera-view'),
-    solicitud: document.getElementById('solicitud-view'),
-    empleados: document.getElementById('empleados-view'),
-    adminPanel: document.getElementById('admin-panel-view'),
-    projectDetails: document.getElementById('project-details-view'),
-    subItems: document.getElementById('sub-items-view'),
-};
+let views = {}; // <-- AÑADE ESTA LÍNEA
 
 // ====================================================================
 //      INICIO: FUNCIÓN AÑADIDA PARA CERRAR EL MENÚ LATERAL
@@ -108,18 +94,30 @@ function closeSidebar() {
 // --- MANEJO DE VISTAS ---
 
 function showView(viewName) {
-    Object.values(views).forEach(view => view.classList.add('hidden'));
-    if (views[viewName]) {
-        views[viewName].classList.remove('hidden');
+    Object.values(views).forEach(view => {
+        if (view) {
+            view.classList.add('hidden');
+            view.style.display = 'none';
+        }
+    });
+
+    const targetView = views[viewName];
+    if (targetView) {
+        targetView.classList.remove('hidden');
+        targetView.style.display = 'block';
+    } else {
+        console.error(`Error: No se encontró el elemento de la vista con el nombre: ${viewName}`);
     }
-    // Actualizar el enlace activo en la navegación
+
     document.querySelectorAll('#main-nav .nav-link').forEach(link => {
         link.classList.toggle('active', link.dataset.view === viewName);
     });
-    // Ocultar el menú lateral en móviles al cambiar de vista
-    document.getElementById('sidebar').classList.add('-translate-x-full');
-}
 
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar && window.innerWidth < 768) {
+        sidebar.classList.add('-translate-x-full');
+    }
+}
 // --- AUTENTICACIÓN ---
 
 onAuthStateChanged(auth, async (user) => {
@@ -755,9 +753,11 @@ function loadCortes(projectId) {
         }
 
         const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+        
         snapshot.forEach(doc => {
             const corte = { id: doc.id, ...doc.data() };
             const corteCard = document.createElement('div');
+            corteCard.className = 'p-4 bg-gray-50 rounded-lg border';
 
             let statusColor, statusText;
             switch (corte.status) {
@@ -765,7 +765,6 @@ function loadCortes(projectId) {
                 default: statusColor = 'bg-yellow-100 text-yellow-800'; statusText = 'Preliminar'; break;
             }
 
-            corteCard.className = 'p-4 bg-gray-50 rounded-lg border';
             corteCard.innerHTML = `
                 <div class="flex justify-between items-start">
                     <div>
@@ -776,21 +775,57 @@ function loadCortes(projectId) {
                     <div class="text-right">
                         <p class="text-sm">Valor Bruto: ${currencyFormatter.format(corte.totalValue || 0)}</p>
                         ${corte.amortizacion > 0 ? `<p class="text-sm text-red-600">Amortización: - ${currencyFormatter.format(corte.amortizacion)}</p>` : ''}
-                        ${corte.descuento?.valor > 0 ? `<p class="text-sm text-red-600">Descuento: - ${currencyFormatter.format(corte.descuento.valor)}</p>` : ''}
+                        ${(corte.otrosDescuentos || []).map(d => `<p class="text-sm text-red-600">Descuento (${d.concept}): - ${currencyFormatter.format(d.value)}</p>`).join('')}
                         <p class="text-lg font-semibold text-green-600 mt-1 border-t">Neto a Pagar: ${currencyFormatter.format(corte.netoAPagar || 0)}</p>
                     </div>
                 </div>
-                ${corte.status === 'preliminar' ? `
                 <div class="flex justify-between items-center mt-2 pt-2 border-t">
                     <span class="text-xs font-medium px-2.5 py-0.5 rounded-full ${statusColor}">${statusText}</span>
-                    <div class="flex space-x-2">
-                        <button data-action="approve-corte" data-id="${corte.id}" class="bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-1 px-2 rounded">Aprobar</button>
-                        <button data-action="deny-corte" data-id="${corte.id}" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-1 px-2 rounded">Denegar</button>
+                    <div class="flex space-x-2 flex-wrap gap-2 justify-end">
+                        ${corte.status === 'preliminar' ? `
+                            ${currentProject.pricingModel === 'separado' ? `
+                                <button data-action="export-corte-pdf" data-type="suministro" class="bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold py-1 px-2 rounded">Previsualizar Suministro</button>
+                                <button data-action="export-corte-pdf" data-type="instalacion" class="bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold py-1 px-2 rounded">Previsualizar Instalación</button>
+                            ` : `
+                                <button data-action="export-corte-pdf" data-type="completo" class="bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold py-1 px-2 rounded">Previsualizar</button>
+                            `}
+                            <button data-action="approve-corte" class="bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-1 px-2 rounded">Aprobar</button>
+                            <button data-action="deny-corte" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-1 px-2 rounded">Denegar</button>
+                        ` : ''}
+                        ${corte.status === 'aprobado' ? 
+                            (currentProject.pricingModel === 'separado' ? `
+                                <button data-action="export-corte-pdf" data-type="suministro" class="bg-cyan-500 hover:bg-cyan-600 text-white text-xs font-bold py-1 px-2 rounded">Memoria Suministro</button>
+                                <button data-action="export-corte-pdf" data-type="instalacion" class="bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold py-1 px-2 rounded">Memoria Instalación</button>
+                            ` : `
+                                <button data-action="export-corte-pdf" data-type="completo" class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-1 px-2 rounded">Exportar Memoria</button>
+                            `) 
+                        : ''}
                     </div>
                 </div>
-                ` : `<div class="mt-2 pt-2 border-t"><span class="text-xs font-medium px-2.5 py-0.5 rounded-full ${statusColor}">${statusText}</span></div>`}
             `;
+            
             container.appendChild(corteCard);
+
+            corteCard.querySelectorAll('[data-action="export-corte-pdf"]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const exportType = btn.dataset.type;
+                    exportCorteToPDF(currentProject, corte, exportType);
+                });
+            });
+
+            const approveBtn = corteCard.querySelector('[data-action="approve-corte"]');
+            if (approveBtn) {
+                approveBtn.addEventListener('click', () => {
+                    openConfirmModal("¿Estás seguro de que quieres aprobar este corte? Esta acción es final.", () => approveCorte(projectId, corte.id));
+                });
+            }
+
+            const denyBtn = corteCard.querySelector('[data-action="deny-corte"]');
+            if (denyBtn) {
+                denyBtn.addEventListener('click', () => {
+                    openConfirmModal("¿Estás seguro de que quieres denegar y eliminar este corte? No se podrá recuperar.", () => denyCorte(projectId, corte.id));
+                });
+            }
         });
     });
 }
@@ -891,70 +926,90 @@ async function setupCorteSelection(type) {
  * Genera el corte preliminar a partir de la selección del usuario.
  */
 async function generateCorte() {
-    const selectedSubItems = document.querySelectorAll('.corte-subitem-checkbox:checked');
-    if (selectedSubItems.length === 0) {
+    const selectedSubItemsCheckboxes = document.querySelectorAll('.corte-subitem-checkbox:checked');
+    if (selectedSubItemsCheckboxes.length === 0) {
         alert("Por favor, selecciona al menos un sub-ítem para generar el corte.");
         return;
     }
 
+    const usarMedidaReal = document.getElementById('corte-usar-medida-real').checked;
     const amortizarAnticipo = document.getElementById('corte-amortizar-anticipo').checked;
     const esCorteFinal = document.getElementById('corte-es-final').checked;
-    const descuentoConcepto = document.getElementById('corte-descuento-concepto').value;
-    const descuentoValor = parseFloat(document.getElementById('corte-descuento-valor').value.replace(/[$. ]/g, '')) || 0;
+    const agregarOtrosDescuentos = document.getElementById('corte-add-other-discounts-checkbox').checked;
 
     openConfirmModal(
-        `Se creará un nuevo corte preliminar con ${selectedSubItems.length} sub-ítems. ¿Deseas continuar?`,
+        `Se creará un nuevo corte preliminar con ${selectedSubItemsCheckboxes.length} sub-ítems. ¿Deseas continuar?`,
         async () => {
             loadingOverlay.classList.remove('hidden');
             try {
-                // --- 1. Calcular valor bruto del corte (lógica existente) ---
+                // --- 1. Calcular valor bruto del corte (con lógica de medida real) ---
                 let valorBrutoCorte = 0;
-                const subItemIds = Array.from(selectedSubItems).map(cb => cb.dataset.subitemId);
-                const itemIds = [...new Set(Array.from(selectedSubItems).map(cb => cb.dataset.itemId))];
-                const itemsQuery = query(collection(db, "items"), where("__name__", "in", itemIds));
-                const itemsSnapshot = await getDocs(itemsQuery);
+                const subItemIds = Array.from(selectedSubItemsCheckboxes).map(cb => cb.dataset.subitemId);
+                
+                const allItemsQuery = query(collection(db, "items"), where("projectId", "==", currentProject.id));
+                const allSubItemsQuery = query(collection(db, "subItems"), where("projectId", "==", currentProject.id));
+                const [itemsSnapshot, subItemsSnapshot] = await Promise.all([getDocs(allItemsQuery), getDocs(allSubItemsQuery)]);
                 const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, d.data()]));
+                const subItemsMap = new Map(subItemsSnapshot.docs.map(d => [d.id, {id: d.id, ...d.data()}]));
 
-                subItemIds.forEach(subItemId => {
-                    const checkbox = document.querySelector(`[data-subitem-id="${subItemId}"]`);
-                    const parentItem = itemsMap.get(checkbox.dataset.itemId);
+                for (const subItemId of subItemIds) {
+                    const subItem = subItemsMap.get(subItemId);
+                    const parentItem = itemsMap.get(subItem.itemId);
+
                     if (parentItem) {
-                        const subItemValue = calculateItemTotal(parentItem) / parentItem.quantity;
-                        valorBrutoCorte += subItemValue;
+                        const valorUnitarioContratado = calculateItemTotal(parentItem) / parentItem.quantity;
+                        let valorSubItemParaCorte = valorUnitarioContratado;
+
+                        if (usarMedidaReal && subItem.realWidth > 0 && subItem.realHeight > 0) {
+                            const areaContratada = parentItem.width * parentItem.height;
+                            const areaReal = subItem.realWidth * subItem.realHeight;
+                            if (areaContratada > 0) {
+                                valorSubItemParaCorte = (valorUnitarioContratado / areaContratada) * areaReal;
+                            }
+                        }
+                        valorBrutoCorte += valorSubItemParaCorte;
                     }
-                });
+                }
 
                 // --- 2. Calcular amortización y descuentos ---
                 let valorAmortizacion = 0;
                 const anticipoTotal = currentProject.advance || 0;
-
                 if (amortizarAnticipo && anticipoTotal > 0) {
-                    const contractedValue = await calculateProjectContractedValue(currentProject.id);
-                    // Obtener el total ya amortizado en cortes anteriores
                     const cortesQuery = query(collection(db, "projects", currentProject.id, "cortes"), where("status", "==", "aprobado"));
                     const cortesSnapshot = await getDocs(cortesQuery);
                     let totalAmortizadoPrevio = 0;
-                    cortesSnapshot.forEach(doc => {
-                        totalAmortizadoPrevio += doc.data().amortizacion || 0;
-                    });
-
+                    cortesSnapshot.forEach(doc => { totalAmortizadoPrevio += doc.data().amortizacion || 0; });
                     const anticipoRestante = anticipoTotal - totalAmortizadoPrevio;
 
                     if (esCorteFinal) {
                         valorAmortizacion = anticipoRestante;
                     } else {
-                        const porcentajeCorte = (valorBrutoCorte / contractedValue) * 100;
-                        valorAmortizacion = (anticipoTotal * porcentajeCorte) / 100;
+                        const contractedValue = await calculateProjectContractedValue(currentProject.id);
+                        if (contractedValue > 0) {
+                           const porcentajeCorte = (valorBrutoCorte / contractedValue) * 100;
+                           valorAmortizacion = (anticipoTotal * porcentajeCorte) / 100;
+                        }
                     }
-                    // No podemos amortizar más de lo que queda del anticipo
-                    if (valorAmortizacion > anticipoRestante) {
-                        valorAmortizacion = anticipoRestante;
-                    }
+                    valorAmortizacion = Math.min(valorAmortizacion, anticipoRestante);
                 }
 
-                const valorNeto = valorBrutoCorte - valorAmortizacion - descuentoValor;
+                let totalOtrosDescuentos = 0;
+                const otrosDescuentos = [];
+                if (agregarOtrosDescuentos) {
+                    document.querySelectorAll('#corte-descuentos-section .flex').forEach(div => {
+                        const concept = div.querySelector('.discount-concept')?.value.trim();
+                        const valueStr = div.querySelector('.discount-value')?.value.replace(/[$. ]/g, '') || '0';
+                        const value = parseFloat(valueStr);
+                        if (concept && value > 0) {
+                            otrosDescuentos.push({ concept, value });
+                            totalOtrosDescuentos += value;
+                        }
+                    });
+                }
+                
+                const valorNeto = valorBrutoCorte - valorAmortizacion - totalOtrosDescuentos;
 
-                // --- 3. Guardar el nuevo corte con la información financiera ---
+                // --- 3. Guardar el nuevo corte preliminar ---
                 const cortesQueryTotal = query(collection(db, "projects", currentProject.id, "cortes"));
                 const cortesSnapshotTotal = await getDocs(cortesQueryTotal);
                 const newCorteNumber = cortesSnapshotTotal.size + 1;
@@ -965,21 +1020,24 @@ async function generateCorte() {
                     subItemIds: subItemIds,
                     totalValue: valorBrutoCorte,
                     amortizacion: valorAmortizacion,
-                    descuento: {
-                        concepto: descuentoConcepto,
-                        valor: descuentoValor
-                    },
+                    otrosDescuentos: otrosDescuentos,
                     netoAPagar: valorNeto,
                     isFinal: esCorteFinal,
+                    usadoMedidaReal: usarMedidaReal, // <-- AÑADE ESTA LÍNEA
                     projectId: currentProject.id,
                     status: 'preliminar',
                     type: currentCorteType
                 };
-
+                
                 await addDoc(collection(db, "projects", currentProject.id, "cortes"), newCorte);
-
+                
                 alert(`¡Corte preliminar #${newCorteNumber} creado con éxito!`);
                 document.getElementById('corte-items-selection-view').classList.add('hidden');
+                document.querySelectorAll('.corte-type-btn').forEach(btn => {
+                    btn.classList.remove('bg-blue-500', 'text-white');
+                    btn.classList.add('bg-gray-200', 'text-gray-700');
+                });
+
 
             } catch (error) {
                 console.error("Error al generar el corte:", error);
@@ -996,16 +1054,16 @@ async function generateCorte() {
 /**
  * Aprueba un corte, cambiando su estado a 'aprobado'.
  */
-async function approveCorte(corteId) {
-    const corteRef = doc(db, "projects", currentProject.id, "cortes", corteId);
+async function approveCorte(projectId, corteId) {
+    const corteRef = doc(db, "projects", projectId, "cortes", corteId);
     await updateDoc(corteRef, { status: 'aprobado' });
 }
 
 /**
  * Deniega un corte, eliminándolo de la base de datos.
  */
-async function denyCorte(corteId) {
-    const corteRef = doc(db, "projects", currentProject.id, "cortes", corteId);
+async function denyCorte(projectId, corteId) {
+    const corteRef = doc(db, "projects", projectId, "cortes", corteId);
     await deleteDoc(corteRef);
     alert("El corte ha sido denegado y eliminado.");
 }
@@ -1013,6 +1071,189 @@ async function denyCorte(corteId) {
 // ====================================================================
 //      FIN: LÓGICA REPLANTEADA
 // ====================================================================
+
+// =================== INICIA CÓDIGO AÑADIDO ===================
+
+/**
+ * Genera una memoria de corte detallada con formato profesional, cabeceras y totales de columna.
+ * @param {object} proyecto - El objeto con los datos del proyecto actual.
+ * @param {object} corte - El objeto con los datos del corte a exportar.
+ * @param {string} exportType - El tipo de memoria: 'completo', 'suministro', o 'instalacion'.
+ */
+async function exportCorteToPDF(proyecto, corte, exportType) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape' });
+    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+
+    const calculateTaxDetails = (details, baseValue) => {
+        const result = { admin: 0, imprev: 0, utilidad: 0, ivaSobreUtilidad: 0, iva: 0, aiuTotal: 0 };
+        if (!details || !details.unitPrice || baseValue <= 0) return result;
+        if (details.taxType === 'aiu') {
+            result.admin = baseValue * (details.aiuA / 100 || 0);
+            result.imprev = baseValue * (details.aiuI / 100 || 0);
+            result.utilidad = baseValue * (details.aiuU / 100 || 0);
+            result.ivaSobreUtilidad = result.utilidad * 0.19;
+            result.aiuTotal = result.admin + result.imprev + result.utilidad + result.ivaSobreUtilidad;
+        } else if (details.taxType === 'iva') {
+            result.iva = baseValue * 0.19;
+        }
+        return result;
+    };
+
+    const [itemsSnapshot, subItemsSnapshot, cortesAnterioresSnapshot] = await Promise.all([
+        getDocs(query(collection(db, "items"), where("projectId", "==", proyecto.id))),
+        getDocs(query(collection(db, "subItems"), where("projectId", "==", proyecto.id))),
+        getDocs(query(collection(db, "projects", proyecto.id, "cortes"), where("status", "==", "aprobado"), where("corteNumber", "<", corte.corteNumber)))
+    ]);
+    const allItems = new Map(itemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+    const allSubItems = new Map(subItemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+    const subItemsEjecutadosAntes = new Set();
+    cortesAnterioresSnapshot.forEach(doc => { doc.data().subItemIds.forEach(id => subItemsEjecutadosAntes.add(id)); });
+
+    let reportTitle = `ACTA DE CORTE DE OBRA`;
+    if (exportType === 'suministro') reportTitle = `ACTA DE CORTE DE SUMINISTRO`;
+    if (exportType === 'instalacion') reportTitle = `ACTA DE CORTE DE INSTALACIÓN`;
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text(`CONTRATISTA:`, 14, 15); doc.text(`CONTRATANTE:`, 14, 20); doc.text(`PROYECTO:`, 14, 25);
+    doc.setFont("helvetica", "normal");
+    doc.text(`DISTRIBUIDORA ALUMINIO Y VIDRIOS EXITO SAS`, 50, 15);
+    doc.text(proyecto.builderName || 'No especificado', 50, 20);
+    doc.text(proyecto.name, 50, 25);
+    doc.setFont("helvetica", "bold");
+    doc.text(`No Acta:`, 230, 15); doc.text(`FECHA:`, 230, 20);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${corte.corteNumber}`, 250, 15);
+    doc.text(new Date(corte.createdAt.seconds * 1000).toLocaleDateString('es-CO'), 250, 20);
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text(`${reportTitle} - ${proyecto.name}`, doc.internal.pageSize.getWidth() / 2, 35, { align: 'center' });
+
+    const body = [];
+    let subTotalCorteSinImpuestos = 0, aiuDetailsCorte = { admin: 0, imprev: 0, utilidad: 0, ivaSobreUtilidad: 0, aiuA: 0, aiuI: 0, aiuU: 0 }, totalIvaCorte = 0;
+    const subItemsEnCorteSet = new Set(corte.subItemIds);
+
+    // --- Variables para los totales de la tabla ---
+    let totalValorContratado = 0;
+    let totalValorEjecutadoAcumulado = 0;
+    let totalValorEjecutadoCorte = 0;
+    let totalValorSaldo = 0;
+
+    allItems.forEach(item => {
+        const subItemsDeEsteItem = Array.from(allSubItems.values()).filter(si => si.itemId === item.id);
+        const ejecutadosEnEsteCorte = subItemsDeEsteItem.filter(si => subItemsEnCorteSet.has(si.id)).length;
+        const ejecutadosAntes = subItemsDeEsteItem.filter(si => subItemsEjecutadosAntes.has(si.id)).length;
+        const ejecutadoAcumulado = ejecutadosAntes + ejecutadosEnEsteCorte;
+        const saldo = item.quantity - ejecutadoAcumulado;
+        let valorUnitarioSinImpuestos = 0, valorUnitarioTotal = 0, detallesDePrecio = null;
+
+        if (exportType === 'completo') { detallesDePrecio = item.includedDetails; valorUnitarioTotal = calculateItemTotal(item) / item.quantity; }
+        else if (exportType === 'suministro') { detallesDePrecio = item.supplyDetails; }
+        else if (exportType === 'instalacion') { detallesDePrecio = item.installationDetails; }
+        if (detallesDePrecio) { valorUnitarioSinImpuestos = detallesDePrecio.unitPrice || 0; const tax = calculateTaxDetails(detallesDePrecio, valorUnitarioSinImpuestos); valorUnitarioTotal = valorUnitarioSinImpuestos + tax.iva + tax.aiuTotal; }
+
+        if (ejecutadosEnEsteCorte > 0) {
+            const valorEjecutadoSinImpuestos = valorUnitarioSinImpuestos * ejecutadosEnEsteCorte;
+            subTotalCorteSinImpuestos += valorEjecutadoSinImpuestos;
+            const taxCorte = calculateTaxDetails(detallesDePrecio, valorEjecutadoSinImpuestos);
+            totalIvaCorte += taxCorte.iva;
+            aiuDetailsCorte.admin += taxCorte.admin; aiuDetailsCorte.imprev += taxCorte.imprev; aiuDetailsCorte.utilidad += taxCorte.utilidad;
+            aiuDetailsCorte.ivaSobreUtilidad += taxCorte.ivaSobreUtilidad;
+            if (detallesDePrecio?.taxType === 'aiu') { aiuDetailsCorte.aiuA = detallesDePrecio.aiuA || 0; aiuDetailsCorte.aiuI = detallesDePrecio.aiuI || 0; aiuDetailsCorte.aiuU = detallesDePrecio.aiuU || 0; }
+        }
+
+        const valorTotalContratadoItem = valorUnitarioTotal * item.quantity;
+        const valorTotalEjecutadoAcumuladoItem = valorUnitarioTotal * ejecutadoAcumulado;
+        const valorTotalEjecutadoCorteItem = valorUnitarioTotal * ejecutadosEnEsteCorte;
+        const valorTotalSaldoItem = valorUnitarioTotal * saldo;
+
+        totalValorContratado += valorTotalContratadoItem;
+        totalValorEjecutadoAcumulado += valorTotalEjecutadoAcumuladoItem;
+        totalValorEjecutadoCorte += valorTotalEjecutadoCorteItem;
+        totalValorSaldo += valorTotalSaldoItem;
+
+        const descriptionText = (item.description || item.name).substring(0, 100);
+
+        // --- Nuevo orden de las columnas en el cuerpo ---
+        body.push([
+            item.name, descriptionText, item.width, item.height,
+            item.quantity, currencyFormatter.format(valorUnitarioTotal), currencyFormatter.format(valorTotalContratadoItem),
+            ejecutadosEnEsteCorte, currencyFormatter.format(valorTotalEjecutadoCorteItem),
+            ejecutadoAcumulado, currencyFormatter.format(valorTotalEjecutadoAcumuladoItem),
+            saldo, currencyFormatter.format(valorTotalSaldoItem)
+        ]);
+    });
+
+    const headStyles = { fontStyle: 'bold', halign: 'center', valign: 'middle', fillColor: [52, 73, 94], textColor: 255 };
+    const subheadStyles = { fontStyle: 'bold', halign: 'center', valign: 'middle', fillColor: [236, 240, 241], textColor: 0 };
+    doc.autoTable({
+        startY: 45,
+        head: [
+            [
+                { content: 'CONTRATADO', colSpan: 7, styles: headStyles },
+                { content: 'EJECUTADO CORTE ACTUAL', colSpan: 2, styles: { ...headStyles, fillColor: [22, 160, 133] } },
+                { content: 'EJECUTADO ACUMULADO', colSpan: 2, styles: { ...headStyles, fillColor: [41, 128, 185] } },
+                { content: 'SALDO POR EJECUTAR', colSpan: 2, styles: { ...headStyles, fillColor: [192, 57, 43] } }
+            ],
+            [
+                { content: 'Item', styles: subheadStyles }, { content: 'Descripción', styles: subheadStyles }, { content: 'Ancho', styles: subheadStyles }, { content: 'Alto', styles: subheadStyles },
+                { content: 'Cant.', styles: subheadStyles }, { content: 'Vlr. Unit', styles: subheadStyles }, { content: 'Vlr. Total', styles: subheadStyles },
+                { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles },
+                { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles },
+                { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles }
+            ]
+        ],
+        body: body,
+        // --- Fila de Totales (foot) ---
+        foot: [
+            [
+                { content: 'TOTALES', colSpan: 6, styles: { halign: 'right', fontStyle: 'bold' } },
+                { content: currencyFormatter.format(totalValorContratado), styles: { fontStyle: 'bold', halign: 'center' } },
+                '', // Cantidad Ejecutada Corte
+                { content: currencyFormatter.format(totalValorEjecutadoCorte), styles: { fontStyle: 'bold', halign: 'center' } },
+                '', // Cantidad Acumulada
+                { content: currencyFormatter.format(totalValorEjecutadoAcumulado), styles: { fontStyle: 'bold', halign: 'center' } },
+                '', // Cantidad Saldo
+                { content: currencyFormatter.format(totalValorSaldo), styles: { fontStyle: 'bold', halign: 'center' } }
+            ]
+        ],
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 1.5, halign: 'center', valign: 'middle' },
+        footStyles: { fillColor: [236, 240, 241], textColor: 0 }
+    });
+
+    let finalY = doc.autoTable.previous.finalY;
+    if (finalY > 180) { doc.addPage(); finalY = 20; } else { finalY += 7; }
+
+    let totalBrutoCorte = subTotalCorteSinImpuestos + totalIvaCorte + aiuDetailsCorte.admin + aiuDetailsCorte.imprev + aiuDetailsCorte.utilidad + aiuDetailsCorte.ivaSobreUtilidad;
+    let totalAPagar = totalBrutoCorte;
+
+    const summaryBody = [];
+    summaryBody.push(['SUB TOTAL (Valor Ejecutado en Corte)', currencyFormatter.format(subTotalCorteSinImpuestos)]);
+    if (totalIvaCorte > 0) summaryBody.push(['IVA (19%)', currencyFormatter.format(totalIvaCorte)]);
+    if (aiuDetailsCorte.admin > 0 || aiuDetailsCorte.imprev > 0) {
+        summaryBody.push([`Administración (${aiuDetailsCorte.aiuA}%)`, currencyFormatter.format(aiuDetailsCorte.admin)]);
+        summaryBody.push([`Imprevistos (${aiuDetailsCorte.aiuI}%)`, currencyFormatter.format(aiuDetailsCorte.imprev)]);
+        summaryBody.push([`Utilidad (${aiuDetailsCorte.aiuU}%)`, currencyFormatter.format(aiuDetailsCorte.utilidad)]);
+        summaryBody.push(["IVA (19%) s/Utilidad", currencyFormatter.format(aiuDetailsCorte.ivaSobreUtilidad)]);
+    }
+    summaryBody.push([{ content: "TOTAL BRUTO CORTE", styles: { fontStyle: 'bold' } }, { content: currencyFormatter.format(totalBrutoCorte), styles: { fontStyle: 'bold' } }]);
+
+    if (exportType === 'completo' || exportType === 'suministro') {
+        if (corte.amortizacion > 0) { summaryBody.push(["Amortización Anticipo", `(${currencyFormatter.format(corte.amortizacion)})`]); totalAPagar -= corte.amortizacion; }
+        if (corte.otrosDescuentos && corte.otrosDescuentos.length > 0) { corte.otrosDescuentos.forEach(d => { summaryBody.push([`Descuento (${d.concept})`, `(${currencyFormatter.format(d.value)})`]); totalAPagar -= d.value; }); }
+    }
+    summaryBody.push([{ content: "TOTAL A PAGAR", styles: { fontStyle: 'bold' } }, { content: currencyFormatter.format(totalAPagar), styles: { fontStyle: 'bold' } }]);
+
+    doc.autoTable({
+        startY: finalY, body: summaryBody, theme: 'plain', tableWidth: 100,
+        margin: { left: 180 }, styles: { fontSize: 9 }, columnStyles: { 0: { halign: 'right' }, 1: { halign: 'right' } }
+    });
+
+    doc.save(`Memoria_Corte_${corte.corteNumber}_${proyecto.name}_${exportType}.pdf`);
+}
+// =================== FINALIZA CÓDIGO AÑADIDO ===================
+
 
 // ====================================================================
 //      INICIO: FUNCIÓN PARA CALCULAR EL VALOR TOTAL DE ÍTEMS
@@ -1239,6 +1480,8 @@ async function createItem(data) {
 
     const newItem = {
         name: data.name,
+        description: data.description, // <-- AÑADE ESTA LÍNEA
+
         quantity: parseInt(data.quantity),
         width: parseFloat(data.width),
         height: parseFloat(data.height),
@@ -1302,6 +1545,8 @@ async function updateItem(itemId, data) {
 
     const updatedData = {
         name: data.name,
+        description: data.description, // <-- AÑADE ESTA LÍNEA
+
         width: parseFloat(data.width),
         height: parseFloat(data.height),
         // LÍNEA CORREGIDA: Asignamos el tipo basado en el modelo del proyecto
@@ -1355,13 +1600,9 @@ async function deleteItem(itemId) {
 // --- LÓGICA DE SUB-ÍTEMS ---
 function showSubItems(item) {
     currentItem = item;
-
-    // Oculta la vista de detalles del proyecto y muestra la de sub-ítems
     showView('subItems');
-
     document.getElementById('item-name-header').textContent = `Detalle de: ${item.name}`;
     document.getElementById('item-summary-header').textContent = `Total de ${item.quantity} unidades.`;
-
     loadSubItems(item.id);
 }
 
@@ -1948,14 +2189,38 @@ function loadSubItems(itemId) {
     const subItemsTableBody = document.getElementById('sub-items-table-body');
 
     const q = query(collection(db, "subItems"), where("itemId", "==", itemId));
+    
+    if (unsubscribeSubItems) unsubscribeSubItems();
+
     unsubscribeSubItems = onSnapshot(q, (querySnapshot) => {
         loadingDiv.classList.add('hidden');
         subItemsTableBody.innerHTML = '';
-        const docs = querySnapshot.docs.sort((a, b) => a.data().number - b.data().number);
-        docs.forEach(subItemDoc => {
-            const subItem = { id: subItemDoc.id, ...subItemDoc.data() };
-            subItemsTableBody.appendChild(createSubItemRow(subItem));
+
+        const docs = querySnapshot.docs.sort((a, b) => {
+            const numA = a.data()?.number || 0;
+            const numB = b.data()?.number || 0;
+            return numA - numB;
         });
+
+        if (docs.length === 0) {
+            subItemsTableBody.innerHTML = `<tr><td colspan="8" class="text-center py-10 text-gray-500">No hay sub-ítems para mostrar.</td></tr>`;
+            return;
+        }
+
+        docs.forEach(subItemDoc => {
+            try {
+                const subItem = { id: subItemDoc.id, ...subItemDoc.data() };
+                subItemsTableBody.appendChild(createSubItemRow(subItem));
+            } catch (error) {
+                console.error("Error al procesar el subítem:", subItemDoc.id, error);
+                const errorRow = document.createElement('tr');
+                errorRow.innerHTML = `<td colspan="8" class="text-center py-4 text-red-500 font-semibold">Error al cargar este subítem (ID: ${subItemDoc.id}).</td>`;
+                subItemsTableBody.appendChild(errorRow);
+            }
+        });
+    }, (error) => {
+        console.error("Error al cargar la lista de sub-ítems:", error);
+        subItemsTableBody.innerHTML = `<tr><td colspan="8" class="text-center py-10 text-red-500">Ocurrió un error al cargar los datos.</td></tr>`;
     });
 }
 
@@ -1963,27 +2228,21 @@ function createSubItemRow(subItem) {
     const row = document.createElement('tr');
     row.className = 'bg-white border-b hover:bg-gray-50';
 
+    // Búsqueda segura de nombres de usuario
     const manufacturerData = usersMap.get(subItem.manufacturer);
     const installerData = usersMap.get(subItem.installer);
+
+    // Si el usuario existe, muestra su nombre, si no, muestra 'N/A'
     const manufacturerName = manufacturerData ? `${manufacturerData.firstName} ${manufacturerData.lastName}` : 'N/A';
     const installerName = installerData ? `${installerData.firstName} ${installerData.lastName}` : 'N/A';
 
     let statusText = subItem.status || 'Pendiente de Fabricación';
     let statusColor;
     switch (statusText) {
-        case 'Instalado':
-            statusColor = 'bg-green-100 text-green-800';
-            break;
-        case 'Pendiente de Instalación':
-            statusColor = 'bg-yellow-100 text-yellow-800';
-            break;
-        case 'Faltante de Evidencia':
-            statusColor = 'bg-orange-100 text-orange-800';
-            break;
-        case 'Pendiente de Fabricación':
-        default:
-            statusColor = 'bg-red-100 text-red-800';
-            break;
+        case 'Instalado': statusColor = 'bg-green-100 text-green-800'; break;
+        case 'Pendiente de Instalación': statusColor = 'bg-yellow-100 text-yellow-800'; break;
+        case 'Faltante de Evidencia': statusColor = 'bg-orange-100 text-orange-800'; break;
+        default: statusColor = 'bg-red-100 text-red-800'; break;
     }
 
     let photoHtml = 'N/A';
@@ -1995,18 +2254,32 @@ function createSubItemRow(subItem) {
     }
 
     row.innerHTML = `
-    <td class="px-6 py-4 font-bold text-gray-900">${subItem.number}</td><td class="px-6 py-4">${subItem.location || 'N/A'}</td><td class="px-6 py-4">${manufacturerName}</td><td class="px-6 py-4">${installerName}</td><td class="px-6 py-4">${subItem.installDate || 'N/A'}</td><td class="px-6 py-4 text-center"><span class="text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full ${statusColor}">${statusText}</span></td><td class="px-6 py-4 text-center">${photoHtml}</td><td class="px-6 py-4 text-center"><button class="register-progress-btn bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-1 px-3 rounded-full">Registrar Avance</button></td>`;
+        <td class="px-6 py-4">
+            <input type="checkbox" class="subitem-checkbox h-4 w-4 text-blue-600 border-gray-300 rounded" data-id="${subItem.id}">
+        </td>
+        <td class="px-6 py-4 font-bold text-gray-900">${subItem.number || 'N/A'}</td>
+        <td class="px-6 py-4">${subItem.location || 'N/A'}</td>
+        <td class="px-6 py-4">${manufacturerName}</td>
+        <td class="px-6 py-4">${installerName}</td>
+        <td class="px-6 py-4">${subItem.installDate || 'N/A'}</td>
+        <td class="px-6 py-4 text-center"><span class="text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full ${statusColor}">${statusText}</span></td>
+        <td class="px-6 py-4 text-center">${photoHtml}</td>
+        <td class="px-6 py-4 text-center"><button class="register-progress-btn bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-1 px-3 rounded-full">Avance Individual</button></td>
+    `;
 
     if (subItem.photoURL) {
         row.querySelector('.view-photo-btn').addEventListener('click', (e) => {
             openImageModal(e.target.dataset.photourl);
         });
         if (currentUserRole === 'admin') {
-            row.querySelector('.delete-photo-btn').addEventListener('click', (e) => {
-                openConfirmModal(`¿Seguro que quieres eliminar esta foto de evidencia?`, () => {
-                    handleDeletePhoto(e.target.dataset.subitemid, e.target.dataset.itemid, e.target.dataset.installerid, e.target.dataset.projectid);
+            const deleteBtn = row.querySelector('.delete-photo-btn');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', (e) => {
+                    openConfirmModal(`¿Seguro que quieres eliminar esta foto de evidencia?`, () => {
+                        handleDeletePhoto(e.target.dataset.subitemid, e.target.dataset.itemid, e.target.dataset.installerid, e.target.dataset.projectid);
+                    });
                 });
-            });
+            }
         }
     }
 
@@ -2245,6 +2518,11 @@ function openMainModal(type, data = {}) {
             bodyHtml = `
         <div class="space-y-4">
             <div><label class="block text-sm font-medium">Nombre</label><input type="text" name="name" required class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.name : ''}"></div>
+            
+            <div>
+                <label class="block text-sm font-medium">Descripción</label>
+                <textarea name="description" rows="3" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Ventana corrediza sistema 744 con vidrio laminado 3+3mm, incoloro...">${isEditing ? (data.description || '') : ''}</textarea>
+            </div>
             <div class="grid grid-cols-3 gap-4">
                 <div><label class="block text-sm font-medium">Cantidad</label><input type="number" name="quantity" required min="1" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.quantity : ''}" ${isEditing ? 'readonly' : ''}></div>
                 <div><label class="block text-sm font-medium">Ancho (m)</label><input type="number" name="width" required step="0.01" min="0" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.width : ''}"></div>
@@ -2398,53 +2676,36 @@ async function populateUserDropdowns(manufacturerSelect, installerSelect, subIte
 }
 
 
+// --- MODAL DE AVANCE INDIVIDUAL (SIMPLE Y DIRECTO) ---
 async function openProgressModal(subItem) {
-    progressForm.reset();
-    progressForm.dataset.id = subItem.id;
-    progressForm.dataset.itemid = subItem.itemId;
-    document.getElementById('progress-modal-title').textContent = `Registrar Avance: Unidad N° ${subItem.number}`;
-    document.getElementById('sub-item-location').value = subItem.location || '';
+    const modal = document.getElementById('progress-modal');
+    if (!modal) return;
+    
+    const form = modal.querySelector('#progress-modal-form');
+    form.reset();
+    form.dataset.id = subItem.id;
+    form.dataset.itemid = subItem.itemId;
 
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('sub-item-date').value = subItem.installDate || today;
+    modal.querySelector('#progress-modal-title').textContent = `Registrar Avance: Unidad N° ${subItem.number}`;
+    modal.querySelector('#sub-item-location').value = subItem.location || '';
+    modal.querySelector('#sub-item-real-width').value = subItem.realWidth || '';
+    modal.querySelector('#sub-item-real-height').value = subItem.realHeight || '';
+    modal.querySelector('#sub-item-date').value = subItem.installDate || new Date().toISOString().split('T')[0];
 
-    const manufacturerSelect = document.getElementById('sub-item-manufacturer');
-    const installerSelect = document.getElementById('sub-item-installer');
-    const photoInput = document.getElementById('sub-item-photo');
-    const feedbackP = document.getElementById('progress-feedback');
-    feedbackP.textContent = '';
-
+    const manufacturerSelect = modal.querySelector('#sub-item-manufacturer');
+    const installerSelect = modal.querySelector('#sub-item-installer');
     await populateUserDropdowns(manufacturerSelect, installerSelect, subItem);
-
-    const updatePhotoPermission = () => {
-        const isInstallerSelected = installerSelect.value !== '';
-        photoInput.disabled = !isInstallerSelected;
-        if (!isInstallerSelected) {
-            photoInput.value = '';
-        }
-    };
-
-    installerSelect.addEventListener('change', updatePhotoPermission);
-    photoInput.addEventListener('click', (e) => {
-        if (!installerSelect.value) {
-            e.preventDefault();
-            feedbackP.textContent = 'Por favor, seleccione un instalador antes de subir una foto de evidencia.';
-            feedbackP.className = 'text-sm mt-4 text-center text-red-600';
-        } else {
-            feedbackP.textContent = '';
-        }
-    });
-    updatePhotoPermission();
-
-    const photoPreview = document.getElementById('photo-preview');
+    
+    const photoPreview = modal.querySelector('#photo-preview');
     if (subItem.photoURL) {
         photoPreview.innerHTML = `<a href="${subItem.photoURL}" target="_blank" class="text-blue-600 hover:underline text-sm">Ver foto actual</a>`;
     } else {
         photoPreview.innerHTML = '';
     }
-
-    progressModal.style.display = 'flex';
+    
+    modal.style.display = 'flex';
 }
+
 function closeProgressModal() { progressModal.style.display = 'none'; }
 document.getElementById('progress-modal-cancel-btn').addEventListener('click', closeProgressModal);
 progressForm.addEventListener('submit', async (e) => {
@@ -2453,58 +2714,223 @@ progressForm.addEventListener('submit', async (e) => {
     progressConfirmBtn.disabled = true;
     progressConfirmBtn.textContent = 'Guardando...';
     feedbackP.textContent = '';
-    feedbackP.className = 'text-sm mt-4 text-center';
+    feedbackP.className = 'text-sm mt-4 text-center text-blue-600';
 
     const subItemId = progressForm.dataset.id;
     const itemId = progressForm.dataset.itemid;
     const photoFile = document.getElementById('sub-item-photo').files[0];
+    const location = document.getElementById('sub-item-location').value;
+    const installDate = document.getElementById('sub-item-date').value;
 
-    const manufacturerId = document.getElementById('sub-item-manufacturer').value;
-    const installerId = document.getElementById('sub-item-installer').value;
+    const data = {
+        location: location,
+                realWidth: parseFloat(document.getElementById('sub-item-real-width').value) || 0,
+        realHeight: parseFloat(document.getElementById('sub-item-real-height').value) || 0,
 
-    let newStatus = 'Pendiente de Fabricación';
-    if (installerId) {
-        newStatus = 'Instalado';
-    } else if (manufacturerId) {
-        newStatus = 'Pendiente de Instalación';
-    }
-
-    let data = {
-        location: document.getElementById('sub-item-location').value,
-        manufacturer: manufacturerId,
-        installer: installerId,
-        installDate: document.getElementById('sub-item-date').value,
-        status: newStatus
+        manufacturer: document.getElementById('sub-item-manufacturer').value,
+        installer: document.getElementById('sub-item-installer').value,
+        installDate: installDate,
     };
+
+    if (data.installer) { data.status = 'Instalado'; }
+    else if (data.manufacturer) { data.status = 'Pendiente de Instalación'; }
 
     try {
         if (photoFile) {
-            if (currentUserRole === 'employee' && installerId !== currentUser.uid) {
-                throw new Error("Solo puedes subir una foto si eres el instalador asignado.");
-            }
+            feedbackP.textContent = 'Aplicando marca de agua...';
+            const watermarkText = `Vidrios Exito - ${currentProject.name} - ${installDate} - ${location}`;
+            const watermarkedBlob = await addWatermark(photoFile, watermarkText);
+
             feedbackP.textContent = 'Subiendo foto...';
-            feedbackP.classList.add('text-blue-600');
             const storageRef = ref(storage, `evidence/${currentProject.id}/${itemId}/${subItemId}`);
-            const snapshot = await uploadBytes(storageRef, photoFile);
+            const snapshot = await uploadBytes(storageRef, watermarkedBlob);
             data.photoURL = await getDownloadURL(snapshot.ref);
-            feedbackP.textContent = 'Foto subida con éxito. Guardando datos...';
-            feedbackP.classList.remove('text-blue-600');
-            feedbackP.classList.add('text-green-600');
+            feedbackP.textContent = 'Foto subida. Guardando datos...';
         }
 
         await updateSubItem(subItemId, data);
         closeProgressModal();
 
     } catch (error) {
-        console.error("Error detallado al guardar:", error);
-        feedbackP.textContent = error.message.includes("instalador") ? error.message : `Error: ${error.code}.`;
-        feedbackP.classList.remove('text-blue-600', 'text-green-600');
-        feedbackP.classList.add('text-red-600');
+        console.error("Error al guardar el avance:", error);
+        feedbackP.textContent = `Error: ${error.message}.`;
+        feedbackP.className = 'text-sm mt-4 text-center text-red-600';
     } finally {
         progressConfirmBtn.disabled = false;
         progressConfirmBtn.textContent = 'Guardar Cambios';
     }
 });
+
+// =================== INICIAN NUEVAS FUNCIONES PARA AVANCE MÚLTIPLE ===================
+const multipleProgressModal = document.getElementById('multiple-progress-modal');
+
+async function openMultipleProgressModal(selectedIds) {
+    const modal = document.getElementById('multiple-progress-modal');
+    const title = document.getElementById('multiple-progress-modal-title');
+    const tableBody = document.getElementById('multiple-progress-table-body');
+    title.textContent = `Registrar Avance para ${selectedIds.length} Unidades`;
+    tableBody.innerHTML = '';
+
+    const manufacturerSelect = document.getElementById('multiple-sub-item-manufacturer');
+    const installerSelect = document.getElementById('multiple-sub-item-installer');
+    await populateUserDropdowns(manufacturerSelect, installerSelect, {});
+
+    document.getElementById('multiple-sub-item-date').value = new Date().toISOString().split('T')[0];
+    
+    for (const id of selectedIds) {
+        const subItemDoc = await getDoc(doc(db, "subItems", id));
+        if (subItemDoc.exists()) {
+            const subItem = { id: subItemDoc.id, ...subItemDoc.data() };
+            const row = document.createElement('tr');
+            row.className = 'border-b';
+            row.dataset.id = subItem.id;
+        row.innerHTML = `
+            <td class="px-4 py-2 font-bold">${subItem.number}</td>
+            <td class="px-4 py-2"><input type="text" class="location-input mt-1 block w-full px-2 py-1 border rounded-md" value="${subItem.location || ''}"></td>
+            <td class="px-4 py-2"><input type="number" step="0.01" class="real-width-input mt-1 block w-full px-2 py-1 border rounded-md" value="${subItem.realWidth || ''}"></td>
+            <td class="px-4 py-2"><input type="number" step="0.01" class="real-height-input mt-1 block w-full px-2 py-1 border rounded-md" value="${subItem.realHeight || ''}"></td>
+            <td class="px-4 py-2"><input type="file" class="photo-input" accept="image/*" capture="environment" style="display: block; width: 100%;"></td>
+        `;
+            tableBody.appendChild(row);
+        }
+    }
+    modal.style.display = 'flex';
+}
+
+function closeMultipleProgressModal() {
+    if (multipleProgressModal) {
+        multipleProgressModal.style.display = 'none';
+    }
+}
+
+/**
+ * Añade una marca de agua a un archivo de imagen.
+ * @param {File} file - El archivo de imagen original.
+ * @param {string} text - El texto que se usará como marca de agua.
+ * @returns {Promise<Blob>} - Una promesa que se resuelve con el nuevo archivo de imagen (Blob) con la marca de agua.
+ */
+function addWatermark(file, text) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                // Ajustar el tamaño del canvas a la imagen
+                canvas.width = img.width;
+                canvas.height = img.height;
+
+                // Dibujar la imagen original en el canvas
+                ctx.drawImage(img, 0, 0);
+
+                // Configurar el estilo de la marca de agua
+                const fontSize = Math.max(18, Math.min(img.width, img.height) / 30); // Tamaño de fuente dinámico
+                ctx.font = `bold ${fontSize}px Arial`;
+                ctx.fillStyle = 'rgb(255, 0, 0)'; // Blanco semi-transparente
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'bottom';
+
+                // Añadir un pequeño margen desde el borde
+                const margin = 15;
+                ctx.fillText(text, canvas.width - margin, canvas.height - margin);
+
+                // Convertir el canvas de nuevo a un archivo (Blob)
+                canvas.toBlob((blob) => {
+                    resolve(blob);
+                }, 'image/jpeg', 0.9); // Calidad del 90%
+            };
+            img.onerror = reject;
+            img.src = event.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+// Asegurarse de que los listeners para el nuevo modal existan
+const cancelBtn = document.getElementById('multiple-progress-modal-cancel-btn');
+if (cancelBtn) {
+    cancelBtn.addEventListener('click', closeMultipleProgressModal);
+}
+
+document.getElementById('multiple-progress-modal-confirm-btn').addEventListener('click', async () => {
+    const confirmBtn = document.getElementById('multiple-progress-modal-confirm-btn');
+    const feedbackP = document.getElementById('multiple-progress-feedback');
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Guardando...';
+    feedbackP.textContent = 'Actualizando datos...';
+    feedbackP.className = 'text-sm mt-4 text-center text-blue-600';
+
+    const commonData = {
+        manufacturer: document.getElementById('multiple-sub-item-manufacturer').value,
+        installer: document.getElementById('multiple-sub-item-installer').value,
+        installDate: document.getElementById('multiple-sub-item-date').value,
+    };
+
+    if (commonData.installer) { commonData.status = 'Instalado'; }
+    else if (commonData.manufacturer) { commonData.status = 'Pendiente de Instalación'; }
+
+    const tableRows = document.querySelectorAll('#multiple-progress-table-body tr');
+    const batch = writeBatch(db);
+    const photoUploads = [];
+
+    // Pre-cargar todos los sub-ítems para obtener su itemId
+    const allSubItemsDocs = await getDocs(query(collection(db, "subItems"), where("projectId", "==", currentProject.id)));
+    const subItemsMap = new Map(allSubItemsDocs.docs.map(doc => [doc.id, doc.data()]));
+
+    tableRows.forEach(row => {
+        const subItemId = row.dataset.id;
+        const individualData = {
+            location: row.querySelector('.location-input').value,
+            realWidth: parseFloat(row.querySelector('.real-width-input').value) || 0,
+            realHeight: parseFloat(row.querySelector('.real-height-input').value) || 0,
+        };
+                const photoFile = row.querySelector('.photo-input').files[0];
+
+        const subItemRef = doc(db, "subItems", subItemId);
+        batch.update(subItemRef, { ...commonData, ...individualData });
+
+        if (photoFile) {
+            const subItemData = subItemsMap.get(subItemId);
+            if (subItemData) {
+                const watermarkText = `Vidrios Exito - ${currentProject.name} - ${commonData.installDate} - ${individualData.location}`;
+                photoUploads.push({ subItemId, photoFile, watermarkText, itemId: subItemData.itemId });
+            }
+        }
+    });
+
+    try {
+        await batch.commit();
+        feedbackP.textContent = 'Datos guardados. Procesando y subiendo fotos...';
+
+        for (const upload of photoUploads) {
+            const watermarkedBlob = await addWatermark(upload.photoFile, upload.watermarkText);
+            const storageRef = ref(storage, `evidence/${currentProject.id}/${upload.itemId}/${upload.subItemId}`);
+            const snapshot = await uploadBytes(storageRef, watermarkedBlob);
+            const downloadURL = await getDownloadURL(snapshot.ref);
+            await updateDoc(doc(db, "subItems", upload.subItemId), { photoURL: downloadURL });
+        }
+        
+        feedbackP.textContent = '¡Proceso completado!';
+        feedbackP.className = 'text-sm mt-4 text-center text-green-600';
+        setTimeout(() => {
+            closeMultipleProgressModal();
+            feedbackP.textContent = '';
+        }, 1500);
+
+    } catch (error) {
+        console.error("Error al guardar el avance múltiple:", error);
+        feedbackP.textContent = 'Error al guardar. Revisa la consola.';
+        feedbackP.className = 'text-sm mt-4 text-center text-red-600';
+    } finally {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Guardar Cambios';
+    }
+});
+// =================== FINALIZAN NUEVAS FUNCIONES ===================
+
 
 const confirmModal = document.getElementById('confirm-modal');
 const confirmModalBody = document.getElementById('confirm-modal-body');
@@ -2754,9 +3180,9 @@ async function exportProjectToPDF() {
             getDocs(query(collection(db, "projects", projectId, "cortes"), where("status", "==", "aprobado"), orderBy("corteNumber")))
         ]);
 
-        const itemsMap = new Map(itemsSnapshot.docs.map(doc => [doc.id, {id: doc.id, ...doc.data()}]));
-        const subItemsMap = new Map(subItemsSnapshot.docs.map(doc => [doc.id, {id: doc.id, ...doc.data()}]));
-        const approvedCortes = cortesSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
+        const itemsMap = new Map(itemsSnapshot.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() }]));
+        const subItemsMap = new Map(subItemsSnapshot.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() }]));
+        const approvedCortes = cortesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
         // --- 2. ENCABEZADO Y RESUMEN DEL CONTRATO ---
         docPDF.setFontSize(18);
@@ -2793,7 +3219,7 @@ async function exportProjectToPDF() {
 
         for (const corte of approvedCortes) {
             const tableRows = [];
-            
+
             // Llenamos las filas con el detalle de cada sub-ítem
             for (const subItemId of corte.subItemIds) {
                 const subItem = subItemsMap.get(subItemId);
@@ -2814,7 +3240,7 @@ async function exportProjectToPDF() {
                 theme: 'grid',
                 didDrawPage: (data) => { yPosition = data.cursor.y; }
             });
-            
+
             // --- AÑADIMOS LA TABLA DE RESUMEN FINANCIERO DEL CORTE ---
             const financialSummary = [
                 ['Valor Bruto del Corte:', currencyFormatter.format(corte.totalValue)],
@@ -2971,6 +3397,21 @@ if ('serviceWorker' in navigator) {
 
 // --- EVENT LISTENERS ---
 document.addEventListener('DOMContentLoaded', () => {
+
+    views = {
+        proyectos: document.getElementById('dashboard-view'),
+        tareas: document.getElementById('tareas-view'),
+        herramienta: document.getElementById('herramienta-view'),
+        dotacion: document.getElementById('dotacion-view'),
+        cartera: document.getElementById('cartera-view'),
+        solicitud: document.getElementById('solicitud-view'),
+        empleados: document.getElementById('empleados-view'),
+        adminPanel: document.getElementById('admin-panel-view'),
+        projectDetails: document.getElementById('project-details-view'),
+        subItems: document.getElementById('sub-items-view'),
+    };
+
+
     // Formularios de Autenticación
     document.getElementById('login-form').addEventListener('submit', handleLogin);
     document.getElementById('register-form').addEventListener('submit', handleRegister);
@@ -3154,13 +3595,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     generateCorte();
                     break;
                 case 'approve-corte': {
-                    const corteId = button.dataset.id;
-                    openConfirmModal("¿Estás seguro de que quieres aprobar este corte? Esta acción es final.", () => approveCorte(corteId));
+                    const corteId = button.closest('.p-4.bg-gray-50').querySelector('[data-action="approve-corte"]').dataset.id; // Forma segura de obtener el id
+                    if (currentProject && currentProject.id && corteId) {
+                        openConfirmModal("¿Estás seguro de que quieres aprobar este corte? Esta acción es final.", () => approveCorte(currentProject.id, corteId));
+                    }
                     break;
                 }
                 case 'deny-corte': {
-                    const corteId = button.dataset.id;
-                    openConfirmModal("¿Estás seguro de que quieres denegar y eliminar este corte? No se podrá recuperar.", () => denyCorte(corteId));
+                    const corteId = button.closest('.p-4.bg-gray-50').querySelector('[data-action="deny-corte"]').dataset.id; // Forma segura de obtener el id
+                    if (currentProject && currentProject.id && corteId) {
+                        openConfirmModal("¿Estás seguro de que quieres denegar y eliminar este corte? No se podrá recuperar.", () => denyCorte(currentProject.id, corteId));
+                    }
                     break;
                 }
             }
@@ -3502,15 +3947,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ====================================================================
     //      FIN: LÓGICA FINAL
     // ====================================================================
-    const selectAllCheckbox = document.getElementById('select-all-nosotros-corte');
-    if (selectAllCheckbox) {
-        selectAllCheckbox.addEventListener('change', (e) => {
-            const isChecked = e.target.checked;
-            document.querySelectorAll('.nosotros-corte-checkbox').forEach(checkbox => {
-                checkbox.checked = isChecked;
-            });
-        });
-    }
+
 
     document.getElementById('corte-items-accordion').addEventListener('click', (e) => {
         const header = e.target.closest('.accordion-header');
@@ -3529,13 +3966,76 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     });
-    const corteEsFinalCheckbox = document.getElementById('corte-es-final');
-    const descuentosSection = document.getElementById('corte-descuentos-section');
 
-    if (corteEsFinalCheckbox && descuentosSection) {
-        corteEsFinalCheckbox.addEventListener('change', (e) => {
-            // Muestra la sección de descuentos solo si se marca como corte final
-            descuentosSection.classList.toggle('hidden', !e.target.checked);
+    // Listener para mostrar/ocultar el contenedor de otros descuentos del corte
+    const addOtherDiscountsCheckboxCorte = document.getElementById('corte-add-other-discounts-checkbox');
+    const descuentosSectionCorte = document.getElementById('corte-descuentos-section');
+    if (addOtherDiscountsCheckboxCorte && descuentosSectionCorte) {
+        addOtherDiscountsCheckboxCorte.addEventListener('change', () => {
+            descuentosSectionCorte.classList.toggle('hidden', !addOtherDiscountsCheckboxCorte.checked);
         });
     }
+
+    // Listener para el botón que añade nuevos campos de descuento en el corte
+    const addDiscountButtonCorte = document.getElementById('corte-add-discount-button');
+    if (addDiscountButtonCorte) {
+        addDiscountButtonCorte.addEventListener('click', () => {
+            const container = descuentosSectionCorte;
+            const newDiscountField = document.createElement('div');
+            newDiscountField.classList.add('flex', 'items-center', 'mb-2', 'space-x-2');
+
+            newDiscountField.innerHTML = `
+                <input type="text" placeholder="Concepto" class="discount-concept w-full border rounded-md p-2 text-sm">
+                <input type="text" placeholder="Valor" class="discount-value currency-input border rounded-md p-2 text-sm" style="max-width: 150px;">
+                <button type="button" class="remove-discount-button text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100">
+                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            `;
+            container.insertBefore(newDiscountField, addDiscountButtonCorte);
+
+            // Añadir listener para el formateador de moneda al nuevo campo
+            const currencyInput = newDiscountField.querySelector('.currency-input');
+            const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+            currencyInput.addEventListener('input', (e) => {
+                let value = e.target.value.replace(/[$. ]/g, '');
+                if (!isNaN(value) && value) e.target.value = currencyFormatter.format(value).replace(/\s/g, ' ');
+                else e.target.value = '';
+            });
+
+            // Añadir listener para el botón de eliminar
+            newDiscountField.querySelector('.remove-discount-button').addEventListener('click', () => {
+                newDiscountField.remove();
+            });
+        });
+    }
+
+const subItemsTableBody = document.getElementById('sub-items-table-body');
+const selectAllCheckbox = document.getElementById('select-all-subitems-checkbox');
+const registerMultipleBtn = document.getElementById('register-multiple-progress-btn');
+
+if (subItemsTableBody && selectAllCheckbox && registerMultipleBtn) {
+    const updateMultipleProgressButtonState = () => {
+        const selectedCheckboxes = document.querySelectorAll('.subitem-checkbox:checked');
+        registerMultipleBtn.disabled = selectedCheckboxes.length === 0;
+    };
+
+    selectAllCheckbox.addEventListener('change', () => {
+        document.querySelectorAll('.subitem-checkbox').forEach(checkbox => { checkbox.checked = selectAllCheckbox.checked; });
+        updateMultipleProgressButtonState();
+    });
+
+    subItemsTableBody.addEventListener('change', (e) => {
+        if (e.target.classList.contains('subitem-checkbox')) {
+            const allCheckboxes = document.querySelectorAll('.subitem-checkbox');
+            const checkedCount = document.querySelectorAll('.subitem-checkbox:checked').length;
+            selectAllCheckbox.checked = allCheckboxes.length > 0 && checkedCount === allCheckboxes.length;
+            updateMultipleProgressButtonState();
+        }
+    });
+
+    registerMultipleBtn.addEventListener('click', () => {
+        const selectedIds = Array.from(document.querySelectorAll('.subitem-checkbox:checked')).map(cb => cb.dataset.id);
+        openMultipleProgressModal(selectedIds); // <-- Cambio clave aquí
+    });
+}
 });
