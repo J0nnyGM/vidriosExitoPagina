@@ -189,7 +189,7 @@ function generarPDFCliente(remision) {
 
     const addHeader = () => {
         doc.setFont("helvetica", "bold").setFontSize(18).text("Remisión de Servicio", 105, 20, { align: "center" });
-        doc.setFontSize(10).setFont("helvetica", "bold").text("IMPORTADORA VIDRIOS EXITO", 105, 28, { align: "center" });
+        doc.setFontSize(10).setFont("helvetica", "bold").text("IMPORTADORA VIDRIO EXPRESS SAS", 105, 28, { align: "center" });
         doc.setFont("helvetica", "normal").text("Tels: 311 8109893 - 310 2557543", 105, 33, { align: "center" });
         doc.text("Cra 27 No 67-58", 105, 38, { align: "center" });
         doc.setFontSize(14).setFont("helvetica", "bold").text(`Remisión N°: ${remision.numeroRemision}`, 190, 45, { align: "right" });
@@ -315,7 +315,7 @@ async function generarPDF(remision, isForPlanta = false) {
             doc.setTextColor(0, 0, 0);
         }
         if (!title.toLowerCase().includes("anexo")) {
-            doc.setFontSize(10).setFont("helvetica", "bold").text("IMPORTADORA VIDRIOS EXITO", 105, 28, { align: "center" });
+            doc.setFontSize(10).setFont("helvetica", "bold").text("IMPORTADORA VIDRIO EXPRESS SAS", 105, 28, { align: "center" });
             doc.setFont("helvetica", "normal").text("Tels: 311 8109893 - 310 2557543", 105, 33, { align: "center" });
             doc.text("Cra 27 No 67-58", 105, 38, { align: "center" });
         }
@@ -618,7 +618,7 @@ exports.onRemisionCreate = functions.region("us-central1").firestore
                     to: remisionData.clienteEmail,
                     from: FROM_EMAIL,
                     subject: `Confirmación de Remisión N° ${remisionData.numeroRemision}`,
-                    html: `<p>Hola ${remisionData.clienteNombre},</p><p>Hemos recibido tu orden y adjuntamos la remisión de servicio.</p><p>El estado actual es: <strong>${remisionData.estado}</strong>.</p><p>Gracias por confiar en nosotros.</p><p><strong>Importadora Vidrios Exito</strong></p>`,
+                    html: `<p>Hola ${remisionData.clienteNombre},</p><p>Hemos recibido tu orden y adjuntamos la remisión de servicio.</p><p>El estado actual es: <strong>${remisionData.estado}</strong>.</p><p>Gracias por confiar en nosotros.</p><p><strong>Importadora Vidrio Express</strong></p>`,
                     attachments: [{
                         content: pdfBufferCliente.toString("base64"),
                         filename: `Remision-${remisionData.numeroRemision}.pdf`,
@@ -976,7 +976,7 @@ exports.applyDiscount = functions.https.onCall(async (data, context) => {
                    <p>Se ha aplicado un descuento del <strong>${discountPercentage.toFixed(2)}%</strong> a tu remisión N° ${finalRemisionData.numeroRemision}.</p>
                    <p>El nuevo total es: <strong>${formatCurrency(newTotal)}</strong>.</p>
                    <p>Adjuntamos la remisión actualizada.</p>
-                   <p><strong>Importadora Vidrios Exito</strong></p>`,
+                   <p><strong>Importadora Vidrio Express</strong></p>`,
             attachments: [{
                 content: pdfBuffer.toString("base64"),
                 filename: `Remision-Actualizada-${finalRemisionData.numeroRemision}.pdf`,
