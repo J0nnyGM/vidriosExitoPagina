@@ -324,7 +324,10 @@ function loadViewTemplates() {
 
 function updateUIVisibility(userData) {
     if (!userData) return;
+
     const isAdmin = userData.role?.toLowerCase() === 'admin';
+    
+    // Muestra/oculta los módulos principales según los permisos
     ALL_MODULES.forEach(module => {
         const tab = document.getElementById(`tab-${module}`);
         if (tab) {
@@ -332,9 +335,19 @@ function updateUIVisibility(userData) {
             tab.classList.toggle('hidden', !hasPermission);
         }
     });
+
+    // Muestra/oculta botones específicos para administradores
     document.getElementById('view-all-loans-btn').style.display = isAdmin ? 'block' : 'none';
     document.getElementById('summary-btn').style.display = isAdmin ? 'block' : 'none';
+
+    // --- LÍNEA AÑADIDA AQUÍ ---
+    // Muestra el botón de regenerar URLs solo si el usuario es admin
+    document.getElementById('regenerate-urls-btn').style.display = isAdmin ? 'block' : 'none';
+
+    // Muestra/oculta botones específicos para no administradores
     document.getElementById('loan-request-btn').style.display = isAdmin ? 'none' : 'block';
+
+    // Ajusta la vista del módulo de remisiones según el rol
     const isPlanta = userData.role?.toLowerCase() === 'planta';
     const remisionFormContainer = document.getElementById('remision-form-container');
     const remisionListContainer = document.getElementById('remisiones-list-container');
@@ -6616,3 +6629,22 @@ async function handleInitialBalanceSubmit(e) {
         showModalMessage(`Error: ${error.message}`);
     }
 }
+
+// Listener para el nuevo botón de regeneración
+document.getElementById('regenerate-urls-btn').addEventListener('click', async () => {
+    if (!confirm('¿Estás seguro de que quieres regenerar TODAS las URLs de los PDFs? Este proceso puede tardar unos minutos.')) {
+        return;
+    }
+
+    showModalMessage("Regenerando enlaces de todas las remisiones, por favor espera...", true);
+
+    try {
+        const regenerateFunction = httpsCallable(functions, 'regenerateAllRemisionUrls');
+        const result = await regenerateFunction();
+
+        showModalMessage(result.data.message, false, 5000); // Muestra el mensaje de éxito por 5 segundos
+    } catch (error) {
+        console.error("Error al regenerar URLs:", error);
+        showModalMessage(`Error: ${error.message}`);
+    }
+});

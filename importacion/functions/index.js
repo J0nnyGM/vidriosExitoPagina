@@ -328,7 +328,7 @@ async function generarPDF(remision, isForPlanta = false) {
         doc.setFontSize(8);
         doc.text(`Página ${pageNumber} de ${pageCount}`, 105, pageHeight - 10, { align: 'center' });
     };
-    
+
     // --- PÁGINA(S) 1: RESUMEN DE MATERIALES ---
     const paginaResumen = new jsPDF();
     const headerHeight = 85;
@@ -374,7 +374,7 @@ async function generarPDF(remision, isForPlanta = false) {
             }
         }
     });
-    
+
     // --- OBTENER POSICIÓN FINAL DE LA TABLA ---
     let finalY = paginaResumen.lastAutoTable.finalY;
     const pageCountAfterTable = paginaResumen.internal.getNumberOfPages();
@@ -384,7 +384,7 @@ async function generarPDF(remision, isForPlanta = false) {
     // Dibuja las observaciones DESPUÉS de la tabla de ítems
     if (remision.observaciones && remision.observaciones.trim() !== '') {
         finalY += 7; // Añadir un pequeño espacio
-        
+
         // Comprobar si hay espacio suficiente en la página actual
         if (finalY > paginaResumen.internal.pageSize.height - 40) { // 40 es un margen de seguridad
             paginaResumen.addPage();
@@ -436,7 +436,7 @@ async function generarPDF(remision, isForPlanta = false) {
         }
         paginaResumen.setFont("helvetica", "bold").text("TOTAL:", 130, yPos);
         paginaResumen.text(formatCurrency(remision.valorTotal), 190, yPos, { align: "right" });
-        
+
         const pageHeight = paginaResumen.internal.pageSize.height;
         const signatureY = pageHeight - 45;
         paginaResumen.line(40, signatureY, 120, signatureY);
@@ -452,14 +452,14 @@ async function generarPDF(remision, isForPlanta = false) {
         const [copiedPage] = await pdfDocFinal.copyPages(resumenPdfBytes, [i]);
         pdfDocFinal.addPage(copiedPage);
     }
-    
+
     // --- LÓGICA DE ANEXOS Y PLANOS DE CORTE (SIN CAMBIOS) ---
     const itemsCortados = remision.items.filter(item => item.tipo === 'Cortada' && item.planoDespiece && item.planoDespiece.length > 0);
     if (itemsCortados.length > 0) {
         // --- ANEXO DE PRODUCCIÓN (4 COLUMNAS) ---
         const paginaAnexo = new jsPDF();
         addHeader(paginaAnexo, "Anexo: Despiece Detallado");
-        
+
         const allCortes = [];
         let corteIdGlobal = 1;
         itemsCortados.forEach(item => {
@@ -490,7 +490,7 @@ async function generarPDF(remision, isForPlanta = false) {
             paginaAnexo.setDrawColor(200, 200, 200).rect(xActual, yActual, anchoColumna, altoTarjeta);
             paginaAnexo.setFontSize(16).setFont("helvetica", "bold").text(`${corte.id}`, xActual + 3, yActual + 8);
             paginaAnexo.setFontSize(7).setFont("helvetica", "normal").text(corte.medida, xActual + 3, yActual + 13);
-            paginaAnexo.text(corte.material, xActual + 3, yActual + 18, { maxWidth: anchoColumna - 4 }); 
+            paginaAnexo.text(corte.material, xActual + 3, yActual + 18, { maxWidth: anchoColumna - 4 });
             yActual += altoTarjeta + 3;
         });
 
@@ -511,7 +511,7 @@ async function generarPDF(remision, isForPlanta = false) {
             for (const lamina of item.planoDespiece) {
                 const page = pdfDocFinal.addPage(PageSizes.A4);
                 const { width, height } = page.getSize();
-                
+
                 page.drawText(`Plano de Corte - Lámina ${lamina.numero} de ${item.planoDespiece.length}`, { x: 50, y: height - 40, font: fontBold, size: 16 });
                 page.drawText(`Remisión N°: ${remision.numeroRemision}`, { x: width - 200, y: height - 40, font: fontBold, size: 12 });
                 page.drawText(`Material: ${item.descripcion} (${anchoMaestra}x${altoMaestra}mm)`, { x: 50, y: height - 60, font, size: 10 });
@@ -520,9 +520,9 @@ async function generarPDF(remision, isForPlanta = false) {
 
                 const escala = (width - 120) / anchoMaestra;
                 const xOffset = 60, yOffset = height - 95 - (altoMaestra * escala);
-                
+
                 page.drawRectangle({ x: xOffset, y: yOffset, width: anchoMaestra * escala, height: altoMaestra * escala, borderColor: rgb(0.5, 0.5, 0.5), borderWidth: 1 });
-                
+
                 (lamina.cortes || []).forEach(corte => {
                     page.drawRectangle({
                         x: xOffset + corte.x * escala,
@@ -543,7 +543,7 @@ async function generarPDF(remision, isForPlanta = false) {
             }
         }
     }
-    
+
     const finalPdfBytes = await pdfDocFinal.save();
     return Buffer.from(finalPdfBytes);
 }
@@ -600,13 +600,18 @@ exports.onRemisionCreate = functions.region("us-central1").firestore
             const filePlanta = bucket.file(filePathPlanta);
             await filePlanta.save(pdfBufferPlanta);
 
-            const [urlAdmin] = await fileAdmin.getSignedUrl({ action: 'read', expires: '03-09-2491' });
-            const [urlPlanta] = await filePlanta.getSignedUrl({ action: 'read', expires: '03-09-2491' });
-            
+            const expiresDate = '03-09-2491'; // Fecha muy lejana en el futuro
+            const [urlAdmin] = await fileAdmin.getSignedUrl({ action: 'read', expires: expiresDate });
+            const [urlPlanta] = await filePlanta.getSignedUrl({ action: 'read', expires: expiresDate });
+
+            // Se añaden los campos de ruta que faltaban
             await snap.ref.update({
+                pdfPath: filePathAdmin, // Guardar la ruta del archivo
                 pdfUrl: urlAdmin,
+                pdfPlantaPath: filePathPlanta, // Guardar la ruta del archivo de planta
                 pdfPlantaUrl: urlPlanta,
             });
+            log("PDFs guardados con sus rutas y URLs permanentes.");
 
             try {
                 const msg = {
@@ -627,7 +632,7 @@ exports.onRemisionCreate = functions.region("us-central1").firestore
                 functions.logger.error(`Error detallado al enviar correo al cliente:`, JSON.stringify(emailError, null, 2));
                 emailStatus = "error";
             }
-            
+
             try {
                 const printerMsg = {
                     to: "oficinavidriosexito@print.brother.com",
@@ -785,7 +790,7 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 const pdfBufferCliente = await generarPDFCliente(afterData);
                 const pdfBufferAdmin = await generarPDF(afterData, false);
                 const pdfBufferPlanta = await generarPDF(afterData, true);
-                
+
                 const bucket = admin.storage().bucket(BUCKET_NAME);
                 const filePathAdmin = `remisiones/${afterData.numeroRemision}.pdf`;
                 const fileAdmin = bucket.file(filePathAdmin);
@@ -794,12 +799,26 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 const filePathPlanta = `remisiones/planta-${afterData.numeroRemision}.pdf`;
                 const filePlanta = bucket.file(filePathPlanta);
                 await filePlanta.save(pdfBufferPlanta);
-                
+
+                // --- INICIO DE LA CORRECCIÓN ---
+                // 4. Obtener y guardar las nuevas URLs permanentes
+                // --- INICIO DE LA CORRECCIÓN ---
                 const [urlAdmin] = await fileAdmin.getSignedUrl({ action: 'read', expires: '03-09-2491' });
                 const [urlPlanta] = await filePlanta.getSignedUrl({ action: 'read', expires: '03-09-2491' });
-                
-                await change.after.ref.update({ pdfUrl: urlAdmin, pdfPlantaUrl: urlPlanta });
-                
+
+                const updateData = {
+                    pdfPath: filePathAdmin, // Guardar la ruta
+                    pdfUrl: urlAdmin,
+                    pdfPlantaPath: filePathPlanta, // Guardar la ruta
+                    pdfPlantaUrl: urlPlanta
+                };
+                if (pagoFinalizado) {
+                    updateData.formaPago = "Cancelado";
+                }
+                await change.after.ref.update(updateData);
+                log("Rutas y URLs de PDFs actualizadas en Firestore.");
+                // --- FIN DE LA CORRECCIÓN ---
+
                 const msg = {
                     to: afterData.clienteEmail, from: FROM_EMAIL, subject: `Anulación de Remisión N° ${afterData.numeroRemision}`,
                     html: `<p>Hola ${afterData.clienteNombre},</p><p>Te informamos que la remisión N° <strong>${afterData.numeroRemision}</strong> ha sido <strong>ANULADA</strong>.</p>`,
@@ -811,17 +830,17 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
             } catch (error) {
                 log("Error al procesar anulación:", error);
             }
-        } 
+        }
         // Se activa para otros cambios de estado relevantes o pago final
         else if ((estadoCambio && afterData.estado !== "Anulada") || pagoFinalizado) {
             log("Detectado cambio de estado o pago final. Regenerando PDFs y notificando.");
             try {
                 const remisionParaPdf = pagoFinalizado ? { ...afterData, formaPago: "Cancelado" } : afterData;
-                
+
                 const pdfBufferCliente = await generarPDFCliente(remisionParaPdf);
                 const pdfBufferAdmin = await generarPDF(remisionParaPdf, false);
                 const pdfBufferPlanta = await generarPDF(remisionParaPdf, true);
-                
+
                 const bucket = admin.storage().bucket(BUCKET_NAME);
                 const filePathAdmin = `remisiones/${afterData.numeroRemision}.pdf`;
                 const fileAdmin = bucket.file(filePathAdmin);
@@ -830,16 +849,25 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 const filePathPlanta = `remisiones/planta-${afterData.numeroRemision}.pdf`;
                 const filePlanta = bucket.file(filePathPlanta);
                 await filePlanta.save(pdfBufferPlanta);
-                
+
+                // --- INICIO DE LA CORRECCIÓN ---
                 const [urlAdmin] = await fileAdmin.getSignedUrl({ action: 'read', expires: '03-09-2491' });
                 const [urlPlanta] = await filePlanta.getSignedUrl({ action: 'read', expires: '03-09-2491' });
-                
-                const updateData = { pdfUrl: urlAdmin, pdfPlantaUrl: urlPlanta };
+
+                const updateData = {
+                    pdfPath: filePathAdmin, // Guardar la ruta
+                    pdfUrl: urlAdmin,
+                    pdfPlantaPath: filePathPlanta, // Guardar la ruta
+                    pdfPlantaUrl: urlPlanta
+                };
                 if (pagoFinalizado) {
                     updateData.formaPago = "Cancelado";
                 }
                 await change.after.ref.update(updateData);
-                
+                log("Rutas y URLs de PDFs actualizadas en Firestore.");
+                // --- FIN DE LA CORRECCIÓN ---
+
+
                 if (afterData.estado === "Entregado") {
                     const msg = {
                         to: afterData.clienteEmail, from: FROM_EMAIL, subject: `Tu orden N° ${afterData.numeroRemision} ha sido entregada`,
@@ -861,7 +889,7 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 log("Error al procesar actualización:", error);
             }
         }
-        
+
         return null;
     });
 
@@ -1088,7 +1116,7 @@ exports.onImportacionUpdate = functions.firestore
                 if (abonosDespues.length > abonosAntes.length) {
                     const nuevoAbono = abonosDespues[abonosDespues.length - 1];
                     log(`Nuevo abono de ${nuevoAbono.valor} para factura ${factura.numeroFactura} de ${tipoGasto}`);
-                    
+
                     const nuevoGastoDoc = {
                         fecha: nuevoAbono.fecha,
                         proveedorNombre: `${factura.proveedorNombre} (Imp. ${afterData.numeroImportacion})`,
@@ -1104,7 +1132,7 @@ exports.onImportacionUpdate = functions.firestore
                         gastoTipo: tipoGasto,
                         facturaId: factura.id
                     };
-                    
+
                     // Crear el documento en la colección de gastos
                     admin.firestore().collection("gastos").add(nuevoGastoDoc)
                         .then(() => log("Gasto por abono registrado con éxito."))
@@ -1141,7 +1169,7 @@ exports.setMyUserAsAdmin = functions.https.onRequest(async (req, res) => {
         const decodedToken = await admin.auth().verifyIdToken(idToken);
         const userId = decodedToken.uid;
         await admin.auth().setCustomUserClaims(userId, { admin: true });
-        
+
         console.log(`Permiso de 'admin' OTORGADO al usuario ${userId}.`);
         return res.status(200).send({ data: { message: `¡Éxito! El usuario ${userId} ahora tiene permisos de admin.` } });
 
@@ -1152,10 +1180,10 @@ exports.setMyUserAsAdmin = functions.https.onRequest(async (req, res) => {
 });
 
 
-    /**
- * NUEVA FUNCIÓN: Cambia el estado de un usuario (active, inactive).
- * Invocable solo por administradores.
- */
+/**
+* NUEVA FUNCIÓN: Cambia el estado de un usuario (active, inactive).
+* Invocable solo por administradores.
+*/
 exports.setUserStatus = functions.https.onCall(async (data, context) => {
     // 1. Verificar que el que llama es un administrador
     if (!context.auth || !context.auth.token.admin) {
@@ -1225,11 +1253,11 @@ exports.onUserRoleChange = functions.firestore
     });
 
 
-    /**
- * --- FUNCIÓN DE DEPURACIÓN ---
- * Permite a un usuario autenticado verificar los permisos (custom claims)
- * que están presentes en su token de sesión actual.
- */
+/**
+* --- FUNCIÓN DE DEPURACIÓN ---
+* Permite a un usuario autenticado verificar los permisos (custom claims)
+* que están presentes en su token de sesión actual.
+*/
 exports.checkMyClaims = functions.https.onRequest((req, res) => {
     // Usa el middleware de CORS para manejar los permisos del navegador.
     cors(req, res, async () => {
@@ -1243,10 +1271,10 @@ exports.checkMyClaims = functions.https.onRequest((req, res) => {
 
             // Verificar el token usando el Admin SDK
             const decodedToken = await admin.auth().verifyIdToken(idToken);
-            
+
             console.log(`Revisando claims para el UID: ${decodedToken.uid}`);
             console.log("Claims completos en el token del servidor:", decodedToken);
-            
+
             // Devolver los claims al cliente
             return res.status(200).send({ data: { claims: decodedToken } });
 
@@ -1295,4 +1323,89 @@ exports.setInitialBalances = functions.https.onCall(async (data, context) => {
             "No se pudo guardar la información en la base de datos."
         );
     }
+});
+
+/**
+ * --- NUEVA FUNCIÓN DE MANTENIMIENTO ---
+ * Recorre todas las remisiones y regenera sus URLs de PDF para que sean permanentes.
+ * Se activa manualmente desde la aplicación.
+ */
+exports.regenerateAllRemisionUrls = functions.https.onCall(async (data, context) => {
+    if (!context.auth || !context.auth.token.admin) {
+        throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden ejecutar esta operación.");
+    }
+
+    const log = functions.logger;
+    log.info("Iniciando la regeneración de todas las URLs de remisiones...");
+
+    const remisionesRef = db.collection("remisiones");
+    const snapshot = await remisionesRef.get();
+
+    if (snapshot.empty) {
+        log.info("No se encontraron remisiones para procesar.");
+        return { success: true, message: "No hay remisiones para actualizar." };
+    }
+
+    const bucket = admin.storage().bucket(BUCKET_NAME);
+    const expiresDate = '03-09-2491';
+    let updatedCount = 0;
+    const batchSize = 100;
+    let batch = db.batch();
+
+    for (let i = 0; i < snapshot.docs.length; i++) {
+        const doc = snapshot.docs[i];
+        const remision = doc.data();
+        let updates = {};
+
+        // --- LÓGICA DE REPARACIÓN MEJORADA ---
+        const adminPath = remision.pdfPath || `remisiones/${remision.numeroRemision}.pdf`;
+        const plantaPath = remision.pdfPlantaPath || `remisiones/planta-${remision.numeroRemision}.pdf`;
+
+        const fileAdmin = bucket.file(adminPath);
+        const filePlanta = bucket.file(plantaPath);
+
+        try {
+            const [existsAdmin] = await fileAdmin.exists();
+            if (existsAdmin) {
+                const [url] = await fileAdmin.getSignedUrl({ action: 'read', expires: expiresDate });
+                updates.pdfUrl = url;
+            } else {
+                log.warn(`El archivo no existe en Storage: ${adminPath}`);
+            }
+        } catch (error) {
+            log.error(`No se pudo obtener la URL para ${adminPath}:`, error.message);
+        }
+
+        try {
+            const [existsPlanta] = await filePlanta.exists();
+            if (existsPlanta) {
+                const [urlPlanta] = await filePlanta.getSignedUrl({ action: 'read', expires: expiresDate });
+                updates.pdfPlantaUrl = urlPlanta;
+            } else {
+                log.warn(`El archivo no existe en Storage: ${plantaPath}`);
+            }
+        } catch (error) {
+            log.error(`No se pudo obtener la URL para ${plantaPath}:`, error.message);
+        }
+        // --- FIN DE LA LÓGICA DE REPARACIÓN ---
+
+        if (Object.keys(updates).length > 0) {
+            batch.update(doc.ref, updates);
+            updatedCount++;
+        }
+
+        if ((i + 1) % batchSize === 0) {
+            await batch.commit();
+            batch = db.batch();
+            log.info(`Lote de ${batchSize} remisiones procesado...`);
+        }
+    }
+
+    if (updatedCount > 0 && updatedCount % batchSize !== 0) {
+        await batch.commit();
+    }
+
+    const resultMessage = `Proceso completado. Se actualizaron ${updatedCount} remisiones.`;
+    log.info(resultMessage);
+    return { success: true, message: resultMessage };
 });
