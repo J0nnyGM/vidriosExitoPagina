@@ -318,7 +318,63 @@ function loadViewTemplates() {
     document.getElementById('view-facturacion').innerHTML = `<div class="bg-white p-6 rounded-xl shadow-md max-w-6xl mx-auto"><h2 class="text-2xl font-semibold mb-4">Gestión de Facturación</h2><div class="border-b border-gray-200 mb-6"><nav id="facturacion-nav" class="-mb-px flex space-x-6"><button id="tab-pendientes" class="dashboard-tab-btn active py-3 px-1 font-semibold">Pendientes</button><button id="tab-realizadas" class="dashboard-tab-btn py-3 px-1 font-semibold">Realizadas</button></nav></div><div id="view-pendientes"><h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Pendientes de Facturar</h3><div id="facturacion-pendientes-list" class="space-y-3"></div></div><div id="view-realizadas" class="hidden"><h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Facturadas</h3><div id="facturacion-realizadas-list" class="space-y-3"></div></div></div>`;
     document.getElementById('view-clientes').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Cliente</h2><form id="add-cliente-form" class="space-y-4"><input type="text" id="nuevo-cliente-nombre" placeholder="Nombre Completo" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="email" id="nuevo-cliente-email" placeholder="Correo" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="tel" id="nuevo-cliente-telefono1" placeholder="Teléfono 1" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="tel" id="nuevo-cliente-telefono2" placeholder="Teléfono 2 (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg"><input type="text" id="nuevo-cliente-nit" placeholder="NIT (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg"><button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Clientes</h2><input type="search" id="search-clientes" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="clientes-list" class="space-y-3"></div></div></div>`;
     document.getElementById('view-proveedores').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Proveedor</h2><form id="add-proveedor-form" class="space-y-4"><input type="text" id="nuevo-proveedor-nombre" placeholder="Nombre del Proveedor" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="text" id="nuevo-proveedor-contacto" placeholder="Nombre de Contacto" class="w-full p-3 border border-gray-300 rounded-lg"><input type="tel" id="nuevo-proveedor-telefono" placeholder="Teléfono" class="w-full p-3 border border-gray-300 rounded-lg"><input type="email" id="nuevo-proveedor-email" placeholder="Correo" class="w-full p-3 border border-gray-300 rounded-lg"><button type="submit" class="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Proveedores</h2><input type="search" id="search-proveedores" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="proveedores-list" class="space-y-3"></div></div></div>`;
-    document.getElementById('view-gastos').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Nuevo Gasto</h2><form id="add-gasto-form" class="space-y-4"><div><label for="gasto-fecha">Fecha</label><input type="date" id="gasto-fecha" class="w-full p-3 border border-gray-300 rounded-lg mt-1" required></div><div class="relative"><label for="proveedor-search-input">Proveedor</label><input type="text" id="proveedor-search-input" autocomplete="off" placeholder="Buscar..." class="w-full p-3 border border-gray-300 rounded-lg mt-1" required><input type="hidden" id="proveedor-id-hidden" name="proveedorId"><div id="proveedor-search-results" class="search-results hidden"></div></div><input type="text" id="gasto-factura" placeholder="N° de Factura (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg"><input type="text" id="gasto-valor-total" inputmode="numeric" placeholder="Valor Total" class="w-full p-3 border border-gray-300 rounded-lg" required><label class="flex items-center space-x-2"><input type="checkbox" id="gasto-iva" class="h-4 w-4 rounded border-gray-300"><span>IVA del 19% incluido</span></label><div><label for="gasto-fuente">Fuente del Pago</label><select id="gasto-fuente" class="w-full p-3 border border-gray-300 rounded-lg mt-1 bg-white" required><option>Efectivo</option><option>Nequi</option><option>Davivienda</option><option>Bancolombia</option><option>Consignación</option></select></div><button type="submit" class="w-full bg-orange-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-orange-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4"><h2 class="text-xl font-semibold flex-shrink-0">Historial de Gastos</h2><div class="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end"><select id="filter-gastos-month" class="p-2 border rounded-lg bg-white"></select><select id="filter-gastos-year" class="p-2 border rounded-lg bg-white"></select><input type="search" id="search-gastos" placeholder="Buscar..." class="p-2 border rounded-lg flex-grow sm:flex-grow-0 sm:w-40"></div></div><div id="gastos-list" class="space-y-3"></div></div></div>`;
+    document.getElementById('view-gastos').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+    <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
+        <h2 class="text-xl font-semibold mb-4">Nuevo Gasto</h2>
+        <form id="add-gasto-form" class="space-y-4">
+            <div>
+                <label for="gasto-fecha">Fecha</label>
+                <input type="date" id="gasto-fecha" class="w-full p-3 border border-gray-300 rounded-lg mt-1" required>
+            </div>
+            <div class="relative">
+                <label for="proveedor-search-input">Proveedor</label>
+                <input type="text" id="proveedor-search-input" autocomplete="off" placeholder="Buscar..." class="w-full p-3 border border-gray-300 rounded-lg mt-1" required>
+                <input type="hidden" id="proveedor-id-hidden" name="proveedorId">
+                <div id="proveedor-search-results" class="search-results hidden"></div>
+            </div>
+            <input type="text" id="gasto-factura" placeholder="N° de Factura (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg">
+            <input type="text" id="gasto-valor-total" inputmode="numeric" placeholder="Valor Total" class="w-full p-3 border border-gray-300 rounded-lg" required>
+            <label class="flex items-center space-x-2">
+                <input type="checkbox" id="gasto-iva" class="h-4 w-4 rounded border-gray-300">
+                <span>IVA del 19% incluido</span>
+            </label>
+            <div>
+                <label for="gasto-fuente">Fuente del Pago</label>
+                <select id="gasto-fuente" class="w-full p-3 border border-gray-300 rounded-lg mt-1 bg-white" required>
+                    <option>Efectivo</option>
+                    <option>Nequi</option>
+                    <option>Davivienda</option>
+                    <option>Bancolombia</option>
+                    <option>Consignación</option>
+                </select>
+            </div>
+            <button type="submit" class="w-full bg-orange-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-orange-700">Registrar</button>
+        </form>
+    </div>
+    <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
+        <div class="flex justify-between items-center pb-4 border-b">
+            <h2 class="text-xl font-semibold">Historial de Gastos</h2>
+            <button id="export-gastos-btn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 flex-shrink-0">
+                Exportar a Excel
+            </button>
+        </div>
+        <div class="flex flex-col sm:flex-row gap-4 my-4 p-4 bg-gray-50 rounded-lg">
+            <div class="flex-1">
+                <label for="filter-gastos-month" class="text-sm font-medium text-gray-700">Mes</label>
+                <select id="filter-gastos-month" class="p-2 border rounded-lg bg-white w-full mt-1"></select>
+            </div>
+            <div class="flex-1">
+                <label for="filter-gastos-year" class="text-sm font-medium text-gray-700">Año</label>
+                <select id="filter-gastos-year" class="p-2 border rounded-lg bg-white w-full mt-1"></select>
+            </div>
+            <div class="flex-1">
+                <label for="search-gastos" class="text-sm font-medium text-gray-700">Buscar</label>
+                <input type="search" id="search-gastos" placeholder="Por proveedor o factura..." class="p-2 border rounded-lg w-full mt-1">
+            </div>
+        </div>
+        <div id="gastos-list" class="space-y-3"></div>
+    </div>
+</div>`;
     document.getElementById('view-empleados').innerHTML = `<div class="bg-white p-6 rounded-xl shadow-md max-w-4xl mx-auto"><h2 class="text-xl font-semibold mb-4">Gestión de Empleados</h2><div id="empleados-list" class="space-y-3"></div></div>`;
 }
 
@@ -326,7 +382,7 @@ function updateUIVisibility(userData) {
     if (!userData) return;
 
     const isAdmin = userData.role?.toLowerCase() === 'admin';
-    
+
     // Muestra/oculta los módulos principales según los permisos
     ALL_MODULES.forEach(module => {
         const tab = document.getElementById(`tab-${module}`);
@@ -6648,3 +6704,90 @@ document.getElementById('regenerate-urls-btn').addEventListener('click', async (
         showModalMessage(`Error: ${error.message}`);
     }
 });
+
+// --- NUEVAS FUNCIONES PARA EXPORTAR GASTOS ---
+
+
+/**
+ * Muestra el modal para seleccionar el rango de fechas para exportar gastos.
+ */
+function showExportGastosModal() {
+    const modal = document.getElementById('export-gastos-modal');
+    if (modal) {
+        const endDateInput = document.getElementById('export-end-date');
+        if (endDateInput) {
+            endDateInput.valueAsDate = new Date();
+        }
+        modal.classList.remove('hidden');
+    }
+}
+
+/**
+ * Maneja el envío del formulario de exportación, llama a la Cloud Function
+ * y descarga el archivo Excel generado.
+ */
+async function handleExportGastos(e) {
+    e.preventDefault();
+    const startDate = document.getElementById('export-start-date').value;
+    const endDate = document.getElementById('export-end-date').value;
+
+    if (!startDate || !endDate) {
+        showModalMessage("Por favor, selecciona ambas fechas.");
+        return;
+    }
+
+    showModalMessage("Generando reporte de gastos, por favor espera...", true);
+
+    try {
+        const exportFunction = httpsCallable(functions, 'exportGastosToExcel');
+        const result = await exportFunction({ startDate, endDate });
+
+        if (result.data.success) {
+            const byteCharacters = atob(result.data.fileContent);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `Reporte_Gastos_${startDate}_a_${endDate}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            hideModal();
+            showTemporaryMessage("¡Reporte generado con éxito!", "success");
+        } else {
+            throw new Error(result.data.message || "No se encontraron datos para exportar.");
+        }
+    } catch (error) {
+        console.error("Error al exportar gastos:", error);
+        showModalMessage(`Error al generar el reporte: ${error.message}`);
+    }
+}
+
+// Se añade un solo event listener al documento que maneja los eventos
+// de los elementos que se crean dinámicamente.
+document.addEventListener('click', function (event) {
+    // 1. Manejar el clic en el botón de Exportar Gastos
+    if (event.target && event.target.id === 'export-gastos-btn') {
+        showExportGastosModal();
+    }
+
+    // 2. Manejar el clic en los botones para cerrar el modal
+    const modal = event.target.closest('.modal');
+    if (event.target && event.target.classList.contains('close-modal-btn') && modal) {
+        modal.classList.add('hidden');
+    }
+});
+
+// El listener para el formulario también usa delegación de eventos.
+document.addEventListener('submit', function (event) {
+    if (event.target && event.target.id === 'export-gastos-form') {
+        handleExportGastos(event);
+    }
+});
+

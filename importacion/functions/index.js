@@ -1409,3 +1409,73 @@ exports.regenerateAllRemisionUrls = functions.https.onCall(async (data, context)
     log.info(resultMessage);
     return { success: true, message: resultMessage };
 });
+
+const ExcelJS = require('exceljs');
+
+/**
+ * --- NUEVA FUNCIÓN ---
+ * Exporta los gastos dentro de un rango de fechas a un archivo de Excel.
+ */
+exports.exportGastosToExcel = functions.https.onCall(async (data, context) => {
+    if (!context.auth || !context.auth.token.admin) {
+        throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden exportar datos.");
+    }
+
+    const { startDate, endDate } = data;
+    if (!startDate || !endDate) {
+        throw new functions.https.HttpsError("invalid-argument", "Se requieren fechas de inicio y fin.");
+    }
+
+    try {
+        const gastosRef = db.collection("gastos");
+        const snapshot = await gastosRef
+            .where("fecha", ">=", startDate)
+            .where("fecha", "<=", endDate)
+            .orderBy("fecha", "desc")
+            .get();
+
+        if (snapshot.empty) {
+            return { success: false, message: "No se encontraron gastos en el rango de fechas seleccionado." };
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = 'Vidrios Exito App';
+        workbook.created = new Date();
+        const sheet = workbook.addWorksheet('Gastos');
+
+        // --- INICIO DE LA CORRECCIÓN ---
+        // Se definen únicamente las 4 columnas solicitadas.
+        sheet.columns = [
+            { header: 'Fecha', key: 'fecha', width: 15 },
+            { header: 'Fuente de Pago', key: 'fuentePago', width: 20 },
+            { header: 'Valor Total', key: 'valorTotal', width: 20, style: { numFmt: '"$"#,##0' } },
+            { header: 'Proveedor', key: 'proveedorNombre', width: 35 }
+        ];
+        // --- FIN DE LA CORRECCIÓN ---
+        
+        // Estilo para el encabezado
+        sheet.getRow(1).font = { bold: true };
+
+        // Añadir las filas
+        snapshot.forEach(doc => {
+            const gasto = doc.data();
+            sheet.addRow({
+                fecha: gasto.fecha,
+                fuentePago: gasto.fuentePago,
+                valorTotal: gasto.valorTotal,
+                proveedorNombre: gasto.proveedorNombre || 'N/A'
+            });
+        });
+
+        // Generar el archivo en memoria y convertir a base64
+        const buffer = await workbook.xlsx.writeBuffer();
+        const fileContent = buffer.toString('base64');
+
+        return { success: true, fileContent };
+
+    } catch (error) {
+        functions.logger.error("Error al generar el reporte de gastos:", error);
+        throw new functions.https.HttpsError("internal", "No se pudo generar el archivo de Excel.");
+    }
+});
+
