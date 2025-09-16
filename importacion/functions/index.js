@@ -1415,73 +1415,67 @@ exports.regenerateAllRemisionUrls = functions.https.onCall(async (data, context)
 
 const ExcelJS = require('exceljs');
 
+
 /**
- * --- NUEVA FUNCIÓN ---
- * Exporta los gastos dentro de un rango de fechas a un archivo de Excel.
+ * --- VERSIÓN CORREGIDA ---
+ * Exporta los gastos a un archivo Excel.
+ * Ahora permite el acceso a los roles 'admin' y 'contabilidad'.
  */
 exports.exportGastosToExcel = functions.https.onCall(async (data, context) => {
-    if (!context.auth || !context.auth.token.admin) {
-        throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden exportar datos.");
+    // --- INICIO DE LA CORRECCIÓN DE PERMISOS ---
+    const userRole = context.auth.token.role;
+    const allowedRoles = ['admin', 'contabilidad'];
+
+    if (!context.auth || !allowedRoles.includes(userRole)) {
+        throw new functions.https.HttpsError(
+            'permission-denied',
+            'Solo los administradores o contabilidad pueden exportar datos.'
+        );
     }
+    // --- FIN DE LA CORRECCIÓN DE PERMISOS ---
 
     const { startDate, endDate } = data;
     if (!startDate || !endDate) {
-        throw new functions.https.HttpsError("invalid-argument", "Se requieren fechas de inicio y fin.");
+        throw new functions.https.HttpsError('invalid-argument', 'Se requieren fechas de inicio y fin.');
     }
 
     try {
-        const gastosRef = db.collection("gastos");
-        const snapshot = await gastosRef
-            .where("fecha", ">=", startDate)
-            .where("fecha", "<=", endDate)
-            .orderBy("fecha", "desc")
-            .get();
+        const gastosRef = db.collection('gastos');
+        const snapshot = await gastosRef.where('fecha', '>=', startDate).where('fecha', '<=', endDate).get();
 
         if (snapshot.empty) {
-            return { success: false, message: "No se encontraron gastos en el rango de fechas seleccionado." };
+            return { success: false, message: 'No se encontraron gastos en el rango de fechas seleccionado.' };
         }
 
+        const ExcelJS = require('exceljs');
         const workbook = new ExcelJS.Workbook();
-        workbook.creator = 'Vidrios Exito App';
-        workbook.created = new Date();
-        const sheet = workbook.addWorksheet('Gastos');
+        const worksheet = workbook.addWorksheet('Gastos');
 
-        // --- INICIO DE LA CORRECCIÓN ---
-        // Se definen únicamente las 4 columnas solicitadas.
-        sheet.columns = [
+        // Definir las columnas
+        worksheet.columns = [
             { header: 'Fecha', key: 'fecha', width: 15 },
+            { header: 'Proveedor', key: 'proveedorNombre', width: 30 },
+            { header: 'N° Factura', key: 'numeroFactura', width: 20 },
             { header: 'Fuente de Pago', key: 'fuentePago', width: 20 },
-            { header: 'Valor Total', key: 'valorTotal', width: 20, style: { numFmt: '"$"#,##0' } },
-            { header: 'Proveedor', key: 'proveedorNombre', width: 35 }
+            { header: 'Valor Total', key: 'valorTotal', width: 20, style: { numFmt: '"$"#,##0' } }
         ];
-        // --- FIN DE LA CORRECCIÓN ---
-        
-        // Estilo para el encabezado
-        sheet.getRow(1).font = { bold: true };
 
         // Añadir las filas
         snapshot.forEach(doc => {
-            const gasto = doc.data();
-            sheet.addRow({
-                fecha: gasto.fecha,
-                fuentePago: gasto.fuentePago,
-                valorTotal: gasto.valorTotal,
-                proveedorNombre: gasto.proveedorNombre || 'N/A'
-            });
+            worksheet.addRow(doc.data());
         });
 
-        // Generar el archivo en memoria y convertir a base64
+        // Generar el archivo en memoria
         const buffer = await workbook.xlsx.writeBuffer();
-        const fileContent = buffer.toString('base64');
+        const fileContent = Buffer.from(buffer).toString('base64');
 
-        return { success: true, fileContent };
+        return { success: true, fileContent: fileContent };
 
     } catch (error) {
-        functions.logger.error("Error al generar el reporte de gastos:", error);
-        throw new functions.https.HttpsError("internal", "No se pudo generar el archivo de Excel.");
+        console.error("Error al generar el reporte de gastos:", error);
+        throw new functions.https.HttpsError('internal', 'No se pudo generar el archivo Excel.');
     }
 });
-
 /**
  * Elimina una factura de gasto de nacionalización de una importación.
  * Verifica que la factura no tenga abonos antes de borrarla.

@@ -443,6 +443,26 @@ function updateUIVisibility(userData) {
         remisionListContainer.classList.toggle('lg:col-span-3', isPlanta);
         remisionListContainer.classList.toggle('lg:col-span-2', !isPlanta);
     }
+
+        // --- INICIO DE LA NUEVA LÓGICA PARA GASTOS ---
+    const isContabilidad = userData.role?.toLowerCase() === 'contabilidad';
+    const gastosView = document.getElementById('view-gastos');
+
+    if (gastosView && isContabilidad) {
+        // Ocultar el formulario de "Nuevo Gasto"
+        const formContainer = gastosView.querySelector('.lg\\:col-span-1');
+        if (formContainer) {
+            formContainer.style.display = 'none';
+        }
+
+        // Hacer que la lista de "Historial de Gastos" ocupe todo el ancho
+        const listContainer = gastosView.querySelector('.lg\\:col-span-2');
+        if (listContainer) {
+            listContainer.classList.remove('lg:col-span-2');
+            listContainer.classList.add('lg:col-span-3'); // Ocupa las 3 columnas del grid
+        }
+    }
+    // --- FIN DE LA NUEVA LÓGICA PARA GASTOS ---
 }
 
 function loadInitialData() {
