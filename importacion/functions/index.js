@@ -917,10 +917,6 @@ exports.applyDiscount = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError("invalid-argument", "Faltan datos (remisionId, discountPercentage).");
     }
 
-    if (discountPercentage < 0 || discountPercentage > 5.0001) { // Allow for small floating point inaccuracies
-        throw new functions.https.HttpsError("out-of-range", "El descuento debe estar entre 0 y 5%.");
-    }
-
     const remisionRef = admin.firestore().collection("remisiones").doc(remisionId);
 
     try {
@@ -1217,9 +1213,10 @@ exports.setUserStatus = functions.https.onCall(async (data, context) => {
     }
 });
 /**
- * NUEVA FUNCIÓN: Se activa cuando se escribe en un documento de usuario.
- * Sincroniza el rol de Firestore con un "custom claim" en Firebase Auth.
- * Esto permite que otras Cloud Functions verifiquen de forma segura si un usuario es admin.
+ * --- VERSIÓN MEJORADA ---
+ * Se activa cuando se escribe en un documento de usuario.
+ * Sincroniza el rol de Firestore con un "custom claim" en Firebase Auth,
+ * guardando el rol exacto para mayor flexibilidad.
  */
 exports.onUserRoleChange = functions.firestore
     .document('users/{userId}')
@@ -1237,15 +1234,21 @@ exports.onUserRoleChange = functions.firestore
         }
 
         try {
-            if (newRole === 'admin') {
-                // Si el nuevo rol es admin, establecer la estampa de administrador.
-                await admin.auth().setCustomUserClaims(userId, { admin: true });
-                console.log(`Permiso de 'admin' OTORGADO al usuario ${userId}.`);
-            } else if (oldRole === 'admin' && newRole !== 'admin') {
-                // Si el usuario dejó de ser admin, remover la estampa.
-                await admin.auth().setCustomUserClaims(userId, { admin: false });
-                console.log(`Permiso de 'admin' REVOCADO al usuario ${userId}.`);
+            // --- INICIO DE LA MODIFICACIÓN ---
+            // Definimos los roles válidos para el sistema
+            const validRoles = ['admin', 'planta', 'contabilidad'];
+
+            if (newRole && validRoles.includes(newRole)) {
+                // Si el nuevo rol es válido, lo estampamos en los permisos del usuario.
+                // Esto es más potente que solo tener "admin: true".
+                await admin.auth().setCustomUserClaims(userId, { role: newRole });
+                console.log(`Permiso de '${newRole}' asignado al usuario ${userId}.`);
+            } else {
+                // Si el rol no es válido o es nulo, le quitamos cualquier permiso especial.
+                await admin.auth().setCustomUserClaims(userId, null);
+                console.log(`Permisos personalizados eliminados para el usuario ${userId}.`);
             }
+            // --- FIN DE LA MODIFICACIÓN ---
         } catch (error) {
             console.error(`Error al establecer permisos para ${userId}:`, error);
         }
@@ -1476,6 +1479,79 @@ exports.exportGastosToExcel = functions.https.onCall(async (data, context) => {
     } catch (error) {
         functions.logger.error("Error al generar el reporte de gastos:", error);
         throw new functions.https.HttpsError("internal", "No se pudo generar el archivo de Excel.");
+    }
+});
+
+/**
+ * Elimina una factura de gasto de nacionalización de una importación.
+ * Verifica que la factura no tenga abonos antes de borrarla.
+ * Solo puede ser llamada por un administrador.
+ */
+exports.deleteGastoNacionalizacion = functions.region("us-central1").https.onCall(async (data, context) => {
+    if (!context.auth || context.auth.token.role !== 'admin') {
+        throw new functions.https.HttpsError('permission-denied', 'Solo los administradores pueden realizar esta acción.');
+    }
+
+    const { importacionId, gastoTipo, facturaId } = data;
+    if (!importacionId || !gastoTipo || !facturaId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Faltan datos para eliminar el gasto.');
+    }
+
+    const importacionRef = db.collection("importaciones").doc(importacionId);
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const importacionDoc = await transaction.get(importacionRef);
+
+            // --- INICIO DE LA CORRECCIÓN ---
+            // Se usa '.exists' como una propiedad, sin paréntesis ().
+            if (!importacionDoc.exists) {
+            // --- FIN DE LA CORRECCIÓN ---
+                throw new Error("La importación no fue encontrada.");
+            }
+
+            const importacionData = importacionDoc.data();
+            const gastosNacionalizacion = importacionData.gastosNacionalizacion || {};
+            const gastoActual = gastosNacionalizacion[gastoTipo];
+
+            if (!gastoActual || !gastoActual.facturas) {
+                throw new Error("El grupo de gasto no fue encontrado.");
+            }
+
+            const facturaIndex = gastoActual.facturas.findIndex(f => f.id === facturaId);
+            if (facturaIndex === -1) {
+                console.log(`Factura ${facturaId} no encontrada, probablemente ya fue eliminada.`);
+                return;
+            }
+
+            const facturaAEliminar = gastoActual.facturas[facturaIndex];
+            if (facturaAEliminar.abonos && facturaAEliminar.abonos.length > 0) {
+                throw new functions.https.HttpsError('permission-denied', 'No se puede eliminar un gasto que ya tiene abonos registrados.');
+            }
+
+            gastoActual.facturas.splice(facturaIndex, 1);
+
+            let nuevoTotalNacionalizacionCOP = 0;
+            Object.values(gastosNacionalizacion).forEach(gasto => {
+                (gasto.facturas || []).forEach(factura => {
+                    nuevoTotalNacionalizacionCOP += factura.valorTotal || 0;
+                });
+            });
+
+            transaction.update(importacionRef, {
+                gastosNacionalizacion,
+                totalNacionalizacionCOP: nuevoTotalNacionalizacionCOP
+            });
+        });
+
+        return { success: true, message: "Gasto eliminado con éxito." };
+
+    } catch (error) {
+        console.error("Error al eliminar gasto:", error);
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
+        throw new functions.https.HttpsError('internal', 'Ocurrió un error al intentar eliminar el gasto.');
     }
 });
 

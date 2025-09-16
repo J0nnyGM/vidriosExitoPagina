@@ -2530,9 +2530,25 @@ function setupModalEventListeners(modalBody, importacion) {
             document.getElementById(`facturas-container-${gastoTipo}`).appendChild(createGastoFacturaElement(gastoTipo));
         }
         else if (target.closest('.remove-factura-btn')) {
-            if (confirm('¿Estás seguro de que quieres eliminar esta factura?')) {
-                target.closest('.factura-card').remove();
-                calcularTotalesImportacionCompleto();
+            const facturaCard = target.closest('.factura-card');
+            const gastoTipo = facturaCard.dataset.gastoTipo;
+            const facturaId = facturaCard.dataset.facturaId;
+
+            if (confirm('¿Estás seguro de que quieres eliminar esta factura de forma permanente?')) {
+                showModalMessage("Eliminando gasto...", true);
+
+                const deleteGasto = httpsCallable(functions, 'deleteGastoNacionalizacion');
+                deleteGasto({ importacionId: importacion.id, gastoTipo, facturaId })
+                    .then(() => {
+                        showTemporaryMessage("Gasto eliminado con éxito.", "success");
+                        // La vista se actualizará sola gracias a onSnapshot, pero cerramos el modal de carga.
+                        hideModal();
+                    })
+                    .catch((error) => {
+                        console.error("Error al eliminar:", error);
+                        // Muestra el error específico que viene del backend (ej: "No se puede eliminar...")
+                        showModalMessage(`Error: ${error.message}`);
+                    });
             }
         }
         else if (target.closest('.save-factura-btn')) {
@@ -4269,8 +4285,17 @@ async function showDashboardModal() {
                     <div class="bg-gray-100 p-4 rounded-lg"><div class="text-sm font-semibold text-gray-800">BANCOLOMBIA</div><div id="summary-bancolombia" class="text-xl font-bold"></div></div>
                     <div class="bg-gray-100 p-4 rounded-lg"><div class="text-sm font-semibold text-gray-800">CONSIGNACIÓN</div><div id="summary-consignacion" class="text-xl font-bold"></div></div>
                 </div>
-                <div class="bg-gray-100 p-4 rounded-lg mt-4"><div class="text-sm font-semibold text-gray-800">CARTERA TOTAL</div><div id="summary-cartera-total" class="text-xl font-bold"></div></div>
-            </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div class="bg-gray-100 p-4 rounded-lg">
+                        <div class="text-sm font-semibold text-gray-800">CARTERA TOTAL</div>
+                        <div id="summary-cartera-total" class="text-xl font-bold"></div>
+                    </div>
+                    <div class="bg-teal-100 p-4 rounded-lg border-l-4 border-teal-500">
+                        <div class="text-sm font-semibold text-teal-800">VENTA DEL DÍA</div>
+                        <div id="summary-daily-sales" class="text-xl font-bold"></div>
+                    </div>
+                </div>
+                </div>
             <div>
                 <h3 class="font-semibold mb-2">Utilidad/Pérdida (Últimos 6 Meses)</h3>
                 <div class="bg-gray-50 p-4 rounded-lg"><canvas id="profitLossChart"></canvas></div>
@@ -4367,9 +4392,9 @@ async function showDashboardModal() {
 }
 
 /**
- * --- VERSIÓN CORREGIDA Y DEFINITIVA ---
- * Calcula y muestra el resumen. Ahora es más robusto y carga los saldos
- * iniciales desde la base de datos si no están disponibles en la memoria.
+ * --- VERSIÓN CORREGIDA FINAL CON CÁLCULO DE REMISIONES DIARIAS ---
+ * Calcula y muestra el resumen financiero. "Ventas del Día" ahora suma
+ * el valor total de las remisiones creadas en el día.
  */
 async function updateDashboard(year, month) {
     // Cargar saldos iniciales si la variable global está vacía.
@@ -4415,6 +4440,21 @@ async function updateDashboard(year, month) {
     document.getElementById('summary-davivienda').textContent = formatCurrency(accountBalances.Davivienda);
     document.getElementById('summary-bancolombia').textContent = formatCurrency(accountBalances.Bancolombia);
     document.getElementById('summary-consignacion').textContent = formatCurrency(accountBalances.Consignacion);
+
+    // --- INICIO DE LA NUEVA LÓGICA ---
+    const now = new Date();
+    const localYear = now.getFullYear();
+    const localMonth = (now.getMonth() + 1).toString().padStart(2, '0');
+    const localDay = now.getDate().toString().padStart(2, '0');
+    const today = `${localYear}-${localMonth}-${localDay}`;
+
+    // Suma el 'valorTotal' de las remisiones creadas hoy que no estén anuladas.
+    const salesToday = allRemisiones
+        .filter(r => r.fechaRecibido === today && r.estado !== 'Anulada')
+        .reduce((sum, r) => sum + r.valorTotal, 0);
+
+    document.getElementById('summary-daily-sales').textContent = formatCurrency(salesToday);
+    // --- FIN DE LA NUEVA LÓGICA ---
 
     const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
     const labels = [];
@@ -4961,12 +5001,11 @@ function showAdminEditUserModal(user) {
                     <div><label class="block text-sm font-medium">Fecha de Nacimiento</label><input type="date" id="admin-edit-dob" class="w-full p-2 border rounded-lg mt-1" value="${user.dob || ''}"></div>
                     <div>
                         <label class="block text-sm font-medium">Rol</label>
-                        <select id="admin-edit-role-select" class="w-full p-2 border rounded-lg mt-1 bg-white">
-                            <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Administrador</option>
-                            <option value="facturador" ${user.role === 'facturador' ? 'selected' : ''}>Facturador</option>
-                            <option value="planta" ${user.role === 'planta' ? 'selected' : ''}>Planta</option>
-                            <option value="employee" ${user.role === 'employee' ? 'selected' : ''}>Empleado</option>
-                        </select>
+                    <select id="admin-edit-role-select" class="w-full p-2 border rounded-lg mt-1 bg-white">
+                        <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Administrador</option>
+                        <option value="planta" ${user.role === 'planta' ? 'selected' : ''}>Planta</option>
+                        <option value="contabilidad" ${user.role === 'contabilidad' ? 'selected' : ''}>Contabilidad</option>
+                    </select>
                     </div>
                     <div id="admin-edit-permissions-container">
                         <label class="block text-sm font-medium mb-2">Permisos de Módulos</label>
@@ -5838,26 +5877,26 @@ async function downloadAllDocsAsZip(empleado) {
 
 function showDiscountModal(remision) {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
-    const maxDiscount = remision.subtotal * 0.05;
+    // ELIMINAMOS la siguiente línea que calculaba el 5%
+    // const maxDiscount = remision.subtotal * 0.05;
 
     modalContentWrapper.innerHTML = `
-            <div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-auto text-left">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold">Aplicar Descuento</h2>
-                    <button id="close-discount-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
-                </div>
-                <p class="text-sm text-gray-600 mb-2">Remisión N°: <span class="font-bold">${remision.numeroRemision}</span></p>
-                <p class="text-sm text-gray-600 mb-4">Subtotal: <span class="font-bold">${formatCurrency(remision.subtotal)}</span></p>
-                <form id="discount-form" class="space-y-4">
-                    <div>
-                        <label for="discount-amount" class="block text-sm font-medium">Valor del Descuento (COP)</label>
-                        <input type="text" id="discount-amount" class="w-full p-2 border rounded-lg mt-1" inputmode="numeric" required placeholder="Ej: 10000">
-                        <p class="text-xs text-gray-500 mt-1">Máximo descuento permitido: <span class="font-semibold">${formatCurrency(maxDiscount)}</span> (5%)</p>
-                    </div>
-                    <button type="submit" class="w-full bg-cyan-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-cyan-700">Aplicar Descuento</button>
-                </form>
+        <div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-auto text-left">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Aplicar Descuento</h2>
+                <button id="close-discount-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
             </div>
-        `;
+            <p class="text-sm text-gray-600 mb-2">Remisión N°: <span class="font-bold">${remision.numeroRemision}</span></p>
+            <p class="text-sm text-gray-600 mb-4">Subtotal: <span class="font-bold">${formatCurrency(remision.subtotal)}</span></p>
+            <form id="discount-form" class="space-y-4">
+                <div>
+                    <label for="discount-amount" class="block text-sm font-medium">Valor del Descuento (COP)</label>
+                    <input type="text" id="discount-amount" class="w-full p-2 border rounded-lg mt-1" inputmode="numeric" required placeholder="Ej: 10000">
+                    </div>
+                <button type="submit" class="w-full bg-cyan-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-cyan-700">Aplicar Descuento</button>
+            </form>
+        </div>
+    `;
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('close-discount-modal').addEventListener('click', hideModal);
 
@@ -5873,10 +5912,9 @@ function showDiscountModal(remision) {
             showModalMessage("Por favor, ingresa un valor de descuento válido.");
             return;
         }
-        if (discountAmount > maxDiscount) {
-            showModalMessage(`El descuento no puede superar el 5% (${formatCurrency(maxDiscount)}).`);
-            return;
-        }
+        
+        // ELIMINAMOS la validación que comprobaba si el descuento superaba el límite
+        // if (discountAmount > maxDiscount) { ... }
 
         const discountPercentage = (discountAmount / remision.subtotal) * 100;
 
