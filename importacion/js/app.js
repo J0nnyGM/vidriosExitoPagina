@@ -3,7 +3,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
 import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, orderBy, onSnapshot, deleteDoc, updateDoc, addDoc, runTransaction, arrayUnion, where, writeBatch } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js";
 
@@ -160,7 +160,7 @@ function startApp() {
     // --- INICIO DE LA NUEVA LÓGICA ---
     // 3. Determinar y cambiar a la vista inicial correcta.
     const initialView = getInitialViewForUser(currentUserData);
-    
+
     // Obtenemos las referencias a las pestañas y vistas
     const tabs = {
         remisiones: document.getElementById('tab-remisiones'),
@@ -182,7 +182,7 @@ function startApp() {
         empleados: document.getElementById('view-empleados'),
         items: document.getElementById('view-items')
     };
-    
+
     // Usamos la función switchView para navegar a la vista inicial
     switchView(initialView, tabs, views);
     // --- FIN DE LA NUEVA LÓGICA ---
@@ -347,8 +347,8 @@ function loadViewTemplates() {
             </div>`;
 
     document.getElementById('view-facturacion').innerHTML = `<div class="bg-white p-6 rounded-xl shadow-md max-w-6xl mx-auto"><h2 class="text-2xl font-semibold mb-4">Gestión de Facturación</h2><div class="border-b border-gray-200 mb-6"><nav id="facturacion-nav" class="-mb-px flex space-x-6"><button id="tab-pendientes" class="dashboard-tab-btn active py-3 px-1 font-semibold">Pendientes</button><button id="tab-realizadas" class="dashboard-tab-btn py-3 px-1 font-semibold">Realizadas</button></nav></div><div id="view-pendientes"><h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Pendientes de Facturar</h3><div id="facturacion-pendientes-list" class="space-y-3"></div></div><div id="view-realizadas" class="hidden"><h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Facturadas</h3><div id="facturacion-realizadas-list" class="space-y-3"></div></div></div>`;
-    document.getElementById('view-clientes').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Cliente</h2><form id="add-cliente-form" class="space-y-4"><input type="text" id="nuevo-cliente-nombre" placeholder="Nombre Completo" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="email" id="nuevo-cliente-email" placeholder="Correo" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="tel" id="nuevo-cliente-telefono1" placeholder="Teléfono 1" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="tel" id="nuevo-cliente-telefono2" placeholder="Teléfono 2 (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg"><input type="text" id="nuevo-cliente-nit" placeholder="NIT (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg"><button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Clientes</h2><input type="search" id="search-clientes" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="clientes-list" class="space-y-3"></div></div></div>`;
-    document.getElementById('view-proveedores').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Proveedor</h2><form id="add-proveedor-form" class="space-y-4"><input type="text" id="nuevo-proveedor-nombre" placeholder="Nombre del Proveedor" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="text" id="nuevo-proveedor-contacto" placeholder="Nombre de Contacto" class="w-full p-3 border border-gray-300 rounded-lg"><input type="tel" id="nuevo-proveedor-telefono" placeholder="Teléfono" class="w-full p-3 border border-gray-300 rounded-lg"><input type="email" id="nuevo-proveedor-email" placeholder="Correo" class="w-full p-3 border border-gray-300 rounded-lg"><button type="submit" class="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Proveedores</h2><input type="search" id="search-proveedores" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="proveedores-list" class="space-y-3"></div></div></div>`;
+    document.getElementById('view-clientes').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Cliente</h2><form id="add-cliente-form" class="space-y-4"><input type="text" id="nuevo-cliente-nombre-empresa" placeholder="Nombre Empresa" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="text" id="nuevo-cliente-contacto" placeholder="Nombre del Contacto" class="w-full p-3 border border-gray-300 rounded-lg"><input type="email" id="nuevo-cliente-email" placeholder="Correo Electrónico" class="w-full p-3 border border-gray-300 rounded-lg"><input type="tel" id="nuevo-cliente-telefono1" placeholder="Teléfono 1" class="w-full p-3 border border-gray-300 rounded-lg" required oninput="this.value = this.value.replace(/[^0-9]/g, '')"><input type="tel" id="nuevo-cliente-telefono2" placeholder="Teléfono 2 (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg" oninput="this.value = this.value.replace(/[^0-9]/g, '')"><input type="text" id="nuevo-cliente-nit" placeholder="NIT (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg"><div class="space-y-1"><label for="nuevo-cliente-rut" class="block text-sm font-medium text-gray-700">RUT (Opcional)</label><input type="file" id="nuevo-cliente-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/></div><button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Clientes</h2><input type="search" id="search-clientes" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="clientes-list" class="space-y-3"></div></div></div>`;
+    document.getElementById('view-proveedores').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Proveedor</h2><form id="add-proveedor-form" class="space-y-4"><input type="text" id="nuevo-proveedor-nombre" placeholder="Nombre del Proveedor" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="text" id="nuevo-proveedor-contacto" placeholder="Nombre de Contacto" class="w-full p-3 border border-gray-300 rounded-lg"><input type="tel" id="nuevo-proveedor-telefono" placeholder="Teléfono" class="w-full p-3 border border-gray-300 rounded-lg"><input type="email" id="nuevo-proveedor-email" placeholder="Correo" class="w-full p-3 border border-gray-300 rounded-lg"><div><label for="nuevo-proveedor-rut" class="block text-sm font-medium text-gray-700">RUT</label><input type="file" id="nuevo-proveedor-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"/></div><button type="submit" class="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Proveedores</h2><input type="search" id="search-proveedores" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="proveedores-list" class="space-y-3"></div></div></div>`;
     document.getElementById('view-gastos').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
     <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
         <h2 class="text-xl font-semibold mb-4">Nuevo Gasto</h2>
@@ -444,7 +444,7 @@ function updateUIVisibility(userData) {
         remisionListContainer.classList.toggle('lg:col-span-2', !isPlanta);
     }
 
-        // --- INICIO DE LA NUEVA LÓGICA PARA GASTOS ---
+    // --- INICIO DE LA NUEVA LÓGICA PARA GASTOS ---
     const isContabilidad = userData.role?.toLowerCase() === 'contabilidad';
     const gastosView = document.getElementById('view-gastos');
 
@@ -463,23 +463,6 @@ function updateUIVisibility(userData) {
         }
     }
     // --- FIN DE LA NUEVA LÓGICA PARA GASTOS ---
-}
-
-function loadInitialData() {
-    // Cargar plantillas HTML en las vistas
-    document.getElementById('view-remisiones').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div id="remision-form-container" class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Nueva Remisión</h2><form id="remision-form" class="space-y-4"><div class="relative"><input type="text" id="cliente-search-input" autocomplete="off" placeholder="Buscar y seleccionar cliente..." class="w-full p-3 border border-gray-300 rounded-lg" required><input type="hidden" id="cliente-id-hidden" name="clienteId"><div id="cliente-search-results" class="search-results hidden"></div></div><div><label for="fecha-recibido" class="block text-sm font-medium text-gray-700">Fecha Recibido</label><input type="date" id="fecha-recibido" class="w-full p-3 border border-gray-300 rounded-lg mt-1 bg-gray-100" readonly></div><div class="border-t border-b border-gray-200 py-4"><h3 class="text-lg font-semibold mb-2">Ítems de la Remisión</h3><div id="items-container" class="space-y-4"></div><button type="button" id="add-item-btn" class="mt-4 w-full bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">+ Añadir Ítem</button></div><select id="forma-pago" class="w-full p-3 border border-gray-300 rounded-lg bg-white" required><option value="" disabled selected>Forma de Pago</option><option value="Pendiente">Pendiente</option><option value="Efectivo">Efectivo</option><option value="Nequi">Nequi</option><option value="Davivienda">Davivienda</option></select><div class="bg-gray-50 p-4 rounded-lg space-y-2"><div class="flex justify-between items-center"><span class="font-medium">Subtotal:</span><span id="subtotal" class="font-bold text-lg">$ 0</span></div><div class="flex justify-between items-center"><label for="incluir-iva" class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="incluir-iva" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"><span>Incluir IVA (19%)</span></label><span id="valor-iva" class="font-medium text-gray-600">$ 0</span></div><hr><div class="flex justify-between items-center text-xl"><span class="font-bold">TOTAL:</span><span id="valor-total" class="font-bold text-indigo-600">$ 0</span></div></div><button type="submit" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition-colors">Guardar Remisión</button></form></div><div id="remisiones-list-container" class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4 flex-wrap gap-4"><h2 class="text-xl font-semibold">Historial de Remisiones</h2><div class="flex items-center gap-2 flex-wrap w-full"><select id="filter-remisiones-month" class="p-2 border rounded-lg bg-white"></select><select id="filter-remisiones-year" class="p-2 border rounded-lg bg-white"></select><input type="search" id="search-remisiones" placeholder="Buscar..." class="p-2 border rounded-lg flex-grow"></div></div><div id="remisiones-list" class="space-y-3"></div></div></div>`;
-    // ... (El resto de innerHTML para las otras vistas se mantiene igual)
-
-    // El orden es importante: primero se actualiza la UI y luego se cargan los datos y listeners
-    updateUIVisibility(currentUserData);
-    loadClientes();
-    loadProveedores();
-    loadItems();
-    loadColores();
-    loadRemisiones();
-    loadGastos();
-    if (currentUserData && currentUserData.role === 'admin') loadEmpleados();
-    setupEventListeners();
 }
 
 /**
@@ -1211,66 +1194,6 @@ function renderItems() {
         itemsListEl.appendChild(itemDiv);
     });
 }
-
-// --- FUNCIONES DE CARGA DE DATOS (ACTUALIZADAS) ---
-function loadClientes() {
-    const q = query(collection(db, "clientes"), orderBy("nombre", "asc"));
-    return onSnapshot(q, (snapshot) => {
-        allClientes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        renderClientes();
-    });
-}
-// **** FUNCIÓN AÑADIDA QUE FALTABA ****
-function renderEmpleados(users) {
-    const empleadosListEl = document.getElementById('empleados-list');
-    if (!empleadosListEl) return;
-
-    empleadosListEl.innerHTML = '';
-    // Ordenar usuarios para mostrar los pendientes primero
-    users.sort((a, b) => {
-        if (a.status === 'pending' && b.status !== 'pending') return -1;
-        if (a.status !== 'pending' && b.status === 'pending') return 1;
-        return a.nombre.localeCompare(b.nombre);
-    });
-
-    users.filter(u => u.id !== currentUser.uid && u.status !== 'archived').forEach(empleado => {
-        const el = document.createElement('div');
-        let statusBadge = '';
-        let actionButtons = '';
-
-        switch (empleado.status) {
-            case 'pending':
-                statusBadge = `<span class="text-xs font-semibold bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">Pendiente</span>`;
-                actionButtons = `<button data-uid="${empleado.id}" data-status="active" class="user-status-btn bg-green-500 text-white text-xs px-3 py-1 rounded-full hover:bg-green-600">Activar</button>`;
-                break;
-            case 'active':
-                statusBadge = `<span class="text-xs font-semibold bg-green-200 text-green-800 px-2 py-1 rounded-full">Activo</span>`;
-                actionButtons = `<button data-uid="${empleado.id}" data-status="inactive" class="user-status-btn bg-yellow-500 text-white text-xs px-3 py-1 rounded-full hover:bg-yellow-600">Desactivar</button>`;
-                break;
-            case 'inactive':
-                statusBadge = `<span class="text-xs font-semibold bg-gray-200 text-gray-800 px-2 py-1 rounded-full">Inactivo</span>`;
-                actionButtons = `<button data-uid="${empleado.id}" data-status="active" class="user-status-btn bg-green-500 text-white text-xs px-3 py-1 rounded-full hover:bg-green-600">Activar</button>`;
-                break;
-        }
-
-        el.className = 'border p-3 rounded-lg';
-        el.innerHTML = `
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-                <div>
-                    <p class="font-semibold">${empleado.nombre} <span class="text-sm font-normal text-gray-500">(${empleado.role})</span></p>
-                    <p class="text-sm text-gray-600">${empleado.email}</p>
-                </div>
-                <div class="flex items-center gap-2 mt-2 sm:mt-0">
-                    ${statusBadge}
-                    ${actionButtons}
-                    <button data-uid="${empleado.id}" data-status="archived" class="user-status-btn bg-red-500 text-white text-xs px-3 py-1 rounded-full hover:bg-red-600">Archivar</button>
-                    <button data-user-json='${JSON.stringify(empleado)}' class="manage-user-btn bg-blue-600 text-white text-xs px-3 py-1 rounded-full hover:bg-blue-700">Gestionar</button>
-                </div>
-            </div>`;
-        empleadosListEl.appendChild(el);
-    });
-}
-
 /**
  * Normaliza un texto: lo convierte a minúsculas y le quita las tildes.
  * @param {string} text - El texto a normalizar.
@@ -1281,11 +1204,21 @@ function normalizeText(text) {
     return text.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
+// --- FUNCIONES DE CARGA DE DATOS (ACTUALIZADAS) ---
+function loadClientes() {
+    const q = query(collection(db, "clientes"), orderBy("nombre", "asc"));
+    return onSnapshot(q, (snapshot) => {
+        allClientes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderClientes();
+    });
+}
+
+
+
 function renderClientes() {
     const clientesListEl = document.getElementById('clientes-list');
     if (!clientesListEl) return;
 
-    // 1. Normalizamos el término de búsqueda una sola vez
     const normalizedSearchTerm = normalizeText(document.getElementById('search-clientes').value);
 
     const clientesConHistorial = allClientes.map(cliente => {
@@ -1300,9 +1233,11 @@ function renderClientes() {
     });
 
     const filtered = clientesConHistorial.filter(c => {
-        // 2. Creamos una cadena unificada con todos los datos del cliente y la normalizamos
+        // Se añade el campo 'contacto' a la búsqueda
         const clientDataString = [
             c.nombre,
+            c.nombreEmpresa,
+            c.contacto, // <-- CAMBIO AQUÍ
             c.email,
             c.telefono1,
             c.telefono2,
@@ -1310,8 +1245,6 @@ function renderClientes() {
         ].join(' ');
 
         const normalizedClientData = normalizeText(clientDataString);
-
-        // 3. Comparamos los textos ya normalizados
         return normalizedClientData.includes(normalizedSearchTerm);
     });
 
@@ -1330,10 +1263,18 @@ function renderClientes() {
             ? `<button data-client-json='${JSON.stringify(cliente)}' class="edit-client-btn bg-gray-200 text-gray-700 px-3 py-1 rounded-lg text-sm font-semibold hover:bg-gray-300 w-full text-center">Editar</button>`
             : '';
 
+        // --- INICIO DEL CAMBIO ---
+        // Se añade una línea para mostrar el nombre del contacto
+        const nombreContactoHtml = cliente.contacto 
+            ? `<p class="text-sm text-gray-700"><span class="font-medium">Contacto:</span> ${cliente.contacto}</p>` 
+            : '';
+        // --- FIN DEL CAMBIO ---
+
         clienteDiv.innerHTML = `
             <div class="flex-grow min-w-0">
-                <p class="font-semibold text-lg truncate" title="${cliente.nombre}">${cliente.nombre}</p>
-                <p class="text-sm text-gray-600">${cliente.email || 'Sin correo'} | ${telefonos}</p>
+                <p class="font-semibold text-lg truncate" title="${cliente.nombre}">${cliente.nombreEmpresa || cliente.nombre}</p>
+                ${nombreContactoHtml}
+                <p class="text-sm text-gray-600 mt-1">${cliente.email || 'Sin correo'} | ${telefonos}</p>
                 ${cliente.nit ? `<p class="text-sm text-gray-500">NIT: ${cliente.nit}</p>` : ''}
                 <div class="mt-2 pt-2 border-t border-gray-100 text-sm">
                     <p><span class="font-semibold">Última Compra:</span> ${cliente.ultimaCompra}</p>
@@ -1593,15 +1534,39 @@ function renderFacturacion() {
         pendientes.forEach(remision => {
             const el = document.createElement('div');
             el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4';
+            
+            // Buscamos el cliente para obtener sus datos adicionales
+            const clienteDeRemision = allClientes.find(c => c.id === remision.idCliente);
+            
+            let botonRUT = '';
+            let infoClienteExtra = '';
+
+            if (clienteDeRemision) {
+                if (clienteDeRemision.rutUrl) {
+                    botonRUT = `<button data-file-url="${clienteDeRemision.rutUrl}" data-file-title="RUT de ${clienteDeRemision.nombre}" class="view-file-btn bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-600">RUT</button>`;
+                }
+                // --- INICIO DEL CAMBIO ---
+                infoClienteExtra = `
+                    <p class="text-sm text-gray-500 mt-1">
+                        ${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}
+                        ${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}
+                        ${clienteDeRemision.email || ''}
+                    </p>
+                `;
+                // --- FIN DEL CAMBIO ---
+            }
+
             el.innerHTML = `
                 <div class="flex-grow">
                     <div class="flex items-center gap-3 flex-wrap">
                         <span class="remision-id">N° ${remision.numeroRemision}</span>
                         <p class="font-semibold text-lg">${remision.clienteNombre}</p>
                     </div>
+                    ${infoClienteExtra} 
                     <p class="text-sm text-gray-600 mt-1">Fecha: ${remision.fechaRecibido} &bull; Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>
                 </div>
-                <div class="flex-shrink-0 flex items-center gap-2">
+                <div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end">
+                    ${botonRUT}
                     <button data-pdf-url="${remision.pdfUrl}" data-remision-num="${remision.numeroRemision}" class="view-pdf-btn bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-600">Ver Remisión</button>
                     <button data-remision-id="${remision.id}" class="facturar-btn bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Facturar</button>
                 </div>
@@ -1618,6 +1583,23 @@ function renderFacturacion() {
         realizadas.forEach(remision => {
             const el = document.createElement('div');
             el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4';
+            
+            // Buscamos al cliente también para las realizadas
+            const clienteDeRemision = allClientes.find(c => c.id === remision.idCliente);
+            let infoClienteExtra = '';
+
+            if (clienteDeRemision) {
+                // --- INICIO DEL CAMBIO ---
+                infoClienteExtra = `
+                    <p class="text-sm text-gray-500 mt-1">
+                        ${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}
+                        ${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}
+                        ${clienteDeRemision.email || ''}
+                    </p>
+                `;
+                 // --- FIN DEL CAMBIO ---
+            }
+
             let facturaButtons = remision.facturaPdfUrl
                 ? `<button data-pdf-url="${remision.facturaPdfUrl}" data-remision-num="${remision.numeroFactura || remision.numeroRemision}" class="view-factura-pdf-btn bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700">Ver Factura</button>`
                 : `<button data-remision-id="${remision.id}" class="facturar-btn bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-orange-600">Adjuntar Factura</button>`;
@@ -1628,9 +1610,10 @@ function renderFacturacion() {
                         <span class="remision-id">N° ${remision.numeroRemision}</span>
                         <p class="font-semibold text-lg">${remision.clienteNombre}</p>
                     </div>
+                    ${infoClienteExtra}
                     <p class="text-sm text-gray-600 mt-1">Fecha: ${remision.fechaRecibido} &bull; Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>
                 </div>
-                <div class="flex-shrink-0 flex items-center gap-2">
+                <div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end">
                     <div class="text-right">
                         <span class="status-badge status-entregado">Facturado</span>
                         ${remision.numeroFactura ? `<p class="text-sm text-gray-600 mt-1">Factura N°: <span class="font-semibold">${remision.numeroFactura}</span></p>` : ''}
@@ -1643,12 +1626,11 @@ function renderFacturacion() {
         });
     }
 
-    // Volver a asignar los event listeners para TODOS los botones recién creados
+    // Volver a asignar los event listeners
     document.querySelectorAll('.facturar-btn').forEach(btn => btn.addEventListener('click', (e) => showFacturaModal(e.currentTarget.dataset.remisionId)));
     document.querySelectorAll('.view-pdf-btn').forEach(btn => btn.addEventListener('click', (e) => showPdfModal(e.currentTarget.dataset.pdfUrl, `Remisión N° ${e.currentTarget.dataset.remisionNum}`)));
     document.querySelectorAll('.view-factura-pdf-btn').forEach(btn => btn.addEventListener('click', (e) => showPdfModal(e.currentTarget.dataset.pdfUrl, `Factura N° ${e.currentTarget.dataset.remisionNum}`)));
 }
-
 
 // --- FUNCIONES DEL MÓDULO DE INVENTARIO ---
 function loadImportaciones() {
@@ -4201,8 +4183,125 @@ function calcularCostoDeCortes(totalCortes) {
     return { costo: 20000, descripcion: `Cargo especial por ${totalCortes} cortes`, ivaIncluido: true };
 }
 
-function showEditClientModal(client) { const modalContentWrapper = document.getElementById('modal-content-wrapper'); modalContentWrapper.innerHTML = `<div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-auto text-center"><h2 class="text-xl font-semibold mb-4">Editar Cliente</h2><form id="edit-client-form" class="space-y-4 text-left"><input type="hidden" id="edit-client-id" value="${client.id}"><div><label for="edit-client-name" class="block text-sm font-medium text-gray-700">Nombre</label><input type="text" id="edit-client-name" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${client.nombre}" required></div><div><label for="edit-client-email" class="block text-sm font-medium text-gray-700">Correo</label><input type="email" id="edit-client-email" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${client.email}" required></div><div><label for="edit-client-phone1" class="block text-sm font-medium text-gray-700">Teléfono 1</label><input type="tel" id="edit-client-phone1" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${client.telefono1 || ''}" required></div><div><label for="edit-client-phone2" class="block text-sm font-medium text-gray-700">Teléfono 2</label><input type="tel" id="edit-client-phone2" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${client.telefono2 || ''}"></div><div><label for="edit-client-nit" class="block text-sm font-medium text-gray-700">NIT</label><input type="text" id="edit-client-nit" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${client.nit || ''}"></div><div class="flex gap-4 justify-end pt-4"><button type="button" id="cancel-edit-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-semibold">Cancelar</button><button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold">Guardar Cambios</button></div></form></div>`; document.getElementById('modal').classList.remove('hidden'); document.getElementById('cancel-edit-btn').addEventListener('click', hideModal); document.getElementById('edit-client-form').addEventListener('submit', async (e) => { e.preventDefault(); const clientId = document.getElementById('edit-client-id').value; const updatedData = { nombre: document.getElementById('edit-client-name').value, email: document.getElementById('edit-client-email').value, telefono1: document.getElementById('edit-client-phone1').value, telefono2: document.getElementById('edit-client-phone2').value, nit: document.getElementById('edit-client-nit').value, }; showModalMessage("Actualizando cliente...", true); try { await updateDoc(doc(db, "clientes", clientId), updatedData); hideModal(); showModalMessage("¡Cliente actualizado!", false, 2000); } catch (error) { console.error("Error al actualizar cliente:", error); showModalMessage("Error al actualizar."); } }); }
-function showEditProviderModal(provider) { const modalContentWrapper = document.getElementById('modal-content-wrapper'); modalContentWrapper.innerHTML = `<div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-auto text-center"><h2 class="text-xl font-semibold mb-4">Editar Proveedor</h2><form id="edit-provider-form" class="space-y-4 text-left"><input type="hidden" id="edit-provider-id" value="${provider.id}"><div><label for="edit-provider-name" class="block text-sm font-medium text-gray-700">Nombre</label><input type="text" id="edit-provider-name" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${provider.nombre}" required></div><div><label for="edit-provider-contact" class="block text-sm font-medium text-gray-700">Contacto</label><input type="text" id="edit-provider-contact" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${provider.contacto || ''}"></div><div><label for="edit-provider-phone" class="block text-sm font-medium text-gray-700">Teléfono</label><input type="tel" id="edit-provider-phone" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${provider.telefono || ''}"></div><div><label for="edit-provider-email" class="block text-sm font-medium text-gray-700">Correo</label><input type="email" id="edit-provider-email" class="w-full p-2 border border-gray-300 rounded-lg mt-1" value="${provider.email || ''}"></div><div class="flex gap-4 justify-end pt-4"><button type="button" id="cancel-edit-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-semibold">Cancelar</button><button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold">Guardar Cambios</button></div></form></div>`; document.getElementById('modal').classList.remove('hidden'); document.getElementById('cancel-edit-btn').addEventListener('click', hideModal); document.getElementById('edit-provider-form').addEventListener('submit', async (e) => { e.preventDefault(); const providerId = document.getElementById('edit-provider-id').value; const updatedData = { nombre: document.getElementById('edit-provider-name').value, contacto: document.getElementById('edit-provider-contact').value, telefono: document.getElementById('edit-provider-phone').value, email: document.getElementById('edit-provider-email').value, }; showModalMessage("Actualizando proveedor...", true); try { await updateDoc(doc(db, "proveedores", providerId), updatedData); hideModal(); showModalMessage("¡Proveedor actualizado!", false, 2000); } catch (error) { console.error("Error al actualizar proveedor:", error); showModalMessage("Error al actualizar."); } }); }
+function showEditClientModal(cliente) {
+    let rutHtml = '';
+    if (cliente.rutUrl) {
+        rutHtml = `
+            <div class="mt-4 pt-4 border-t">
+                <p class="block text-sm font-medium text-gray-700 mb-2">Gestión de RUT</p>
+                <div class="flex gap-2">
+                    <button type="button" data-file-url="${cliente.rutUrl}" data-file-title="RUT de ${cliente.nombre}" class="view-file-btn flex-1 text-center bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Ver</button>
+                    <button type="button" id="btn-actualizar-rut-cliente" class="flex-1 bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-600">Actualizar</button>
+                </div>
+                <div id="rut-upload-container-cliente" class="hidden mt-2">
+                    <input type="file" id="edit-cliente-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                </div>
+            </div>
+        `;
+    } else {
+        rutHtml = `
+            <div class="mt-4 pt-4 border-t">
+                <label for="edit-cliente-rut" class="block text-sm font-medium text-gray-700">Subir RUT (Opcional)</label>
+                <input type="file" id="edit-cliente-rut" class="mt-1 w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+            </div>
+        `;
+    }
+
+    const modalContent = `
+        <div class="bg-white p-6 rounded-xl shadow-lg max-w-md mx-auto">
+            <h2 class="text-xl font-semibold mb-4">Editar Cliente</h2>
+            <form id="edit-cliente-form" data-id="${cliente.id}" class="space-y-3">
+                <input type="text" id="edit-cliente-nombre-empresa" value="${cliente.nombreEmpresa || cliente.nombre}" placeholder="Nombre Empresa" class="w-full p-3 border rounded-lg" required>
+                <input type="text" id="edit-cliente-contacto" value="${cliente.contacto || ''}" placeholder="Nombre del Contacto" class="w-full p-3 border rounded-lg">
+                <input type="email" id="edit-cliente-email" value="${cliente.email || ''}" placeholder="Correo" class="w-full p-3 border rounded-lg">
+                <input type="tel" id="edit-cliente-telefono1" value="${cliente.telefono1 || ''}" placeholder="Teléfono 1" class="w-full p-3 border rounded-lg" required oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                <input type="tel" id="edit-cliente-telefono2" value="${cliente.telefono2 || ''}" placeholder="Teléfono 2" class="w-full p-3 border rounded-lg" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                <input type="text" id="edit-cliente-nit" value="${cliente.nit || ''}" placeholder="NIT" class="w-full p-3 border rounded-lg">
+                
+                ${rutHtml}
+
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" id="cancel-edit-client" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button>
+                    <button type="submit" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Guardar Cambios</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.getElementById('modal-content').innerHTML = modalContent;
+    document.getElementById('modal').classList.remove('hidden');
+
+    const btnActualizarRutCliente = document.getElementById('btn-actualizar-rut-cliente');
+    if (btnActualizarRutCliente) {
+        btnActualizarRutCliente.addEventListener('click', () => {
+            document.getElementById('rut-upload-container-cliente').classList.remove('hidden');
+            btnActualizarRutCliente.classList.add('hidden');
+        });
+    }
+    document.getElementById('cancel-edit-client').addEventListener('click', () => {
+        document.getElementById('modal').classList.add('hidden');
+    });
+}
+
+function showEditProviderModal(proveedor) {
+    // Generar los botones del RUT de forma condicional
+    let rutHtml = '';
+    if (proveedor.rutUrl) {
+        rutHtml = `
+            <div class="mt-4 pt-4 border-t">
+                <p class="block text-sm font-medium text-gray-700 mb-2">Gestión de RUT</p>
+                <div class="flex gap-2">
+                    <button type="button" data-file-url="${proveedor.rutUrl}" data-file-title="RUT de ${proveedor.nombre}" class="view-file-btn flex-1 text-center bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Ver</button>
+                    <button type="button" id="btn-actualizar-rut" class="flex-1 bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-600">Actualizar</button>
+                </div>
+                <div id="rut-upload-container" class="hidden mt-2">
+                    <input type="file" id="edit-proveedor-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"/>
+                </div>
+            </div>
+        `;
+    } else {
+        rutHtml = `
+            <div class="mt-4 pt-4 border-t">
+                <label for="edit-proveedor-rut" class="block text-sm font-medium text-gray-700">Subir RUT</label>
+                <input type="file" id="edit-proveedor-rut" class="mt-1 w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"/>
+            </div>
+        `;
+    }
+
+    const modalContent = `
+        <div class="bg-white p-6 rounded-xl shadow-lg max-w-md mx-auto">
+            <h2 class="text-xl font-semibold mb-4">Editar Proveedor</h2>
+            <form id="edit-proveedor-form" data-id="${proveedor.id}">
+                <input type="text" id="edit-proveedor-nombre" value="${proveedor.nombre}" class="w-full p-3 border rounded-lg mb-2" required>
+                <input type="text" id="edit-proveedor-contacto" value="${proveedor.contacto || ''}" placeholder="Nombre de Contacto" class="w-full p-3 border rounded-lg mb-2">
+                <input type="tel" id="edit-proveedor-telefono" value="${proveedor.telefono || ''}" placeholder="Teléfono" class="w-full p-3 border rounded-lg mb-2">
+                <input type="email" id="edit-proveedor-email" value="${proveedor.email || ''}" placeholder="Correo" class="w-full p-3 border rounded-lg">
+                
+                ${rutHtml}
+                
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" id="cancel-edit-provider" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button>
+                    <button type="submit" class="bg-teal-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-teal-700">Guardar Cambios</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.getElementById('modal-content').innerHTML = modalContent;
+    document.getElementById('modal').classList.remove('hidden');
+
+    // Listener para el botón "Actualizar RUT"
+    const btnActualizarRut = document.getElementById('btn-actualizar-rut');
+    if (btnActualizarRut) {
+        btnActualizarRut.addEventListener('click', () => {
+            document.getElementById('rut-upload-container').classList.remove('hidden');
+            btnActualizarRut.classList.add('hidden');
+        });
+    }
+
+    // Listener para el botón de cancelar
+    document.getElementById('cancel-edit-provider').addEventListener('click', () => {
+        document.getElementById('modal').classList.add('hidden');
+    });
+}
 // UBICADA DENTRO DE /importacion/js/app.js
 // ---> ESTA ES LA SOLUCIÓN FINAL Y DEFINITIVA PARA EL ERROR DE CACHÉ EN IOS <---
 
@@ -6005,7 +6104,7 @@ function showDiscountModal(remision) {
             showModalMessage("Por favor, ingresa un valor de descuento válido.");
             return;
         }
-        
+
         // ELIMINAMOS la validación que comprobaba si el descuento superaba el límite
         // if (discountAmount > maxDiscount) { ... }
 
@@ -6922,3 +7021,271 @@ document.addEventListener('submit', function (event) {
     }
 });
 
+// Escucha el evento de envío del formulario para añadir un nuevo proveedor
+// Usamos 'body' y 'delegación de eventos' para asegurarnos de que el listener funcione
+// incluso si el formulario se añade dinámicamente.
+document.body.addEventListener('submit', async (e) => {
+    if (e.target && e.target.id === 'add-cliente-form') {
+        e.preventDefault();
+
+        const nombreEmpresa = document.getElementById('nuevo-cliente-nombre-empresa').value;
+        const contacto = document.getElementById('nuevo-cliente-contacto').value;
+        const email = document.getElementById('nuevo-cliente-email').value;
+        const telefono1 = document.getElementById('nuevo-cliente-telefono1').value;
+        const telefono2 = document.getElementById('nuevo-cliente-telefono2').value;
+        const nit = document.getElementById('nuevo-cliente-nit').value;
+        const rutFile = document.getElementById('nuevo-cliente-rut').files[0];
+
+        const submitButton = e.target.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        submitButton.textContent = 'Registrando...';
+
+        const clienteData = {
+            nombre: nombreEmpresa, // Mantenemos 'nombre' como el campo principal para compatibilidad
+            nombreEmpresa: nombreEmpresa,
+            contacto: contacto,
+            email: email,
+            telefono1: telefono1,
+            telefono2: telefono2,
+            nit: nit,
+            fechaCreacion: new Date()
+        };
+
+        try {
+            if (rutFile) {
+                const storageRef = ref(storage, `ruts_clientes/${Date.now()}-${rutFile.name}`);
+                const snapshot = await uploadBytes(storageRef, rutFile);
+                const downloadURL = await getDownloadURL(snapshot.ref);
+                clienteData.rutUrl = downloadURL;
+            }
+
+            await addDoc(collection(db, 'clientes'), clienteData);
+
+            Swal.fire('¡Cliente Registrado!', 'El nuevo cliente ha sido guardado con éxito.', 'success');
+            
+            e.target.reset();
+
+        } catch (error) {
+            console.error("Error al registrar cliente:", error);
+            Swal.fire('Error', 'Hubo un problema al registrar el cliente.', 'error');
+        } finally {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Registrar';
+        }
+    }
+});
+
+document.body.addEventListener('submit', async (e) => {
+    if (e.target && e.target.id === 'add-proveedor-form') {
+        e.preventDefault();
+
+        // Obtenemos los datos del formulario
+        const nombre = document.getElementById('nuevo-proveedor-nombre').value;
+        const contacto = document.getElementById('nuevo-proveedor-contacto').value;
+        const telefono = document.getElementById('nuevo-proveedor-telefono').value;
+        const email = document.getElementById('nuevo-proveedor-email').value;
+        const rutFile = document.getElementById('nuevo-proveedor-rut').files[0];
+
+        // Preparamos el objeto con los datos del proveedor
+        const proveedorData = {
+            nombre: nombre,
+            contacto: contacto,
+            telefono: telefono,
+            email: email,
+            fechaCreacion: new Date() // Guardamos la fecha de registro
+        };
+
+        const submitButton = e.target.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        submitButton.textContent = 'Guardando...';
+
+        try {
+            // Si el usuario seleccionó un archivo RUT
+            if (rutFile) {
+                // Creamos una referencia única en Firebase Storage
+                const storageRef = ref(storage, `ruts_proveedores/${Date.now()}-${rutFile.name}`);
+
+                // Subimos el archivo
+                const snapshot = await uploadBytes(storageRef, rutFile);
+
+                // Obtenemos la URL de descarga
+                const downloadURL = await getDownloadURL(snapshot.ref);
+
+                // Añadimos la URL al objeto del proveedor
+                proveedorData.rutUrl = downloadURL;
+            }
+
+            // Guardamos el proveedor en Firestore
+            await addDoc(collection(db, 'proveedores'), proveedorData);
+
+            // Mostramos una alerta de éxito
+            Swal.fire('¡Éxito!', 'Proveedor registrado correctamente.', 'success');
+
+            // Limpiamos el formulario
+            e.target.reset();
+
+        } catch (error) {
+            console.error("Error al registrar el proveedor: ", error);
+            Swal.fire('Error', 'No se pudo registrar el proveedor.', 'error');
+        } finally {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Registrar';
+        }
+    }
+});
+document.body.addEventListener('submit', async (e) => {
+    if (e.target && e.target.id === 'edit-proveedor-form') {
+        e.preventDefault();
+        const form = e.target;
+        const proveedorId = form.dataset.id;
+        const submitButton = form.querySelector('button[type="submit"]');
+
+        submitButton.disabled = true;
+        submitButton.textContent = 'Guardando...';
+
+        const updatedData = {
+            nombre: form.querySelector('#edit-proveedor-nombre').value,
+            contacto: form.querySelector('#edit-proveedor-contacto').value,
+            telefono: form.querySelector('#edit-proveedor-telefono').value,
+            email: form.querySelector('#edit-proveedor-email').value,
+        };
+
+        const rutFile = form.querySelector('#edit-proveedor-rut')?.files[0];
+
+        try {
+            // Si se seleccionó un nuevo archivo RUT
+            if (rutFile) {
+                // Primero, verificamos si ya existía un RUT para borrarlo
+                const proveedorDoc = await getDoc(doc(db, 'proveedores', proveedorId));
+                const proveedorActual = proveedorDoc.data();
+                if (proveedorActual.rutUrl) {
+                    try {
+                        const oldFileRef = ref(storage, proveedorActual.rutUrl);
+                        await deleteObject(oldFileRef);
+                    } catch (storageError) {
+                        console.warn("No se pudo eliminar el archivo antiguo, puede que ya no exista:", storageError);
+                    }
+                }
+
+                // Subimos el nuevo archivo
+                const newStorageRef = ref(storage, `ruts_proveedores/${Date.now()}-${rutFile.name}`);
+                const snapshot = await uploadBytes(newStorageRef, rutFile);
+                updatedData.rutUrl = await getDownloadURL(snapshot.ref);
+            }
+
+            // Actualizamos los datos en Firestore
+            await updateDoc(doc(db, 'proveedores', proveedorId), updatedData);
+
+            Swal.fire('¡Éxito!', 'Proveedor actualizado correctamente.', 'success');
+            document.getElementById('modal').classList.add('hidden');
+
+        } catch (error) {
+            console.error("Error al actualizar proveedor: ", error);
+            Swal.fire('Error', 'No se pudo actualizar el proveedor.', 'error');
+        } finally {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Guardar Cambios';
+        }
+    }
+});
+document.body.addEventListener('submit', async (e) => {
+    if (e.target && e.target.id === 'edit-cliente-form') {
+        e.preventDefault();
+        const form = e.target;
+        const clienteId = form.dataset.id;
+        const submitButton = form.querySelector('button[type="submit"]');
+
+        submitButton.disabled = true;
+        submitButton.textContent = 'Guardando...';
+
+        const nombreEmpresa = form.querySelector('#edit-cliente-nombre-empresa').value;
+
+        const updatedData = {
+            nombre: nombreEmpresa, // Actualizamos el campo principal
+            nombreEmpresa: nombreEmpresa,
+            contacto: form.querySelector('#edit-cliente-contacto').value,
+            email: form.querySelector('#edit-cliente-email').value,
+            telefono1: form.querySelector('#edit-cliente-telefono1').value,
+            telefono2: form.querySelector('#edit-cliente-telefono2').value,
+            nit: form.querySelector('#edit-cliente-nit').value,
+        };
+
+        const rutFile = form.querySelector('#edit-cliente-rut')?.files[0];
+
+        try {
+            if (rutFile) {
+                const clienteDoc = await getDoc(doc(db, 'clientes', clienteId));
+                const clienteActual = clienteDoc.data();
+                if (clienteActual.rutUrl) {
+                    try {
+                        const oldFileRef = ref(storage, clienteActual.rutUrl);
+                        await deleteObject(oldFileRef);
+                    } catch (storageError) {
+                         console.warn("No se pudo eliminar el archivo antiguo, puede que ya no exista:", storageError);
+                    }
+                }
+
+                const newStorageRef = ref(storage, `ruts_clientes/${Date.now()}-${rutFile.name}`);
+                const snapshot = await uploadBytes(newStorageRef, rutFile);
+                updatedData.rutUrl = await getDownloadURL(snapshot.ref);
+            }
+
+            await updateDoc(doc(db, 'clientes', clienteId), updatedData);
+
+            Swal.fire('¡Éxito!', 'Cliente actualizado correctamente.', 'success');
+            document.getElementById('modal').classList.add('hidden');
+
+        } catch (error) {
+            console.error("Error al actualizar cliente: ", error);
+            Swal.fire('Error', 'No se pudo actualizar el cliente.', 'error');
+        } finally {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Guardar Cambios';
+        }
+    }
+});
+
+/**
+ * Muestra un modal CENTRADO con un iframe para visualizar un archivo (PDF/Imagen).
+ * @param {string} url La URL del archivo a mostrar.
+ * @param {string} title El título para el modal.
+ */
+function showFileModal(url, title = 'Visualizador de Archivos') {
+    const modalContentWrapper = document.getElementById('modal-content-wrapper');
+    const modal = document.getElementById('modal');
+
+    // Usamos el wrapper para poder definir un tamaño más grande para el visualizador
+    modalContentWrapper.innerHTML = `
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl flex flex-col mx-auto" style="height: 90vh;">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h2 class="text-xl font-semibold">${title}</h2>
+                <button id="close-file-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            </div>
+            <div class="p-2 flex-grow">
+                <iframe src="${url}" class="w-full h-full" frameborder="0"></iframe>
+            </div>
+        </div>
+    `;
+    
+    modal.classList.remove('hidden');
+
+    // El listener para cerrar debe estar dentro para capturar el botón recién creado
+    modalContentWrapper.querySelector('#close-file-modal').addEventListener('click', () => {
+        modal.classList.add('hidden');
+        // Opcional: Limpiar el contenido al cerrar para no afectar otros modales
+        modalContentWrapper.innerHTML = '<div id="modal-content" class="bg-white rounded-lg p-6 shadow-xl w-11/12 max-w-sm mx-auto text-center"></div>';
+    });
+}
+
+document.body.addEventListener('click', (e) => {
+    // Busca un botón con la clase 'view-file-btn' entre el elemento clickeado y sus padres
+    const viewButton = e.target.closest('.view-file-btn');
+
+    if (viewButton) {
+        const fileUrl = viewButton.dataset.fileUrl;
+        const fileTitle = viewButton.dataset.fileTitle || 'Visualizador de Archivos';
+        if (fileUrl) {
+            showFileModal(fileUrl, fileTitle);
+        }
+    }
+});
