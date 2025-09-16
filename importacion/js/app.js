@@ -73,6 +73,7 @@ const GASTOS_NACIONALIZACION = [
     { id: 'montacarga', name: 'Montacarga' }
 
 ];
+
 // --- MANEJO DE AUTENTICACIÓN Y VISTAS ---
 let activeListeners = [];
 function unsubscribeAllListeners() {
@@ -153,13 +154,43 @@ function startApp() {
     // 1. Ajustar la visibilidad de la UI según los permisos del usuario.
     updateUIVisibility(currentUserData);
 
-    // 2. Ahora que el HTML de las vistas existe, podemos asignar los listeners.
+    // 2. Asignar los listeners generales de la aplicación.
     setupEventListeners();
 
-    // 3. Cargar todos los datos de la base de datos.
+    // --- INICIO DE LA NUEVA LÓGICA ---
+    // 3. Determinar y cambiar a la vista inicial correcta.
+    const initialView = getInitialViewForUser(currentUserData);
+    
+    // Obtenemos las referencias a las pestañas y vistas
+    const tabs = {
+        remisiones: document.getElementById('tab-remisiones'),
+        facturacion: document.getElementById('tab-facturacion'),
+        inventario: document.getElementById('tab-inventario'),
+        clientes: document.getElementById('tab-clientes'),
+        gastos: document.getElementById('tab-gastos'),
+        proveedores: document.getElementById('tab-proveedores'),
+        empleados: document.getElementById('tab-empleados'),
+        items: document.getElementById('tab-items')
+    };
+    const views = {
+        remisiones: document.getElementById('view-remisiones'),
+        facturacion: document.getElementById('view-facturacion'),
+        inventario: document.getElementById('view-inventario'),
+        clientes: document.getElementById('view-clientes'),
+        gastos: document.getElementById('view-gastos'),
+        proveedores: document.getElementById('view-proveedores'),
+        empleados: document.getElementById('view-empleados'),
+        items: document.getElementById('view-items')
+    };
+    
+    // Usamos la función switchView para navegar a la vista inicial
+    switchView(initialView, tabs, views);
+    // --- FIN DE LA NUEVA LÓGICA ---
+
+    // 4. Cargar todos los datos de la base de datos.
     loadAllData();
 
-    // 4. Inicializar los campos de búsqueda.
+    // 5. Inicializar los campos de búsqueda.
     setupSearchInputs();
 
     isAppInitialized = true;
@@ -429,6 +460,48 @@ function loadInitialData() {
     loadGastos();
     if (currentUserData && currentUserData.role === 'admin') loadEmpleados();
     setupEventListeners();
+}
+
+/**
+ * Determina la vista inicial para un usuario basándose en su rol y permisos.
+ * @param {object} userData - Los datos del usuario actual (currentUserData).
+ * @returns {string} El nombre de la vista a la que se debe dirigir al usuario.
+ */
+function getInitialViewForUser(userData) {
+    if (!userData) return 'remisiones'; // Fallback por si acaso
+
+    const isAdmin = userData.role === 'admin';
+
+    // 1. El administrador siempre empieza en Remisiones.
+    if (isAdmin) {
+        return 'remisiones';
+    }
+
+    // 2. Para otros roles, definimos un orden de prioridad de los módulos.
+    const modulePriority = [
+        'remisiones',
+        'facturacion',
+        'inventario',
+        'items',
+        'clientes',
+        'gastos',
+        'proveedores',
+        'empleados'
+    ];
+
+    // 3. Buscamos el primer módulo en la lista de prioridades
+    //    para el cual el usuario tenga permiso.
+    if (userData.permissions) {
+        for (const module of modulePriority) {
+            if (userData.permissions[module]) {
+                return module; // Devuelve el primer módulo permitido.
+            }
+        }
+    }
+
+    // 4. Si por alguna razón un usuario no-admin no tiene ningún permiso,
+    //    lo dejamos en remisiones como última opción.
+    return 'remisiones';
 }
 
 // --- LÓGICA DE LOGIN/REGISTRO/LOGOUT ---
