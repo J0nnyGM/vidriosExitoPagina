@@ -17,6 +17,7 @@ const firebaseConfig = {
     measurementId: "G-DMVHCCV44M"
 };
 
+
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
@@ -28,7 +29,7 @@ let currentUser = null;
 let currentUserRole = null;
 let usersMap = new Map();
 let currentProject = null;
-let currentItem = null;
+//let currentItem = null;
 let unsubscribeProjects = null;
 let unsubscribeItems = null;
 let unsubscribeSubItems = null;
