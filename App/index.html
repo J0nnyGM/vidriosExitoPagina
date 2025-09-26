@@ -157,6 +157,7 @@
                                 <span class="whitespace-nowrap">Herramienta</span>
                             </a>
                         </li>
+
                         <li>
                             <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
                                 data-view="dotacion">
@@ -208,6 +209,44 @@
                                 </svg>
                                 <span class="whitespace-nowrap">Empleados</span>
                             </a>
+                        </li>
+                        <li id="inventory-nav-link" class="hidden">
+                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
+                                data-view="catalog">
+                                <svg class="h-6 w-6 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+                                    stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4">
+                                    </path>
+                                </svg>
+                                <span class="whitespace-nowrap">Catálogo de Materiales</span>
+                            </a>
+                        </li>
+                        <li id="compras-nav-link" class="hidden">
+                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
+                                data-view="compras">
+                                <svg class="h-6 w-6 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+                                    stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z">
+                                    </path>
+                                </svg>
+                                <span class="whitespace-nowrap">Órdenes de Compra</span>
+                            </a>
+                        </li>
+                        <li id="reports-nav-link" class="hidden">
+                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
+                                data-view="reports">
+                                <svg class="h-6 w-6 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+                                    stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                    </path>
+                                </svg>
+                                <span class="whitespace-nowrap">Reportes</span>
+                            </a>
+                        </li>
+                        <li id="admin-nav-link" class="hidden">
                         </li>
                         <li id="admin-nav-link" class="hidden">
                             <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
@@ -344,10 +383,11 @@
                         <table class="w-full text-sm text-left text-gray-500 responsive-table">
                             <thead class="text-xs text-gray-700 uppercase bg-gray-50">
                                 <tr>
-                                    <th class="px-6 py-3">Nombre</th>
-                                    <th class="px-6 py-3">Correo Electrónico</th>
-                                    <th class="px-6 py-3">Rol</th>
-                                    <th class="px-6 py-3">Estado</th>
+                                    <th class="px-6 py-3"></th>
+                                    <th class="px-6 py-3">Nombre del Material</th>
+                                    <th class="px-6 py-3">Referencia / SKU</th>
+                                    <th class="px-6 py-3">Unidad</th>
+                                    <th class="px-6 py-3 text-right">Cantidad en Stock</th>
                                     <th class="px-6 py-3 text-center">Acciones</th>
                                 </tr>
                             </thead>
@@ -385,123 +425,128 @@
                         <button data-tab="items" class="tab-button">Ítems</button>
                         <button data-tab="cortes" class="tab-button">Cortes</button>
                         <button data-tab="pagos" class="tab-button">Pagos</button>
+                        <button data-tab="materiales" class="tab-button">Materiales</button>
+
                     </nav>
                     <div id="project-tabs-dropdown-container" class="relative md:hidden">
                         <button id="project-tabs-dropdown-btn"
-                            class="w-full flex justify-between items-center text-left py-2 px-3 border rounded-md shadow-sm bg-white"><span
-                                id="dropdown-btn-text"></span><svg class="ml-2 h-5 w-5" viewBox="0 0 20 20"
-                                fill="currentColor">
+                            class="w-full flex justify-between items-center text-left py-2 px-3 border rounded-md shadow-sm bg-white">
+                            <span id="dropdown-btn-text"></span>
+                            <svg class="ml-2 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                 <path fill-rule="evenodd"
                                     d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
                                     clip-rule="evenodd" />
-                            </svg></button>
+                            </svg>
+                        </button>
                         <div id="project-tabs-dropdown-menu"
                             class="origin-top-right absolute right-0 mt-2 w-full rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 hidden z-10">
-                            <div class="py-1"><a href="#" data-tab="info-general"
-                                    class="dropdown-item block px-4 py-2 text-sm">Información General</a><a href="#"
-                                    data-tab="documentos" class="dropdown-item block px-4 py-2 text-sm">Documentos</a><a
-                                    href="#" data-tab="items" class="dropdown-item block px-4 py-2 text-sm">Ítems</a><a
-                                    href="#" data-tab="cortes"
-                                    class="dropdown-item block px-4 py-2 text-sm">Cortes</a><a href="#" data-tab="pagos"
-                                    class="dropdown-item block px-4 py-2 text-sm">Pagos</a></div>
+                            <div id="dropdown-menu-items" class="py-1"></div>
                         </div>
                     </div>
                 </div>
 
-
-
                 <div id="project-details-content">
-                    <div id="info-general-content" class="tab-content space-y-6">
-                        <div class="flex justify-end space-x-2">
-                            <button data-action="edit-info" id="edit-info-btn"
-                                class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">Editar
-                                Información</button>
-                            <button data-action="save-info" id="save-info-btn"
-                                class="hidden bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">Guardar
-                                Cambios</button>
-                            <button data-action="cancel-edit" id="cancel-edit-btn"
-                                class="hidden bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">Cancelar</button>
-                        </div>
+                    <div id="info-general-content" class="tab-content">
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                        <div id="info-view-mode">
-                            <div class="space-y-6">
-                                <div class="bg-white p-6 rounded-lg shadow-md">
-                                    <h3 class="text-xl font-bold text-gray-800 mb-4">Resumen del Contrato</h3>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                        <div class="bg-gray-50 p-4 rounded-lg">
-                                            <p class="text-sm font-medium text-gray-500">Valor del Contrato</p>
-                                            <p id="project-details-value" class="text-xl font-bold text-gray-800"></p>
-                                        </div>
-                                        <div class="bg-gray-50 p-4 rounded-lg">
-                                            <p class="text-sm font-medium text-gray-500">Valor Contratado (Ítems)</p>
-                                            <p id="project-details-contractedValue"
-                                                class="text-xl font-bold text-gray-800"></p>
-                                        </div>
-                                        <div class="bg-gray-50 p-4 rounded-lg">
-                                            <p class="text-sm font-medium text-gray-500">Anticipo</p>
-                                            <p id="project-details-advance" class="text-xl font-bold text-gray-800"></p>
-                                        </div>
-                                        <div class="bg-gray-50 p-4 rounded-lg">
-                                            <p class="text-sm font-medium text-gray-500">Fecha Inicio Contrato</p>
-                                            <p id="project-details-startDate"
-                                                class="text-lg font-semibold text-gray-800"></p>
-                                        </div>
-                                        <div class="bg-gray-50 p-4 rounded-lg">
-                                            <p class="text-sm font-medium text-gray-500">Fecha Acta de Inicio</p>
-                                            <p id="project-kickoffDate" class="text-lg font-semibold text-gray-800"></p>
-                                        </div>
-                                        <div class="bg-gray-50 p-4 rounded-lg">
-                                            <p class="text-sm font-medium text-gray-500">Fecha Fin Contrato</p>
-                                            <p id="project-endDate" class="text-lg font-semibold text-gray-800"></p>
-                                        </div>
-                                    </div>
+                            <div class="lg:col-span-2 bg-white p-6 rounded-lg shadow-md">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-xl font-bold text-gray-800">Resumen Financiero</h3>
+                                    <button data-action="edit-project-info"
+                                        class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                                        Editar
+                                    </button>
                                 </div>
-                                <div class="bg-white p-6 rounded-lg shadow-md">
-                                    <h3 class="text-xl font-bold text-gray-800 mb-4">Métricas de Avance</h3>
-                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                        <div class="bg-gray-50 p-4 rounded-lg">
-                                            <p class="text-sm font-medium text-gray-500">Valor Ejecutado</p>
-                                            <p id="project-details-executedValue"
-                                                class="text-xl font-bold text-green-600"></p>
-                                        </div>
-                                        <div class="bg-gray-50 p-4 rounded-lg">
-                                            <p class="text-sm font-medium text-gray-500">Ítems Instalados</p>
-                                            <p id="project-details-installedItems"
-                                                class="text-lg font-semibold text-gray-800"></p>
-                                        </div>
-                                        <div class="bg-gray-50 p-4 rounded-lg">
-                                            <p class="text-sm font-medium text-gray-500">M² Ejecutados</p>
-                                            <p id="project-details-executedM2"
-                                                class="text-lg font-semibold text-gray-800"></p>
-                                        </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-y-6 gap-x-4">
+
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Valor Inicial Contrato</p>
+                                        <p id="info-initial-contract-value" class="text-3xl font-bold text-gray-800">
+                                            Cargando...</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Valor Contratado (Ítems)</p>
+                                        <p id="info-contracted-value" class="text-3xl font-bold text-gray-800">
+                                            Cargando...</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Valor Ejecutado</p>
+                                        <p id="info-executed-value" class="text-3xl font-bold text-green-600">
+                                            Cargando...</p>
+                                    </div>
+                                    <div class="md:col-span-2 border-t pt-4">
+                                        <p class="text-sm font-medium text-gray-500">Modelo de Contrato</p>
+                                        <p id="project-details-pricingModel"
+                                            class="text-lg font-semibold text-gray-800">Cargando...</p>
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <div id="info-edit-mode" class="hidden bg-white p-6 rounded-lg shadow-md">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div><label for="edit-project-name" class="block text-sm font-medium">Nombre del
-                                        Proyecto</label><input type="text" id="edit-project-name"
-                                        class="mt-1 w-full border rounded-md p-2"></div>
-                                <div><label for="edit-project-builder"
-                                        class="block text-sm font-medium">Constructora</label><input type="text"
-                                        id="edit-project-builder" class="mt-1 w-full border rounded-md p-2"></div>
-                                <div><label for="edit-project-value" class="block text-sm font-medium">Valor del
-                                        Contrato</label><input type="text" id="edit-project-value"
-                                        class="mt-1 w-full border rounded-md p-2"></div>
-                                <div><label for="edit-project-advance"
-                                        class="block text-sm font-medium">Anticipo</label><input type="text"
-                                        id="edit-project-advance" class="mt-1 w-full border rounded-md p-2"></div>
-                                <div><label for="edit-project-startDate" class="block text-sm font-medium">Fecha Inicio
-                                        Contrato</label><input type="date" id="edit-project-startDate"
-                                        class="mt-1 w-full border rounded-md p-2"></div>
-                                <div><label for="edit-project-kickoffDate" class="block text-sm font-medium">Fecha Acta
-                                        de Inicio</label><input type="date" id="edit-project-kickoffDate"
-                                        class="mt-1 w-full border rounded-md p-2"></div>
-                                <div><label for="edit-project-endDate" class="block text-sm font-medium">Fecha Fin
-                                        Contrato</label><input type="date" id="edit-project-endDate"
-                                        class="mt-1 w-full border rounded-md p-2"></div>
+                            <div class="bg-white p-6 rounded-lg shadow-md">
+                                <h3 class="text-xl font-bold text-gray-800 mb-4">Fechas Clave</h3>
+                                <div class="space-y-4">
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Inicio Contrato</p>
+                                        <p id="project-details-startDate" class="text-lg font-semibold text-gray-800">
+                                            N/A</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Acta de Inicio</p>
+                                        <p id="project-kickoffDate" class="text-lg font-semibold text-gray-800">N/A</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Fin Contrato</p>
+                                        <p id="project-endDate" class="text-lg font-semibold text-gray-800">N/A</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="lg:col-span-3 bg-white p-6 rounded-lg shadow-md">
+                                <h3 class="text-xl font-bold text-gray-800 mb-4">Estado del Anticipo</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Anticipo Total</p>
+                                        <p id="info-anticipo-total" class="text-2xl font-semibold text-gray-800">
+                                            Cargando...</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Amortizado</p>
+                                        <p id="info-anticipo-amortizado" class="text-2xl font-semibold text-green-700">
+                                            Cargando...</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Por Amortizar</p>
+                                        <p id="info-anticipo-por-amortizar" class="text-2xl font-semibold text-red-700">
+                                            Cargando...</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="lg:col-span-3 bg-white p-6 rounded-lg shadow-md">
+                                <h3 class="text-xl font-bold text-gray-800 mb-4">Avance Físico</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Ítems Instalados</p>
+                                        <p id="project-details-installedItems" class="text-2xl font-bold text-gray-800">
+                                            Cargando...</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">M² Ejecutados</p>
+                                        <p id="project-details-executedM2" class="text-2xl font-bold text-gray-800">
+                                            Cargando...</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="lg:col-span-3 bg-white p-6 rounded-lg shadow-md">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-xl font-bold text-gray-800">Personas de Interés</h3>
+                                    <button data-action="add-interest-person"
+                                        class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">
+                                        + Añadir
+                                    </button>
+                                </div>
+                                <div id="interest-people-list" class="space-y-4"></div>
                             </div>
                         </div>
                     </div>
@@ -514,16 +559,26 @@
                     </div>
                     <div id="items-content" class="tab-content hidden">
                         <div class="bg-white p-6 rounded-lg shadow-md">
-                            <div class="flex justify-between items-center mb-4">
+                            <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-4">
+
                                 <h3 class="text-xl font-bold text-gray-800">Ítems</h3>
-                                <div id="project-actions" class="flex flex-wrap gap-2"><button data-action="add-item"
-                                        class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md">Añadir
-                                        Ítem</button><button data-action="import-items"
-                                        class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg shadow-md">Importar
-                                        Ítems</button><button data-action="export-pdf"
-                                        class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg shadow-md">Exportar
-                                        a PDF</button></div>
+
+                                <div id="project-actions" class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                                    <button data-action="add-item"
+                                        class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md w-full sm:w-auto text-center">
+                                        Añadir Ítem
+                                    </button>
+                                    <button data-action="import-items"
+                                        class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg shadow-md w-full sm:w-auto text-center">
+                                        Importar Ítems
+                                    </button>
+                                    <button data-action="export-pdf"
+                                        class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg shadow-md w-full sm:w-auto text-center">
+                                        Exportar a PDF
+                                    </button>
+                                </div>
                             </div>
+
                             <div class="overflow-x-auto">
                                 <table class="w-full text-sm text-left text-gray-500 responsive-table">
                                     <thead class="text-xs text-gray-700 uppercase bg-gray-50">
@@ -551,13 +606,13 @@
                                 <div class="mb-4">
                                     <label class="block text-sm font-medium text-gray-700 mb-2">¿Quién realiza el
                                         corte?</label>
-                                    <div class="flex space-x-4">
+                                    <div class="flex flex-col sm:flex-row gap-2">
                                         <button data-action="set-corte-type" data-type="nosotros"
-                                            class="corte-type-btn flex-1 bg-blue-500 text-white font-bold py-2 px-4 rounded-lg">
+                                            class="corte-type-btn bg-blue-500 text-white font-bold py-3 px-4 rounded-lg w-full text-center">
                                             Lo realizo yo
                                         </button>
                                         <button data-action="set-corte-type" data-type="obra"
-                                            class="corte-type-btn flex-1 bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg">
+                                            class="corte-type-btn bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg w-full text-center">
                                             Lo realiza la obra
                                         </button>
                                     </div>
@@ -611,7 +666,11 @@
                                                 Final</label>
                                         </div>
                                     </div>
-                                    <div class="text-right mt-4">
+                                    <div class="mt-4 flex flex-col sm:flex-row justify-end gap-2">
+                                        <button data-action="cancel-corte-selection"
+                                            class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg">
+                                            Cancelar
+                                        </button>
                                         <button data-action="generate-corte"
                                             class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">
                                             Generar Corte Preliminar
@@ -642,7 +701,8 @@
                             <div class="bg-white p-6 rounded-lg shadow-md">
                                 <div class="flex justify-between items-center mb-4">
                                     <h3 class="text-xl font-bold text-gray-800">Ítems</h3>
-                                    <div id="project-actions" class="flex flex-wrap gap-2">
+                                    <div id="project-actions" class="flex flex-wrap gap-2 justify-start sm:justify-end">
+
                                         <button data-action="add-item"
                                             class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md">Añadir
                                             Ítem</button>
@@ -677,8 +737,217 @@
                             </div>
                         </div>
                     </div>
+                    <div id="pagos-content" class="tab-content hidden">
+                        <div class="space-y-8">
+
+                            <div class="bg-white p-6 rounded-lg shadow-md">
+                                <h3 class="text-xl font-bold text-gray-800 mb-4">Estado del Anticipo</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Anticipo del Contrato</p>
+                                        <p id="pagos-anticipo-total-value"
+                                            class="text-2xl font-bold text-gray-800 mt-1">Cargando...</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Anticipo Amortizado</p>
+                                        <p id="pagos-anticipo-amortizado-value"
+                                            class="text-2xl font-bold text-green-600 mt-1">Cargando...</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-500">Anticipo por Amortizar</p>
+                                        <p id="pagos-anticipo-por-amortizar-value"
+                                            class="text-2xl font-bold text-red-600 mt-1">Cargando...</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <h3 class="text-xl font-bold text-gray-800 mb-4">Abonos a Cortes de Obra</h3>
+                                <div id="cortes-payment-list" class="space-y-4"></div>
+                            </div>
+                            <div class="bg-white p-6 rounded-lg shadow-md">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-xl font-bold text-gray-800">Otros Movimientos</h3>
+                                    <button data-action="add-other-payment"
+                                        class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">
+                                        + Registrar Movimiento
+                                    </button>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-sm text-left">
+                                        <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                            <tr>
+                                                <th class="px-6 py-3">Fecha</th>
+                                                <th class="px-6 py-3">Concepto</th>
+                                                <th class="px-6 py-3 text-right">Valor</th>
+                                                <th class="px-6 py-3 text-center">Acciones</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="other-payments-table-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="materiales-content" class="tab-content hidden">
+                        <div class="bg-white p-6 rounded-lg shadow-md">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xl font-bold text-gray-800">Historial de Solicitudes del Proyecto</h3>
+                                <button data-action="request-material" id="request-material-btn"
+                                    class="hidden bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">
+                                    + Solicitar Material
+                                </button>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm text-left">
+                                    <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3">Fecha</th>
+                                            <th class="px-6 py-3">Material</th>
+                                            <th class="px-6 py-3 text-center">Cantidad</th>
+                                            <th class="px-6 py-3">Solicitante</th>
+                                            <th class="px-6 py-3">Para Ítem</th>
+                                            <th class="px-6 py-3 text-center">Estado</th>
+                                            <th class="px-6 py-3">Responsable</th>
+                                            <th class="px-6 py-3 text-center">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="requests-table-body">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div id="catalog-view" class="hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <h1 class="text-3xl font-bold text-gray-700">Catálogo de Materiales</h1>
+                    <button data-action="add-catalog-item"
+                        class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">
+                        + Añadir Nuevo Material
+                    </button>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3">Nombre del Material</th>
+                                    <th class="px-6 py-3">Referencia / SKU</th>
+                                    <th class="px-6 py-3">Unidad</th>
+                                    <th class="px-6 py-3 text-right">Cantidad en Stock</th>
+                                    <th class="px-6 py-3 text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="catalog-table-body">
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
+
+            <div id="compras-view" class="hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <h1 class="text-3xl font-bold text-gray-700">Órdenes de Compra</h1>
+                    <button data-action="new-purchase-order"
+                        class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">
+                        + Crear Orden de Compra
+                    </button>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3">Fecha</th>
+                                    <th class="px-6 py-3">Proveedor</th>
+                                    <th class="px-6 py-3 text-right">Costo Total</th>
+                                    <th class="px-6 py-3 text-center">Estado</th>
+                                    <th class="px-6 py-3 text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="purchase-orders-table-body">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="reports-view" class="hidden">
+                <h1 class="text-3xl font-bold text-gray-700 mb-6">Reporte de Consumo de Materiales</h1>
+
+                <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                        <div>
+                            <label for="report-start-date" class="block text-sm font-medium">Fecha de Inicio</label>
+                            <input type="date" id="report-start-date" class="mt-1 w-full border p-2 rounded-md">
+                        </div>
+                        <div>
+                            <label for="report-end-date" class="block text-sm font-medium">Fecha de Fin</label>
+                            <input type="date" id="report-end-date" class="mt-1 w-full border p-2 rounded-md">
+                        </div>
+                        <div>
+                            <label for="report-project-filter" class="block text-sm font-medium">Proyecto
+                                (Opcional)</label>
+                            <select id="report-project-filter" class="mt-1 w-full border p-2 rounded-md bg-white">
+                                <option value="all">Todos los Proyectos</option>
+                            </select>
+                        </div>
+                        <button id="generate-report-btn"
+                            class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg w-full">
+                            Generar Reporte
+                        </button>
+                    </div>
+                </div>
+                </div>
+
+                <div id="report-results-container" class="hidden">
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">Resultados del Reporte</h3>
+                        <div id="report-summary" class="mb-4 grid grid-cols-2 gap-4">
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left">
+                                <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3">Fecha</th>
+                                        <th class="px-6 py-3">Proyecto</th>
+                                        <th class="px-6 py-3">Material</th>
+                                        <th class="px-6 py-3 text-center">Cantidad</th>
+                                        <th class="px-6 py-3 text-right">Costo Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="report-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="corte-details-view" class="hidden">
+                <header class="mb-6">
+                    <button data-action="back-to-project-details-cortes"
+                        class="text-blue-600 hover:text-blue-800 font-semibold mb-2 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20"
+                            fill="currentColor">
+                            <path fill-rule="evenodd"
+                                d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                                clip-rule="evenodd" />
+                        </svg>
+                        Volver a Cortes
+                    </button>
+                    <h1 id="corte-details-title" class="text-3xl font-bold text-gray-700">Cargando detalles...</h1>
+                    <p id="corte-details-summary" class="text-gray-500 mt-1"></p>
+                </header>
+
+                <div id="corte-details-list" class="space-y-4">
+                </div>
+            </div>
+
             <div id="sub-items-view" class="hidden">
                 <header class="mb-6">
                     <button data-action="back-to-project"
@@ -734,7 +1003,6 @@
 
 
 
-
     <div id="documents-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
         <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto p-6 max-h-[90vh] flex flex-col">
             <h3 id="documents-modal-title" class="text-xl font-bold mb-4">Gestionar Documentos</h3>
@@ -776,51 +1044,67 @@
             </form>
         </div>
     </div>
-<div id="progress-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-    <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
-        <form id="progress-modal-form">
-            <h3 id="progress-modal-title" class="text-xl font-bold mb-4">Registrar Avance</h3>
-            <div class="space-y-4">
-                <div>
-                    <label for="sub-item-location" class="block text-sm font-medium text-gray-700">Lugar de Instalación</label>
-                    <input type="text" id="sub-item-location" class="mt-1 block w-full px-3 py-2 border rounded-md">
-                </div>
-                <div class="grid grid-cols-2 gap-4">
+
+    <div id="progress-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
+            <form id="progress-modal-form">
+                <h3 id="progress-modal-title" class="text-xl font-bold mb-4">Registrar Avance</h3>
+                <div class="space-y-4">
                     <div>
-                        <label for="sub-item-real-width" class="block text-sm font-medium text-gray-700">Ancho Real (m)</label>
-                        <input type="number" step="0.01" id="sub-item-real-width" placeholder="Ej: 1.52" class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        <label for="sub-item-location" class="block text-sm font-medium text-gray-700">Lugar de
+                            Instalación</label>
+                        <input type="text" id="sub-item-location" class="mt-1 block w-full px-3 py-2 border rounded-md">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label for="sub-item-real-width" class="block text-sm font-medium text-gray-700">Ancho Real
+                                (m)</label>
+                            <input type="number" step="0.01" id="sub-item-real-width" placeholder="Ej: 1.52"
+                                class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        </div>
+                        <div>
+                            <label for="sub-item-real-height" class="block text-sm font-medium text-gray-700">Alto Real
+                                (m)</label>
+                            <input type="number" step="0.01" id="sub-item-real-height" placeholder="Ej: 2.21"
+                                class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        </div>
                     </div>
                     <div>
-                        <label for="sub-item-real-height" class="block text-sm font-medium text-gray-700">Alto Real (m)</label>
-                        <input type="number" step="0.01" id="sub-item-real-height" placeholder="Ej: 2.21" class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        <label for="sub-item-manufacturer"
+                            class="block text-sm font-medium text-gray-700">Fabricante</label>
+                        <select id="sub-item-manufacturer"
+                            class="mt-1 block w-full px-3 py-2 border rounded-md bg-white"></select>
+                    </div>
+                    <div>
+                        <label for="sub-item-installer"
+                            class="block text-sm font-medium text-gray-700">Instalador</label>
+                        <select id="sub-item-installer"
+                            class="mt-1 block w-full px-3 py-2 border rounded-md bg-white"></select>
+                    </div>
+                    <div>
+                        <label for="sub-item-date" class="block text-sm font-medium text-gray-700">Fecha de
+                            Instalación</label>
+                        <input type="date" id="sub-item-date" class="mt-1 block w-full px-3 py-2 border rounded-md">
+                    </div>
+                    <div>
+                        <label for="sub-item-photo" class="block text-sm font-medium text-gray-700">Foto de
+                            Evidencia</label>
+                        <input type="file" id="sub-item-photo" accept="image/*" capture="environment"
+                            class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                        <div id="photo-preview" class="mt-2"></div>
                     </div>
                 </div>
-                <div>
-                    <label for="sub-item-manufacturer" class="block text-sm font-medium text-gray-700">Fabricante</label>
-                    <select id="sub-item-manufacturer" class="mt-1 block w-full px-3 py-2 border rounded-md bg-white"></select>
+                <p id="progress-feedback" class="text-sm mt-4 text-center"></p>
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" id="progress-modal-cancel-btn"
+                        class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button>
+                    <button type="submit" id="progress-modal-confirm-btn"
+                        class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Guardar</button>
                 </div>
-                <div>
-                    <label for="sub-item-installer" class="block text-sm font-medium text-gray-700">Instalador</label>
-                    <select id="sub-item-installer" class="mt-1 block w-full px-3 py-2 border rounded-md bg-white"></select>
-                </div>
-                <div>
-                    <label for="sub-item-date" class="block text-sm font-medium text-gray-700">Fecha de Instalación</label>
-                    <input type="date" id="sub-item-date" class="mt-1 block w-full px-3 py-2 border rounded-md">
-                </div>
-                <div>
-                    <label for="sub-item-photo" class="block text-sm font-medium text-gray-700">Foto de Evidencia</label>
-                    <input type="file" id="sub-item-photo" accept="image/*" capture="environment" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-                    <div id="photo-preview" class="mt-2"></div>
-                </div>
-            </div>
-            <p id="progress-feedback" class="text-sm mt-4 text-center"></p>
-            <div class="mt-6 flex justify-end gap-3">
-                <button type="button" id="progress-modal-cancel-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button>
-                <button type="submit" id="progress-modal-confirm-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Guardar</button>
-            </div>
-        </form>
+            </form>
+        </div>
     </div>
-</div>
+
     <div id="import-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
         <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-lg mx-auto p-6">
             <h3 class="text-xl font-bold mb-4">Importar Ítems</h3>
@@ -840,6 +1124,7 @@
             </div>
         </div>
     </div>
+
     <div id="confirm-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
         <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
             <h3 id="confirm-modal-title" class="text-xl font-bold mb-4">Confirmar Acción</h3>
@@ -862,6 +1147,7 @@
                 </svg></button><img id="modal-image" src="" alt="Evidencia de instalación"
                 class="max-w-full max-h-[85vh] mx-auto"></div>
     </div>
+
     <div id="multiple-progress-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
         <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-4xl mx-auto p-6 max-h-[90vh] flex flex-col">
             <h3 id="multiple-progress-modal-title" class="text-xl font-bold mb-4">Registrar Avance en Lote</h3>
@@ -913,6 +1199,7 @@
             </div>
         </div>
     </div>
+
     <div id="register-success-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
         <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
             <h3 class="text-xl font-bold mb-4">Registro Exitoso</h3>
@@ -922,9 +1209,9 @@
             </div>
         </div>
     </div>
+
     <div id="documents-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop"> ...
     </div>
-
 
     <div id="document-viewer-modal"
         class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50">
@@ -1029,6 +1316,30 @@
                 <h4 class="text-lg font-semibold text-gray-700 mb-4">Historial de Documentos Varios</h4>
                 <div id="varios-list-container" class="space-y-3">
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="po-details-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h3 id="po-details-title" class="text-xl font-bold">Detalle de Orden de Compra</h3>
+                <button id="po-details-close-btn"
+                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
+            </div>
+
+            <div class="p-6 overflow-y-auto space-y-4">
+                <div id="po-details-summary"></div>
+
+                <div>
+                    <h4 class="font-semibold text-gray-700 mb-2">Materiales en esta orden:</h4>
+                    <div id="po-details-items-list" class="space-y-2"></div>
+                </div>
+            </div>
+
+            <div id="po-details-actions" class="mt-auto p-6 border-t flex justify-end gap-3">
+                <button type="button" id="po-details-cancel-btn"
+                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cerrar</button>
             </div>
         </div>
     </div>

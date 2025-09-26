@@ -1,7 +1,8 @@
 // Importaciones de Firebase
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup  } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-messaging.js";
 
@@ -24,12 +25,21 @@ const auth = getAuth(app);
 const storage = getStorage(app);
 const messaging = getMessaging(app);
 
+let unsubscribeReports = null;
+const functions = getFunctions(app);
+let unsubscribePurchaseOrders = null;
+let unsubscribeInventory = null;
+let unsubscribeStock = null;
+let unsubscribeMaterialRequests = null;
+let currentCorte = null;
+let unsubscribePeopleOfInterest = null;
+let unsubscribePayments = null;
 let activeListeners = [];
 let currentUser = null;
 let currentUserRole = null;
 let usersMap = new Map();
 let currentProject = null;
-//let currentItem = null;
+let currentItem = null;
 let unsubscribeProjects = null;
 let unsubscribeItems = null;
 let unsubscribeSubItems = null;
@@ -94,7 +104,7 @@ function closeSidebar() {
 
 // --- MANEJO DE VISTAS ---
 
-function showView(viewName) {
+function showView(viewName, fromHistory = false) {
     Object.values(views).forEach(view => {
         if (view) {
             view.classList.add('hidden');
@@ -107,16 +117,25 @@ function showView(viewName) {
         targetView.classList.remove('hidden');
         targetView.style.display = 'block';
     } else {
-        console.error(`Error: No se encontró el elemento de la vista con el nombre: ${viewName}`);
+        console.error(`Error: No se encontró la vista: ${viewName}`);
     }
 
     document.querySelectorAll('#main-nav .nav-link').forEach(link => {
         link.classList.toggle('active', link.dataset.view === viewName);
     });
 
-    const sidebar = document.getElementById('sidebar');
-    if (sidebar && window.innerWidth < 768) {
-        sidebar.classList.add('-translate-x-full');
+    if (window.innerWidth < 768) {
+        closeSidebar();
+    }
+
+    // --- LÓGICA AÑADIDA PARA EL HISTORIAL ---
+    // Si el cambio de vista NO viene de presionar "Atrás",
+    // entonces lo añadimos al historial.
+    if (!fromHistory) {
+        const state = { viewName: viewName };
+        const title = `Gestor de Proyectos - ${viewName}`;
+        const url = `#${viewName}`;
+        history.pushState(state, title, url);
     }
 }
 // --- AUTENTICACIÓN ---
@@ -191,7 +210,7 @@ async function handleRegister(e) {
             phone: document.getElementById('register-phone').value,
             address: document.getElementById('register-address').value,
             email: email,
-            role: 'employee',
+            role: 'operario',
             status: 'pending',
             createdAt: new Date()
         });
@@ -234,21 +253,295 @@ async function loadUsersMap() {
 
 // --- LÓGICA DEL DASHBOARD ---
 function showDashboard() {
-    showView('proyectos'); // Mostrar la vista de proyectos por defecto
+    showView('proyectos'); // Llama a la vista de proyectos por defecto
     currentProject = null;
-    currentItem = null;
+
+    // Cancela las suscripciones de la vista de detalles para ahorrar recursos
     if (unsubscribeItems) unsubscribeItems();
     if (unsubscribeSubItems) unsubscribeSubItems();
-    if (unsubscribeUsers) unsubscribeUsers();
+    if (unsubscribeCortes) unsubscribeCortes();
+    if (unsubscribePeopleOfInterest) unsubscribePeopleOfInterest();
+    if (unsubscribePayments) unsubscribePayments();
 
-    document.getElementById('admin-nav-link').classList.toggle('hidden', currentUserRole !== 'admin');
+    // Actualiza la visibilidad de los enlaces del menú según el rol
+    const isAdmin = currentUserRole === 'admin';
+    const isBodega = currentUserRole === 'bodega';
+    document.getElementById('admin-nav-link').classList.toggle('hidden', !isAdmin);
+    document.getElementById('inventory-nav-link').classList.toggle('hidden', !isAdmin && !isBodega);
+    document.getElementById('compras-nav-link').classList.toggle('hidden', currentUserRole !== 'admin' && currentUserRole !== 'bodega');
+    document.getElementById('reports-nav-link').classList.toggle('hidden', currentUserRole !== 'admin');
+
 
     if (currentUser) {
         loadProjects();
-        if (currentUserRole === 'employee') {
-            // loadNotifications(); // Puedes reactivar esto si lo necesitas
+    }else if (viewName === 'reports') {
+    showView('reports');
+    loadReportsView();
+}
+}
+
+let unsubscribeCatalog = null; // Renombra la variable global
+
+function loadCatalogView() {
+    const tableBody = document.getElementById('catalog-table-body');
+    if (!tableBody) return;
+
+    if (unsubscribeCatalog) unsubscribeCatalog();
+    
+    const catalogQuery = query(collection(db, "materialCatalog"), orderBy("name"));
+    unsubscribeCatalog = onSnapshot(catalogQuery, (snapshot) => {
+        tableBody.innerHTML = '';
+        if (snapshot.empty) {
+            tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-gray-500">No hay materiales en el catálogo.</td></tr>`;
+            return;
+        }
+        snapshot.forEach(doc => {
+            const material = { id: doc.id, ...doc.data() };
+            const stock = material.quantityInStock || 0;
+            const minStock = material.minStockThreshold || 0;
+            
+            let stockStatusIndicator = '<div class="h-3 w-3 rounded-full bg-green-500 mx-auto" title="Stock OK"></div>';
+            if (minStock > 0 && stock <= minStock) {
+                stockStatusIndicator = '<div class="h-3 w-3 rounded-full bg-red-500 mx-auto" title="Stock Bajo"></div>';
+            }
+
+            const row = document.createElement('tr');
+            row.className = 'bg-white border-b';
+            row.innerHTML = `
+                <td class="px-6 py-4">${stockStatusIndicator}</td>
+                <td class="px-6 py-4 font-medium">${material.name}</td>
+                <td class="px-6 py-4 text-gray-500">${material.reference || 'N/A'}</td>
+                <td class="px-6 py-4">${material.unit}</td>
+                <td class="px-6 py-4 text-right font-bold text-lg">${stock}</td>
+                <td class="px-6 py-4 text-center">
+                    <button data-action="edit-catalog-item" data-id="${material.id}" class="text-yellow-600 font-semibold hover:underline">Editar</button>
+                </td>
+            `;
+            tableBody.appendChild(row);
+        });
+    });
+}
+
+
+function loadComprasView() {
+    const tableBody = document.getElementById('purchase-orders-table-body');
+    if (!tableBody) return;
+
+    if (unsubscribePurchaseOrders) unsubscribePurchaseOrders();
+
+    const poQuery = query(collection(db, "purchaseOrders"), orderBy("createdAt", "desc"));
+    unsubscribePurchaseOrders = onSnapshot(poQuery, (snapshot) => {
+        tableBody.innerHTML = '';
+        if (snapshot.empty) {
+            tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">No hay órdenes de compra.</td></tr>`;
+            return;
+        }
+
+        snapshot.forEach(doc => {
+            // Usamos un bloque try/catch para que un documento erróneo no detenga todo el proceso
+            try {
+                const po = { id: doc.id, ...doc.data() };
+
+                // VERIFICACIÓN CLAVE: Nos aseguramos de que los datos esenciales existan
+                if (!po.createdAt || typeof po.createdAt.toDate !== 'function' || !po.provider) {
+                    // Si falta la fecha o el proveedor, lo reportamos en la consola y saltamos este documento
+                    console.warn(`Se omitió la orden de compra con ID ${doc.id} por tener datos incompletos.`);
+                    return; // 'continue' en un forEach
+                }
+
+                let statusText, statusColor;
+                switch (po.status) {
+                    case 'recibida':
+                        statusText = 'Recibida'; statusColor = 'bg-green-100 text-green-800'; break;
+                    default:
+                        statusText = 'Pendiente'; statusColor = 'bg-yellow-100 text-yellow-800';
+                }
+
+                const row = document.createElement('tr');
+                row.className = 'bg-white border-b';
+                row.innerHTML = `
+                    <td class="px-6 py-4">${po.createdAt.toDate().toLocaleDateString('es-CO')}</td>
+                    <td class="px-6 py-4 font-medium">${po.provider}</td>
+                    <td class="px-6 py-4 text-right font-semibold">${currencyFormatter.format(po.totalCost || 0)}</td>
+                    <td class="px-6 py-4 text-center"><span class="px-2 py-1 text-xs font-semibold rounded-full ${statusColor}">${statusText}</span></td>
+                    <td class="px-6 py-4 text-center">
+                        <button data-action="view-purchase-order" data-id="${po.id}" class="text-blue-600 font-semibold hover:underline">Ver</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+
+            } catch (error) {
+                console.error(`Error al procesar la orden de compra con ID ${doc.id}:`, error);
+                // Si ocurre un error inesperado, lo mostramos en consola pero no detenemos la carga de los demás
+            }
+        });
+    });
+}
+
+async function loadReportsView() {
+    const projectFilter = document.getElementById('report-project-filter');
+    
+    // Rellenar el filtro de proyectos
+    const projectsSnapshot = await getDocs(query(collection(db, "projects")));
+    projectFilter.innerHTML = '<option value="all">Todos los Proyectos</option>'; // Reset
+    projectsSnapshot.forEach(doc => {
+        projectFilter.innerHTML += `<option value="${doc.id}">${doc.data().name}</option>`;
+    });
+
+    // Poner fechas por defecto (mes actual)
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
+    document.getElementById('report-start-date').value = firstDay;
+    document.getElementById('report-end-date').value = lastDay;
+}
+
+async function generateMaterialReport() {
+    loadingOverlay.classList.remove('hidden');
+    const resultsContainer = document.getElementById('report-results-container');
+    const summaryContainer = document.getElementById('report-summary');
+    const tableBody = document.getElementById('report-table-body');
+
+    // 1. Obtener valores de los filtros
+    const startDate = new Date(document.getElementById('report-start-date').value);
+    const endDate = new Date(document.getElementById('report-end-date').value);
+    endDate.setHours(23, 59, 59); // Incluir todo el día de fin
+    const projectId = document.getElementById('report-project-filter').value;
+
+    // 2. Construir la consulta a Firestore
+    let requestsQuery = collectionGroup(db, 'materialRequests');
+    requestsQuery = query(requestsQuery, where('createdAt', '>=', startDate), where('createdAt', '<=', endDate));
+    if (projectId !== 'all') {
+        // Firestore no permite filtrar por un campo y luego por el path del documento.
+        // Haremos el filtro del proyecto en el cliente.
+    }
+
+    // 3. Obtener y procesar los datos
+    const snapshot = await getDocs(requestsQuery);
+    let requests = snapshot.docs.map(doc => ({projectId: doc.ref.parent.parent.id, ...doc.data()}));
+    
+    // Filtro manual por proyecto si es necesario
+    if (projectId !== 'all') {
+        requests = requests.filter(req => req.projectId === projectId);
+    }
+    
+    // 4. Renderizar resultados
+    tableBody.innerHTML = '';
+    if (requests.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">No se encontraron solicitudes en el rango de fechas.</td></tr>`;
+    } else {
+        const projectNames = new Map(); // Para no consultar el nombre del proyecto cada vez
+        for (const req of requests) {
+            if (!projectNames.has(req.projectId)) {
+                const projectDoc = await getDoc(doc(db, "projects", req.projectId));
+                projectNames.set(req.projectId, projectDoc.data()?.name || 'Proyecto Desconocido');
+            }
+            
+            const row = document.createElement('tr');
+            row.className = 'bg-white border-b';
+            row.innerHTML = `
+                <td class="px-6 py-4">${req.createdAt.toDate().toLocaleDateString('es-CO')}</td>
+                <td class="px-6 py-4 font-medium">${projectNames.get(req.projectId)}</td>
+                <td class="px-6 py-4">${req.materialName}</td>
+                <td class="px-6 py-4 text-center">${req.quantity}</td>
+                <td class="px-6 py-4 text-right font-semibold">${currencyFormatter.format(req.totalCost || 0)}</td>
+            `;
+            tableBody.appendChild(row);
         }
     }
+
+    // 5. Calcular y mostrar resumen
+    const totalCost = requests.reduce((sum, req) => sum + (req.totalCost || 0), 0);
+    summaryContainer.innerHTML = `
+        <div class="bg-gray-50 p-4 rounded-lg">
+            <p class="text-sm font-medium text-gray-500">Costo Total de Materiales</p>
+            <p class="text-2xl font-bold text-gray-800">${currencyFormatter.format(totalCost)}</p>
+        </div>
+        <div class="bg-gray-50 p-4 rounded-lg">
+            <p class="text-sm font-medium text-gray-500">N° de Solicitudes</p>
+            <p class="text-2xl font-bold text-gray-800">${requests.length}</p>
+        </div>
+    `;
+
+    resultsContainer.classList.remove('hidden');
+    loadingOverlay.classList.add('hidden');
+}
+
+/**
+ * Abre y rellena el modal con los detalles de una Orden de Compra específica.
+ * @param {string} poId - El ID de la Orden de Compra a mostrar.
+ */
+async function openPurchaseOrderModal(poId) {
+    const modal = document.getElementById('po-details-modal');
+    if (!modal) return;
+
+    const summaryContainer = document.getElementById('po-details-summary');
+    const itemsListContainer = document.getElementById('po-details-items-list');
+    const actionsContainer = document.getElementById('po-details-actions');
+
+    summaryContainer.innerHTML = '<p>Cargando...</p>';
+    itemsListContainer.innerHTML = '';
+
+    const poRef = doc(db, "purchaseOrders", poId);
+    const poSnap = await getDoc(poRef);
+
+    if (!poSnap.exists()) {
+        alert("Error: No se encontró la orden de compra.");
+        return;
+    }
+
+    const po = { id: poSnap.id, ...poSnap.data() };
+
+    // Rellenar información del resumen
+    summaryContainer.innerHTML = `
+        <div>
+            <p><span class="font-semibold">Proveedor:</span> ${po.provider}</p>
+            <p><span class="font-semibold">Fecha:</span> ${po.createdAt.toDate().toLocaleDateString('es-CO')}</p>
+            <p><span class="font-semibold">Estado:</span> ${po.status}</p>
+        </div>`;
+
+    // Rellenar lista de materiales
+    for (const item of po.items) {
+        const materialRef = doc(db, "materialCatalog", item.materialId);
+        const materialSnap = await getDoc(materialRef);
+        const materialName = materialSnap.exists() ? materialSnap.data().name : 'Material no encontrado';
+
+        const itemEl = document.createElement('div');
+        itemEl.className = 'p-2 bg-gray-50 rounded-md text-sm';
+        itemEl.innerHTML = `
+            <span class="font-semibold">${materialName}</span> - 
+            Cantidad: <span class="font-bold">${item.quantity}</span> - 
+            Costo Unitario: <span class="font-bold">${currencyFormatter.format(item.unitCost)}</span>
+        `;
+        itemsListContainer.appendChild(itemEl);
+    }
+
+    // Añadir botón de acción si la orden está pendiente
+    actionsContainer.innerHTML = `<button type="button" id="po-details-cancel-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cerrar</button>`;
+    if (po.status === 'pendiente' && (currentUserRole === 'admin' || currentUserRole === 'bodega')) {
+        // Botón Rechazar
+        const rejectBtn = document.createElement('button');
+        rejectBtn.textContent = 'Rechazar Orden';
+        rejectBtn.className = 'bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg';
+        rejectBtn.dataset.action = 'reject-purchase-order';
+        rejectBtn.dataset.id = po.id;
+        actionsContainer.appendChild(rejectBtn);
+
+        // Botón Recibir
+        const receiveBtn = document.createElement('button');
+        receiveBtn.textContent = 'Recibir Mercancía';
+        receiveBtn.className = 'bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg';
+        receiveBtn.dataset.action = 'receive-purchase-order';
+        receiveBtn.dataset.id = po.id;
+        actionsContainer.appendChild(receiveBtn);
+    }
+
+    modal.style.display = 'flex';
+}
+
+function closePurchaseOrderModal() {
+    const modal = document.getElementById('po-details-modal');
+    if (modal) modal.style.display = 'none';
 }
 
 function loadProjects(status = 'active') {
@@ -383,7 +676,8 @@ function createProjectCard(project, progress, stats) {
                         <p class="text-sm text-gray-500 font-semibold">${project.builderName || 'Constructora no especificada'}</p>
                         <p class="text-sm text-gray-500">${project.location} - ${project.address}</p>
                     </div>
-                <div class="flex items-center space-x-2">
+                <div class="flex flex-wrap gap-2 justify-end">
+
                     <button data-action="view-details" class="text-blue-600 hover:text-blue-800 font-semibold py-2 px-4 rounded-lg bg-blue-100 hover:bg-blue-200 transition-colors">Ver Detalles</button>
     
                     ${project.status === 'active'
@@ -510,9 +804,11 @@ function createUserRow(user) {
         <td class="px-6 py-4 font-medium text-gray-900" data-label="Nombre">${user.firstName} ${user.lastName}</td>
         <td class="px-6 py-4" data-label="Correo">${user.email}</td>
         <td class="px-6 py-4" data-label="Rol">
-            <select class="user-role-select border rounded-md p-1" data-userid="${user.id}">
-                <option value="employee" ${user.role === 'employee' ? 'selected' : ''}>Empleado</option>
-                <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Administrador</option>
+            <select class="user-role-select border rounded-md p-1 bg-white" data-userid="${user.id}">
+                <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Administrador </option>
+                <option value="sst" ${user.role === 'sst' ? 'selected' : ''}>SST</option>
+                <option value="bodega" ${user.role === 'bodega' ? 'selected' : ''}>Bodega</option>
+                <option value="operario" ${user.role === 'operario' ? 'selected' : ''}>Operario</option>
             </select>
         </td>
         <td class="px-6 py-4 font-semibold ${statusColor}" data-label="Estado">${statusText}</td>
@@ -629,54 +925,10 @@ function switchProjectTab(tabName) {
     syncTabsState(tabName);
 }
 
-/**
- * Activa o desactiva el modo de edición para la información general del proyecto.
- * @param {boolean} isEditing - True para activar el modo edición, false para desactivarlo.
- */
-function toggleInfoEditMode(isEditing) {
-    const viewMode = document.getElementById('info-view-mode');
-    const editMode = document.getElementById('info-edit-mode');
-    const editBtn = document.getElementById('edit-info-btn');
-    const saveBtn = document.getElementById('save-info-btn');
-    const cancelBtn = document.getElementById('cancel-edit-btn');
-    if (!viewMode || !editMode || !editBtn || !saveBtn || !cancelBtn) return;
-    viewMode.classList.toggle('hidden', isEditing);
-    editMode.classList.toggle('hidden', !isEditing);
-    editBtn.classList.toggle('hidden', isEditing);
-    saveBtn.classList.toggle('hidden', !isEditing);
-    cancelBtn.classList.toggle('hidden', !isEditing);
-    if (isEditing) {
-        document.getElementById('edit-project-name').value = currentProject.name || '';
-        document.getElementById('edit-project-builder').value = currentProject.builderName || '';
-        document.getElementById('edit-project-value').value = currentProject.value || 0;
-        document.getElementById('edit-project-advance').value = currentProject.advance || 0;
-        document.getElementById('edit-project-startDate').value = currentProject.startDate || '';
-        document.getElementById('edit-project-kickoffDate').value = currentProject.kickoffDate || '';
-        document.getElementById('edit-project-endDate').value = currentProject.endDate || '';
-    }
-}
-async function saveProjectInfoChanges() {
-    const updatedData = {
-        name: document.getElementById('edit-project-name').value,
-        builderName: document.getElementById('edit-project-builder').value,
-        value: parseFloat(document.getElementById('edit-project-value').value) || 0,
-        advance: parseFloat(document.getElementById('edit-project-advance').value) || 0,
-        startDate: document.getElementById('edit-project-startDate').value,
-        kickoffDate: document.getElementById('edit-project-kickoffDate').value,
-        endDate: document.getElementById('edit-project-endDate').value,
-    };
-    try {
-        const projectRef = doc(db, "projects", currentProject.id);
-        await updateDoc(projectRef, updatedData);
-        toggleInfoEditMode(false);
-    } catch (error) {
-        console.error("Error al actualizar la información del proyecto:", error);
-        alert("Hubo un error al guardar los cambios.");
-    }
-}
+
 
 // --- LÓGICA DE DETALLES DEL PROYECTO ---
-async function showProjectDetails(project) {
+async function showProjectDetails(project, defaultTab = 'info-general') {
     currentProject = project;
     showView('projectDetails');
     setupResponsiveTabs();
@@ -684,50 +936,50 @@ async function showProjectDetails(project) {
     const safeSetText = (id, text) => {
         const element = document.getElementById(id);
         if (element) element.textContent = text;
-        else console.warn(`Elemento con id '${id}' no encontrado.`);
     };
 
+    // --- Rellenar datos estáticos ---
     safeSetText('project-details-name', project.name);
     safeSetText('project-details-builder', project.builderName || 'Constructora no especificada');
-
-    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
-
-    // Rellenar datos estáticos del contrato
-    safeSetText('project-details-value', currencyFormatter.format(project.value || 0));
-    safeSetText('project-details-advance', currencyFormatter.format(project.advance || 0));
     safeSetText('project-details-startDate', project.startDate ? new Date(project.startDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A');
     safeSetText('project-kickoffDate', project.kickoffDate ? new Date(project.kickoffDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A');
     safeSetText('project-endDate', project.endDate ? new Date(project.endDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A');
+    const pricingModelText = project.pricingModel === 'incluido'
+        ? 'Suministro e Instalación (Incluido)'
+        : 'Suministro e Instalación (Separado)';
+    safeSetText('project-details-pricingModel', pricingModelText);
 
-    toggleInfoEditMode(false);
+    // --- Cargar datos dinámicos ---
+    // Ponemos un listener a los pagos para actualizar el resumen de Info General en tiempo real.
+    const paymentsQuery = query(collection(db, "projects", project.id, "payments"));
+    onSnapshot(paymentsQuery, (paymentsSnapshot) => {
+        const allPayments = paymentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        updateGeneralInfoSummary(project, allPayments);
+    });
 
-    // --- CÁLCULO Y VISUALIZACIÓN DE MÉTRICAS DINÁMICAS ---
-    safeSetText('project-details-contractedValue', 'Calculando...');
-    safeSetText('project-details-executedValue', 'Calculando...');
-    safeSetText('project-details-installedItems', 'Calculando...');
-    safeSetText('project-details-executedM2', 'Calculando...');
-
-    // Llamamos a las dos funciones de cálculo en paralelo
     const [contractedValue, statsMap] = await Promise.all([
         calculateProjectContractedValue(project.id),
         calculateAllProjectsProgress([project.id])
     ]);
+    const stats = statsMap.get(project.id) || { executedValue: 0, totalItems: 0 };
 
-    const stats = statsMap.get(project.id) || { executedValue: 0, executedItems: 0, totalItems: 0, executedM2: 0, totalM2: 0 };
+    safeSetText('info-initial-contract-value', currencyFormatter.format(project.value || 0));
 
-    // Mostramos los resultados
-    safeSetText('project-details-contractedValue', currencyFormatter.format(contractedValue));
-    safeSetText('project-details-executedValue', currencyFormatter.format(stats.executedValue));
+
+    safeSetText('info-contracted-value', currencyFormatter.format(contractedValue));
+    safeSetText('info-executed-value', currencyFormatter.format(stats.executedValue));
     safeSetText('project-details-installedItems', `${stats.executedItems} / ${stats.totalItems}`);
     safeSetText('project-details-executedM2', `${stats.executedM2.toFixed(2)}m² / ${stats.totalM2.toFixed(2)}m²`);
 
     // --- Cargar datos para las otras pestañas ---
     renderInteractiveDocumentCards(project.id);
     loadItems(project.id);
-    loadCortes(project.id);
+    loadCortes(project);
+    loadPeopleOfInterest(project.id);
+    loadPayments(project);
+    loadMaterialsTab(project);
 
-    // Activar la primera pestaña por defecto
-    switchProjectTab('info-general');
+    switchProjectTab(defaultTab);
 }
 
 // ====================================================================
@@ -739,11 +991,15 @@ let currentCorteType = 'nosotros'; // 'nosotros' o 'obra'
 /**
  * Carga y muestra la lista de cortes de obra para un proyecto.
  */
-function loadCortes(projectId) {
+
+/**
+ * Carga y muestra la lista de cortes de obra para un proyecto con un diseño responsive mejorado.
+ */
+function loadCortes(project) {
     const container = document.getElementById('cortes-list-container');
     if (!container) return;
 
-    const q = query(collection(db, "projects", projectId, "cortes"), orderBy("createdAt", "desc"));
+    const q = query(collection(db, "projects", project.id, "cortes"), orderBy("createdAt", "desc"));
     if (unsubscribeCortes) unsubscribeCortes();
 
     unsubscribeCortes = onSnapshot(q, (snapshot) => {
@@ -754,11 +1010,11 @@ function loadCortes(projectId) {
         }
 
         const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
-        
+
         snapshot.forEach(doc => {
             const corte = { id: doc.id, ...doc.data() };
             const corteCard = document.createElement('div');
-            corteCard.className = 'p-4 bg-gray-50 rounded-lg border';
+            corteCard.className = 'bg-white p-4 rounded-lg shadow-md border';
 
             let statusColor, statusText;
             switch (corte.status) {
@@ -766,70 +1022,48 @@ function loadCortes(projectId) {
                 default: statusColor = 'bg-yellow-100 text-yellow-800'; statusText = 'Preliminar'; break;
             }
 
+            // --- PLANTILLA SIMPLIFICADA ---
             corteCard.innerHTML = `
-                <div class="flex justify-between items-start">
+                <div class="flex flex-col sm:flex-row justify-between">
                     <div>
-                        <p class="font-bold text-gray-800">Corte #${corte.corteNumber || 'N/A'} ${corte.isFinal ? '<span class="text-xs text-red-600">(FINAL)</span>' : ''}</p>
+                        <p class="font-bold text-lg text-gray-800">Corte #${corte.corteNumber || 'N/A'} ${corte.isFinal ? '<span class="text-xs text-red-600 font-semibold">(FINAL)</span>' : ''}</p>
                         <p class="text-sm text-gray-600">Creado el: ${corte.createdAt.toDate().toLocaleDateString('es-CO')}</p>
-                        <p class="text-xs text-gray-500">Tipo: ${corte.type === 'obra' ? 'Realizado por Obra' : 'Realizado por Nosotros'}</p>
+                        <span class="mt-2 inline-block text-sm font-semibold px-3 py-1 rounded-full ${statusColor}">${statusText}</span>
                     </div>
-                    <div class="text-right">
-                        <p class="text-sm">Valor Bruto: ${currencyFormatter.format(corte.totalValue || 0)}</p>
-                        ${corte.amortizacion > 0 ? `<p class="text-sm text-red-600">Amortización: - ${currencyFormatter.format(corte.amortizacion)}</p>` : ''}
-                        ${(corte.otrosDescuentos || []).map(d => `<p class="text-sm text-red-600">Descuento (${d.concept}): - ${currencyFormatter.format(d.value)}</p>`).join('')}
-                        <p class="text-lg font-semibold text-green-600 mt-1 border-t">Neto a Pagar: ${currencyFormatter.format(corte.netoAPagar || 0)}</p>
+                    <div class="bg-gray-50 p-3 rounded-lg flex justify-between items-center mt-3 sm:mt-0 sm:flex-col sm:items-end sm:justify-center">
+                        <span class="text-base font-bold text-gray-800">Neto a Pagar:</span>
+                        <span class="text-2xl font-bold text-green-600">${currencyFormatter.format(corte.netoAPagar || 0)}</span>
                     </div>
                 </div>
-                <div class="flex justify-between items-center mt-2 pt-2 border-t">
-                    <span class="text-xs font-medium px-2.5 py-0.5 rounded-full ${statusColor}">${statusText}</span>
-                    <div class="flex space-x-2 flex-wrap gap-2 justify-end">
-                        ${corte.status === 'preliminar' ? `
-                            ${currentProject.pricingModel === 'separado' ? `
-                                <button data-action="export-corte-pdf" data-type="suministro" class="bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold py-1 px-2 rounded">Previsualizar Suministro</button>
-                                <button data-action="export-corte-pdf" data-type="instalacion" class="bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold py-1 px-2 rounded">Previsualizar Instalación</button>
-                            ` : `
-                                <button data-action="export-corte-pdf" data-type="completo" class="bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold py-1 px-2 rounded">Previsualizar</button>
-                            `}
-                            <button data-action="approve-corte" class="bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-1 px-2 rounded">Aprobar</button>
-                            <button data-action="deny-corte" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-1 px-2 rounded">Denegar</button>
-                        ` : ''}
-                        ${corte.status === 'aprobado' ? 
-                            (currentProject.pricingModel === 'separado' ? `
-                                <button data-action="export-corte-pdf" data-type="suministro" class="bg-cyan-500 hover:bg-cyan-600 text-white text-xs font-bold py-1 px-2 rounded">Memoria Suministro</button>
-                                <button data-action="export-corte-pdf" data-type="instalacion" class="bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold py-1 px-2 rounded">Memoria Instalación</button>
-                            ` : `
-                                <button data-action="export-corte-pdf" data-type="completo" class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-1 px-2 rounded">Exportar Memoria</button>
-                            `) 
-                        : ''}
-                    </div>
+
+                <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2 justify-end mt-4 pt-3 border-t">
+                    <button data-action="view-corte-details" data-corte-id="${corte.id}" class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-2 px-3 rounded w-full sm:w-auto">Ver Detalles</button>
+                    ${corte.status === 'preliminar' ? `
+                        ${project.pricingModel === 'separado' ? `
+                            <button data-action="export-corte-pdf" data-corte-id="${corte.id}" data-type="suministro" class="bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold py-2 px-3 rounded w-full sm:w-auto">Previsualizar Suministro</button>
+                            <button data-action="export-corte-pdf" data-corte-id="${corte.id}" data-type="instalacion" class="bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold py-2 px-3 rounded w-full sm:w-auto">Previsualizar Instalación</button>
+                        ` : `
+                            <button data-action="export-corte-pdf" data-corte-id="${corte.id}" data-type="completo" class="bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold py-2 px-3 rounded w-full sm:w-auto">Previsualizar</button>
+                        `}
+                        <button data-action="approve-corte" data-corte-id="${corte.id}" class="bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-2 px-3 rounded w-full sm:w-auto">Aprobar</button>
+                        <button data-action="deny-corte" data-corte-id="${corte.id}" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-2 px-3 rounded w-full sm:w-auto">Denegar</button>
+                    ` : ''}
+                    ${corte.status === 'aprobado' ?
+                    (project.pricingModel === 'separado' ? `
+                            <button data-action="export-corte-pdf" data-corte-id="${corte.id}" data-type="suministro" class="bg-cyan-500 hover:bg-cyan-600 text-white text-xs font-bold py-2 px-3 rounded w-full sm:w-auto">Memoria Suministro</button>
+                            <button data-action="export-corte-pdf" data-corte-id="${corte.id}" data-type="instalacion" class="bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold py-2 px-3 rounded w-full sm:w-auto">Memoria Instalación</button>
+                        ` : `
+                            <button data-action="export-corte-pdf" data-corte-id="${corte.id}" data-type="completo" class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-2 px-3 rounded w-full sm:w-auto">Exportar Memoria</button>
+                        `)
+                    : ''}
                 </div>
             `;
-            
+
             container.appendChild(corteCard);
-
-            corteCard.querySelectorAll('[data-action="export-corte-pdf"]').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const exportType = btn.dataset.type;
-                    exportCorteToPDF(currentProject, corte, exportType);
-                });
-            });
-
-            const approveBtn = corteCard.querySelector('[data-action="approve-corte"]');
-            if (approveBtn) {
-                approveBtn.addEventListener('click', () => {
-                    openConfirmModal("¿Estás seguro de que quieres aprobar este corte? Esta acción es final.", () => approveCorte(projectId, corte.id));
-                });
-            }
-
-            const denyBtn = corteCard.querySelector('[data-action="deny-corte"]');
-            if (denyBtn) {
-                denyBtn.addEventListener('click', () => {
-                    openConfirmModal("¿Estás seguro de que quieres denegar y eliminar este corte? No se podrá recuperar.", () => denyCorte(projectId, corte.id));
-                });
-            }
         });
     });
 }
+
 
 
 /**
@@ -946,12 +1180,12 @@ async function generateCorte() {
                 // --- 1. Calcular valor bruto del corte (con lógica de medida real) ---
                 let valorBrutoCorte = 0;
                 const subItemIds = Array.from(selectedSubItemsCheckboxes).map(cb => cb.dataset.subitemId);
-                
+
                 const allItemsQuery = query(collection(db, "items"), where("projectId", "==", currentProject.id));
                 const allSubItemsQuery = query(collection(db, "subItems"), where("projectId", "==", currentProject.id));
                 const [itemsSnapshot, subItemsSnapshot] = await Promise.all([getDocs(allItemsQuery), getDocs(allSubItemsQuery)]);
                 const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, d.data()]));
-                const subItemsMap = new Map(subItemsSnapshot.docs.map(d => [d.id, {id: d.id, ...d.data()}]));
+                const subItemsMap = new Map(subItemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
 
                 for (const subItemId of subItemIds) {
                     const subItem = subItemsMap.get(subItemId);
@@ -987,8 +1221,8 @@ async function generateCorte() {
                     } else {
                         const contractedValue = await calculateProjectContractedValue(currentProject.id);
                         if (contractedValue > 0) {
-                           const porcentajeCorte = (valorBrutoCorte / contractedValue) * 100;
-                           valorAmortizacion = (anticipoTotal * porcentajeCorte) / 100;
+                            const porcentajeCorte = (valorBrutoCorte / contractedValue) * 100;
+                            valorAmortizacion = (anticipoTotal * porcentajeCorte) / 100;
                         }
                     }
                     valorAmortizacion = Math.min(valorAmortizacion, anticipoRestante);
@@ -1007,7 +1241,7 @@ async function generateCorte() {
                         }
                     });
                 }
-                
+
                 const valorNeto = valorBrutoCorte - valorAmortizacion - totalOtrosDescuentos;
 
                 // --- 3. Guardar el nuevo corte preliminar ---
@@ -1029,15 +1263,11 @@ async function generateCorte() {
                     status: 'preliminar',
                     type: currentCorteType
                 };
-                
+
                 await addDoc(collection(db, "projects", currentProject.id, "cortes"), newCorte);
-                
+
                 alert(`¡Corte preliminar #${newCorteNumber} creado con éxito!`);
-                document.getElementById('corte-items-selection-view').classList.add('hidden');
-                document.querySelectorAll('.corte-type-btn').forEach(btn => {
-                    btn.classList.remove('bg-blue-500', 'text-white');
-                    btn.classList.add('bg-gray-200', 'text-gray-700');
-                });
+                closeCorteSelectionView();
 
 
             } catch (error) {
@@ -1056,8 +1286,42 @@ async function generateCorte() {
  * Aprueba un corte, cambiando su estado a 'aprobado'.
  */
 async function approveCorte(projectId, corteId) {
-    const corteRef = doc(db, "projects", projectId, "cortes", corteId);
-    await updateDoc(corteRef, { status: 'aprobado' });
+    loadingOverlay.classList.remove('hidden');
+    try {
+        const corteRef = doc(db, "projects", projectId, "cortes", corteId);
+        const corteSnap = await getDoc(corteRef);
+
+        if (!corteSnap.exists()) {
+            throw new Error("No se encontró el corte para aprobar.");
+        }
+
+        const corte = corteSnap.data();
+
+        // 1. Revisa si este corte tiene un valor de amortización pre-calculado.
+        const montoAmortizar = corte.amortizacion || 0;
+
+        // 2. Si el monto es mayor que cero, crea el registro del pago.
+        if (montoAmortizar > 0) {
+            await addDoc(collection(db, "projects", projectId, "payments"), {
+                amount: montoAmortizar,
+                date: new Date().toISOString().split('T')[0],
+                type: 'amortizacion_anticipo',
+                concept: `Amortización Corte #${corte.corteNumber}`,
+                targetId: corteId,
+            });
+        }
+
+        // 3. Finalmente, actualiza el estado del corte a "aprobado".
+        await updateDoc(corteRef, { status: 'aprobado' });
+
+        alert("¡Corte aprobado con éxito!");
+
+    } catch (error) {
+        console.error("Error al aprobar el corte:", error);
+        alert("Ocurrió un error al aprobar el corte: " + error.message);
+    } finally {
+        loadingOverlay.classList.add('hidden');
+    }
 }
 
 /**
@@ -1067,6 +1331,161 @@ async function denyCorte(projectId, corteId) {
     const corteRef = doc(db, "projects", projectId, "cortes", corteId);
     await deleteDoc(corteRef);
     alert("El corte ha sido denegado y eliminado.");
+}
+
+/**
+ * Muestra los detalles de un corte específico, incluyendo los ítems y sus valores.
+ * @param {object} corteData - El objeto completo del corte desde Firestore.
+ */
+/**
+ * Muestra los detalles de un corte específico, incluyendo los ítems y sus valores.
+ * @param {object} corteData - El objeto completo del corte desde Firestore.
+ */
+async function showCorteDetails(corteData) {
+    currentCorte = corteData;
+    showView('corteDetails');
+
+    const titleEl = document.getElementById('corte-details-title');
+    const summaryEl = document.getElementById('corte-details-summary');
+    const listContainer = document.getElementById('corte-details-list');
+
+    titleEl.textContent = `Detalle del Corte #${corteData.corteNumber}`;
+    // Limpiamos el resumen para añadir el desglose financiero
+    summaryEl.innerHTML = `
+        <div class="text-sm space-y-1 mt-2">
+            <div class="flex justify-between">
+                <span>Valor Bruto:</span>
+                <span class="font-medium">${currencyFormatter.format(corteData.totalValue || 0)}</span>
+            </div>
+            <div class="flex justify-between text-red-600">
+                <span>Amortización:</span>
+                <span class="font-medium">- ${currencyFormatter.format(corteData.amortizacion || 0)}</span>
+            </div>
+            ${(corteData.otrosDescuentos || []).map(d => `
+                <div class="flex justify-between text-red-600">
+                    <span>Descuento (${d.concept}):</span>
+                    <span class="font-medium">- ${currencyFormatter.format(d.value)}</span>
+                </div>
+            `).join('')}
+            <div class="flex justify-between border-t mt-1 pt-1">
+                <span class="font-bold">Neto a Pagar:</span>
+                <span class="font-bold text-green-600">${currencyFormatter.format(corteData.netoAPagar || 0)}</span>
+            </div>
+        </div>
+    `;
+    listContainer.innerHTML = `<div class="loader-container"><div class="loader"></div></div>`;
+
+    try {
+        const [itemsSnapshot, subItemsSnapshot] = await Promise.all([
+            getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id))),
+            getDocs(query(collection(db, "subItems"), where("projectId", "==", currentProject.id)))
+        ]);
+        const itemsMap = new Map(itemsSnapshot.docs.map(doc => [doc.id, doc.data()]));
+        const subItemsMap = new Map(subItemsSnapshot.docs.map(doc => [doc.id, doc.data()]));
+
+        listContainer.innerHTML = '';
+
+        for (const subItemId of corteData.subItemIds) {
+            const subItem = subItemsMap.get(subItemId);
+            if (!subItem) continue;
+
+            const parentItem = itemsMap.get(subItem.itemId);
+            if (!parentItem) continue;
+
+            const valorUnitarioContratado = calculateItemTotal(parentItem) / parentItem.quantity;
+            let valorSubItemEnCorte = valorUnitarioContratado;
+
+            if (corteData.usadoMedidaReal && subItem.realWidth > 0 && subItem.realHeight > 0) {
+                const areaContratada = parentItem.width * parentItem.height;
+                const areaReal = subItem.realWidth * subItem.realHeight;
+                if (areaContratada > 0) {
+                    valorSubItemEnCorte = (valorUnitarioContratado / areaContratada) * areaReal;
+                }
+            }
+
+            const manufacturerData = usersMap.get(subItem.manufacturer);
+            const installerData = usersMap.get(subItem.installer);
+            const manufacturerName = manufacturerData ? `${manufacturerData.firstName} ${manufacturerData.lastName}` : 'N/A';
+            const installerName = installerData ? `${installerData.firstName} ${installerData.lastName}` : 'N/A';
+
+            let statusText = subItem.status || 'Pendiente';
+            let statusColor = 'bg-gray-100 text-gray-800';
+            switch (statusText) {
+                case 'Instalado': statusColor = 'bg-green-100 text-green-800'; break;
+                case 'Pendiente de Instalación': statusColor = 'bg-yellow-100 text-yellow-800'; break;
+                case 'Faltante de Evidencia': statusColor = 'bg-orange-100 text-orange-800'; break;
+            }
+
+            const itemCard = document.createElement('div');
+            itemCard.className = 'bg-white p-4 rounded-lg shadow-md border';
+            itemCard.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="md:col-span-1 space-y-4">
+                        <div class="h-48 bg-gray-200 rounded-md flex items-center justify-center">
+                            ${subItem.photoURL ?
+                    `<img src="${subItem.photoURL}" alt="Evidencia" class="w-full h-full object-cover rounded-md cursor-pointer" data-action="view-image">` :
+                    '<span class="text-gray-500 text-sm">Sin evidencia</span>'}
+                        </div>
+                        <div class="text-center">
+                            <p class="text-sm font-medium text-gray-500">Valor en este Corte</p>
+                            <p class="text-2xl font-bold text-green-600">${currencyFormatter.format(valorSubItemEnCorte)}</p>
+                        </div>
+                    </div>
+                    <div class="md:col-span-2">
+                        <p class="text-sm text-gray-500">Objeto</p>
+                        <p class="font-bold text-xl text-gray-800 mb-2">${parentItem.name} - Unidad #${subItem.number}</p>
+                        <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                            <div>
+                                <dt class="font-medium text-gray-500">Lugar de Instalación</dt>
+                                <dd class="text-gray-800">${subItem.location || 'N/A'}</dd>
+                            </div>
+                            <div>
+                                <dt class="font-medium text-gray-500">Estado</dt>
+                                <dd><span class="text-xs font-semibold px-2 py-1 rounded-full ${statusColor}">${statusText}</span></dd>
+                            </div>
+                            <div>
+                                <dt class="font-medium text-gray-500">Medidas Contrato</dt>
+                                <dd class="text-gray-800">${parentItem.width}m x ${parentItem.height}m</dd>
+                            </div>
+                             <div>
+                                <dt class="font-medium text-gray-500">Medidas Reales</dt>
+                                <dd class="text-gray-800">${subItem.realWidth || 'N/A'}m x ${subItem.realHeight || 'N/A'}m</dd>
+                            </div>
+                            <div>
+                                <dt class="font-medium text-gray-500">Fabricante</dt>
+                                <dd class="text-gray-800">${manufacturerName}</dd>
+                            </div>
+                            <div>
+                                <dt class="font-medium text-gray-500">Instalador</dt>
+                                <dd class="text-gray-800">${installerName}</dd>
+                            </div>
+                             <div>
+                                <dt class="font-medium text-gray-500">Fecha Instalación</dt>
+                                <dd class="text-gray-800">${subItem.installDate || 'N/A'}</dd>
+                            </div>
+                        </dl>
+                    </div>
+                </div>
+            `;
+            listContainer.appendChild(itemCard);
+        }
+    } catch (error) {
+        console.error("Error al cargar detalles del corte:", error);
+        listContainer.innerHTML = '<p class="text-red-500">No se pudieron cargar los detalles.</p>';
+    }
+}
+
+
+function closeCorteSelectionView() {
+    const selectionView = document.getElementById('corte-items-selection-view');
+    if (selectionView) {
+        selectionView.classList.add('hidden');
+    }
+    // Resetea los botones "Lo realizo yo" / "Lo realiza la obra"
+    document.querySelectorAll('.corte-type-btn').forEach(btn => {
+        btn.classList.remove('bg-blue-500', 'text-white');
+        btn.classList.add('bg-gray-200', 'text-gray-700');
+    });
 }
 
 // ====================================================================
@@ -1111,6 +1530,7 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
     const subItemsEjecutadosAntes = new Set();
     cortesAnterioresSnapshot.forEach(doc => { doc.data().subItemIds.forEach(id => subItemsEjecutadosAntes.add(id)); });
 
+    // --- Cabecera del PDF (sin cambios) ---
     let reportTitle = `ACTA DE CORTE DE OBRA`;
     if (exportType === 'suministro') reportTitle = `ACTA DE CORTE DE SUMINISTRO`;
     if (exportType === 'instalacion') reportTitle = `ACTA DE CORTE DE INSTALACIÓN`;
@@ -1131,42 +1551,70 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
     doc.text(`${reportTitle} - ${proyecto.name}`, doc.internal.pageSize.getWidth() / 2, 35, { align: 'center' });
 
     const body = [];
-    let subTotalCorteSinImpuestos = 0, aiuDetailsCorte = { admin: 0, imprev: 0, utilidad: 0, ivaSobreUtilidad: 0, aiuA: 0, aiuI: 0, aiuU: 0 }, totalIvaCorte = 0;
     const subItemsEnCorteSet = new Set(corte.subItemIds);
+    let totalValorContratado = 0, totalValorEjecutadoAcumulado = 0, totalValorEjecutadoCorte = 0, totalValorSaldo = 0;
 
-    // --- Variables para los totales de la tabla ---
-    let totalValorContratado = 0;
-    let totalValorEjecutadoAcumulado = 0;
-    let totalValorEjecutadoCorte = 0;
-    let totalValorSaldo = 0;
+    // ======================================================
+    //      INICIO: LÓGICA DE CÁLCULO DE TOTALES PARA RESUMEN (NUEVO)
+    // ======================================================
+    let subTotalCorteSinImpuestos = 0;
+    let aiuDetailsCorte = { admin: 0, imprev: 0, utilidad: 0, ivaSobreUtilidad: 0, aiuA: 0, aiuI: 0, aiuU: 0 };
+    let totalIvaCorte = 0;
 
     allItems.forEach(item => {
         const subItemsDeEsteItem = Array.from(allSubItems.values()).filter(si => si.itemId === item.id);
-        const ejecutadosEnEsteCorte = subItemsDeEsteItem.filter(si => subItemsEnCorteSet.has(si.id)).length;
+        const subItemsEnEsteCorte = subItemsDeEsteItem.filter(si => subItemsEnCorteSet.has(si.id));
+        const ejecutadosEnEsteCorte = subItemsEnEsteCorte.length;
         const ejecutadosAntes = subItemsDeEsteItem.filter(si => subItemsEjecutadosAntes.has(si.id)).length;
         const ejecutadoAcumulado = ejecutadosAntes + ejecutadosEnEsteCorte;
         const saldo = item.quantity - ejecutadoAcumulado;
-        let valorUnitarioSinImpuestos = 0, valorUnitarioTotal = 0, detallesDePrecio = null;
 
-        if (exportType === 'completo') { detallesDePrecio = item.includedDetails; valorUnitarioTotal = calculateItemTotal(item) / item.quantity; }
+        let valorUnitarioSinImpuestos = 0, valorUnitarioTotalConImpuestos = 0, detallesDePrecio = null;
+
+        if (exportType === 'completo') { detallesDePrecio = item.includedDetails; }
         else if (exportType === 'suministro') { detallesDePrecio = item.supplyDetails; }
         else if (exportType === 'instalacion') { detallesDePrecio = item.installationDetails; }
-        if (detallesDePrecio) { valorUnitarioSinImpuestos = detallesDePrecio.unitPrice || 0; const tax = calculateTaxDetails(detallesDePrecio, valorUnitarioSinImpuestos); valorUnitarioTotal = valorUnitarioSinImpuestos + tax.iva + tax.aiuTotal; }
 
-        if (ejecutadosEnEsteCorte > 0) {
-            const valorEjecutadoSinImpuestos = valorUnitarioSinImpuestos * ejecutadosEnEsteCorte;
-            subTotalCorteSinImpuestos += valorEjecutadoSinImpuestos;
-            const taxCorte = calculateTaxDetails(detallesDePrecio, valorEjecutadoSinImpuestos);
-            totalIvaCorte += taxCorte.iva;
-            aiuDetailsCorte.admin += taxCorte.admin; aiuDetailsCorte.imprev += taxCorte.imprev; aiuDetailsCorte.utilidad += taxCorte.utilidad;
-            aiuDetailsCorte.ivaSobreUtilidad += taxCorte.ivaSobreUtilidad;
-            if (detallesDePrecio?.taxType === 'aiu') { aiuDetailsCorte.aiuA = detallesDePrecio.aiuA || 0; aiuDetailsCorte.aiuI = detallesDePrecio.aiuI || 0; aiuDetailsCorte.aiuU = detallesDePrecio.aiuU || 0; }
+        if (detallesDePrecio) {
+            valorUnitarioSinImpuestos = detallesDePrecio.unitPrice || 0;
+            const tax = calculateTaxDetails(detallesDePrecio, valorUnitarioSinImpuestos);
+            valorUnitarioTotalConImpuestos = valorUnitarioSinImpuestos + tax.iva + tax.aiuTotal;
         }
 
-        const valorTotalContratadoItem = valorUnitarioTotal * item.quantity;
-        const valorTotalEjecutadoAcumuladoItem = valorUnitarioTotal * ejecutadoAcumulado;
-        const valorTotalEjecutadoCorteItem = valorUnitarioTotal * ejecutadosEnEsteCorte;
-        const valorTotalSaldoItem = valorUnitarioTotal * saldo;
+        let valorTotalEjecutadoCorteItem = 0;
+
+        if (ejecutadosEnEsteCorte > 0) {
+            subItemsEnEsteCorte.forEach(subItem => {
+                let valorSubItemSinImpuestos = valorUnitarioSinImpuestos;
+
+                if (corte.usadoMedidaReal && subItem.realWidth > 0 && subItem.realHeight > 0) {
+                    const areaContratada = item.width * item.height;
+                    const areaReal = subItem.realWidth * subItem.realHeight;
+                    if (areaContratada > 0) {
+                        valorSubItemSinImpuestos = (valorUnitarioSinImpuestos / areaContratada) * areaReal;
+                    }
+                }
+
+                subTotalCorteSinImpuestos += valorSubItemSinImpuestos;
+                const taxSubItem = calculateTaxDetails(detallesDePrecio, valorSubItemSinImpuestos);
+                totalIvaCorte += taxSubItem.iva;
+                aiuDetailsCorte.admin += taxSubItem.admin;
+                aiuDetailsCorte.imprev += taxSubItem.imprev;
+                aiuDetailsCorte.utilidad += taxSubItem.utilidad;
+                aiuDetailsCorte.ivaSobreUtilidad += taxSubItem.ivaSobreUtilidad;
+
+                valorTotalEjecutadoCorteItem += valorSubItemSinImpuestos + taxSubItem.iva + taxSubItem.aiuTotal;
+            });
+            if (detallesDePrecio?.taxType === 'aiu') {
+                aiuDetailsCorte.aiuA = detallesDePrecio.aiuA || 0;
+                aiuDetailsCorte.aiuI = detallesDePrecio.aiuI || 0;
+                aiuDetailsCorte.aiuU = detallesDePrecio.aiuU || 0;
+            }
+        }
+
+        const valorTotalContratadoItem = valorUnitarioTotalConImpuestos * item.quantity;
+        const valorTotalEjecutadoAcumuladoItem = valorUnitarioTotalConImpuestos * ejecutadoAcumulado;
+        const valorTotalSaldoItem = valorUnitarioTotalConImpuestos * saldo;
 
         totalValorContratado += valorTotalContratadoItem;
         totalValorEjecutadoAcumulado += valorTotalEjecutadoAcumuladoItem;
@@ -1175,10 +1623,9 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
 
         const descriptionText = (item.description || item.name).substring(0, 100);
 
-        // --- Nuevo orden de las columnas en el cuerpo ---
         body.push([
             item.name, descriptionText, item.width, item.height,
-            item.quantity, currencyFormatter.format(valorUnitarioTotal), currencyFormatter.format(valorTotalContratadoItem),
+            item.quantity, currencyFormatter.format(valorUnitarioTotalConImpuestos), currencyFormatter.format(valorTotalContratadoItem),
             ejecutadosEnEsteCorte, currencyFormatter.format(valorTotalEjecutadoCorteItem),
             ejecutadoAcumulado, currencyFormatter.format(valorTotalEjecutadoAcumuladoItem),
             saldo, currencyFormatter.format(valorTotalSaldoItem)
@@ -1190,33 +1637,12 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
     doc.autoTable({
         startY: 45,
         head: [
-            [
-                { content: 'CONTRATADO', colSpan: 7, styles: headStyles },
-                { content: 'EJECUTADO CORTE ACTUAL', colSpan: 2, styles: { ...headStyles, fillColor: [22, 160, 133] } },
-                { content: 'EJECUTADO ACUMULADO', colSpan: 2, styles: { ...headStyles, fillColor: [41, 128, 185] } },
-                { content: 'SALDO POR EJECUTAR', colSpan: 2, styles: { ...headStyles, fillColor: [192, 57, 43] } }
-            ],
-            [
-                { content: 'Item', styles: subheadStyles }, { content: 'Descripción', styles: subheadStyles }, { content: 'Ancho', styles: subheadStyles }, { content: 'Alto', styles: subheadStyles },
-                { content: 'Cant.', styles: subheadStyles }, { content: 'Vlr. Unit', styles: subheadStyles }, { content: 'Vlr. Total', styles: subheadStyles },
-                { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles },
-                { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles },
-                { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles }
-            ]
+            [{ content: 'CONTRATADO', colSpan: 7, styles: headStyles }, { content: 'EJECUTADO CORTE ACTUAL', colSpan: 2, styles: { ...headStyles, fillColor: [22, 160, 133] } }, { content: 'EJECUTADO ACUMULADO', colSpan: 2, styles: { ...headStyles, fillColor: [41, 128, 185] } }, { content: 'SALDO POR EJECUTAR', colSpan: 2, styles: { ...headStyles, fillColor: [192, 57, 43] } }],
+            [{ content: 'Item', styles: subheadStyles }, { content: 'Descripción', styles: subheadStyles }, { content: 'Ancho', styles: subheadStyles }, { content: 'Alto', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'Vlr. Unit', styles: subheadStyles }, { content: 'Vlr. Total', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles }]
         ],
         body: body,
-        // --- Fila de Totales (foot) ---
         foot: [
-            [
-                { content: 'TOTALES', colSpan: 6, styles: { halign: 'right', fontStyle: 'bold' } },
-                { content: currencyFormatter.format(totalValorContratado), styles: { fontStyle: 'bold', halign: 'center' } },
-                '', // Cantidad Ejecutada Corte
-                { content: currencyFormatter.format(totalValorEjecutadoCorte), styles: { fontStyle: 'bold', halign: 'center' } },
-                '', // Cantidad Acumulada
-                { content: currencyFormatter.format(totalValorEjecutadoAcumulado), styles: { fontStyle: 'bold', halign: 'center' } },
-                '', // Cantidad Saldo
-                { content: currencyFormatter.format(totalValorSaldo), styles: { fontStyle: 'bold', halign: 'center' } }
-            ]
+            [{ content: 'TOTALES', colSpan: 6, styles: { halign: 'right', fontStyle: 'bold' } }, { content: currencyFormatter.format(totalValorContratado), styles: { fontStyle: 'bold', halign: 'center' } }, '', { content: currencyFormatter.format(totalValorEjecutadoCorte), styles: { fontStyle: 'bold', halign: 'center' } }, '', { content: currencyFormatter.format(totalValorEjecutadoAcumulado), styles: { fontStyle: 'bold', halign: 'center' } }, '', { content: currencyFormatter.format(totalValorSaldo), styles: { fontStyle: 'bold', halign: 'center' } }]
         ],
         theme: 'grid',
         styles: { fontSize: 8, cellPadding: 1.5, halign: 'center', valign: 'middle' },
@@ -1225,9 +1651,6 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
 
     let finalY = doc.autoTable.previous.finalY;
     if (finalY > 180) { doc.addPage(); finalY = 20; } else { finalY += 7; }
-
-    let totalBrutoCorte = subTotalCorteSinImpuestos + totalIvaCorte + aiuDetailsCorte.admin + aiuDetailsCorte.imprev + aiuDetailsCorte.utilidad + aiuDetailsCorte.ivaSobreUtilidad;
-    let totalAPagar = totalBrutoCorte;
 
     const summaryBody = [];
     summaryBody.push(['SUB TOTAL (Valor Ejecutado en Corte)', currencyFormatter.format(subTotalCorteSinImpuestos)]);
@@ -1238,12 +1661,11 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
         summaryBody.push([`Utilidad (${aiuDetailsCorte.aiuU}%)`, currencyFormatter.format(aiuDetailsCorte.utilidad)]);
         summaryBody.push(["IVA (19%) s/Utilidad", currencyFormatter.format(aiuDetailsCorte.ivaSobreUtilidad)]);
     }
-    summaryBody.push([{ content: "TOTAL BRUTO CORTE", styles: { fontStyle: 'bold' } }, { content: currencyFormatter.format(totalBrutoCorte), styles: { fontStyle: 'bold' } }]);
+    summaryBody.push([{ content: "TOTAL BRUTO CORTE", styles: { fontStyle: 'bold' } }, { content: currencyFormatter.format(totalValorEjecutadoCorte), styles: { fontStyle: 'bold' } }]);
 
-    if (exportType === 'completo' || exportType === 'suministro') {
-        if (corte.amortizacion > 0) { summaryBody.push(["Amortización Anticipo", `(${currencyFormatter.format(corte.amortizacion)})`]); totalAPagar -= corte.amortizacion; }
-        if (corte.otrosDescuentos && corte.otrosDescuentos.length > 0) { corte.otrosDescuentos.forEach(d => { summaryBody.push([`Descuento (${d.concept})`, `(${currencyFormatter.format(d.value)})`]); totalAPagar -= d.value; }); }
-    }
+    let totalAPagar = totalValorEjecutadoCorte;
+    if (corte.amortizacion > 0) { summaryBody.push(["Amortización Anticipo", `(${currencyFormatter.format(corte.amortizacion)})`]); totalAPagar -= corte.amortizacion; }
+    if (corte.otrosDescuentos && corte.otrosDescuentos.length > 0) { corte.otrosDescuentos.forEach(d => { summaryBody.push([`Descuento (${d.concept})`, `(${currencyFormatter.format(d.value)})`]); totalAPagar -= d.value; }); }
     summaryBody.push([{ content: "TOTAL A PAGAR", styles: { fontStyle: 'bold' } }, { content: currencyFormatter.format(totalAPagar), styles: { fontStyle: 'bold' } }]);
 
     doc.autoTable({
@@ -2190,7 +2612,7 @@ function loadSubItems(itemId) {
     const subItemsTableBody = document.getElementById('sub-items-table-body');
 
     const q = query(collection(db, "subItems"), where("itemId", "==", itemId));
-    
+
     if (unsubscribeSubItems) unsubscribeSubItems();
 
     unsubscribeSubItems = onSnapshot(q, (querySnapshot) => {
@@ -2310,32 +2732,32 @@ function openMainModal(type, data = {}) {
             btnText = 'Crear Proyecto';
             btnClass = 'bg-blue-500 hover:bg-blue-600';
             bodyHtml = `
-    <div class="space-y-4">
-        <div class="grid grid-cols-2 gap-4">
-            <div>
-                <label for="project-name" class="block text-sm font-medium">Nombre del Proyecto</label>
-                <input type="text" id="project-name" name="name" required class="mt-1 w-full border rounded-md p-2">
-            </div>
-            <div>
-                <label for="project-builder" class="block text-sm font-medium">Constructora</label>
-                <input type="text" id="project-builder" name="builderName" required class="mt-1 w-full border rounded-md p-2">
-            </div>
-        </div>
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label for="project-name" class="block text-sm font-medium">Nombre del Proyecto</label>
+                                <input type="text" id="project-name" name="name" required class="mt-1 w-full border rounded-md p-2">
+                            </div>
+                            <div>
+                                <label for="project-builder" class="block text-sm font-medium">Constructora</label>
+                                <input type="text" id="project-builder" name="builderName" required class="mt-1 w-full border rounded-md p-2">
+                            </div>
+                        </div>
 
-        <div class="border-t pt-4">
-            <label class="block text-sm font-medium text-gray-700">Modelo de Contrato</label>
-            <div class="mt-2 flex space-x-4">
-                <label class="flex items-center">
-                    <input type="radio" name="pricingModel" value="separado" class="mr-2" checked>
-                    <span>Suministro e Instalación (Separado)</span>
-                </label>
-                <label class="flex items-center">
-                    <input type="radio" name="pricingModel" value="incluido" class="mr-2">
-                    <span>Suministro e Instalación (Incluido)</span>
-                </label>
-            </div>
-        </div>
-        <div class="relative">
+                        <div class="border-t pt-4">
+                            <label class="block text-sm font-medium text-gray-700">Modelo de Contrato</label>
+                            <div class="mt-2 flex space-x-4">
+                                <label class="flex items-center">
+                                    <input type="radio" name="pricingModel" value="separado" class="mr-2" checked>
+                                    <span>Suministro e Instalación (Separado)</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="radio" name="pricingModel" value="incluido" class="mr-2">
+                                    <span>Suministro e Instalación (Incluido)</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="relative">
                             <label for="project-location" class="block text-sm font-medium">Ubicación (Municipio)</label>
                             <input type="text" id="project-location" name="location" required class="mt-1 w-full border rounded-md p-2" autocomplete="off" placeholder="Escribe para buscar...">
                             <div id="municipalities-results" class="municipality-search-results hidden"></div>
@@ -2406,25 +2828,7 @@ function openMainModal(type, data = {}) {
                     }
                 });
                 // Ocultar resultados si se hace clic fuera
-                document.addEventListener('click', (e) => {
-                    const dropdownBtn = document.getElementById('project-tabs-dropdown-btn');
-                    const dropdownMenu = document.getElementById('project-tabs-dropdown-menu');
 
-                    // Si se hace clic en el botón, muestra/oculta el menú
-                    if (dropdownBtn && dropdownBtn.contains(e.target)) {
-                        dropdownMenu.classList.toggle('hidden');
-                    }
-                    // Si se hace clic en una opción del menú...
-                    else if (dropdownMenu && dropdownMenu.contains(e.target) && e.target.dataset.tab) {
-                        e.preventDefault();
-                        switchProjectTab(e.target.dataset.tab); // Cambia la pestaña
-                        dropdownMenu.classList.add('hidden'); // Cierra el menú
-                    }
-                    // Si se hace clic en cualquier otro lugar, cierra el menú
-                    else if (dropdownMenu) {
-                        dropdownMenu.classList.add('hidden');
-                    }
-                });
                 // --- NUEVA LÓGICA PARA FORMATEO DE MONEDA ---
                 const valueInput = document.getElementById('project-value');
                 const advanceInput = document.getElementById('project-advance');
@@ -2442,6 +2846,259 @@ function openMainModal(type, data = {}) {
                 valueInput.addEventListener('input', formatCurrencyInput);
                 advanceInput.addEventListener('input', formatCurrencyInput);
 
+            }, 100);
+            break;
+        case 'editProjectInfo':
+            title = 'Editar Información del Proyecto';
+            btnText = 'Guardar Cambios';
+            btnClass = 'bg-yellow-500 hover:bg-yellow-600';
+            bodyHtml = `
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium">Nombre del Proyecto</label>
+                        <input type="text" name="name" required class="mt-1 w-full border rounded-md p-2" value="${data.name || ''}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium">Constructora</label>
+                        <input type="text" name="builderName" required class="mt-1 w-full border rounded-md p-2" value="${data.builderName || ''}">
+                    </div>
+                </div>
+                
+                <div class="relative">
+                    <label for="project-location" class="block text-sm font-medium">Ubicación (Municipio)</label>
+                    <input type="text" id="project-location" name="location" required class="mt-1 w-full border rounded-md p-2" autocomplete="off" value="${data.location || ''}">
+                    <div id="municipalities-results" class="municipality-search-results hidden"></div>
+                </div>
+
+                <div>
+                    <label for="project-address" class="block text-sm font-medium">Dirección</label>
+                    <input type="text" id="project-address" name="address" required class="mt-1 w-full border rounded-md p-2" value="${data.address || ''}">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium">Valor del Contrato</label>
+                        <input type="text" name="value" class="mt-1 w-full border rounded-md p-2" value="${data.value || 0}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium">Anticipo</label>
+                        <input type="text" name="advance" class="mt-1 w-full border rounded-md p-2" value="${data.advance || 0}">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-4 border-t pt-4">
+                    <div>
+                        <label class="block text-sm font-medium">Inicio Contrato</label>
+                        <input type="date" name="startDate" class="mt-1 w-full border rounded-md p-2" value="${data.startDate || ''}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium">Acta de Inicio</label>
+                        <input type="date" name="kickoffDate" class="mt-1 w-full border rounded-md p-2" value="${data.kickoffDate || ''}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium">Fin Contrato</label>
+                        <input type="date" name="endDate" class="mt-1 w-full border rounded-md p-2" value="${data.endDate || ''}">
+                    </div>
+                </div>
+            </div>`;
+
+            setTimeout(() => {
+                // Lógica para el formato de moneda
+                const valueInput = modalForm.querySelector('input[name="value"]');
+                const advanceInput = modalForm.querySelector('input[name="advance"]');
+                setupCurrencyInput(valueInput);
+                setupCurrencyInput(advanceInput);
+
+                // Lógica para el buscador de municipios (reutilizada de "Nuevo Proyecto")
+                const inputLocation = document.getElementById('project-location');
+                const resultsContainer = document.getElementById('municipalities-results');
+                fetchMunicipalities(); // Asegura que los municipios estén disponibles
+                inputLocation.addEventListener('input', async () => {
+                    const municipalities = await fetchMunicipalities();
+                    resultsContainer.innerHTML = '';
+                    const query = inputLocation.value;
+                    if (query.length === 0) {
+                        resultsContainer.classList.add('hidden');
+                        return;
+                    }
+                    const normalizedQuery = normalizeString(query);
+                    const filtered = municipalities.filter(m => normalizeString(m).startsWith(normalizedQuery));
+                    if (filtered.length > 0) {
+                        resultsContainer.classList.remove('hidden');
+                        filtered.slice(0, 7).forEach(municipality => {
+                            const item = document.createElement('div');
+                            item.className = 'municipality-item';
+                            item.textContent = municipality;
+                            item.addEventListener('click', () => {
+                                inputLocation.value = municipality;
+                                resultsContainer.classList.add('hidden');
+                            });
+                            resultsContainer.appendChild(item);
+                        });
+                    } else {
+                        resultsContainer.classList.add('hidden');
+                    }
+                });
+            }, 100);
+
+            break;
+        case 'return-material': {
+            title = 'Registrar Devolución de Material';
+            btnText = 'Confirmar Devolución';
+            btnClass = 'bg-yellow-500 hover:bg-yellow-600';
+            const maxReturn = data.quantity - (data.returnedQuantity || 0);
+            bodyHtml = `
+        <div class="space-y-4">
+            <p class="text-sm">Material: <span class="font-bold">${data.materialName}</span></p>
+            <p class="text-sm">Cantidad Solicitada Originalmente: <span class="font-bold">${data.quantity}</span></p>
+            <p class="text-sm">Cantidad Máxima a Devolver: <span class="font-bold">${maxReturn}</span></p>
+            <div>
+                <label class="block text-sm font-medium">Cantidad a Devolver</label>
+                <input type="number" name="quantityToReturn" required class="mt-1 w-full border p-2 rounded-md" max="${maxReturn}" min="1">
+            </div>
+        </div>`;
+            break;
+        }
+        case 'add-catalog-item':
+        case 'edit-catalog-item': {
+            const isEditing = type === 'edit-catalog-item';
+            title = isEditing ? 'Editar Material del Catálogo' : 'Añadir Nuevo Material al Catálogo';
+            btnText = isEditing ? 'Guardar Cambios' : 'Añadir Material';
+            btnClass = isEditing ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-blue-500 hover:bg-blue-600';
+            bodyHtml = `
+        <div class="space-y-4">
+            <div><label class="block text-sm font-medium">Nombre del Material</label><input type="text" name="name" required class="mt-1 w-full border p-2 rounded-md" value="${isEditing ? data.name : ''}"></div>
+            <div><label class="block text-sm font-medium">Referencia / SKU (Opcional)</label><input type="text" name="reference" class="mt-1 w-full border p-2 rounded-md" value="${isEditing ? data.reference : ''}"></div>
+            <div class="grid grid-cols-2 gap-4">
+                <div><label class="block text-sm font-medium">Unidad de Medida</label><input type="text" name="unit" required class="mt-1 w-full border p-2 rounded-md" value="${isEditing ? data.unit : ''}" placeholder="Metros, Unidades..."></div>
+                <div><label class="block text-sm font-medium">Umbral de Stock Mínimo</label><input type="number" name="minStockThreshold" class="mt-1 w-full border p-2 rounded-md" value="${isEditing ? data.minStockThreshold || '' : ''}" placeholder="Ej: 10"></div>
+            </div>
+        </div>`;
+            break;
+        }
+        case 'addInterestPerson':
+            title = 'Añadir Persona de Interés';
+            btnText = 'Guardar Persona';
+            btnClass = 'bg-blue-500 hover:bg-blue-600';
+            bodyHtml = `
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium">Nombre Completo</label>
+                        <input type="text" name="name" required class="mt-1 w-full border rounded-md p-2">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium">Cargo</label>
+                        <select name="position" required class="mt-1 w-full border rounded-md p-2 bg-white">
+                            <option value="" disabled selected>Selecciona un cargo...</option>
+                            <option value="Director de obra">Director de obra</option>
+                            <option value="Residente de obra">Residente de obra</option>
+                            <option value="Maestro de obra">Maestro de obra</option>
+                            <option value="SST residente">SST residente</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium">Correo Electrónico</label>
+                        <input type="email" name="email" class="mt-1 w-full border rounded-md p-2">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium">Teléfono</label>
+                        <input type="tel" name="phone" class="mt-1 w-full border rounded-md p-2">
+                    </div>
+                </div>`;
+            break;
+        case 'add-anticipo-payment':
+            title = 'Abonar al Anticipo';
+            btnText = 'Guardar Abono';
+            btnClass = 'bg-blue-500 hover:bg-blue-600';
+            bodyHtml = `
+                <p class="text-sm mb-4">Estás a punto de registrar un pago que se aplicará directamente al <strong>anticipo</strong> del contrato.</p>
+                <input type="hidden" name="type" value="abono_anticipo">
+                <div><label class="block text-sm font-medium">Valor del Abono</label><input type="text" name="amount" required class="currency-input mt-1 w-full border rounded-md p-2"></div>
+                <div class="mt-4"><label class="block text-sm font-medium">Fecha del Abono</label><input type="date" name="date" required class="mt-1 w-full border rounded-md p-2"></div>`;
+
+            setTimeout(() => {
+                setupCurrencyInput(modalForm.querySelector('input[name="amount"]'));
+                modalForm.querySelector('input[name="date"]').value = new Date().toISOString().split('T')[0];
+            }, 100);
+            break;
+
+        case 'add-corte-payment':
+            title = `Abonar al Corte #${data.corteNumber}`;
+            btnText = 'Guardar Abono';
+            btnClass = 'bg-blue-500 hover:bg-blue-600';
+            bodyHtml = `
+                <p class="text-sm mb-4">Estás registrando un pago para el <strong>Corte #${data.corteNumber}</strong>.</p>
+                <input type="hidden" name="type" value="abono_corte">
+                <input type="hidden" name="targetId" value="${data.corteId}">
+                <div><label class="block text-sm font-medium">Valor del Abono</label><input type="text" name="amount" required class="currency-input mt-1 w-full border rounded-md p-2"></div>
+                <div class="mt-4"><label class="block text-sm font-medium">Fecha del Abono</label><input type="date" name="date" required class="mt-1 w-full border rounded-md p-2"></div>`;
+
+            setTimeout(() => {
+                setupCurrencyInput(modalForm.querySelector('input[name="amount"]'));
+                modalForm.querySelector('input[name="date"]').value = new Date().toISOString().split('T')[0];
+            }, 100);
+            break;
+        case 'new-purchase-order': {
+            title = 'Crear Orden de Compra';
+            btnText = 'Guardar Orden';
+            btnClass = 'bg-blue-500 hover:bg-blue-600';
+
+            // Preparamos las opciones del catálogo para el desplegable
+            const materialOptions = data.catalog.map(mat => `<option value="${mat.id}" data-unit="${mat.unit}">${mat.name} (${mat.reference})</option>`).join('');
+
+            bodyHtml = `
+                <div class="space-y-4">
+                    <div><label class="block text-sm font-medium">Proveedor</label><input type="text" name="provider" required class="mt-1 w-full border p-2 rounded-md"></div>
+                    <div id="po-items-container" class="space-y-2 border-t pt-4">
+                        <div class="po-item flex items-end gap-2">
+                            <div class="flex-grow"><label class="block text-xs">Material</label><select name="materialId" class="po-material-select w-full border p-2 rounded-md bg-white">${materialOptions}</select></div>
+                            <div><label class="block text-xs">Cantidad</label><input type="number" name="quantity" required class="w-24 border p-2 rounded-md"></div>
+                            <div><label class="block text-xs">Costo Unitario</label><input type="text" name="unitCost" required class="currency-input w-32 border p-2 rounded-md"></div>
+                            <div class="pb-2"><span class="unit-display text-sm text-gray-500"></span></div>
+                        </div>
+                    </div>
+                    <button type="button" id="add-po-item-btn" class="text-sm text-blue-600 font-semibold">+ Añadir otro material</button>
+                </div>`;
+
+            setTimeout(() => {
+                // Lógica para añadir más items a la PO y actualizar unidades/formato de moneda
+                const container = document.getElementById('po-items-container');
+                const firstItem = container.querySelector('.po-item');
+                document.getElementById('add-po-item-btn').addEventListener('click', () => {
+                    const newItem = firstItem.cloneNode(true);
+                    newItem.querySelectorAll('input').forEach(input => input.value = '');
+                    container.appendChild(newItem);
+                });
+                // Listener para actualizar la unidad y aplicar formato de moneda dinámicamente
+                container.addEventListener('change', (e) => {
+                    if (e.target.classList.contains('po-material-select')) {
+                        const selectedOption = e.target.options[e.target.selectedIndex];
+                        e.target.closest('.po-item').querySelector('.unit-display').textContent = selectedOption.dataset.unit;
+                    }
+                });
+                container.addEventListener('input', (e) => {
+                    if (e.target.classList.contains('currency-input')) {
+                        setupCurrencyInput(e.target);
+                    }
+                });
+            }, 100);
+            break;
+        }
+        case 'add-other-payment':
+            title = 'Registrar Otro Movimiento';
+            btnText = 'Guardar Movimiento';
+            btnClass = 'bg-green-500 hover:bg-green-600';
+            bodyHtml = `
+                <p class="text-sm mb-4">Usa esta opción para registrar movimientos que no son abonos a cortes, como <strong>adelantos</strong>.</p>
+                <input type="hidden" name="type" value="otro">
+                <div><label class="block text-sm font-medium">Concepto</label><input type="text" name="concept" required class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Adelanto semana 25"></div>
+                <div class="mt-4"><label class="block text-sm font-medium">Valor</label><input type="text" name="amount" required class="currency-input mt-1 w-full border rounded-md p-2"></div>
+                <div class="mt-4"><label class="block text-sm font-medium">Fecha</label><input type="date" name="date" required class="mt-1 w-full border rounded-md p-2"></div>`;
+
+            setTimeout(() => {
+                setupCurrencyInput(modalForm.querySelector('input[name="amount"]'));
+                modalForm.querySelector('input[name="date"]').value = new Date().toISOString().split('T')[0];
             }, 100);
             break;
         case 'addItem':
@@ -2557,6 +3214,20 @@ function openMainModal(type, data = {}) {
             }, 100);
             break;
         }
+        case 'add-catalog-item':
+        case 'edit-catalog-item': {
+            const isEditing = type === 'edit-catalog-item';
+            title = isEditing ? 'Editar Material del Catálogo' : 'Añadir Nuevo Material al Catálogo';
+            btnText = isEditing ? 'Guardar Cambios' : 'Añadir Material';
+            btnClass = isEditing ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-blue-500 hover:bg-blue-600';
+            bodyHtml = `
+                <div class="space-y-4">
+                    <div><label class="block text-sm font-medium">Nombre del Material</label><input type="text" name="name" required class="mt-1 w-full border p-2 rounded-md" value="${isEditing ? data.name : ''}"></div>
+                    <div><label class="block text-sm font-medium">Referencia / SKU (Opcional)</label><input type="text" name="reference" class="mt-1 w-full border p-2 rounded-md" value="${isEditing ? data.reference : ''}"></div>
+                    <div><label class="block text-sm font-medium">Unidad de Medida</label><input type="text" name="unit" required class="mt-1 w-full border p-2 rounded-md" value="${isEditing ? data.unit : ''}" placeholder="Metros, Unidades, Kilos..."></div>
+                </div>`;
+            break;
+        }
         case 'editUser':
             title = 'Editar Usuario'; btnText = 'Guardar Cambios'; btnClass = 'bg-yellow-500 hover:bg-yellow-600';
             bodyHtml = `<div class="space-y-4">
@@ -2570,15 +3241,43 @@ function openMainModal(type, data = {}) {
                 <div><label for="user-address" class="block text-sm font-medium text-gray-700">Dirección</label><input type="text" id="user-address" name="address" value="${data.address}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
             </div>`;
             break;
+        case 'add-purchase':
+            title = 'Registrar Compra en Inventario';
+            btnText = 'Añadir a Inventario';
+            btnClass = 'bg-blue-500 hover:bg-blue-600';
+            bodyHtml = `
+        <div class="space-y-4">
+            <div><label class="block text-sm font-medium">Nombre del Material</label><input type="text" name="name" required class="mt-1 w-full border p-2 rounded-md"></div>
+            <div><label class="block text-sm font-medium">Referencia (Opcional)</label><input type="text" name="reference" class="mt-1 w-full border p-2 rounded-md"></div>
+            <div class="grid grid-cols-2 gap-4">
+                <div><label class="block text-sm font-medium">Cantidad Comprada</label><input type="number" name="quantity" required class="mt-1 w-full border p-2 rounded-md"></div>
+                <div><label class="block text-sm font-medium">Unidad</label><input type="text" name="unit" required class="mt-1 w-full border p-2 rounded-md" placeholder="Metros, Unidades..."></div>
+            </div>
+        </div>`;
+            break;
+
+        case 'request-material':
+            title = 'Solicitar Material del Inventario General';
+            btnText = 'Crear Solicitud';
+            btnClass = 'bg-green-500 hover:bg-green-600';
+            const materialOptions = data.inventory.map(mat => `<option value="${mat.id}">${mat.name} (${mat.quantity} ${mat.unit} en stock)</option>`).join('');
+            const subItemOptions = data.subItems.map(si => `<option value="${si.id}">${si.parentName} - Unidad #${si.number}</option>`).join('');
+            bodyHtml = `
+        <div class="space-y-4">
+            <div><label class="block text-sm font-medium">Material del Inventario</label><select name="materialId" required class="mt-1 w-full border p-2 rounded-md bg-white">${materialOptions}</select></div>
+            <div><label class="block text-sm font-medium">Cantidad Solicitada</label><input type="number" name="quantity" required class="mt-1 w-full border p-2 rounded-md"></div>
+            <div><label class="block text-sm font-medium">Vincular a Sub-Ítem</label><select name="subItemId" required class="mt-1 w-full border p-2 rounded-md bg-white">${subItemOptions}</select></div>
+        </div>`;
+            break;
         case 'editProfile':
             title = 'Mi Perfil'; btnText = 'Guardar Cambios'; btnClass = 'bg-blue-500 hover:bg-blue-600';
             bodyHtml = `<div class="space-y-4">
-                <div><label class="block text-sm font-medium text-gray-500">Nombre</label><p class="mt-1">${data.firstName} ${data.lastName}</p></div>
-                <div><label class="block text-sm font-medium text-gray-500">Cédula</label><p class="mt-1">${data.idNumber}</p></div>
-                <div><label for="profile-email" class="block text-sm font-medium text-gray-700">Correo</label><input type="email" id="profile-email" name="email" value="${data.email}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
-                <div><label for="profile-phone" class="block text-sm font-medium text-gray-700">Celular</label><input type="tel" id="profile-phone" name="phone" value="${data.phone}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
-                <div><label for="profile-address" class="block text-sm font-medium text-gray-700">Dirección</label><input type="text" id="profile-address" name="address" value="${data.address}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
-            </div>`;
+                    <div><label class="block text-sm font-medium text-gray-500">Nombre</label><p class="mt-1">${data.firstName} ${data.lastName}</p></div>
+                    <div><label class="block text-sm font-medium text-gray-500">Cédula</label><p class="mt-1">${data.idNumber}</p></div>
+                    <div><label for="profile-email" class="block text-sm font-medium text-gray-700">Correo</label><input type="email" id="profile-email" name="email" value="${data.email}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
+                    <div><label for="profile-phone" class="block text-sm font-medium text-gray-700">Celular</label><input type="tel" id="profile-phone" name="phone" value="${data.phone}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
+                    <div><label for="profile-address" class="block text-sm font-medium text-gray-700">Dirección</label><input type="text" id="profile-address" name="address" value="${data.address}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
+                </div>`;
             break;
     }
     document.getElementById('modal-title').textContent = title;
@@ -2614,6 +3313,231 @@ modalForm.addEventListener('submit', async (e) => {
             };
             await createProject(projectData);
             break;
+        case 'editProjectInfo': // Asegúrate de que este bloque esté aquí
+            const updatedData = {
+                name: data.name,
+                builderName: data.builderName,
+                // Limpiamos los valores de moneda antes de guardarlos
+                value: parseFloat(data.value.replace(/[$. ]/g, '')) || 0,
+                advance: parseFloat(data.advance.replace(/[$. ]/g, '')) || 0,
+                startDate: data.startDate,
+                kickoffDate: data.kickoffDate,
+                endDate: data.endDate,
+            };
+            await updateDoc(doc(db, "projects", id), updatedData);
+            break;
+        case 'addInterestPerson':
+            const personData = {
+                name: data.name,
+                position: data.position,
+                email: data.email,
+                phone: data.phone
+            };
+            await addDoc(collection(db, "projects", currentProject.id, "peopleOfInterest"), personData);
+            break;
+        case 'back-to-project-details-cortes':
+            showProjectDetails(currentProject);
+            switchProjectTab('cortes');
+            break;
+        case 'view-corte-details':
+            const corteId = button.dataset.corteId;
+            const corteRef = doc(db, "projects", currentProject.id, "cortes", corteId);
+            const corteSnap = await getDoc(corteRef);
+            if (corteSnap.exists()) {
+                showCorteDetails({ id: corteSnap.id, ...corteSnap.data() });
+            }
+            break;
+case 'add-catalog-item': {
+    const catalogData = {
+        name: data.name,
+        reference: data.reference,
+        unit: data.unit,
+        minStockThreshold: parseInt(data.minStockThreshold) || 0, // <-- AÑADE ESTA LÍNEA
+        quantityInStock: 0
+    };
+    await addDoc(collection(db, "materialCatalog"), catalogData);
+    break;
+}
+case 'edit-catalog-item': {
+    const updatedData = {
+        name: data.name,
+        reference: data.reference,
+        unit: data.unit,
+        minStockThreshold: parseInt(data.minStockThreshold) || 0 // <-- AÑADE ESTA LÍNEA
+    };
+    await updateDoc(doc(db, "materialCatalog", id), updatedData);
+    break;
+}
+        case 'return-material': {
+            modalConfirmBtn.disabled = true;
+            modalConfirmBtn.textContent = 'Procesando...';
+
+            const returnData = {
+                projectId: currentProject.id,
+                requestId: id, // El id de la solicitud se guarda en el dataset del form
+                quantityToReturn: parseInt(data.quantityToReturn)
+            };
+
+            try {
+                const returnMaterial = httpsCallable(functions, 'returnMaterial');
+                const result = await returnMaterial(returnData);
+
+                alert(result.data.message);
+                closeMainModal();
+            } catch (error) {
+                console.error("Error al llamar a la Cloud Function 'returnMaterial':", error);
+                alert("Error: " + error.message);
+            } finally {
+                modalConfirmBtn.disabled = false;
+            }
+            break;
+        }
+        case 'new-purchase-order': {
+            console.log("DEBUG: Paso 1 - Iniciando el guardado de la orden de compra.");
+            modalConfirmBtn.disabled = true;
+            modalConfirmBtn.textContent = 'Guardando...';
+
+            try {
+                const items = [];
+                let totalCost = 0;
+
+                console.log("DEBUG: Paso 2 - Obteniendo proveedor del formulario.");
+                const provider = modalForm.querySelector('input[name="provider"]').value;
+                console.log(`DEBUG: Proveedor encontrado: "${provider}"`);
+
+                if (!provider) {
+                    throw new Error("El campo 'Proveedor' es obligatorio.");
+                }
+
+                console.log("DEBUG: Paso 3 - Buscando los ítems de la orden en el DOM.");
+                const itemElements = document.querySelectorAll('#po-items-container .po-item');
+                console.log(`DEBUG: Se encontraron ${itemElements.length} elementos de ítem.`);
+
+                itemElements.forEach((itemEl, index) => {
+                    console.log(`DEBUG: Procesando ítem #${index + 1}`);
+                    const materialId = itemEl.querySelector('select[name="materialId"]').value;
+                    const quantity = parseInt(itemEl.querySelector('input[name="quantity"]').value);
+                    const unitCostValue = itemEl.querySelector('input[name="unitCost"]').value;
+                    const unitCost = parseFloat(unitCostValue.replace(/[$. ]/g, '')) || 0;
+
+                    console.log(`DEBUG: Ítem #${index + 1} - Material ID: ${materialId}, Cantidad: ${quantity}, Costo Unitario: ${unitCost}`);
+
+                    if (materialId && quantity > 0) {
+                        items.push({ materialId, quantity, unitCost });
+                        totalCost += quantity * unitCost;
+                    }
+                });
+
+                console.log(`DEBUG: Paso 4 - Se procesaron ${items.length} ítems válidos.`);
+
+                if (items.length === 0) {
+                    throw new Error("Debes añadir al menos un material válido a la orden.");
+                }
+
+                const poData = {
+                    provider: provider,
+                    createdAt: new Date(),
+                    createdBy: currentUser.uid,
+                    status: 'pendiente',
+                    items: items,
+                    totalCost: totalCost
+                };
+                console.log("DEBUG: Paso 5 - Datos de la orden de compra listos para enviar:", poData);
+
+                await addDoc(collection(db, "purchaseOrders"), poData);
+                console.log("DEBUG: Paso 6 - ¡Datos enviados a Firestore con éxito!");
+
+                alert("¡Orden de compra creada con éxito!");
+                closeMainModal();
+
+            } catch (error) {
+                console.error("DEBUG ERROR CRÍTICO: Fallo al guardar la orden de compra:", error);
+                alert("No se pudo guardar la orden de compra: " + error.message);
+            } finally {
+                console.log("DEBUG: Paso 7 - Bloque 'finally' ejecutado, reactivando botón.");
+                modalConfirmBtn.disabled = false;
+            }
+            break;
+        }
+
+        // Y finalmente, la lógica para recibir la mercancía y actualizar el stock
+        // Esta es una acción que irá en un futuro modal de "Ver PO", pero la preparamos aquí
+        case 'receive-purchase-order': {
+            const poId = button.dataset.id;
+            const poRef = doc(db, "purchaseOrders", poId);
+
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const poDoc = await transaction.get(poRef);
+                    if (!poDoc.exists() || poDoc.data().status !== 'pendiente') {
+                        throw "Esta orden ya fue procesada o no existe.";
+                    }
+
+                    // Actualiza el stock de cada material en la orden
+                    for (const item of poDoc.data().items) {
+                        const materialRef = doc(db, "materialCatalog", item.materialId);
+                        const materialDoc = await transaction.get(materialRef);
+                        const newStock = (materialDoc.data().quantityInStock || 0) + item.quantity;
+                        transaction.update(materialRef, { quantityInStock: newStock });
+                    }
+
+                    // Actualiza el estado de la orden
+                    transaction.update(poRef, { status: 'recibida', receivedAt: new Date(), receivedBy: currentUser.uid });
+                });
+                alert("¡Orden de compra recibida y stock actualizado con éxito!");
+            } catch (error) {
+                console.error("Error al recibir la orden de compra:", error);
+                alert("Error: " + error);
+            }
+            break;
+        }
+        case 'request-material': {
+            modalConfirmBtn.disabled = true;
+            modalConfirmBtn.textContent = 'Procesando...';
+
+            const requestData = {
+                projectId: currentProject.id,
+                materialId: data.materialId,
+                quantity: parseInt(data.quantity),
+                subItemId: data.subItemId,
+            };
+
+            try {
+                // Prepara y llama a la nueva Cloud Function
+                const requestMaterial = httpsCallable(functions, 'requestMaterialFIFO');
+                const result = await requestMaterial(requestData);
+
+                alert(result.data.message);
+                closeMainModal();
+
+            } catch (error) {
+                console.error("Error al llamar a la Cloud Function 'requestMaterialFIFO':", error);
+                alert("Error al crear la solicitud: " + error.message);
+            } finally {
+                modalConfirmBtn.disabled = false;
+            }
+            break;
+        }
+        case 'add-anticipo-payment':
+        case 'add-corte-payment':
+        case 'add-other-payment':
+            const paymentData = {
+                amount: parseFloat(data.amount.replace(/[$. ]/g, '')) || 0,
+                date: data.date,
+                type: data.type, // 'abono_anticipo', 'abono_corte', u 'otro'
+                targetId: data.targetId || null, // ID del corte si aplica
+                concept: data.concept || `Abono a ${data.type === 'abono_anticipo' ? 'Anticipo' : `Corte #${modalForm.dataset.corteNumber}`}`, // Concepto automático o manual
+            };
+            modalForm.dataset.corteNumber = ''; // Limpiamos el dataset
+            await addDoc(collection(db, "projects", currentProject.id, "payments"), paymentData);
+            break;
+        case 'view-image': // Para abrir el modal de la imagen
+            const imageUrl = e.target.getAttribute('src');
+            if (imageUrl) {
+                openImageModal(imageUrl);
+            }
+            break;
+
         case 'addItem': await createItem(data); break;
         case 'editItem': await updateItem(id, data); break;
         case 'editUser':
@@ -2681,7 +3605,7 @@ async function populateUserDropdowns(manufacturerSelect, installerSelect, subIte
 async function openProgressModal(subItem) {
     const modal = document.getElementById('progress-modal');
     if (!modal) return;
-    
+
     const form = modal.querySelector('#progress-modal-form');
     form.reset();
     form.dataset.id = subItem.id;
@@ -2696,14 +3620,14 @@ async function openProgressModal(subItem) {
     const manufacturerSelect = modal.querySelector('#sub-item-manufacturer');
     const installerSelect = modal.querySelector('#sub-item-installer');
     await populateUserDropdowns(manufacturerSelect, installerSelect, subItem);
-    
+
     const photoPreview = modal.querySelector('#photo-preview');
     if (subItem.photoURL) {
         photoPreview.innerHTML = `<a href="${subItem.photoURL}" target="_blank" class="text-blue-600 hover:underline text-sm">Ver foto actual</a>`;
     } else {
         photoPreview.innerHTML = '';
     }
-    
+
     modal.style.display = 'flex';
 }
 
@@ -2725,7 +3649,7 @@ progressForm.addEventListener('submit', async (e) => {
 
     const data = {
         location: location,
-                realWidth: parseFloat(document.getElementById('sub-item-real-width').value) || 0,
+        realWidth: parseFloat(document.getElementById('sub-item-real-width').value) || 0,
         realHeight: parseFloat(document.getElementById('sub-item-real-height').value) || 0,
 
         manufacturer: document.getElementById('sub-item-manufacturer').value,
@@ -2777,7 +3701,7 @@ async function openMultipleProgressModal(selectedIds) {
     await populateUserDropdowns(manufacturerSelect, installerSelect, {});
 
     document.getElementById('multiple-sub-item-date').value = new Date().toISOString().split('T')[0];
-    
+
     for (const id of selectedIds) {
         const subItemDoc = await getDoc(doc(db, "subItems", id));
         if (subItemDoc.exists()) {
@@ -2785,7 +3709,7 @@ async function openMultipleProgressModal(selectedIds) {
             const row = document.createElement('tr');
             row.className = 'border-b';
             row.dataset.id = subItem.id;
-        row.innerHTML = `
+            row.innerHTML = `
             <td class="px-4 py-2 font-bold">${subItem.number}</td>
             <td class="px-4 py-2"><input type="text" class="location-input mt-1 block w-full px-2 py-1 border rounded-md" value="${subItem.location || ''}"></td>
             <td class="px-4 py-2"><input type="number" step="0.01" class="real-width-input mt-1 block w-full px-2 py-1 border rounded-md" value="${subItem.realWidth || ''}"></td>
@@ -2888,7 +3812,7 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
             realWidth: parseFloat(row.querySelector('.real-width-input').value) || 0,
             realHeight: parseFloat(row.querySelector('.real-height-input').value) || 0,
         };
-                const photoFile = row.querySelector('.photo-input').files[0];
+        const photoFile = row.querySelector('.photo-input').files[0];
 
         const subItemRef = doc(db, "subItems", subItemId);
         batch.update(subItemRef, { ...commonData, ...individualData });
@@ -2913,7 +3837,7 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
             const downloadURL = await getDownloadURL(snapshot.ref);
             await updateDoc(doc(db, "subItems", upload.subItemId), { photoURL: downloadURL });
         }
-        
+
         feedbackP.textContent = '¡Proceso completado!';
         feedbackP.className = 'text-sm mt-4 text-center text-green-600';
         setTimeout(() => {
@@ -3314,47 +4238,83 @@ async function handleDeletePhoto(subItemId, itemId, installerId, projectId) {
 function loadNotifications() {
     const notificationsList = document.getElementById('notifications-list');
     const notificationBadge = document.getElementById('notification-badge');
-    const q = query(collection(db, "notifications"), where("userId", "==", currentUser.uid), where("read", "==", false));
-    onSnapshot(q, (querySnapshot) => {
-        notificationBadge.classList.toggle('hidden', querySnapshot.empty);
+    if (!notificationsList || !notificationBadge) return;
+
+    let personalNotifs = [];
+    let channelNotifs = [];
+
+    // Función para renderizar todas las notificaciones juntas
+    const renderNotifications = () => {
+        const allNotifs = [...personalNotifs, ...channelNotifs];
+        // Ordenamos por fecha para que las más nuevas aparezcan primero
+        allNotifs.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+
+        notificationBadge.classList.toggle('hidden', allNotifs.length === 0);
         notificationsList.innerHTML = '';
-        if (querySnapshot.empty) {
+
+        if (allNotifs.length === 0) {
             notificationsList.innerHTML = '<p class="p-4 text-sm text-gray-500">No hay notificaciones nuevas.</p>';
             return;
         }
-        querySnapshot.forEach(doc => {
-            const notification = { id: doc.id, ...doc.data() };
+
+        allNotifs.forEach(notification => {
             const notificationItem = document.createElement('div');
-            notificationItem.className = 'p-2 border-b hover:bg-gray-100 cursor-pointer';
-            notificationItem.dataset.projectid = notification.projectId;
-            notificationItem.dataset.itemid = notification.itemId;
-            notificationItem.dataset.notifid = notification.id;
+            notificationItem.className = 'p-3 border-b hover:bg-gray-100 cursor-pointer notification-item';
+            // Guardamos todos los datos necesarios para la navegación
+            notificationItem.dataset.notifId = notification.id;
+            notificationItem.dataset.projectId = notification.projectId || '';
+            notificationItem.dataset.itemId = notification.itemId || '';
+            notificationItem.dataset.link = notification.link || '';
+            
             notificationItem.innerHTML = `
-                <p class="text-sm font-bold">Acción Requerida</p>
+                <p class="text-sm font-bold">${notification.channel ? 'Alerta de Sistema' : 'Acción Requerida'}</p>
                 <p class="text-sm">${notification.message}</p>
             `;
             notificationsList.appendChild(notificationItem);
         });
+    };
 
-        document.querySelectorAll('#notifications-list > div').forEach(item => {
-            item.addEventListener('click', async (e) => {
-                const { projectid, itemid, notifid } = e.currentTarget.dataset;
+    // Listener 1: Notificaciones personales
+    const personalQuery = query(collection(db, "notifications"), where("userId", "==", currentUser.uid), where("read", "==", false));
+    onSnapshot(personalQuery, (snapshot) => {
+        personalNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderNotifications();
+    });
 
-                await updateDoc(doc(db, "notifications", notifid), { read: true });
-
-                const projectDoc = await getDoc(doc(db, "projects", projectid));
-                const itemDoc = await getDoc(doc(db, "items", itemid));
-                if (projectDoc.exists() && itemDoc.exists()) {
-                    const projectData = { id: projectid, ...projectDoc.data() };
-                    const itemData = { id: itemid, ...itemDoc.data() };
-
-                    showProjectDetails(projectData);
-                    showSubItems(itemData);
-                }
-
-                document.getElementById('notifications-dropdown').classList.add('hidden');
-            });
+    // Listener 2: Notificaciones de canal para admin y bodega
+    if (currentUserRole === 'admin' || currentUserRole === 'bodega') {
+        const channelQuery = query(collection(db, "notifications"), where("channel", "==", "admins_bodega"), where("read", "==", false));
+        onSnapshot(channelQuery, (snapshot) => {
+            channelNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            renderNotifications();
         });
+    }
+
+    // Un único Event Listener en la lista para manejar todos los clics
+    notificationsList.addEventListener('click', async (e) => {
+        const item = e.target.closest('.notification-item');
+        if (!item) return;
+
+        const { notifId, projectId, itemId, link } = item.dataset;
+
+        // Marcar la notificación como leída
+        await updateDoc(doc(db, "notifications", notifId), { read: true });
+
+        // Navegar a la sección correspondiente
+        if (link === '/catalog') {
+            showView('catalog');
+            loadCatalogView();
+        } else if (projectId && itemId) {
+            const projectDoc = await getDoc(doc(db, "projects", projectId));
+            const itemDoc = await getDoc(doc(db, "items", itemId));
+            if (projectDoc.exists() && itemDoc.exists()) {
+                showProjectDetails({ id: projectId, ...projectDoc.data() });
+                showSubItems({ id: itemId, ...itemDoc.data() });
+            }
+        }
+        
+        // Ocultar el menú desplegable
+        document.getElementById('notifications-dropdown').classList.add('hidden');
     });
 }
 
@@ -3410,7 +4370,19 @@ document.addEventListener('DOMContentLoaded', () => {
         adminPanel: document.getElementById('admin-panel-view'),
         projectDetails: document.getElementById('project-details-view'),
         subItems: document.getElementById('sub-items-view'),
+        corteDetails: document.getElementById('corte-details-view'),
+        //pagos: document.getElementById('pagos-content'),
+        //materiales: document.getElementById('materiales-content'), // <-- AÑADE ESTA LÍNEA
+        catalog: document.getElementById('catalog-view'),
+        compras: document.getElementById('compras-view'),
+        reports: document.getElementById('reports-view'),
+
     };
+
+    document.getElementById('generate-report-btn').addEventListener('click', generateMaterialReport);
+
+    document.getElementById('po-details-close-btn').addEventListener('click', closePurchaseOrderModal);
+    document.getElementById('po-details-cancel-btn').addEventListener('click', closePurchaseOrderModal);
 
 
     // Formularios de Autenticación
@@ -3434,185 +4406,452 @@ document.addEventListener('DOMContentLoaded', () => {
     // MANEJADOR DE EVENTOS CENTRALIZADO para el contenido principal
     document.getElementById('main-content').addEventListener('click', async (e) => {
         const target = e.target;
+        const button = target.closest('button[data-action]');
 
-        const uploadCard = e.target.closest('.document-upload-card[data-action="upload-doc"]');
-        // LA CONDICIÓN AÑADIDA ES: !e.target.closest('button')
-        if (uploadCard && !e.target.closest('button')) {
-            // Busca el input de archivo oculto DENTRO de la tarjeta y lo activa
-            const fileInput = uploadCard.querySelector('input[type="file"]');
-            if (fileInput) {
-                fileInput.click();
+        // Manejo de clics en imágenes
+        if (target.dataset.action === 'view-image' && target.tagName === 'IMG') {
+            const imageUrl = target.getAttribute('src');
+            if (imageUrl) openImageModal(imageUrl);
+            return;
+        }
+
+        if (!button) return;
+        const action = button.dataset.action;
+
+        switch (action) {
+            // -- Acciones de Dashboard --
+            case 'view-details': {
+                const projectId = projectCard?.dataset.id;
+                const docSnap = await getDoc(doc(db, "projects", projectId));
+                if (docSnap.exists()) showProjectDetails({ id: docSnap.id, ...docSnap.data() });
+                break;
             }
-            return; // Detenemos la ejecución para no interferir con otros clics
-        }
-
-        const button = target.closest('button');
-        const docCard = target.closest('.document-category-card.clickable');
-
-        // ====================================================================
-        //      INICIO: CÓDIGO AÑADIDO PARA LA TARJETA "OTRO SÍ"
-        // ====================================================================
-        const otroSiCard = e.target.closest('.document-upload-card[data-action="open-otro-si-modal"]');
-        if (otroSiCard) {
-            openOtroSiModal();
-            return; // Detiene la ejecución para no interferir con otros clics
-        }
-        // ====================================================================
-        //      FIN: CÓDIGO AÑADIDO
-        // ====================================================================
-
-        // Lógica para clics en tarjetas de documentos
-        if (docCard) {
-            const docType = docCard.dataset.docType;
-            const docs = currentProjectDocs.get(docType) || [];
-            openDocumentViewerModal(docType, docs);
-            return; // Detiene la ejecución para no procesar botones
-        }
-
-        // ======================================================
-        //      INICIO: CÓDIGO AÑADIDO PARA EL BOTÓN "VER"
-        // ======================================================
-        if (button && button.dataset.action === 'view-documents') {
-            const docType = button.dataset.docType;
-            const docs = currentProjectDocs.get(docType) || [];
-            openDocumentViewerModal(docType, docs);
-            return; // Detenemos la ejecución aquí para que no interfiera con otros clics
-        }
-        // ======================================================
-        //      FIN: CÓDIGO AÑADIDO
-        // ======================================================
-
-
-        // NUEVA LÓGICA PARA LAS PESTAÑAS DE DETALLES DEL PROYECTO
-        const tabButton = e.target.closest('#project-details-tabs .tab-button');
-        if (tabButton) {
-            const tabName = tabButton.dataset.tab;
-            switchProjectTab(tabName);
-        }
-
-        // Lógica para clics en botones
-        if (button && button.dataset.action) {
-            const action = button.dataset.action;
-            const projectCard = button.closest('.project-card');
-            const itemRow = button.closest('tr');
-
-            // Acciones en tarjetas de PROYECTO
-            if (projectCard) {
-                const projectId = projectCard.dataset.id;
-                const projectName = projectCard.dataset.name;
-
-                switch (action) {
-                    case 'view-details': {
-                        const docSnap = await getDoc(doc(db, "projects", projectId));
-                        if (docSnap.exists()) showProjectDetails({ id: docSnap.id, ...docSnap.data() });
-                        break;
-                    }
-                    case 'archive':
-                        openConfirmModal(`¿Estás seguro de archivar el proyecto "${projectName}"?`, () => archiveProject(projectId));
-                        break;
-                    case 'restore':
-                        openConfirmModal(`¿Restaurar el proyecto "${projectName}"?`, () => restoreProject(projectId));
-                        break;
-                    case 'delete':
-                        openConfirmModal(`¿Estás seguro de eliminar el proyecto "${projectName}"?`, () => deleteProject(projectId));
-                        break;
+            case 'archive': {
+                const projectId = projectCard?.dataset.id;
+                const projectName = projectCard?.dataset.name;
+                openConfirmModal(`¿Estás seguro de archivar el proyecto "${projectName}"?`, () => archiveProject(projectId));
+                break;
+            }
+            case 'restore': {
+                const projectId = projectCard?.dataset.id;
+                const projectName = projectCard?.dataset.name;
+                openConfirmModal(`¿Restaurar el proyecto "${projectName}"?`, () => restoreProject(projectId));
+                break;
+            }
+            case 'delete': {
+                const projectId = projectCard?.dataset.id;
+                const projectName = projectCard?.dataset.name;
+                openConfirmModal(`¿Estás seguro de eliminar el proyecto "${projectName}"?`, () => deleteProject(projectId));
+                break;
+            }
+            case 'return-material': {
+                const requestId = button.dataset.id;
+                const requestRef = doc(db, "projects", currentProject.id, "materialRequests", requestId);
+                const requestSnap = await getDoc(requestRef);
+                if (requestSnap.exists()) {
+                    openMainModal('return-material', { id: requestSnap.id, ...requestSnap.data() });
                 }
-                return;
+                break;
             }
 
-            // Acciones en filas de la tabla de ÍTEMS
-            if (itemRow && itemRow.dataset.id) {
-                const itemId = itemRow.dataset.id;
+            case 'add-stock':
+                openMainModal('add-stock');
+                break;
+
+            // Añade un nuevo case para editar
+            case 'edit-catalog-item': {
+                const materialId = button.dataset.id;
+                const materialRef = doc(db, "materialCatalog", materialId);
+                const materialSnap = await getDoc(materialRef);
+                if (materialSnap.exists()) {
+                    openMainModal('edit-catalog-item', { id: materialSnap.id, ...materialSnap.data() });
+                }
+                break;
+            }
+            // Renombra 'add-purchase' a 'add-catalog-item'
+            case 'add-catalog-item':
+                openMainModal('add-catalog-item');
+                break;
+
+
+            case 'request-material': {
+                // 1. Muestra un indicador de carga porque esta operación puede tardar un momento
+                loadingOverlay.classList.remove('hidden');
+
+                try {
+                    // 2. Obtiene los datos necesarios en paralelo para mayor eficiencia
+                    const [
+                        inventorySnapshot,
+                        itemsSnapshot,
+                        subItemsSnapshot
+                    ] = await Promise.all([
+                        getDocs(query(collection(db, "inventory"))),
+                        getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id))),
+                        getDocs(query(collection(db, "subItems"), where("projectId", "==", currentProject.id)))
+                    ]);
+
+                    // 3. Prepara la lista de materiales del inventario general
+                    const inventory = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                    // 4. Prepara la lista de sub-ítems del proyecto, añadiendo el nombre del ítem padre para mayor claridad
+                    const itemsMap = new Map(itemsSnapshot.docs.map(doc => [doc.id, doc.data()]));
+                    const subItems = subItemsSnapshot.docs.map(doc => {
+                        const data = doc.data();
+                        const parentName = itemsMap.get(data.itemId)?.name || 'Ítem Desconocido';
+                        return { id: doc.id, parentName, ...data };
+                    });
+
+                    // 5. Llama a la ventana flotante y le pasa toda la información preparada
+                    openMainModal('request-material', { inventory, subItems });
+
+                } catch (error) {
+                    console.error("Error al preparar los datos para la solicitud de material:", error);
+                    alert("No se pudieron cargar los datos para la solicitud.");
+                } finally {
+                    // 6. Oculta el indicador de carga
+                    loadingOverlay.classList.add('hidden');
+                }
+                break;
+            }
+
+            case 'approve-request':
+                await updateDoc(doc(db, "projects", currentProject.id, "materialRequests", button.dataset.id), { status: 'aprobado' });
+                break;
+
+            case 'reject-request':
+                await updateDoc(doc(db, "projects", currentProject.id, "materialRequests", button.dataset.id), { status: 'rechazado' });
+                break;
+            case 'view-purchase-order': {
+                const poId = button.dataset.id;
+                openPurchaseOrderModal(poId);
+                break;
+            }
+
+            case 'deliver-material':
+                await updateDoc(doc(db, "projects", currentProject.id, "materialRequests", button.dataset.id), {
+                    status: 'entregado',
+                    responsibleId: currentUser.uid // El usuario de bodega que entrega es el responsable
+                });
+                break;
+            case 'add-purchase-order': {
+                const catalogSnapshot = await getDocs(query(collection(db, "materialCatalog")));
+                const catalog = catalogSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                openMainModal('new-purchase-order', { catalog });
+                break;
+            }
+            case 'new-purchase-order': {
+                // Muestra un indicador de carga mientras preparamos los datos
+                loadingOverlay.classList.remove('hidden');
+                try {
+                    // Obtenemos los materiales del catálogo para el desplegable
+                    const catalogSnapshot = await getDocs(query(collection(db, "materialCatalog")));
+                    const catalog = catalogSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                    // Abrimos el modal y le pasamos la lista de materiales
+                    openMainModal('new-purchase-order', { catalog });
+                } catch (error) {
+                    console.error("Error al preparar la orden de compra:", error);
+                    alert("No se pudieron cargar los materiales del catálogo.");
+                } finally {
+                    loadingOverlay.classList.add('hidden');
+                }
+                break;
+            }
+
+            // -- Acciones de la tabla de Ítems --
+            case 'view-item-details':
+            case 'edit-item':
+            case 'delete-item': {
+                const itemId = itemRow?.dataset.id;
+                if (!itemId) return;
                 const itemDoc = await getDoc(doc(db, "items", itemId));
                 if (!itemDoc.exists()) return;
                 const itemData = { id: itemDoc.id, ...itemDoc.data() };
 
-                switch (action) {
-                    case 'view-item-details':
-                        showSubItems(itemData);
-                        break;
-                    case 'edit-item':
-                        openMainModal('editItem', itemData);
-                        break;
-                    case 'delete-item':
-                        openConfirmModal(`¿Seguro que quieres eliminar el ítem "${itemData.name}"?`, () => deleteItem(itemId));
-                        break;
-
-                }
-                return;
+                if (action === 'view-item-details') showSubItems(itemData);
+                if (action === 'edit-item') openMainModal('editItem', itemData);
+                if (action === 'delete-item') openConfirmModal(`¿Seguro que quieres eliminar el ítem "${itemData.name}"?`, () => deleteItem(itemId));
+                break;
             }
 
-            // Acciones generales (cabecera, etc.)
-            switch (action) {
-                case 'logout': handleLogout(); break;
-                case 'new-project': openMainModal('newProject'); break;
-                case 'toggle-menu': document.getElementById('sidebar').classList.toggle('-translate-x-full'); break;
-                case 'back-to-dashboard': showDashboard(); break;
-                case 'back-to-project': showProjectDetails(currentProject); break;
-                case 'add-item':
-                    openMainModal('addItem');
-                    break;
-
-                // ASEGÚRATE DE QUE ESTE CASE EXISTA
-                case 'import-items':
-                    document.getElementById('import-modal').style.display = 'flex';
-                    break;
-
-                case 'export-pdf':
-                    exportProjectToPDF();
-                    break;
-
-                case 'edit-info':
-                    toggleInfoEditMode(true);
-                    break;
-                case 'save-info':
-                    saveProjectInfoChanges();
-                    break;
-                case 'cancel-edit':
-                    toggleInfoEditMode(false);
-                    break;
-
-                case 'manage-documents': openDocumentsModal(currentProject); break;
-                case 'save-dates':
-                    const kickoffDate = document.getElementById('project-kickoffDate').value;
-                    const endDate = document.getElementById('project-endDate').value;
-                    await updateDoc(doc(db, "projects", currentProject.id), { kickoffDate, endDate });
-                    document.getElementById('save-dates-btn').classList.add('hidden');
-                    break;
-                // REEMPLAZA el 'case set-corte-type' con este bloque completo
-                case 'set-corte-type': {
-                    const type = button.dataset.type;
-                    document.querySelectorAll('.corte-type-btn').forEach(btn => {
-                        const isSelected = btn.dataset.type === type;
-                        btn.classList.toggle('bg-blue-500', isSelected);
-                        btn.classList.toggle('text-white', isSelected);
-                        btn.classList.toggle('bg-gray-200', !isSelected);
-                        btn.classList.toggle('text-gray-700', !isSelected);
-                    });
-                    setupCorteSelection(type);
-                    break;
+            // -- Acciones de Cortes --
+            case 'view-corte-details': {
+                const corteId = button.dataset.corteId;
+                const corteRef = doc(db, "projects", currentProject.id, "cortes", corteId);
+                const corteSnap = await getDoc(corteRef);
+                if (corteSnap.exists()) {
+                    showCorteDetails({ id: corteSnap.id, ...corteSnap.data() });
                 }
-                case 'generate-corte':
-                    generateCorte();
-                    break;
-                case 'approve-corte': {
-                    const corteId = button.closest('.p-4.bg-gray-50').querySelector('[data-action="approve-corte"]').dataset.id; // Forma segura de obtener el id
-                    if (currentProject && currentProject.id && corteId) {
-                        openConfirmModal("¿Estás seguro de que quieres aprobar este corte? Esta acción es final.", () => approveCorte(currentProject.id, corteId));
-                    }
-                    break;
+                break;
+            }
+            case 'export-corte-pdf': {
+                const corteId = button.dataset.corteId;
+                const exportType = button.dataset.type;
+                const corteRef = doc(db, "projects", currentProject.id, "cortes", corteId);
+                const corteSnap = await getDoc(corteRef);
+                if (corteSnap.exists()) {
+                    exportCorteToPDF(currentProject, { id: corteSnap.id, ...corteSnap.data() }, exportType);
                 }
-                case 'deny-corte': {
-                    const corteId = button.closest('.p-4.bg-gray-50').querySelector('[data-action="deny-corte"]').dataset.id; // Forma segura de obtener el id
-                    if (currentProject && currentProject.id && corteId) {
-                        openConfirmModal("¿Estás seguro de que quieres denegar y eliminar este corte? No se podrá recuperar.", () => denyCorte(currentProject.id, corteId));
-                    }
-                    break;
-                }
+                break;
+            }
+            case 'approve-corte': {
+                const corteId = button.dataset.corteId;
+                openConfirmModal("¿Estás seguro de que quieres aprobar este corte? Esta acción es final.", () => approveCorte(currentProject.id, corteId));
+                break;
+            }
+            case 'deny-corte': {
+                const corteId = button.dataset.corteId;
+                openConfirmModal("¿Estás seguro de que quieres denegar y eliminar este corte? No se podrá recuperar.", () => denyCorte(currentProject.id, corteId));
+                break;
+            }
+            case 'cancel-corte-selection':
+                closeCorteSelectionView();
+                break;
+            case 'generate-corte':
+                generateCorte();
+                break;
+            case 'set-corte-type': {
+                const type = button.dataset.type;
+                document.querySelectorAll('.corte-type-btn').forEach(btn => {
+                    btn.classList.toggle('bg-blue-500', btn.dataset.type === type);
+                    btn.classList.toggle('text-white', btn.dataset.type === type);
+                });
+                setupCorteSelection(type);
+                break;
+            }
+
+            // -- Acciones de Personas de Interés --
+            case 'add-interest-person':
+                openMainModal('addInterestPerson');
+                break;
+            case 'delete-interest-person': {
+                const personId = button.dataset.id;
+                openConfirmModal('¿Estás seguro de eliminar a esta persona?', () => deleteDoc(doc(db, "projects", currentProject.id, "peopleOfInterest", personId)));
+                break;
+            }
+
+            // -- Acciones Generales --
+            case 'logout': handleLogout(); break;
+            case 'new-project': openMainModal('newProject'); break;
+            case 'toggle-menu': document.getElementById('sidebar').classList.toggle('-translate-x-full'); break;
+            case 'back-to-dashboard': showDashboard(); break;
+            case 'back-to-project': showProjectDetails(currentProject); break;
+            case 'add-item': openMainModal('addItem'); break;
+            case 'import-items': document.getElementById('import-modal').style.display = 'flex'; break;
+            case 'export-pdf': exportProjectToPDF(); break;
+            case 'edit-project-info': openMainModal('editProjectInfo', currentProject); break;
+            case 'back-to-project-details-cortes':
+                showProjectDetails(currentProject, 'cortes'); // <--- Pasamos 'cortes' como el tab por defecto
+                break;
+            case 'view-image':
+                const imageUrl = target.getAttribute('src');
+                if (imageUrl) openImageModal(imageUrl);
+                break;
+            case 'add-anticipo-payment':
+                openMainModal('add-anticipo-payment');
+                break;
+            case 'add-corte-payment':
+                // Pasamos los datos del corte al modal
+                openMainModal('add-corte-payment', {
+                    corteId: button.dataset.corteId,
+                    corteNumber: button.dataset.corteNumber
+                });
+                break;
+            case 'add-other-payment':
+                openMainModal('add-other-payment');
+                break;
+            case 'delete-payment':
+                const paymentId = button.dataset.id;
+                openConfirmModal(
+                    '¿Estás seguro de que quieres eliminar este movimiento? Esta acción no se puede deshacer.',
+                    () => deleteDoc(doc(db, "projects", currentProject.id, "payments", paymentId))
+                );
+                break;
+            case 'view-purchase-order': {
+                const poId = button.dataset.id;
+                openPurchaseOrderModal(poId);
+                break;
             }
         }
-
     });
+
+
+
+    // --- Listener Secundario (SOLO para los botones de los modales) ---
+    document.body.addEventListener('click', async (e) => {
+        const button = e.target.closest('button[data-action]');
+        if (!button) return;
+
+        const action = button.dataset.action;
+        const poId = button.dataset.id;
+
+        if (action === 'receive-purchase-order') {
+            openConfirmModal(
+                '¿Confirmas que has recibido toda la mercancía? Esta acción actualizará el stock y no se puede deshacer.',
+                async () => {
+                    loadingOverlay.classList.remove('hidden');
+
+                    try {
+                        // Prepara la llamada a la Cloud Function
+                        const receivePO = httpsCallable(functions, 'receivePurchaseOrder');
+                        const result = await receivePO({ poId: poId });
+
+                        // Muestra el mensaje de éxito del backend
+                        alert(result.data.message);
+                        closePurchaseOrderModal();
+
+                    } catch (error) {
+                        console.error("Error al llamar a la Cloud Function 'receivePurchaseOrder':", error);
+                        alert("Error al procesar la orden: " + error.message);
+                    } finally {
+                        loadingOverlay.classList.add('hidden');
+                    }
+                }
+            );
+        }
+
+        if (action === 'reject-purchase-order') {
+            openConfirmModal(
+                '¿Confirmas que has recibido toda la mercancía de esta orden? Esta acción actualizará el stock y no se puede deshacer.',
+                async () => {
+                    loadingOverlay.classList.remove('hidden'); // 1. Mostramos la carga
+                    const poRef = doc(db, "purchaseOrders", poId);
+
+                    try {
+                        await runTransaction(db, async (transaction) => {
+                            // ... (toda la lógica de la transacción se mantiene igual)
+                            const poDoc = await transaction.get(poRef);
+                            if (!poDoc.exists() || poDoc.data().status !== 'pendiente') {
+                                throw new Error("Esta orden ya fue procesada o no existe.");
+                            }
+
+                            const materialsToUpdate = new Map();
+                            poDoc.data().items.forEach(item => {
+                                const currentQty = materialsToUpdate.get(item.materialId) || 0;
+                                materialsToUpdate.set(item.materialId, currentQty + item.quantity);
+                            });
+
+                            const materialRefs = Array.from(materialsToUpdate.keys()).map(id => doc(db, "materialCatalog", id));
+                            const materialDocs = await Promise.all(materialRefs.map(ref => transaction.get(ref)));
+
+                            materialDocs.forEach((materialDoc, index) => {
+                                if (!materialDoc.exists()) {
+                                    throw new Error(`Uno de los materiales en la orden ya no existe.`);
+                                }
+                                const materialId = materialRefs[index].id;
+                                const currentStock = materialDoc.data().quantityInStock || 0;
+                                const receivedQuantity = materialsToUpdate.get(materialId);
+                                transaction.update(materialRefs[index], { quantityInStock: currentStock + receivedQuantity });
+                            });
+
+                            transaction.update(poRef, { status: 'recibida', receivedAt: new Date(), receivedBy: currentUser.uid });
+                        });
+
+                        loadingOverlay.classList.add('hidden'); // 2. Ocultamos la carga ANTES de la alerta
+                        alert("¡Orden de compra recibida y stock actualizado con éxito!"); // 3. Mostramos el mensaje
+                        closePurchaseOrderModal(); // 4. Cerramos el modal de detalles
+
+                    } catch (error) {
+                        loadingOverlay.classList.add('hidden'); // También ocultamos la carga si hay un error
+                        console.error("Error al recibir la orden de compra:", error);
+                        alert("Error al procesar la orden: " + error.message);
+                    }
+                }
+            );
+        }
+
+        // --- ACCIÓN: RECHAZAR ORDEN DE COMPRA (SIN CAMBIOS) ---
+        if (action === 'reject-purchase-order') {
+            openConfirmModal(
+                '¿Estás seguro de que quieres rechazar y eliminar esta orden de compra? Esta acción no se puede deshacer.',
+                async () => {
+                    loadingOverlay.classList.remove('hidden');
+                    try {
+                        const poRef = doc(db, "purchaseOrders", poId);
+                        await deleteDoc(poRef);
+                        alert("La orden de compra ha sido eliminada.");
+                        closePurchaseOrderModal();
+                    } catch (error) {
+                        console.error("Error al eliminar la orden de compra:", error);
+                        alert("No se pudo eliminar la orden de compra.");
+                    } finally {
+                        loadingOverlay.classList.add('hidden');
+                    }
+                }
+            );
+        }
+    });
+
+    // ==============================================================
+    //      INICIO: LISTENERS PARA EL MODAL DE ORDEN DE COMPRA
+    // ==============================================================
+    const poDetailsModal = document.getElementById('po-details-modal');
+
+    // Función para cerrar el modal (asegúrate de que exista)
+    function closePurchaseOrderModal() {
+        if (poDetailsModal) poDetailsModal.style.display = 'none';
+    }
+
+    if (poDetailsModal) {
+        poDetailsModal.addEventListener('click', (e) => {
+            // Se cierra si se presiona el botón [X], el botón "Cerrar", o el fondo oscuro
+            if (e.target.id === 'po-details-close-btn' ||
+                e.target.id === 'po-details-cancel-btn' ||
+                e.target.id === 'po-details-modal') {
+                closePurchaseOrderModal();
+            }
+        });
+    }
+    // ==============================================================
+    //      FIN: LISTENERS PARA EL MODAL DE ORDEN DE COMPRA
+    // ==============================================================
+
+    // ========================================================
+    //      INICIO: LISTENER PARA EL BOTÓN "ATRÁS" DEL NAVEGADOR
+    // ========================================================
+    window.addEventListener('popstate', (event) => {
+        // 'popstate' se activa cuando el usuario navega con los botones del navegador.
+        if (event.state && event.state.viewName) {
+            // Si encontramos una vista guardada, la mostramos.
+            // El 'true' evita que se vuelva a guardar en el historial (evitando un bucle).
+            console.log(`Navegando hacia atrás a la vista: ${event.state.viewName}`);
+            showView(event.state.viewName, true);
+        } else {
+            // Si no hay estado, podría ser la primera página, mostramos el dashboard.
+            showDashboard();
+        }
+    });
+    // ========================================================
+    //      FIN: LISTENER
+    // ========================================================
+
+    // ====================================================================
+    //      INICIO: LISTENER PARA EL MENÚ DESPLEGABLE RESPONSIVE (NUEVO)
+    // ====================================================================
+    document.addEventListener('click', (e) => {
+        const dropdownBtn = document.getElementById('project-tabs-dropdown-btn');
+        const dropdownMenu = document.getElementById('project-tabs-dropdown-menu');
+        const linkItem = e.target.closest('#dropdown-menu-items a');
+
+        // Si se hace clic en una opción del menú
+        if (linkItem && linkItem.dataset.tab) {
+            e.preventDefault();
+            switchProjectTab(linkItem.dataset.tab); // Cambia la pestaña
+            if (dropdownMenu) dropdownMenu.classList.add('hidden'); // Cierra el menú
+        }
+        // Si se hace clic en el botón para abrir/cerrar el menú
+        else if (dropdownBtn && dropdownBtn.contains(e.target)) {
+            if (dropdownMenu) dropdownMenu.classList.toggle('hidden');
+        }
+        // Si se hace clic en cualquier otro lugar, cierra el menú
+        else {
+            if (dropdownMenu) dropdownMenu.classList.add('hidden');
+        }
+    });
+    // ====================================================================
+    //      FIN: LISTENER AÑADIDO
+    // ====================================================================
+
 
     // Pestañas de Proyectos y Usuarios
     document.getElementById('active-projects-tab').addEventListener('click', () => loadProjects('active'));
@@ -3899,13 +5138,22 @@ document.addEventListener('DOMContentLoaded', () => {
             if (link) {
                 e.preventDefault();
                 const viewName = link.dataset.view;
+
+                // Lógica corregida para llamar a la función de carga de cada vista
                 if (viewName === 'adminPanel') {
                     showView('adminPanel');
                     loadUsers('active');
+                } else if (viewName === 'catalog') { // <-- LÍNEA AÑADIDA
+                    showView('catalog');
+                    loadCatalogView();
+                } else if (viewName === 'compras') { // <-- LÍNEA AÑADIDA
+                    showView('compras');
+                    loadComprasView();
                 } else {
                     showView(viewName);
                 }
-                // En móvil, sí cerramos el menú después de hacer clic.
+
+                // En móvil, cerramos el menú después de hacer clic.
                 if (window.innerWidth < 768) {
                     sidebar.classList.add('-translate-x-full');
                 }
@@ -4010,33 +5258,319 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-const subItemsTableBody = document.getElementById('sub-items-table-body');
-const selectAllCheckbox = document.getElementById('select-all-subitems-checkbox');
-const registerMultipleBtn = document.getElementById('register-multiple-progress-btn');
+    const subItemsTableBody = document.getElementById('sub-items-table-body');
+    const selectAllCheckbox = document.getElementById('select-all-subitems-checkbox');
+    const registerMultipleBtn = document.getElementById('register-multiple-progress-btn');
 
-if (subItemsTableBody && selectAllCheckbox && registerMultipleBtn) {
-    const updateMultipleProgressButtonState = () => {
-        const selectedCheckboxes = document.querySelectorAll('.subitem-checkbox:checked');
-        registerMultipleBtn.disabled = selectedCheckboxes.length === 0;
+    if (subItemsTableBody && selectAllCheckbox && registerMultipleBtn) {
+        const updateMultipleProgressButtonState = () => {
+            const selectedCheckboxes = document.querySelectorAll('.subitem-checkbox:checked');
+            registerMultipleBtn.disabled = selectedCheckboxes.length === 0;
+        };
+
+        selectAllCheckbox.addEventListener('change', () => {
+            document.querySelectorAll('.subitem-checkbox').forEach(checkbox => { checkbox.checked = selectAllCheckbox.checked; });
+            updateMultipleProgressButtonState();
+        });
+
+        subItemsTableBody.addEventListener('change', (e) => {
+            if (e.target.classList.contains('subitem-checkbox')) {
+                const allCheckboxes = document.querySelectorAll('.subitem-checkbox');
+                const checkedCount = document.querySelectorAll('.subitem-checkbox:checked').length;
+                selectAllCheckbox.checked = allCheckboxes.length > 0 && checkedCount === allCheckboxes.length;
+                updateMultipleProgressButtonState();
+            }
+        });
+
+        registerMultipleBtn.addEventListener('click', () => {
+            const selectedIds = Array.from(document.querySelectorAll('.subitem-checkbox:checked')).map(cb => cb.dataset.id);
+            openMultipleProgressModal(selectedIds); // <-- Cambio clave aquí
+        });
+    }
+});
+
+// ====================================================================
+//      INICIO: LÓGICA PARA FORMATEO DE MONEDA (NUEVO)
+// ====================================================================
+
+/**
+ * Formateador de moneda para Pesos Colombianos (COP).
+ * Se puede reutilizar en toda la aplicación.
+ */
+const currencyFormatter = new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    minimumFractionDigits: 0
+});
+
+/**
+ * Aplica el formato de moneda a un campo de texto (input) mientras el usuario escribe.
+ * @param {HTMLInputElement} inputElement - El elemento del input al que se le aplicará el formato.
+ */
+function setupCurrencyInput(inputElement) {
+    if (!inputElement) return;
+
+    // Función que se ejecuta cada vez que el usuario escribe
+    const formatValue = () => {
+        // 1. Limpia el valor actual de cualquier caracter que no sea un número
+        let value = inputElement.value.replace(/[$. ]/g, '');
+
+        // 2. Si es un número válido, lo formatea
+        if (!isNaN(value) && value) {
+            // Usamos el formateador y reemplazamos espacios raros para consistencia
+            inputElement.value = currencyFormatter.format(value).replace(/\s/g, ' ');
+        } else {
+            // Si no es un número, limpia el campo
+            inputElement.value = '';
+        }
     };
 
-    selectAllCheckbox.addEventListener('change', () => {
-        document.querySelectorAll('.subitem-checkbox').forEach(checkbox => { checkbox.checked = selectAllCheckbox.checked; });
-        updateMultipleProgressButtonState();
-    });
+    // 3. Asigna la función al evento 'input'
+    inputElement.addEventListener('input', formatValue);
 
-    subItemsTableBody.addEventListener('change', (e) => {
-        if (e.target.classList.contains('subitem-checkbox')) {
-            const allCheckboxes = document.querySelectorAll('.subitem-checkbox');
-            const checkedCount = document.querySelectorAll('.subitem-checkbox:checked').length;
-            selectAllCheckbox.checked = allCheckboxes.length > 0 && checkedCount === allCheckboxes.length;
-            updateMultipleProgressButtonState();
+    // 4. Formatea el valor inicial que pueda tener el campo
+    if (inputElement.value) {
+        formatValue();
+    }
+}
+// ====================================================================
+//      FIN: LÓGICA PARA FORMATEO DE MONEDA
+// ====================================================================
+
+
+function loadPeopleOfInterest(projectId) {
+    const listContainer = document.getElementById('interest-people-list');
+    if (!listContainer) return;
+
+    const q = query(collection(db, "projects", projectId, "peopleOfInterest"));
+    if (unsubscribePeopleOfInterest) unsubscribePeopleOfInterest();
+
+    unsubscribePeopleOfInterest = onSnapshot(q, (snapshot) => {
+        listContainer.innerHTML = ''; // Limpia la lista
+        if (snapshot.empty) {
+            listContainer.innerHTML = '<p class="text-gray-500 text-sm">No se han añadido personas de interés.</p>';
+            return;
         }
-    });
 
-    registerMultipleBtn.addEventListener('click', () => {
-        const selectedIds = Array.from(document.querySelectorAll('.subitem-checkbox:checked')).map(cb => cb.dataset.id);
-        openMultipleProgressModal(selectedIds); // <-- Cambio clave aquí
+        snapshot.forEach(doc => {
+            const person = { id: doc.id, ...doc.data() };
+            const personCard = document.createElement('div');
+            personCard.className = 'p-3 border rounded-lg bg-gray-50 flex justify-between items-start';
+
+            personCard.innerHTML = `
+                <div class="flex-grow">
+                    <p class="font-bold text-gray-800">${person.name}</p>
+                    <p class="text-sm text-gray-600">${person.position || 'Sin cargo'}</p>
+                    <div class="mt-2 text-xs">
+                        <p><strong>Correo:</strong> <a href="mailto:${person.email}" class="text-blue-600">${person.email || 'N/A'}</a></p>
+                        <p><strong>Teléfono:</strong> <a href="tel:${person.phone}" class="text-blue-600">${person.phone || 'N/A'}</a></p>
+                    </div>
+                </div>
+                <button data-action="delete-interest-person" data-id="${person.id}" class="text-red-500 hover:text-red-700 font-semibold text-sm ml-4">
+                    Eliminar
+                </button>
+            `;
+            listContainer.appendChild(personCard);
+        });
     });
 }
-});
+
+
+
+/**
+ * Carga los datos financieros y llama a las funciones de renderizado para la pestaña de Pagos.
+ * VERSIÓN REESTRUCTURADA Y FINAL.
+ */
+async function loadPayments(project) {
+    if (unsubscribePayments) unsubscribePayments();
+
+    const cortesQuery = query(collection(db, "projects", project.id, "cortes"), where("status", "==", "aprobado"));
+    const paymentsQuery = query(collection(db, "projects", project.id, "payments"), orderBy("date", "desc"));
+
+    const approvedCortesSnapshot = await getDocs(cortesQuery);
+    const allApprovedCortes = approvedCortesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    unsubscribePayments = onSnapshot(paymentsQuery, (paymentsSnapshot) => {
+        // Obtenemos las referencias a los elementos del DOM CON LOS NUEVOS IDs
+        const anticipoTotalEl = document.getElementById('pagos-anticipo-total-value');
+        const anticipoAmortizadoEl = document.getElementById('pagos-anticipo-amortizado-value');
+        const anticipoPorAmortizarEl = document.getElementById('pagos-anticipo-por-amortizar-value');
+        const cortesListContainer = document.getElementById('cortes-payment-list');
+        const otrosPagosTableBody = document.getElementById('other-payments-table-body');
+
+        if (!anticipoTotalEl) return; // Salida de seguridad
+
+        const allPayments = paymentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // 1. Procesar Anticipo
+        const totalAnticipo = project.advance || 0;
+        const anticipoPayments = allPayments.filter(p => p.type === 'abono_anticipo' || p.type === 'amortizacion_anticipo');
+        const totalAmortizado = anticipoPayments.reduce((sum, p) => sum + p.amount, 0);
+
+        anticipoTotalEl.textContent = currencyFormatter.format(totalAnticipo);
+        anticipoAmortizadoEl.textContent = currencyFormatter.format(totalAmortizado);
+        anticipoPorAmortizarEl.textContent = currencyFormatter.format(totalAnticipo - totalAmortizado);
+
+        // 2. Procesar Abonos a Cortes
+        cortesListContainer.innerHTML = '';
+        if (allApprovedCortes.length === 0) {
+            cortesListContainer.innerHTML = '<p class="text-center py-4 text-gray-500">No hay cortes aprobados.</p>';
+        } else {
+            allApprovedCortes.forEach(corte => {
+                const cortePayments = allPayments.filter(p => p.type === 'abono_corte' && p.targetId === corte.id);
+                const totalPagadoCorte = cortePayments.reduce((sum, p) => sum + p.amount, 0);
+                const saldoCorte = (corte.netoAPagar || 0) - totalPagadoCorte;
+
+                const corteCard = document.createElement('div');
+                corteCard.className = 'bg-white p-4 rounded-lg shadow-sm border';
+                corteCard.innerHTML = `
+                    <div class="flex flex-col sm:flex-row justify-between items-start">
+                        <div>
+                            <p class="font-bold text-gray-800">Corte #${corte.corteNumber}</p>
+                            <p class="text-lg font-bold text-gray-800">${currencyFormatter.format(corte.netoAPagar || 0)}</p>
+                        </div>
+                        <div class="text-left sm:text-right mt-2 sm:mt-0">
+                            <p class="text-xs font-medium text-gray-500">Pagado: <span class="font-bold text-green-600">${currencyFormatter.format(totalPagadoCorte)}</span></p>
+                            <p class="text-xs font-medium text-gray-500">Saldo: <span class="font-bold text-red-600">${currencyFormatter.format(saldoCorte)}</span></p>
+                            <button data-action="add-corte-payment" data-corte-id="${corte.id}" data-corte-number="${corte.corteNumber}" class="mt-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-1 px-3 rounded w-full sm:w-auto">
+                                + Registrar Abono
+                            </button>
+                        </div>
+                    </div>`;
+                cortesListContainer.appendChild(corteCard);
+            });
+        }
+
+        // 3. Procesar Otros Pagos
+        const otrosPagos = allPayments.filter(p => !p.type || p.type === 'otro');
+        otrosPagosTableBody.innerHTML = '';
+        if (otrosPagos.length === 0) {
+            otrosPagosTableBody.innerHTML = `<tr><td colspan="4" class="text-center py-10 text-gray-500">No hay otros movimientos.</td></tr>`;
+        } else {
+            otrosPagos.forEach(pago => {
+                const row = document.createElement('tr');
+                row.className = 'bg-white border-b';
+                row.innerHTML = `
+                    <td class="px-6 py-4">${new Date(pago.date).toLocaleDateString('es-CO')}</td>
+                    <td class="px-6 py-4 font-medium text-gray-900">${pago.concept}</td>
+                    <td class="px-6 py-4 text-right font-semibold">${currencyFormatter.format(pago.amount)}</td>
+                    <td class="px-6 py-4 text-center">
+                        <button data-action="delete-payment" data-id="${pago.id}" class="text-red-500 hover:text-red-700 font-semibold text-sm">Eliminar</button>
+                    </td>`;
+                otrosPagosTableBody.appendChild(row);
+            });
+        }
+    });
+}
+
+async function loadMaterialsTab(project) {
+    // Visibilidad de botones según el rol del usuario
+    const canRequest = currentUserRole === 'admin' || currentUserRole === 'operario';
+    const requestMaterialBtn = document.getElementById('request-material-btn');
+    if (requestMaterialBtn) {
+        requestMaterialBtn.classList.toggle('hidden', !canRequest);
+    }
+
+    const requestsTableBody = document.getElementById('requests-table-body');
+    if (!requestsTableBody) return;
+
+    // Listener para las Solicitudes de este proyecto
+    if (unsubscribeMaterialRequests) unsubscribeMaterialRequests();
+    const requestsQuery = query(collection(db, "projects", project.id, "materialRequests"), orderBy("createdAt", "desc"));
+
+    unsubscribeMaterialRequests = onSnapshot(requestsQuery, async (snapshot) => {
+        // Obtenemos todos los sub-ítems del proyecto una sola vez para eficiencia
+        const subItemsSnapshot = await getDocs(query(collection(db, "subItems"), where("projectId", "==", project.id)));
+        const subItemsMap = new Map(subItemsSnapshot.docs.map(doc => [doc.id, doc.data()]));
+
+        // Obtenemos los nombres de los ítems padres para dar más contexto
+        const itemsSnapshot = await getDocs(query(collection(db, "items"), where("projectId", "==", project.id)));
+        const itemsMap = new Map(itemsSnapshot.docs.map(doc => [doc.id, doc.data()]));
+
+        requestsTableBody.innerHTML = '';
+        if (snapshot.empty) {
+            requestsTableBody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-gray-500">No hay solicitudes de material para este proyecto.</td></tr>`;
+            return;
+        }
+
+        snapshot.forEach(doc => {
+            const request = { id: doc.id, ...doc.data() };
+
+            // Construcción de nombres para mayor claridad
+            const subItem = subItemsMap.get(request.subItemId);
+            const parentItem = subItem ? itemsMap.get(subItem.itemId) : null;
+            const subItemName = parentItem ? `${parentItem.name} - Unidad #${subItem.number}` : 'Ítem no encontrado';
+            const solicitante = usersMap.get(request.requesterId)?.firstName || 'Desconocido';
+            const responsable = usersMap.get(request.responsibleId)?.firstName || 'N/A';
+
+            let statusText, statusColor, actionsHtml = '';
+
+            // Lógica de estados y acciones según el rol del usuario
+            switch (request.status) {
+                case 'solicitado':
+                    statusText = 'Solicitado';
+                    statusColor = 'bg-yellow-100 text-yellow-800';
+                    if (currentUserRole === 'admin') {
+                        actionsHtml = `<button data-action="approve-request" data-id="${request.id}" class="text-green-600 font-semibold hover:underline">Aprobar</button>
+                                       <button data-action="reject-request" data-id="${request.id}" class="text-red-600 font-semibold hover:underline">Rechazar</button>`;
+                    }
+                    break;
+                case 'aprobado':
+                    statusText = 'Aprobado';
+                    statusColor = 'bg-blue-100 text-blue-800';
+                    if (currentUserRole === 'bodega' || currentUserRole === 'admin') {
+                        actionsHtml = `<button data-action="deliver-material" data-id="${request.id}" class="text-blue-600 font-semibold hover:underline">Marcar Entregado</button>`;
+                    }
+                    break;
+                case 'entregado':
+                    statusText = 'Entregado'; statusColor = 'bg-green-100 text-green-800';
+                    // AÑADIMOS EL BOTÓN DE DEVOLVER SI AÚN NO SE HA DEVUELTO TODO
+                    if (request.quantity > (request.returnedQuantity || 0) && (currentUserRole === 'admin' || currentUserRole === 'operario')) {
+                        actionsHtml = `<button data-action="return-material" data-id="${request.id}" class="text-yellow-600 font-semibold hover:underline">Devolver</button>`;
+                    }
+                    break;
+                case 'rechazado':
+                    statusText = 'Rechazado';
+                    statusColor = 'bg-red-100 text-red-800';
+                    break;
+                default:
+                    statusText = 'Desconocido';
+                    statusColor = 'bg-gray-100 text-gray-800';
+            }
+
+            const row = document.createElement('tr');
+            row.className = 'bg-white border-b hover:bg-gray-50';
+            row.innerHTML = `
+                <td class="px-6 py-4">${request.createdAt.toDate().toLocaleDateString('es-CO')}</td>
+                <td class="px-6 py-4 font-medium">${request.materialName}</td>
+                <td class="px-6 py-4 text-center">${request.quantity}</td>
+                <td class="px-6 py-4">${solicitante}</td>
+                <td class="px-6 py-4">${subItemName}</td>
+                <td class="px-6 py-4 text-center"><span class="px-2 py-1 text-xs font-semibold rounded-full ${statusColor}">${statusText}</span></td>
+                <td class="px-6 py-4">${responsable}</td>
+                <td class="px-6 py-4 text-center space-x-2">${actionsHtml}</td>
+            `;
+            requestsTableBody.appendChild(row);
+        });
+    });
+}
+/**
+ * Actualiza la tarjeta de resumen financiero en la PESTAÑA DE INFORMACIÓN GENERAL.
+ * @param {object} project - El objeto del proyecto actual.
+ * @param {Array} allPayments - Un array con todos los pagos del proyecto.
+ */
+function updateGeneralInfoSummary(project, allPayments) {
+    const totalEl = document.getElementById('info-anticipo-total');
+    const amortizadoEl = document.getElementById('info-anticipo-amortizado');
+    const porAmortizarEl = document.getElementById('info-anticipo-por-amortizar');
+
+    if (!totalEl || !amortizadoEl || !porAmortizarEl) return;
+
+    const totalAnticipo = project.advance || 0;
+    const anticipoPayments = allPayments.filter(p => p.type === 'abono_anticipo' || p.type === 'amortizacion_anticipo');
+    const totalAmortizado = anticipoPayments.reduce((sum, p) => sum + p.amount, 0);
+
+    totalEl.textContent = currencyFormatter.format(totalAnticipo);
+    amortizadoEl.textContent = currencyFormatter.format(totalAmortizado);
+    porAmortizarEl.textContent = currencyFormatter.format(totalAnticipo - totalAmortizado);
+}

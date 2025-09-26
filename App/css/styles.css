@@ -403,3 +403,54 @@ body, #app-container {
 #sidebar.is-expanded-hover .nav-link {
     justify-content: flex-start; /* Alinea el ícono y texto a la izquierda */
 }
+
+/*
+==============================================
+  ESTILOS RESPONSIVE PARA BOTONES (NUEVO)
+==============================================
+*/
+
+/* En pantallas de menos de 640px (móviles) */
+@media (max-width: 640px) {
+  
+  /* Hace que los grupos de botones principales ocupen todo el ancho */
+  #project-actions {
+    width: 100%;
+    margin-top: 1rem; /* Añade un espacio arriba */
+  }
+
+  /* Hace que cada botón dentro de esos grupos se expanda */
+  #project-actions button {
+    width: 100%;
+    text-align: center;
+  }
+
+  /* Ajusta los botones en las tarjetas de proyecto */
+  .project-card .flex-wrap {
+    justify-content: center; /* Centra los botones */
+  }
+  .project-card .flex-wrap button {
+    flex-grow: 1; /* Permite que los botones crezcan y ocupen espacio */
+  }
+}
+
+/*
+==============================================
+  AJUSTES PARA LA NUEVA VISTA DE INFO GENERAL
+==============================================
+*/
+
+/* Define un espacio entre el título (dt) y su valor (dd) */
+dl dt {
+  margin-bottom: 0.25rem;
+}
+
+/* Asegura que los 'span' dentro de los detalles se muestren correctamente */
+dl dd span.block {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+dl dd span.block:last-child {
+  margin-bottom: 0;
+}
