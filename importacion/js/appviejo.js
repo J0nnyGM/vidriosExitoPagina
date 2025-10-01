@@ -1342,12 +1342,10 @@ function renderRemisiones() {
     const remisionesListEl = document.getElementById('remisiones-list');
     if (!remisionesListEl) return;
 
-    // --- Lógica de filtrado (sin cambios) ---
     const isPlanta = currentUserData && currentUserData.role === 'planta';
     const month = document.getElementById('filter-remisiones-month').value;
     const year = document.getElementById('filter-remisiones-year').value;
     const searchTerm = document.getElementById('search-remisiones').value.toLowerCase();
-
     let filtered = allRemisiones;
 
     if (isPlanta) {
@@ -1363,7 +1361,6 @@ function renderRemisiones() {
     if (searchTerm) {
         filtered = filtered.filter(r => r.clienteNombre.toLowerCase().includes(searchTerm) || r.numeroRemision.toString().includes(searchTerm));
     }
-
     filtered.sort((a, b) => new Date(b.fechaRecibido) - new Date(a.fechaRecibido));
 
     remisionesListEl.innerHTML = '';
@@ -1378,7 +1375,6 @@ function renderRemisiones() {
         const esEntregada = remision.estado === 'Entregado';
         el.className = `border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${esAnulada ? 'remision-anulada' : ''}`;
 
-        // --- Lógica de badges y botones (con la corrección) ---
         const totalPagadoConfirmado = (remision.payments || []).filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
         const saldoPendiente = remision.valorTotal - totalPagadoConfirmado;
 
@@ -1393,71 +1389,51 @@ function renderRemisiones() {
             }
         }
 
-        // --- INICIO DE LA CORRECCIÓN ---
-        // 1. Obtenemos la RUTA (path) en lugar de la URL.
         const pdfPath = isPlanta ? remision.pdfPlantaPath : remision.pdfPath;
 
-        // 2. Modificamos el botón para que use 'data-pdf-path' con la ruta del archivo.
         const pdfButton = pdfPath
-            ? `<button data-pdf-path="${pdfPath}" data-remision-num="${remision.numeroRemision}" class="view-pdf-btn w-full bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition text-center">Ver Remisión</button>`
+            ? `<button data-file-path="${pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="w-full bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition text-center">Ver Remisión</button>`
             : `<button class="w-full bg-gray-400 text-white px-4 py-2 rounded-lg text-sm font-semibold btn-disabled" title="El PDF para esta remisión aún no está disponible.">Generando PDF...</button>`;
-        // --- FIN DE LA CORRECCIÓN ---
 
         const anularButton = (esAnulada || esEntregada || isPlanta || (remision.payments && remision.payments.length > 0)) ? '' : `<button data-remision-id="${remision.id}" class="anular-btn w-full bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-600 transition">Anular</button>`;
         const pagosButton = esAnulada || isPlanta ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="payment-btn w-full bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 transition">Pagos (${formatCurrency(saldoPendiente)})</button>`;
         const descuentoButton = (esAnulada || esEntregada || isPlanta || remision.discount) ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="discount-btn w-full bg-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-cyan-600 transition">Descuento</button>`;
-
         let discountInfo = '';
         if (remision.discount && remision.discount.percentage > 0) {
             discountInfo = `<span class="text-xs font-semibold bg-cyan-100 text-cyan-800 px-2 py-1 rounded-full">DTO ${remision.discount.percentage.toFixed(2)}%</span>`;
         }
-
         const statusClasses = { 'Recibido': 'status-recibido', 'En Proceso': 'status-en-proceso', 'Procesado': 'status-procesado', 'Entregado': 'status-entregado' };
         const statusBadge = `<span class="status-badge ${statusClasses[remision.estado] || ''}">${remision.estado}</span>`;
-
         let statusButton = '';
         const currentIndex = ESTADOS_REMISION.indexOf(remision.estado);
         if (!esAnulada && currentIndex < ESTADOS_REMISION.length - 1) {
             const nextStatus = ESTADOS_REMISION[currentIndex + 1];
             statusButton = `<button data-remision-id="${remision.id}" data-current-status="${remision.estado}" class="status-update-btn w-full bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-600 transition">Mover a ${nextStatus}</button>`;
         }
-
-        // --- HTML de la tarjeta (sin cambios) ---
         el.innerHTML = `
             <div class="flex-grow">
                 <div class="flex items-center gap-3 flex-wrap">
                     <span class="remision-id">N° ${remision.numeroRemision}</span>
                     <p class="font-semibold text-lg">${remision.clienteNombre}</p>
-                    ${statusBadge}
-                    ${paymentStatusBadge}
-                    ${discountInfo}
+                    ${statusBadge} ${paymentStatusBadge} ${discountInfo}
                     ${esAnulada ? '<span class="px-2 py-1 bg-red-200 text-red-800 text-xs font-bold rounded-full">ANULADA</span>' : ''}
                 </div>
                 <p class="text-sm text-gray-600 mt-1">Recibido: ${remision.fechaRecibido} &bull; ${remision.fechaEntrega ? `Entregado: ${remision.fechaEntrega}` : 'Entrega: Pendiente'}</p>
                 ${!isPlanta ? `<p class="text-sm text-gray-600 mt-1">Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>` : ''}
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-shrink-0 w-full sm:max-w-xs">
-                ${statusButton}
-                ${pdfButton}
-                ${pagosButton}
-                ${descuentoButton}
-                ${anularButton}
+                ${statusButton} ${pdfButton} ${pagosButton} ${descuentoButton} ${anularButton}
             </div>`;
         remisionesListEl.appendChild(el);
     });
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // 3. Eliminamos el listener específico para .view-pdf-btn
-    // El listener global que ya añadimos se encargará de estos botones.
-    // document.querySelectorAll('.view-pdf-btn').forEach(button => ... ); // <-- BORRA ESTE BLOQUE
-    // --- FIN DE LA CORRECCIÓN ---
-
-    // Reasignar los otros listeners (sin cambios)
-    document.querySelectorAll('.anular-btn').forEach(button => button.addEventListener('click', (e) => { const remisionId = e.currentTarget.dataset.remisionId; if (confirm(`¿Estás seguro de que quieres ANULAR esta remisión?`)) { handleAnularRemision(remisionId); } }));
-    document.querySelectorAll('.status-update-btn').forEach(button => button.addEventListener('click', (e) => { const remisionId = e.currentTarget.dataset.remisionId; const currentStatus = e.currentTarget.dataset.currentStatus; handleStatusUpdate(remisionId, currentStatus); }));
-    document.querySelectorAll('.payment-btn').forEach(button => button.addEventListener('click', (e) => { const remision = JSON.parse(e.currentTarget.dataset.remisionJson); showPaymentModal(remision); }));
-    document.querySelectorAll('.discount-btn').forEach(button => button.addEventListener('click', (e) => { const remision = JSON.parse(e.currentTarget.dataset.remisionJson); showDiscountModal(remision); }));
+    // Reasignar listeners para los otros botones
+    remisionesListEl.querySelectorAll('.anular-btn').forEach(button => button.addEventListener('click', (e) => { const remisionId = e.currentTarget.dataset.remisionId; if (confirm(`¿Estás seguro de que quieres ANULAR esta remisión?`)) { handleAnularRemision(remisionId); } }));
+    remisionesListEl.querySelectorAll('.status-update-btn').forEach(button => button.addEventListener('click', (e) => { const remisionId = e.currentTarget.dataset.remisionId; const currentStatus = e.currentTarget.dataset.currentStatus; handleStatusUpdate(remisionId, currentStatus); }));
+    remisionesListEl.querySelectorAll('.payment-btn').forEach(button => button.addEventListener('click', (e) => { const remision = JSON.parse(e.currentTarget.dataset.remisionJson); showPaymentModal(remision); }));
+    remisionesListEl.querySelectorAll('.discount-btn').forEach(button => button.addEventListener('click', (e) => { const remision = JSON.parse(e.currentTarget.dataset.remisionJson); showDiscountModal(remision); }));
 }
+
 function loadGastos() {
     const q = query(collection(db, "gastos"), orderBy("fecha", "desc"));
     return onSnapshot(q, (snapshot) => {
@@ -7264,12 +7240,20 @@ function showFileModal(url, title = 'Visualizador de Archivos') {
 }
 
 document.body.addEventListener('click', (e) => {
-    const pdfButton = e.target.closest('.view-pdf-btn, .view-factura-pdf-btn');
-    if (pdfButton) {
-        const path = pdfButton.dataset.pdfPath;
-        const num = pdfButton.dataset.remisionNum || 'Archivo';
-        const title = pdfButton.classList.contains('view-factura-pdf-btn') ? `Factura N° ${num}` : `Remisión N° ${num}`;
-        viewSecureFile(path, title);
+    // Este selector busca cualquier botón que tenga el atributo data-file-path
+    const secureFileButton = e.target.closest('[data-file-path]');
+    
+    if (secureFileButton) {
+        e.preventDefault(); // Previene cualquier otra acción del botón
+        const path = secureFileButton.dataset.filePath;
+        const title = secureFileButton.dataset.fileTitle || 'Visualizador de Archivo';
+        
+        // Llama a la función segura que ya creamos
+        if (path) {
+            viewSecureFile(path, title);
+        } else {
+            console.error("El botón no tiene una ruta de archivo válida.", secureFileButton);
+        }
     }
 });
 

@@ -115,12 +115,35 @@ function formatColombianPhone(phone) {
 async function sendWhatsAppRemision(toPhoneNumber, customerName, remisionNumber, status, pdfUrl) {
     const formattedPhone = formatColombianPhone(toPhoneNumber);
     if (!formattedPhone) {
-        functions.logger.error(`Número de teléfono inválido o no se pudo formatear a E.164: ${toPhoneNumber}`);
+        functions.logger.error(`Número de teléfono inválido: ${toPhoneNumber}`);
         return;
     }
 
     const API_VERSION = "v19.0";
     const url = `https://graph.facebook.com/${API_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
+
+    // --- INICIO DE LA CORRECCIÓN ---
+    // Construimos los componentes de la plantilla dinámicamente
+    const components = [{
+        type: "body",
+        parameters: [
+            { type: "text", text: String(customerName) },
+            { type: "text", text: String(remisionNumber) },
+            { type: "text", text: String(status) },
+        ],
+    }];
+
+    // Solo añadimos el encabezado con el documento SI la URL existe
+    if (pdfUrl) {
+        components.unshift({ // unshift lo añade al principio del array
+            type: "header",
+            parameters: [{
+                type: "document",
+                document: { link: pdfUrl, filename: `Remision-${String(remisionNumber)}.pdf` },
+            }],
+        });
+    }
+    // --- FIN DE LA CORRECCIÓN ---
 
     const payload = {
         messaging_product: "whatsapp",
@@ -129,46 +152,22 @@ async function sendWhatsAppRemision(toPhoneNumber, customerName, remisionNumber,
         template: {
             name: "envio_remision",
             language: { code: "es" },
-            components: [
-                {
-                    type: "header",
-                    parameters: [{
-                        type: "document",
-                        document: { link: pdfUrl, filename: `Remision-${String(remisionNumber)}.pdf` },
-                    }],
-                },
-                {
-                    type: "body",
-                    parameters: [
-                        { type: "text", text: String(customerName) },
-                        { type: "text", text: String(remisionNumber) },
-                        { type: "text", text: String(status) },
-                    ],
-                },
-            ],
+            components: components, // Usamos los componentes que acabamos de construir
         },
     };
 
-    const headers = {
-        "Authorization": `Bearer ${WHATSAPP_TOKEN}`,
-        "Content-Type": "application/json",
-    };
+    const headers = { "Authorization": `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" };
 
     try {
-        // --- LÍNEA DE DIAGNÓSTICO AÑADIDA ---
-        // Esto nos mostrará el paquete de datos completo que se envía a Meta.
-        functions.logger.info("Enviando el siguiente payload a WhatsApp:", JSON.stringify(payload, null, 2));
-
         await axios.post(url, payload, { headers });
-        functions.logger.info(`Solicitud de envío a WhatsApp para ${formattedPhone} fue aceptada por Meta.`);
+        functions.logger.info(`Solicitud de WhatsApp para ${formattedPhone} aceptada.`);
     } catch (error) {
         if (error.response) {
-            functions.logger.error(`WhatsApp API Error Detallado para ${formattedPhone}:`, JSON.stringify(error.response.data, null, 2));
+            functions.logger.error(`Error de la API de WhatsApp para ${formattedPhone}:`, JSON.stringify(error.response.data, null, 2));
         }
         throw new Error(`Falló el envío de WhatsApp a ${formattedPhone}: ${error.message}`);
     }
 }
-
 /**
  * --- VERSIÓN FINAL Y DEFINITIVA ---
  * 1.  Corrige el error de la firma repetida, asegurando que la sección
@@ -591,7 +590,8 @@ exports.onRemisionCreate = functions.region("us-central1").firestore
             const pdfBufferAdmin = await generarPDF(remisionData, false);
             const pdfBufferPlanta = await generarPDF(remisionData, true);
 
-            const bucket = admin.storage().bucket(BUCKET_NAME);
+            const bucket = admin.storage().bucket();
+
             const filePathAdmin = `remisiones/${remisionData.numeroRemision}.pdf`;
             const fileAdmin = bucket.file(filePathAdmin);
             await fileAdmin.save(pdfBufferAdmin);
@@ -789,7 +789,8 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 const pdfBufferAdmin = await generarPDF(afterData, false);
                 const pdfBufferPlanta = await generarPDF(afterData, true);
 
-                const bucket = admin.storage().bucket(BUCKET_NAME);
+                const bucket = admin.storage().bucket();
+
                 const filePathAdmin = `remisiones/${afterData.numeroRemision}.pdf`;
                 await bucket.file(filePathAdmin).save(pdfBufferAdmin);
 
@@ -832,7 +833,8 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 const pdfBufferAdmin = await generarPDF(remisionParaPdf, false);
                 const pdfBufferPlanta = await generarPDF(remisionParaPdf, true);
 
-                const bucket = admin.storage().bucket(BUCKET_NAME);
+                const bucket = admin.storage().bucket();
+
                 const filePathAdmin = `remisiones/${afterData.numeroRemision}.pdf`;
                 await bucket.file(filePathAdmin).save(pdfBufferAdmin);
 
@@ -937,7 +939,8 @@ exports.applyDiscount = functions.https.onCall(async (data, context) => {
         const pdfBuffer = generarPDF(finalRemisionData, false);
         const pdfPlantaBuffer = generarPDF(finalRemisionData, true);
 
-        const bucket = admin.storage().bucket(BUCKET_NAME);
+        const bucket = admin.storage().bucket();
+
         const filePath = `remisiones/${finalRemisionData.numeroRemision}.pdf`;
         const file = bucket.file(filePath);
         await file.save(pdfBuffer, { metadata: { contentType: "application/pdf" } });
@@ -998,7 +1001,8 @@ exports.onResendEmailRequest = functions.region("us-central1").firestore
             }
             const remisionData = remisionDoc.data();
 
-            const bucket = admin.storage().bucket(BUCKET_NAME);
+            const bucket = admin.storage().bucket();
+
             const filePath = `remisiones/${remisionData.numeroRemision}.pdf`;
             const [pdfBuffer] = await bucket.file(filePath).download();
             log("PDF descargado desde Storage.");
@@ -1337,7 +1341,8 @@ exports.regenerateAllRemisionUrls = functions.https.onCall(async (data, context)
         return { success: true, message: "No hay remisiones para actualizar." };
     }
 
-    const bucket = admin.storage().bucket(BUCKET_NAME);
+    const bucket = admin.storage().bucket();
+
     let updatedCount = 0;
     let repairedCount = 0;
     const batchSize = 100;
