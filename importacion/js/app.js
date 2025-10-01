@@ -4615,24 +4615,26 @@ async function updateDashboard(year, month) {
         }
     }
 
-    const salesThisMonth = allRemisiones.flatMap(r => r.payments || []).filter(p => { const d = new Date(p.date); return d.getMonth() === month && d.getFullYear() === year; }).reduce((sum, p) => sum + p.amount, 0);
-    const expensesThisMonth = allGastos.filter(g => { const d = new Date(g.fecha); return d.getMonth() === month && d.getFullYear() === year; }).reduce((sum, g) => sum + g.valorTotal, 0);
+    // --- INICIO DE LA CORRECCIÓN ---
+    // Se añade 'T00:00:00' para evitar errores de zona horaria al comparar fechas.
+    const salesThisMonth = allRemisiones.flatMap(r => r.payments || []).filter(p => { const d = new Date(p.date + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year; }).reduce((sum, p) => sum + p.amount, 0);
+    const expensesThisMonth = allGastos.filter(g => { const d = new Date(g.fecha + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year; }).reduce((sum, g) => sum + g.valorTotal, 0);
+    const carteraThisMonth = allRemisiones.filter(r => { const d = new Date(r.fechaRecibido + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year && r.estado !== 'Anulada'; }).reduce((sum, r) => { const totalPagado = (r.payments || []).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
+    // --- FIN DE LA CORRECCIÓN ---
+
     document.getElementById('summary-sales').textContent = formatCurrency(salesThisMonth);
     document.getElementById('summary-expenses').textContent = formatCurrency(expensesThisMonth);
     document.getElementById('summary-profit').textContent = formatCurrency(salesThisMonth - expensesThisMonth);
-    const carteraThisMonth = allRemisiones.filter(r => { const d = new Date(r.fechaRecibido); return d.getMonth() === month && d.getFullYear() === year && r.estado !== 'Anulada'; }).reduce((sum, r) => { const totalPagado = (r.payments || []).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
     document.getElementById('summary-cartera').textContent = formatCurrency(carteraThisMonth);
+
     const totalCartera = allRemisiones.filter(r => r.estado !== 'Anulada').reduce((sum, r) => { const totalPagado = (r.payments || []).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
     document.getElementById('summary-cartera-total').textContent = formatCurrency(totalCartera);
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // 1. Inicializamos los saldos dinámicamente desde la constante
     const accountBalances = {};
     METODOS_DE_PAGO.forEach(metodo => {
         accountBalances[metodo] = initialBalances[metodo] || 0;
     });
 
-    // 2. La lógica de cálculo de ingresos y egresos sigue siendo la misma
     allRemisiones.forEach(r => (r.payments || []).forEach(p => {
         if (accountBalances[p.method] !== undefined) {
             accountBalances[p.method] += p.amount;
@@ -4644,7 +4646,6 @@ async function updateDashboard(year, month) {
         }
     });
 
-    // 3. Actualizamos los elementos del DOM dinámicamente
     METODOS_DE_PAGO.forEach(metodo => {
         const elementId = `summary-${metodo.toLowerCase()}`;
         const element = document.getElementById(elementId);
@@ -4652,7 +4653,6 @@ async function updateDashboard(year, month) {
             element.textContent = formatCurrency(accountBalances[metodo]);
         }
     });
-    // --- FIN DE LA CORRECCIÓN ---
 
     const now = new Date();
     const localYear = now.getFullYear();
@@ -4663,7 +4663,6 @@ async function updateDashboard(year, month) {
     const salesToday = allRemisiones
         .filter(r => r.fechaRecibido === today && r.estado !== 'Anulada')
         .reduce((sum, r) => sum + r.valorTotal, 0);
-
     document.getElementById('summary-daily-sales').textContent = formatCurrency(salesToday);
 
     const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
@@ -4676,8 +4675,12 @@ async function updateDashboard(year, month) {
         const m = d.getMonth();
         const y = d.getFullYear();
         labels.push(monthNames[m]);
-        const monthlySales = allRemisiones.flatMap(r => r.payments || []).filter(p => { const pDate = new Date(p.date); return pDate.getMonth() === m && pDate.getFullYear() === y; }).reduce((sum, p) => sum + p.amount, 0);
-        const monthlyExpenses = allGastos.filter(g => { const gDate = new Date(g.fecha); return gDate.getMonth() === m && gDate.getFullYear() === y; }).reduce((sum, g) => sum + g.valorTotal, 0);
+        
+        // --- INICIO DE LA CORRECCIÓN ---
+        const monthlySales = allRemisiones.flatMap(r => r.payments || []).filter(p => { const pDate = new Date(p.date + 'T00:00:00'); return pDate.getMonth() === m && pDate.getFullYear() === y; }).reduce((sum, p) => sum + p.amount, 0);
+        const monthlyExpenses = allGastos.filter(g => { const gDate = new Date(g.fecha + 'T00:00:00'); return gDate.getMonth() === m && gDate.getFullYear() === y; }).reduce((sum, g) => sum + g.valorTotal, 0);
+        // --- FIN DE LA CORRECCIÓN ---
+
         salesData.push(monthlySales);
         expensesData.push(monthlyExpenses);
     }
@@ -4700,15 +4703,10 @@ async function updateDashboard(year, month) {
             }]
         },
         options: {
-            scales: {
-                y: {
-                    beginAtZero: true
-                }
-            }
+            scales: { y: { beginAtZero: true } }
         }
     });
 }
-
 function calculateOverdueDays(dateString) {
     const today = new Date();
     const receivedDate = new Date(dateString);
