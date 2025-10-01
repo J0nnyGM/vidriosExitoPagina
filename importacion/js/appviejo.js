@@ -9,13 +9,13 @@ import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/12.0.
 
 // --- INICIALIZACIÓN Y CONFIGURACIÓN ---
 const firebaseConfig = {
-  apiKey: "AIzaSyCBTjIT0q2X5K_aSnyTgZSRSyZc6Cc3FJ4",
-  authDomain: "vidrioexpres1.firebaseapp.com",
-  projectId: "vidrioexpres1",
-  storageBucket: "vidrioexpres1.firebasestorage.app",
-  messagingSenderId: "59380378063",
-  appId: "1:59380378063:web:de9accc5f9ddc48d274aba",
-  measurementId: "G-BXZJWX9ZKG"
+  apiKey: "AIzaSyC3cAvG47JSR7fNc5YbBisG7BxJhfLQxRg",
+  authDomain: "importadorave-7d1a0.firebaseapp.com",
+  projectId: "importadorave-7d1a0",
+  storageBucket: "importadorave-7d1a0.firebasestorage.app",
+  messagingSenderId: "14979091937",
+  appId: "1:14979091937:web:b415c75ada1fe0e688d6a0",
+  measurementId: "G-EDX2L0J4Z0"
 };
 let app, auth, db, storage, functions, analytics;
 try {
@@ -44,8 +44,6 @@ let dynamicElementCounter = 0;
 let isRegistering = false;
 let modalTimeout;
 let initialBalances = {};
-const METODOS_DE_PAGO_IMPORTACION = ['Efectivo', 'Nequi', 'Bancolombia', 'Transferencia'];
-const METODOS_DE_PAGO = ['Efectivo', 'Nequi', 'Bancolombia'];
 const ESTADOS_REMISION = ['Recibido', 'En Proceso', 'Procesado', 'Entregado'];
 const ALL_MODULES = ['remisiones', 'facturacion', 'inventario', 'clientes', 'gastos', 'proveedores', 'prestamos', 'empleados', 'items'];
 const RRHH_DOCUMENT_TYPES = [
@@ -216,11 +214,6 @@ function loadAllData() {
 }
 
 function loadViewTemplates() {
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Generamos las opciones de pago una sola vez para reutilizarlas
-    const metodosDePagoHTML = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
-    // --- FIN DE LA CORRECCIÓN ---
-
     registerForm.innerHTML = `
         <h2 class="text-2xl font-bold text-center mb-6">Crear Cuenta</h2>
         <div class="space-y-4">
@@ -241,7 +234,9 @@ function loadViewTemplates() {
         </div>
         <p class="text-center mt-4 text-sm">¿Ya tienes una cuenta? <a href="#" id="show-login-link-register" class="font-semibold text-indigo-600 hover:underline">Inicia sesión</a></p>
     `;
+    document.getElementById('show-login-link-register').addEventListener('click', (e) => { e.preventDefault(); registerForm.classList.add('hidden'); loginForm.classList.remove('hidden'); });
 
+    // REEMPLAZA la línea de 'view-inventario'.innerHTML con esta versión:
     document.getElementById('view-inventario').innerHTML = `
     <div class="bg-white p-6 rounded-xl shadow-md max-w-7xl mx-auto">
         <div class="border-b border-gray-200 mb-6">
@@ -250,6 +245,7 @@ function loadViewTemplates() {
                 <button id="tab-nacional" class="dashboard-tab-btn py-3 px-1 font-semibold">Compras Nacionales</button>
             </nav>
         </div>
+
         <div id="view-importaciones-content">
             <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
                 <h2 class="text-xl font-semibold">Gestión de Importaciones</h2>
@@ -257,6 +253,7 @@ function loadViewTemplates() {
             </div>
             <div id="importaciones-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6"></div>
             </div>
+
         <div id="view-nacional-content" class="hidden">
             <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
                 <h2 class="text-xl font-semibold">Gestión de Compras Nacionales</h2>
@@ -267,6 +264,7 @@ function loadViewTemplates() {
             </div>
         </div>
     </div>`;
+
 
     document.getElementById('view-items').innerHTML = `
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
@@ -291,8 +289,10 @@ function loadViewTemplates() {
             </div>
             <div id="items-list" class="space-y-3"></div>
         </div>
-    </div>`;
-
+    </div>
+`;
+    // Se añade el listener para el enlace recién creado
+    document.getElementById('show-login-link-register').addEventListener('click', (e) => { e.preventDefault(); registerForm.classList.add('hidden'); loginForm.classList.remove('hidden'); });
     document.getElementById('view-remisiones').innerHTML = `
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
             <div id="remision-form-container" class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
@@ -315,7 +315,11 @@ function loadViewTemplates() {
                     <select id="forma-pago" class="w-full p-3 border border-gray-300 rounded-lg bg-white" required>
                         <option value="" disabled selected>Forma de Pago</option>
                         <option value="Pendiente">Pendiente</option>
-                        ${metodosDePagoHTML}
+                        <option value="Efectivo">Efectivo</option>
+                        <option value="Nequi">Nequi</option>
+                        <option value="Davivienda">Davivienda</option>
+                        <option value="Bancolombia">Bancolombia</option>
+                        <option value="Consignacion">Consignación</option>
                     </select>
                     <div>
                         <label for="remision-observaciones" class="block text-sm font-medium text-gray-700">Observaciones</label>
@@ -344,8 +348,7 @@ function loadViewTemplates() {
 
     document.getElementById('view-facturacion').innerHTML = `<div class="bg-white p-6 rounded-xl shadow-md max-w-6xl mx-auto"><h2 class="text-2xl font-semibold mb-4">Gestión de Facturación</h2><div class="border-b border-gray-200 mb-6"><nav id="facturacion-nav" class="-mb-px flex space-x-6"><button id="tab-pendientes" class="dashboard-tab-btn active py-3 px-1 font-semibold">Pendientes</button><button id="tab-realizadas" class="dashboard-tab-btn py-3 px-1 font-semibold">Realizadas</button></nav></div><div id="view-pendientes"><h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Pendientes de Facturar</h3><div id="facturacion-pendientes-list" class="space-y-3"></div></div><div id="view-realizadas" class="hidden"><h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Facturadas</h3><div id="facturacion-realizadas-list" class="space-y-3"></div></div></div>`;
     document.getElementById('view-clientes').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Cliente</h2><form id="add-cliente-form" class="space-y-4"><input type="text" id="nuevo-cliente-nombre-empresa" placeholder="Nombre Empresa" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="text" id="nuevo-cliente-contacto" placeholder="Nombre del Contacto" class="w-full p-3 border border-gray-300 rounded-lg"><input type="email" id="nuevo-cliente-email" placeholder="Correo Electrónico" class="w-full p-3 border border-gray-300 rounded-lg"><input type="tel" id="nuevo-cliente-telefono1" placeholder="Teléfono 1" class="w-full p-3 border border-gray-300 rounded-lg" required oninput="this.value = this.value.replace(/[^0-9]/g, '')"><input type="tel" id="nuevo-cliente-telefono2" placeholder="Teléfono 2 (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg" oninput="this.value = this.value.replace(/[^0-9]/g, '')"><input type="text" id="nuevo-cliente-nit" placeholder="NIT (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg"><div class="space-y-1"><label for="nuevo-cliente-rut" class="block text-sm font-medium text-gray-700">RUT (Opcional)</label><input type="file" id="nuevo-cliente-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/></div><button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Clientes</h2><input type="search" id="search-clientes" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="clientes-list" class="space-y-3"></div></div></div>`;
-    document.getElementById('view-proveedores').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Proveedor</h2><form id="add-proveedor-form" class="space-y-4"><input type="text" id="nuevo-proveedor-nombre" placeholder="Nombre del Proveedor" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="text" id="nuevo-proveedor-contacto" placeholder="Nombre de Contacto" class="w-full p-3 border border-gray-300 rounded-lg"><input type="tel" id="nuevo-proveedor-telefono" placeholder="Teléfono" class="w-full p-3 border border-gray-300 rounded-lg"><input type="email" id="nuevo-proveedor-email" placeholder="Correo" class="w-full p-3 border border-gray-300 rounded-lg"><div><label for="nuevo-proveedor-rut" class="block text-sm font-medium text-gray-700">RUT</Opcional></label><input type="file" id="nuevo-proveedor-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"/></div><button type="submit" class="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Proveedores</h2><input type="search" id="search-proveedores" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="proveedores-list" class="space-y-3"></div></div></div>`;
-    
+    document.getElementById('view-proveedores').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Proveedor</h2><form id="add-proveedor-form" class="space-y-4"><input type="text" id="nuevo-proveedor-nombre" placeholder="Nombre del Proveedor" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="text" id="nuevo-proveedor-contacto" placeholder="Nombre de Contacto" class="w-full p-3 border border-gray-300 rounded-lg"><input type="tel" id="nuevo-proveedor-telefono" placeholder="Teléfono" class="w-full p-3 border border-gray-300 rounded-lg"><input type="email" id="nuevo-proveedor-email" placeholder="Correo" class="w-full p-3 border border-gray-300 rounded-lg"><div><label for="nuevo-proveedor-rut" class="block text-sm font-medium text-gray-700">RUT</label><input type="file" id="nuevo-proveedor-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"/></div><button type="submit" class="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Proveedores</h2><input type="search" id="search-proveedores" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="proveedores-list" class="space-y-3"></div></div></div>`;
     document.getElementById('view-gastos').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
     <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
         <h2 class="text-xl font-semibold mb-4">Nuevo Gasto</h2>
@@ -369,7 +372,11 @@ function loadViewTemplates() {
             <div>
                 <label for="gasto-fuente">Fuente del Pago</label>
                 <select id="gasto-fuente" class="w-full p-3 border border-gray-300 rounded-lg mt-1 bg-white" required>
-                    ${metodosDePagoHTML}
+                    <option>Efectivo</option>
+                    <option>Nequi</option>
+                    <option>Davivienda</option>
+                    <option>Bancolombia</option>
+                    <option>Consignación</option>
                 </select>
             </div>
             <button type="submit" class="w-full bg-orange-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-orange-700">Registrar</button>
@@ -400,10 +407,6 @@ function loadViewTemplates() {
     </div>
 </div>`;
     document.getElementById('view-empleados').innerHTML = `<div class="bg-white p-6 rounded-xl shadow-md max-w-4xl mx-auto"><h2 class="text-xl font-semibold mb-4">Gestión de Empleados</h2><div id="empleados-list" class="space-y-3"></div></div>`;
-    
-    // Se mueven los listeners al final para asegurar que todos los elementos existan
-    document.getElementById('show-policy-link').addEventListener('click', (e) => { e.preventDefault(); showPolicyModal(); });
-    document.getElementById('show-login-link-register').addEventListener('click', (e) => { e.preventDefault(); registerForm.classList.add('hidden'); loginForm.classList.remove('hidden'); });
 }
 
 function updateUIVisibility(userData) {
@@ -426,7 +429,7 @@ function updateUIVisibility(userData) {
 
     // --- LÍNEA AÑADIDA AQUÍ ---
     // Muestra el botón de regenerar URLs solo si el usuario es admin
-    //document.getElementById('regenerate-urls-btn').style.display = isAdmin ? 'block' : 'none';
+   // document.getElementById('regenerate-urls-btn').style.display = isAdmin ? 'block' : 'none';
 
     // Muestra/oculta botones específicos para no administradores
     document.getElementById('loan-request-btn').style.display = isAdmin ? 'none' : 'block';
@@ -1839,11 +1842,6 @@ function createGastoFacturaElement(gastoTipo, factura = null) {
 
     let cardContentHTML = '';
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Generamos las opciones de pago una sola vez para reutilizarlas
-    const metodosDePagoHTML = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
-    // --- FIN DE LA CORRECCIÓN ---
-
     if (isSaved) {
         // --- DISEÑO PARA FACTURAS GUARDADAS ---
         const totalAbonado = (facturaData.abonos || []).reduce((sum, abono) => sum + abono.valor, 0);
@@ -1869,7 +1867,7 @@ function createGastoFacturaElement(gastoTipo, factura = null) {
                     <div class="mt-2">${pdfSectionHTML}</div>
                 </div>
                 <div class="md:col-span-1 text-xs space-y-1 bg-gray-50 p-2 rounded-lg h-full flex flex-col justify-center"><div class="flex justify-between"><span>Abonado:</span> <span class="font-medium">${formatCurrency(totalAbonado)}</span></div><div class="flex justify-between text-red-600"><span>Saldo:</span> <span class="font-bold">${formatCurrency(saldoPendiente)}</span></div></div>
-                <div class="bg-gray-50 p-2 rounded-lg"><label class="text-xs font-semibold">Registrar Abono</label><div class="mt-2 space-y-2"><input type="text" placeholder="Valor Abono" class="abono-valor-input cost-input-cop w-full p-1 border rounded text-xs"><select class="abono-forma-pago-input w-full p-1 border rounded text-xs bg-white">${metodosDePagoHTML}</select><button type="button" class="add-abono-gasto-btn w-full bg-green-500 text-white text-xs font-bold py-1 rounded hover:bg-green-600" data-gasto-tipo="${gastoTipo}" data-factura-id="${facturaData.id}">+ Abono</button></div></div>
+                <div class="bg-gray-50 p-2 rounded-lg"><label class="text-xs font-semibold">Registrar Abono</label><div class="mt-2 space-y-2"><input type="text" placeholder="Valor Abono" class="abono-valor-input cost-input-cop w-full p-1 border rounded text-xs"><select class="abono-forma-pago-input w-full p-1 border rounded text-xs bg-white"><option>Efectivo</option><option>Nequi</option><option>Davivienda</option><option>Bancolombia</option><option>Consignación</option></select><button type="button" class="add-abono-gasto-btn w-full bg-green-500 text-white text-xs font-bold py-1 rounded hover:bg-green-600" data-gasto-tipo="${gastoTipo}" data-factura-id="${facturaData.id}">+ Abono</button></div></div>
             </div>`;
     } else {
         // --- DISEÑO PARA FACTURAS NUEVAS ---
@@ -2164,11 +2162,7 @@ async function showNacionalModal(compra = null) {
     const title = isEditing ? `Gestionar Compra Nacional` : "Registrar Compra Nacional";
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Generamos las opciones de pago una sola vez para reutilizarlas
-    const metodosDePagoHTML = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
-    // --- FIN DE LA CORRECCIÓN ---
-
+    // Lógica para la sección de abonos (solo visible en modo edición)
     let abonosHTML = '';
     if (isEditing) {
         const totalAbonado = (compra.abonos || []).reduce((sum, abono) => sum + abono.valor, 0);
@@ -2191,7 +2185,7 @@ async function showNacionalModal(compra = null) {
                         <div class="space-y-2">
                             <div><label class="text-xs font-semibold">Fecha Abono</label><input type="date" id="abono-nacional-fecha" class="w-full p-1 border rounded text-xs" value="${new Date().toISOString().slice(0, 10)}"></div>
                             <div><label class="text-xs font-semibold">Valor Abono (COP)</label><input type="text" id="abono-nacional-valor" class="cost-input-cop w-full p-1 border rounded text-xs"></div>
-                            <div><label class="text-xs font-semibold">Forma de Pago</label><select id="abono-nacional-forma-pago" class="w-full p-1 border rounded text-xs bg-white">${metodosDePagoHTML}</select></div>
+                            <div><label class="text-xs font-semibold">Forma de Pago</label><select id="abono-nacional-forma-pago" class="w-full p-1 border rounded text-xs bg-white"><option>Efectivo</option><option>Nequi</option><option>Davivienda</option><option>Bancolombia</option><option>Consignación</option></select></div>
                         </div>
                         <button type="button" id="add-abono-nacional-btn" class="mt-2 w-full bg-green-600 text-white text-xs font-bold py-2 rounded hover:bg-green-700">+ Registrar Abono</button>
                     </div>
@@ -2244,14 +2238,17 @@ async function showNacionalModal(compra = null) {
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('close-nacional-modal').addEventListener('click', hideModal);
 
+    // Asignar el listener al botón de guardar.
     const saveBtn = document.getElementById('save-nacional-btn');
     if (isEditing) {
+        // En modo edición, el botón de guardar principal no hace nada por ahora
         saveBtn.disabled = true;
         saveBtn.classList.add('opacity-50');
     } else {
         saveBtn.addEventListener('click', handleNacionalSubmit);
     }
 
+    // Inicializar buscadores y listeners si estamos creando una nueva compra
     if (!isEditing) {
         initSearchableInput(
             document.getElementById('nacional-proveedor-search'),
@@ -2266,13 +2263,16 @@ async function showNacionalModal(compra = null) {
             itemsContainer.appendChild(createNacionalItemElement());
         });
 
+        // Añadir una fila inicial
         itemsContainer.appendChild(createNacionalItemElement());
     } else {
+        // Si estamos editando, renderizamos los ítems existentes
         const itemsContainer = document.getElementById('nacional-items-container');
         compra.items.forEach(item => {
-            itemsContainer.appendChild(createNacionalItemElement(item, true));
+            itemsContainer.appendChild(createNacionalItemElement(item, true)); // 'true' para modo edición
         });
 
+        // Añadir listener para el botón de abonos
         document.getElementById('add-abono-nacional-btn')?.addEventListener('click', () => handleAbonoNacionalSubmit(compra.id));
     }
 }
@@ -2437,10 +2437,7 @@ async function showImportacionModal(importacion = null) {
     const title = isEditing ? `Gestionar Importación N° ${importacion.numeroImportacion}` : "Crear Nueva Importación";
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Generamos las opciones de pago para importaciones desde la nueva constante
-    const metodosDePagoImportacionHTML = METODOS_DE_PAGO_IMPORTACION.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
-    // --- FIN DE LA CORRECCIÓN ---
+    // --- Lógica para construir las secciones dinámicas del HTML ---
 
     let abonosChinaHTML = '';
     if (isEditing) {
@@ -2470,7 +2467,7 @@ async function showImportacionModal(importacion = null) {
                             <div><label class="text-xs font-semibold">Fecha Abono</label><input type="date" id="abono-china-fecha" class="w-full p-1 border rounded text-xs" value="${new Date().toISOString().slice(0, 10)}"></div>
                             <div><label class="text-xs font-semibold">Valor Abono (COP)</label><input type="text" id="abono-china-valor-cop" class="cost-input-cop w-full p-1 border rounded text-xs"></div>
                             <div><label class="text-xs font-semibold">Valor Abono (USD)</label><input type="text" id="abono-china-valor-usd" class="cost-input-usd w-full p-1 border rounded text-xs"></div>
-                            <div><label class="text-xs font-semibold">Forma de Pago</label><select id="abono-china-forma-pago" class="w-full p-1 border rounded text-xs bg-white">${metodosDePagoImportacionHTML}</select></div>
+                            <div><label class="text-xs font-semibold">Forma de Pago</label><select id="abono-china-forma-pago" class="w-full p-1 border rounded text-xs bg-white"><option>Efectivo</option><option>Nequi</option><option>Davivienda</option><option>Bancolombia</option><option>Consignación</option><option>Transferencia</option></select></div>
                         </div>
                         <button type="button" id="add-abono-china-btn" class="mt-2 w-full bg-green-600 text-white text-xs font-bold py-2 rounded hover:bg-green-700">+ Registrar Abono</button>
                     </div>
@@ -2500,6 +2497,7 @@ async function showImportacionModal(importacion = null) {
             </div>`;
     }
 
+    // --- Construcción del HTML Principal ---
     modalContentWrapper.innerHTML = `
         <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl mx-auto flex flex-col" style="max-height: 95vh;">
             <div class="flex justify-between items-center p-4 border-b sticky top-0 bg-white z-10">
@@ -2523,6 +2521,7 @@ async function showImportacionModal(importacion = null) {
         </div>
     `;
 
+    // --- Lógica de Inicialización (después de crear el HTML) ---
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('close-importacion-modal').addEventListener('click', hideModal);
     document.getElementById('save-importacion-btn').addEventListener('click', handleImportacionSubmit);
@@ -4320,45 +4319,91 @@ function showPdfModal(pdfUrl, title) {
 }
 
 function showPaymentModal(remision) {
-    const totalPagado = (remision.payments || []).filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
-    const saldoPendiente = remision.valorTotal - totalPagado;
+    const modalContentWrapper = document.getElementById('modal-content-wrapper');
+    const totalConfirmado = (remision.payments || []).filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
+    const totalPorConfirmar = (remision.payments || []).filter(p => p.status === 'por confirmar').reduce((sum, p) => sum + p.amount, 0);
+    const saldoPendiente = remision.valorTotal - totalConfirmado;
+    const saldoRealPendiente = remision.valorTotal - totalConfirmado - totalPorConfirmar;
 
-    // Genera las opciones del select dinámicamente
-    const opcionesDePagoHtml = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
+    const paymentsHTML = (remision.payments || []).map((p, index) => {
+        let statusBadge = '';
+        let confirmButton = '';
+        if (p.status === 'por confirmar') {
+            statusBadge = `<span class="text-xs font-semibold bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">Por Confirmar</span>`;
+            if (currentUserData.role === 'admin' && p.registeredBy !== currentUser.uid) {
+                confirmButton = `<button data-remision-id="${remision.id}" data-payment-index="${index}" class="confirm-payment-btn bg-green-500 text-white text-xs px-2 py-1 rounded hover:bg-green-600">Confirmar</button>`;
+            }
+        } else {
+            statusBadge = `<span class="text-xs font-semibold bg-green-200 text-green-800 px-2 py-1 rounded-full">Confirmado</span>`;
+        }
 
-    const modalContent = `
-        <div class="bg-white p-6 rounded-xl shadow-lg max-w-lg mx-auto">
-            <h2 class="text-xl font-semibold mb-2">Gestionar Pagos</h2>
-            <p class="text-sm text-gray-600 mb-4">Remisión N° ${remision.numeroRemision} - Saldo: ${formatCurrency(saldoPendiente)}</p>
-            
-            <form id="add-payment-form" class="space-y-4">
-                <input type="number" id="payment-amount" placeholder="Monto del Abono" class="w-full p-3 border rounded-lg" required max="${saldoPendiente}">
-                <select id="payment-method" class="w-full p-3 border rounded-lg" required>
-                    <option value="">-- Selecciona Método --</option>
-                    ${opcionesDePagoHtml}
-                </select>
-                <input type="text" id="payment-reference" placeholder="Referencia (Opcional)" class="w-full p-3 border rounded-lg">
-                <button type="submit" class="w-full bg-purple-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-purple-700">Añadir Pago</button>
-            </form>
-            
-            <div id="payments-history" class="mt-6">
-                <h3 class="font-semibold mb-2">Historial de Pagos</h3>
-                </div>
+        return `<tr class="border-b">
+            <td class="p-2">${p.date}</td>
+            <td class="p-2">${p.method}</td>
+            <td class="p-2 text-right">${formatCurrency(p.amount)}</td>
+            <td class="p-2">${statusBadge}</td>
+            <td class="p-2">${confirmButton}</td>
+        </tr>`;
+    }).join('');
 
-            <div class="mt-6 text-right">
-                <button id="cancel-payment-modal" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Cerrar</button>
-            </div>
-        </div>
-    `;
-
-    document.getElementById('modal-content').innerHTML = modalContent;
+    modalContentWrapper.innerHTML = `<div class="bg-white rounded-lg p-6 shadow-xl max-w-3xl w-full mx-auto text-left"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Gestionar Pagos (Remisión N° ${remision.numeroRemision})</h2><button id="close-payment-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button></div><div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 text-center"><div class="bg-blue-50 p-3 rounded-lg"><div class="text-sm text-blue-800">VALOR TOTAL</div><div class="font-bold text-lg">${formatCurrency(remision.valorTotal)}</div></div><div class="bg-green-50 p-3 rounded-lg"><div class="text-sm text-green-800">PAGADO (CONF.)</div><div class="font-bold text-lg">${formatCurrency(totalConfirmado)}</div></div><div class="bg-yellow-50 p-3 rounded-lg"><div class="text-sm text-yellow-800">POR CONFIRMAR</div><div class="font-bold text-lg">${formatCurrency(totalPorConfirmar)}</div></div><div class="bg-red-50 p-3 rounded-lg"><div class="text-sm text-red-800">SALDO PENDIENTE</div><div class="font-bold text-lg">${formatCurrency(saldoPendiente)}</div></div></div><div class="grid grid-cols-1 md:grid-cols-2 gap-6"><div><h3 class="font-semibold mb-2">Historial de Pagos</h3><div class="border rounded-lg max-h-60 overflow-y-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="p-2 text-left">Fecha</th><th class="p-2 text-left">Método</th><th class="p-2 text-right">Monto</th><th class="p-2 text-left">Estado</th><th></th></tr></thead><tbody>${paymentsHTML || '<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay pagos registrados.</td></tr>'}</tbody></table></div></div><div><h3 class="font-semibold mb-2">Registrar Nuevo Pago</h3>${saldoRealPendiente > 0 ? `<form id="add-payment-form" class="space-y-3 bg-gray-50 p-4 rounded-lg"><div><label for="new-payment-amount" class="text-sm font-medium">Monto del Abono</label><input type="text" inputmode="numeric" id="new-payment-amount" class="w-full p-2 border rounded-md mt-1" max="${saldoRealPendiente}" required></div><div><label for="new-payment-date" class="text-sm font-medium">Fecha del Pago</label><input type="date" id="new-payment-date" class="w-full p-2 border rounded-md mt-1" value="${new Date().toISOString().split('T')[0]}" required></div><div><label for="new-payment-method" class="text-sm font-medium">Método de Pago</label><select id="new-payment-method" class="w-full p-2 border rounded-md mt-1 bg-white" required><option value="Efectivo">Efectivo</option><option value="Nequi">Nequi</option><option value="Davivienda">Davivienda</option><option value="Bancolombia">Bancolombia</option><option value="Consignacion">Consignación</option></select></div><button type="submit" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700">Registrar Pago</button></form>` : '<div class="bg-green-100 text-green-800 p-4 rounded-lg text-center font-semibold">Esta remisión ya ha sido pagada en su totalidad.</div>'}</div></div></div>`;
     document.getElementById('modal').classList.remove('hidden');
-    renderPaymentHistory(remision.id); // Llama a la función para renderizar el historial
+    document.getElementById('close-payment-modal').addEventListener('click', hideModal);
 
-    // Listeners para el modal
-    document.getElementById('cancel-payment-modal').addEventListener('click', () => {
-        document.getElementById('modal').classList.add('hidden');
+    document.querySelectorAll('.confirm-payment-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const remisionId = e.currentTarget.dataset.remisionId;
+            const paymentIndex = parseInt(e.currentTarget.dataset.paymentIndex);
+            const remisionToUpdate = allRemisiones.find(r => r.id === remisionId);
+            if (remisionToUpdate && remisionToUpdate.payments[paymentIndex]) {
+                remisionToUpdate.payments[paymentIndex].status = 'confirmado';
+                remisionToUpdate.payments[paymentIndex].confirmedBy = currentUser.uid;
+                remisionToUpdate.payments[paymentIndex].confirmedAt = new Date();
+                showModalMessage("Confirmando pago...", true);
+                try {
+                    await updateDoc(doc(db, "remisiones", remisionId), { payments: remisionToUpdate.payments });
+                    hideModal();
+                    showModalMessage("¡Pago confirmado!", false, 1500);
+                } catch (error) {
+                    console.error("Error al confirmar pago:", error);
+                    showModalMessage("Error al confirmar el pago.");
+                }
+            }
+        });
     });
+
+    if (saldoRealPendiente > 0) {
+        const paymentAmountInput = document.getElementById('new-payment-amount');
+        paymentAmountInput.addEventListener('focus', (e) => unformatCurrencyInput(e.target));
+        paymentAmountInput.addEventListener('blur', (e) => formatCurrencyInput(e.target));
+        document.getElementById('add-payment-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const amount = unformatCurrency(paymentAmountInput.value);
+            if (amount <= 0 || !amount) { showModalMessage("El monto debe ser mayor a cero."); return; }
+            if (amount > saldoRealPendiente + 0.01) {
+                showModalMessage(`El monto del pago no puede superar el saldo pendiente de ${formatCurrency(saldoRealPendiente)}.`);
+                return;
+            }
+
+            const newPayment = {
+                amount: amount,
+                date: document.getElementById('new-payment-date').value,
+                method: document.getElementById('new-payment-method').value,
+                registeredAt: new Date(),
+                registeredBy: currentUser.uid,
+                status: 'por confirmar'
+            };
+            showModalMessage("Registrando pago...", true);
+            try {
+                await updateDoc(doc(db, "remisiones", remision.id), { payments: arrayUnion(newPayment) });
+                hideModal();
+                showModalMessage("¡Pago registrado! Pendiente de confirmación.", false, 2000);
+            } catch (error) {
+                console.error("Error al registrar pago:", error);
+                showModalMessage("Error al registrar el pago.");
+            }
+        });
+    }
 }
 
 /**
@@ -4369,24 +4414,17 @@ function showPaymentModal(remision) {
 async function showDashboardModal() {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
 
+    // --- NUEVA LÓGICA: VERIFICAR SI LOS SALDOS YA EXISTEN ---
     const balanceDocRef = doc(db, "saldosIniciales", "current");
     const balanceDoc = await getDoc(balanceDocRef);
     const balancesExist = balanceDoc.exists();
 
     let initialBalanceButtonHTML = '';
+    // Solo mostrar el botón si el documento de saldos NO existe
     if (!balancesExist) {
         initialBalanceButtonHTML = `<button id="set-initial-balance-btn" class="bg-gray-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700">Saldos Iniciales</button>`;
     }
-
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Generamos dinámicamente las tarjetas de saldos a partir de nuestra constante
-    const saldosHTML = METODOS_DE_PAGO.map(metodo => `
-        <div class="bg-gray-100 p-4 rounded-lg">
-            <div class="text-sm font-semibold text-gray-800">${metodo.toUpperCase()}</div>
-            <div id="summary-${metodo.toLowerCase()}" class="text-xl font-bold"></div>
-        </div>
-    `).join('');
-    // --- FIN DE LA CORRECCIÓN ---
+    // --- FIN DE LA NUEVA LÓGICA ---
 
     modalContentWrapper.innerHTML = `
     <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl mx-auto text-left flex flex-col" style="height: 80vh;">
@@ -4418,8 +4456,12 @@ async function showDashboardModal() {
             </div>
             <div>
                 <h3 class="font-semibold mb-2">Saldos Estimados (Total)</h3>
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    ${saldosHTML}
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div class="bg-gray-100 p-4 rounded-lg"><div class="text-sm font-semibold text-gray-800">EFECTIVO</div><div id="summary-efectivo" class="text-xl font-bold"></div></div>
+                    <div class="bg-gray-100 p-4 rounded-lg"><div class="text-sm font-semibold text-gray-800">NEQUI</div><div id="summary-nequi" class="text-xl font-bold"></div></div>
+                    <div class="bg-gray-100 p-4 rounded-lg"><div class="text-sm font-semibold text-gray-800">DAVIVIENDA</div><div id="summary-davivienda" class="text-xl font-bold"></div></div>
+                    <div class="bg-gray-100 p-4 rounded-lg"><div class="text-sm font-semibold text-gray-800">BANCOLOMBIA</div><div id="summary-bancolombia" class="text-xl font-bold"></div></div>
+                    <div class="bg-gray-100 p-4 rounded-lg"><div class="text-sm font-semibold text-gray-800">CONSIGNACIÓN</div><div id="summary-consignacion" class="text-xl font-bold"></div></div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                     <div class="bg-gray-100 p-4 rounded-lg">
@@ -4431,7 +4473,7 @@ async function showDashboardModal() {
                         <div id="summary-daily-sales" class="text-xl font-bold"></div>
                     </div>
                 </div>
-            </div>
+                </div>
             <div>
                 <h3 class="font-semibold mb-2">Utilidad/Pérdida (Últimos 6 Meses)</h3>
                 <div class="bg-gray-50 p-4 rounded-lg"><canvas id="profitLossChart"></canvas></div>
@@ -4453,6 +4495,7 @@ async function showDashboardModal() {
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('close-dashboard-modal').addEventListener('click', hideModal);
 
+    // Asignar el listener solo si el botón existe
     const initialBalanceBtn = document.getElementById('set-initial-balance-btn');
     if (initialBalanceBtn) {
         initialBalanceBtn.addEventListener('click', showInitialBalanceModal);
@@ -4485,6 +4528,7 @@ async function showDashboardModal() {
         renderTopClientes(startDate, endDate);
     });
     document.getElementById('rank-show-all-btn').addEventListener('click', () => renderTopClientes());
+
 
     const summaryTab = document.getElementById('dashboard-tab-summary');
     const carteraTab = document.getElementById('dashboard-tab-cartera');
@@ -4531,6 +4575,7 @@ async function showDashboardModal() {
  * el valor total de las remisiones creadas en el día.
  */
 async function updateDashboard(year, month) {
+    // Cargar saldos iniciales si la variable global está vacía.
     if (Object.keys(initialBalances).length === 0) {
         const balanceDocRef = doc(db, "saldosIniciales", "current");
         const balanceDoc = await getDoc(balanceDocRef);
@@ -4549,14 +4594,14 @@ async function updateDashboard(year, month) {
     const totalCartera = allRemisiones.filter(r => r.estado !== 'Anulada').reduce((sum, r) => { const totalPagado = (r.payments || []).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
     document.getElementById('summary-cartera-total').textContent = formatCurrency(totalCartera);
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // 1. Inicializamos los saldos dinámicamente desde la constante
-    const accountBalances = {};
-    METODOS_DE_PAGO.forEach(metodo => {
-        accountBalances[metodo] = initialBalances[metodo] || 0;
-    });
+    const accountBalances = {
+        Efectivo: initialBalances.Efectivo || 0,
+        Nequi: initialBalances.Nequi || 0,
+        Davivienda: initialBalances.Davivienda || 0,
+        Bancolombia: initialBalances.Bancolombia || 0,
+        Consignacion: initialBalances.Consignacion || 0
+    };
 
-    // 2. La lógica de cálculo de ingresos y egresos sigue siendo la misma
     allRemisiones.forEach(r => (r.payments || []).forEach(p => {
         if (accountBalances[p.method] !== undefined) {
             accountBalances[p.method] += p.amount;
@@ -4568,27 +4613,26 @@ async function updateDashboard(year, month) {
         }
     });
 
-    // 3. Actualizamos los elementos del DOM dinámicamente
-    METODOS_DE_PAGO.forEach(metodo => {
-        const elementId = `summary-${metodo.toLowerCase()}`;
-        const element = document.getElementById(elementId);
-        if (element) {
-            element.textContent = formatCurrency(accountBalances[metodo]);
-        }
-    });
-    // --- FIN DE LA CORRECCIÓN ---
+    document.getElementById('summary-efectivo').textContent = formatCurrency(accountBalances.Efectivo);
+    document.getElementById('summary-nequi').textContent = formatCurrency(accountBalances.Nequi);
+    document.getElementById('summary-davivienda').textContent = formatCurrency(accountBalances.Davivienda);
+    document.getElementById('summary-bancolombia').textContent = formatCurrency(accountBalances.Bancolombia);
+    document.getElementById('summary-consignacion').textContent = formatCurrency(accountBalances.Consignacion);
 
+    // --- INICIO DE LA NUEVA LÓGICA ---
     const now = new Date();
     const localYear = now.getFullYear();
     const localMonth = (now.getMonth() + 1).toString().padStart(2, '0');
     const localDay = now.getDate().toString().padStart(2, '0');
     const today = `${localYear}-${localMonth}-${localDay}`;
 
+    // Suma el 'valorTotal' de las remisiones creadas hoy que no estén anuladas.
     const salesToday = allRemisiones
         .filter(r => r.fechaRecibido === today && r.estado !== 'Anulada')
         .reduce((sum, r) => sum + r.valorTotal, 0);
 
     document.getElementById('summary-daily-sales').textContent = formatCurrency(salesToday);
+    // --- FIN DE LA NUEVA LÓGICA ---
 
     const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
     const labels = [];
@@ -5031,7 +5075,7 @@ function generateSummaryPDF(startYear, startMonth, endYear, endMonth) {
     doc.setFontSize(20);
     doc.text(`Reporte Financiero: ${rangeTitle}`, 105, 20, { align: "center" });
 
-    // Resumen del período (sin cambios)
+    // Calculate totals for the entire period
     const salesInRange = allRemisiones.flatMap(r => r.payments || []).filter(p => { const d = new Date(p.date); return d >= startDate && d <= endDate; }).reduce((sum, p) => sum + p.amount, 0);
     const expensesInRange = allGastos.filter(g => { const d = new Date(g.fecha); return d >= startDate && d <= endDate; }).reduce((sum, g) => sum + g.valorTotal, 0);
     const profitInRange = salesInRange - expensesInRange;
@@ -5050,7 +5094,7 @@ function generateSummaryPDF(startYear, startMonth, endYear, endMonth) {
         headStyles: { fillColor: [41, 128, 185] }
     });
 
-    // Desglose mensual (sin cambios)
+    // Monthly breakdown
     const monthlyData = [];
     let currentDate = new Date(startDate);
     while (currentDate <= endDate) {
@@ -5063,6 +5107,7 @@ function generateSummaryPDF(startYear, startMonth, endYear, endMonth) {
         const monthlyProfit = monthlySales - monthlyExpenses;
         const endOfMonth = new Date(year, month + 1, 0);
         const carteraAtEndOfMonth = allRemisiones.filter(r => new Date(r.fechaRecibido) <= endOfMonth && r.estado !== 'Anulada').reduce((sum, r) => { const totalPagado = (r.payments || []).filter(p => new Date(p.date) <= endOfMonth).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
+
 
         monthlyData.push([
             `${monthName} ${year}`,
@@ -5082,20 +5127,17 @@ function generateSummaryPDF(startYear, startMonth, endYear, endMonth) {
         headStyles: { fillColor: [22, 160, 133] }
     });
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // 1. Inicializamos los saldos y calculamos dinámicamente
-    const accountBalances = {};
-    METODOS_DE_PAGO.forEach(metodo => accountBalances[metodo] = 0);
-
+    const accountBalances = { Efectivo: 0, Nequi: 0, Davivienda: 0 };
     allRemisiones.forEach(r => (r.payments || []).forEach(p => { if (accountBalances[p.method] !== undefined) accountBalances[p.method] += p.amount; }));
     allGastos.forEach(g => { if (accountBalances[g.fuentePago] !== undefined) accountBalances[g.fuentePago] -= g.valorTotal; });
-    
     const totalCartera = allRemisiones.filter(r => r.estado !== 'Anulada').reduce((sum, r) => { const totalPagado = (r.payments || []).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
 
-    // 2. Generamos las filas de la tabla dinámicamente
-    const accountData = METODOS_DE_PAGO.map(metodo => [metodo, formatCurrency(accountBalances[metodo])]);
-    accountData.push(['Cartera Total Pendiente', formatCurrency(totalCartera)]);
-    // --- FIN DE LA CORRECCIÓN ---
+    const accountData = [
+        ['Efectivo', formatCurrency(accountBalances.Efectivo)],
+        ['Nequi', formatCurrency(accountBalances.Nequi)],
+        ['Davivienda', formatCurrency(accountBalances.Davivienda)],
+        ['Cartera Total Pendiente', formatCurrency(totalCartera)],
+    ];
 
     doc.autoTable({
         startY: doc.lastAutoTable.finalY + 10,
@@ -5437,20 +5479,16 @@ function renderPagosTab(empleado, container) {
     const salario = empleado.contratacion?.salario || 0;
     const pagos = empleado.pagos || [];
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Generamos las opciones de pago dinámicamente
-    const metodosDePagoHTML = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
-    // --- FIN DE LA CORRECCIÓN ---
-
     const pagosHTML = pagos.length > 0 ? pagos.slice().sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map(p => `
-        <tr class="border-b">
-            <td class="p-2">${p.fecha}</td>
-            <td class="p-2">${p.motivo}</td>
-            <td class="p-2 text-right">${formatCurrency(p.valor)}</td>
-            <td class="p-2">${p.fuentePago}</td>
-        </tr>
-    `).join('') : '<tr><td colspan="4" class="p-4 text-center text-gray-500">No hay pagos registrados.</td></tr>';
+            <tr class="border-b">
+                <td class="p-2">${p.fecha}</td>
+                <td class="p-2">${p.motivo}</td>
+                <td class="p-2 text-right">${formatCurrency(p.valor)}</td>
+                <td class="p-2">${p.fuentePago}</td>
+            </tr>
+        `).join('') : '<tr><td colspan="4" class="p-4 text-center text-gray-500">No hay pagos registrados.</td></tr>';
 
+    // Fetch and render pending loans
     const q = query(collection(db, "prestamos"), where("employeeId", "==", empleado.id), where("status", "==", "aprobado"));
     getDocs(q).then(snapshot => {
         const prestamos = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -5458,18 +5496,18 @@ function renderPagosTab(empleado, container) {
         if (prestamosContainer) {
             if (prestamos.length > 0) {
                 prestamosContainer.innerHTML = `
-                    <h4 class="font-semibold text-md mb-2">Préstamos Pendientes de Cobro</h4>
-                    <div class="space-y-2">
-                        ${prestamos.map(p => `
-                            <div class="bg-yellow-100 p-3 rounded-lg flex justify-between items-center">
-                                <div>
-                                    <p class="font-semibold">${formatCurrency(p.amount)}</p>
-                                    <p class="text-xs text-yellow-800">${p.reason}</p>
+                        <h4 class="font-semibold text-md mb-2">Préstamos Pendientes de Cobro</h4>
+                        <div class="space-y-2">
+                            ${prestamos.map(p => `
+                                <div class="bg-yellow-100 p-3 rounded-lg flex justify-between items-center">
+                                    <div>
+                                        <p class="font-semibold">${formatCurrency(p.amount)}</p>
+                                        <p class="text-xs text-yellow-800">${p.reason}</p>
+                                    </div>
+                                    <button data-loan-id="${p.id}" class="cobrar-prestamo-btn bg-yellow-500 text-white text-xs px-3 py-1 rounded-full hover:bg-yellow-600">Marcar Cancelado</button>
                                 </div>
-                                <button data-loan-id="${p.id}" class="cobrar-prestamo-btn bg-yellow-500 text-white text-xs px-3 py-1 rounded-full hover:bg-yellow-600">Marcar Cancelado</button>
-                            </div>
-                        `).join('')}
-                    </div>`;
+                            `).join('')}
+                        </div>`;
                 prestamosContainer.querySelectorAll('.cobrar-prestamo-btn').forEach(btn => {
                     btn.addEventListener('click', async (e) => {
                         const loanId = e.currentTarget.dataset.loanId;
@@ -5485,44 +5523,44 @@ function renderPagosTab(empleado, container) {
     });
 
     container.innerHTML = `
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="md:col-span-1 space-y-4">
-                 <div class="bg-gray-50 p-4 rounded-lg">
-                    <h3 class="text-lg font-semibold mb-2">Liquidador Horas Extra</h3>
-                    <div class="space-y-2">
-                        <div><label class="text-sm">Salario Base (sin auxilio)</label><input type="text" id="salario-base-he" class="w-full p-2 border bg-gray-200 rounded-lg mt-1" value="${formatCurrency(salario > 200000 ? salario - 200000 : 0)}" readonly></div>
-                        <div><label for="horas-extra-input" class="text-sm">Cantidad de Horas Extra</label><input type="number" id="horas-extra-input" class="w-full p-2 border rounded-lg mt-1" min="0"></div>
-                        <button id="calcular-horas-btn" class="w-full bg-blue-500 text-white font-semibold py-2 rounded-lg hover:bg-blue-600">Calcular</button>
-                        <div id="horas-extra-resultado" class="text-center font-bold text-xl mt-2 p-2 bg-blue-100 rounded-lg"></div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="md:col-span-1 space-y-4">
+                     <div class="bg-gray-50 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-2">Liquidador Horas Extra</h3>
+                        <div class="space-y-2">
+                            <div><label class="text-sm">Salario Base (sin auxilio)</label><input type="text" id="salario-base-he" class="w-full p-2 border bg-gray-200 rounded-lg mt-1" value="${formatCurrency(salario > 200000 ? salario - 200000 : 0)}" readonly></div>
+                            <div><label for="horas-extra-input" class="text-sm">Cantidad de Horas Extra</label><input type="number" id="horas-extra-input" class="w-full p-2 border rounded-lg mt-1" min="0"></div>
+                            <button id="calcular-horas-btn" class="w-full bg-blue-500 text-white font-semibold py-2 rounded-lg hover:bg-blue-600">Calcular</button>
+                            <div id="horas-extra-resultado" class="text-center font-bold text-xl mt-2 p-2 bg-blue-100 rounded-lg"></div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-2">Registrar Nuevo Pago</h3>
+                        <form id="rrhh-pago-form" class="space-y-3">
+                            <div id="prestamos-pendientes-container" class="mb-4"></div>
+                            <div><label class="text-sm">Motivo</label><select id="rrhh-pago-motivo" class="w-full p-2 border rounded-lg mt-1 bg-white"><option>Sueldo</option><option>Prima</option><option>Horas Extra</option><option>Liquidación</option></select></div>
+                            <div>
+                                <label class="text-sm">Valor</label>
+                                <input type="text" id="rrhh-pago-valor" class="w-full p-2 border rounded-lg mt-1" required>
+                                <p id="pago-sugerido-info" class="text-xs text-gray-500 mt-1 hidden">Valor quincenal sugerido (salario/2 - aportes).</p>
+                            </div>
+                            <div><label class="text-sm">Fecha</label><input type="date" id="rrhh-pago-fecha" class="w-full p-2 border rounded-lg mt-1" value="${new Date().toISOString().split('T')[0]}" required></div>
+                            <div><label class="text-sm">Fuente de Pago</label><select id="rrhh-pago-fuente" class="w-full p-2 border rounded-lg mt-1 bg-white"><option>Efectivo</option><option>Nequi</option><option>Davivienda</option><option>Bancolombia</option><option>Consignación</option></select></div>
+                            <button type="submit" class="w-full bg-green-600 text-white font-semibold py-2 rounded-lg hover:bg-green-700">Registrar Pago</button>
+                        </form>
                     </div>
                 </div>
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <h3 class="text-lg font-semibold mb-2">Registrar Nuevo Pago</h3>
-                    <form id="rrhh-pago-form" class="space-y-3">
-                        <div id="prestamos-pendientes-container" class="mb-4"></div>
-                        <div><label class="text-sm">Motivo</label><select id="rrhh-pago-motivo" class="w-full p-2 border rounded-lg mt-1 bg-white"><option>Sueldo</option><option>Prima</option><option>Horas Extra</option><option>Liquidación</option></select></div>
-                        <div>
-                            <label class="text-sm">Valor</label>
-                            <input type="text" id="rrhh-pago-valor" class="w-full p-2 border rounded-lg mt-1" required>
-                            <p id="pago-sugerido-info" class="text-xs text-gray-500 mt-1 hidden">Valor quincenal sugerido (salario/2 - aportes).</p>
-                        </div>
-                        <div><label class="text-sm">Fecha</label><input type="date" id="rrhh-pago-fecha" class="w-full p-2 border rounded-lg mt-1" value="${new Date().toISOString().split('T')[0]}" required></div>
-                        <div><label class="text-sm">Fuente de Pago</label><select id="rrhh-pago-fuente" class="w-full p-2 border rounded-lg mt-1 bg-white">${metodosDePagoHTML}</select></div>
-                        <button type="submit" class="w-full bg-green-600 text-white font-semibold py-2 rounded-lg hover:bg-green-700">Registrar Pago</button>
-                    </form>
+                <div class="md:col-span-2">
+                    <h3 class="text-lg font-semibold mb-2">Historial de Pagos</h3>
+                    <div class="border rounded-lg max-h-96 overflow-y-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-100"><tr><th class="p-2 text-left">Fecha</th><th class="p-2 text-left">Motivo</th><th class="p-2 text-right">Valor</th><th class="p-2 text-left">Fuente</th></tr></thead>
+                            <tbody id="rrhh-pagos-historial">${pagosHTML}</tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-            <div class="md:col-span-2">
-                <h3 class="text-lg font-semibold mb-2">Historial de Pagos</h3>
-                <div class="border rounded-lg max-h-96 overflow-y-auto">
-                    <table class="w-full text-sm">
-                        <thead class="bg-gray-100"><tr><th class="p-2 text-left">Fecha</th><th class="p-2 text-left">Motivo</th><th class="p-2 text-right">Valor</th><th class="p-2 text-left">Fuente</th></tr></thead>
-                        <tbody id="rrhh-pagos-historial">${pagosHTML}</tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    `;
+        `;
 
     const valorPagoInput = document.getElementById('rrhh-pago-valor');
     const motivoPagoSelect = document.getElementById('rrhh-pago-motivo');
@@ -6245,30 +6283,27 @@ async function handleLoanRequestSubmit(e) {
 // +++ NUEVA FUNCIÓN: Muestra el modal para aprobar un préstamo y seleccionar el método de pago +++
 function showApproveLoanModal(loan) {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
-
-    // --- INICIO DE LA CORRECCIÓN ---
-    const metodosDePagoHTML = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
-    // --- FIN DE LA CORRECCIÓN ---
-
     modalContentWrapper.innerHTML = `
-        <div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-auto text-left">
-            <h2 class="text-xl font-semibold mb-4">Aprobar Préstamo</h2>
-            <p class="mb-1"><span class="font-semibold">Empleado:</span> ${loan.employeeName}</p>
-            <p class="mb-4"><span class="font-semibold">Monto:</span> ${formatCurrency(loan.amount)}</p>
-            <form id="approve-loan-form">
-                <div>
-                    <label for="loan-payment-method" class="block text-sm font-medium">Fuente del Pago</label>
-                    <select id="loan-payment-method" class="w-full p-3 border border-gray-300 rounded-lg mt-1 bg-white" required>
-                        ${metodosDePagoHTML}
-                    </select>
-                </div>
-                <div class="flex gap-4 justify-end pt-4 mt-4 border-t">
-                    <button type="button" id="cancel-approve-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-semibold">Cancelar</button>
-                    <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold">Confirmar Aprobación</button>
-                </div>
-            </form>
-        </div>
-    `;
+            <div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-auto text-left">
+                <h2 class="text-xl font-semibold mb-4">Aprobar Préstamo</h2>
+                <p class="mb-1"><span class="font-semibold">Empleado:</span> ${loan.employeeName}</p>
+                <p class="mb-4"><span class="font-semibold">Monto:</span> ${formatCurrency(loan.amount)}</p>
+                <form id="approve-loan-form">
+                    <div>
+                        <label for="loan-payment-method" class="block text-sm font-medium">Fuente del Pago</label>
+                        <select id="loan-payment-method" class="w-full p-3 border border-gray-300 rounded-lg mt-1 bg-white" required>
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Nequi">Nequi</option>
+                            <option value="Davivienda">Davivienda</option>
+                        </select>
+                    </div>
+                    <div class="flex gap-4 justify-end pt-4 mt-4 border-t">
+                        <button type="button" id="cancel-approve-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-semibold">Cancelar</button>
+                        <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold">Confirmar Aprobación</button>
+                    </div>
+                </form>
+            </div>
+        `;
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('cancel-approve-btn').addEventListener('click', hideModal);
     document.getElementById('approve-loan-form').addEventListener('submit', (e) => {
@@ -6786,19 +6821,10 @@ async function handleViewPdf(filePath, remisionNum) {
 async function showInitialBalanceModal() {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
 
+    // Cargar los saldos actuales para pre-llenar el formulario
     const balanceDocRef = doc(db, "saldosIniciales", "current");
     const balanceDoc = await getDoc(balanceDocRef);
     const balances = balanceDoc.exists() ? balanceDoc.data() : {};
-
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Generamos dinámicamente los campos de saldo
-    const balanceFieldsHTML = METODOS_DE_PAGO.map(metodo => `
-        <div>
-            <label class="block text-sm font-medium">${metodo}</label>
-            <input type="text" id="balance-${metodo.toLowerCase()}" class="cost-input-cop w-full p-2 border rounded-lg mt-1" value="${formatCurrency(balances[metodo] || 0)}">
-        </div>
-    `).join('');
-    // --- FIN DE LA CORRECCIÓN ---
 
     modalContentWrapper.innerHTML = `
         <div class="bg-white rounded-lg p-6 shadow-xl max-w-lg w-full mx-auto text-left">
@@ -6808,7 +6834,11 @@ async function showInitialBalanceModal() {
             </div>
             <p class="text-sm text-gray-600 mb-4">Ingresa el saldo con el que inicia cada cuenta. Este valor se sumará al cálculo de movimientos para obtener el saldo actual.</p>
             <form id="initial-balance-form" class="space-y-3">
-                ${balanceFieldsHTML}
+                <div><label class="block text-sm font-medium">Efectivo</label><input type="text" id="balance-efectivo" class="cost-input-cop w-full p-2 border rounded-lg mt-1" value="${formatCurrency(balances.Efectivo || 0)}"></div>
+                <div><label class="block text-sm font-medium">Nequi</label><input type="text" id="balance-nequi" class="cost-input-cop w-full p-2 border rounded-lg mt-1" value="${formatCurrency(balances.Nequi || 0)}"></div>
+                <div><label class="block text-sm font-medium">Davivienda</label><input type="text" id="balance-davivienda" class="cost-input-cop w-full p-2 border rounded-lg mt-1" value="${formatCurrency(balances.Davivienda || 0)}"></div>
+                <div><label class="block text-sm font-medium">Bancolombia</label><input type="text" id="balance-bancolombia" class="cost-input-cop w-full p-2 border rounded-lg mt-1" value="${formatCurrency(balances.Bancolombia || 0)}"></div>
+                <div><label class="block text-sm font-medium">Consignación</label><input type="text" id="balance-consignacion" class="cost-input-cop w-full p-2 border rounded-lg mt-1" value="${formatCurrency(balances.Consignacion || 0)}"></div>
                 <div class="pt-4"><button type="submit" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700">Guardar Saldos</button></div>
             </form>
         </div>
@@ -6817,6 +6847,7 @@ async function showInitialBalanceModal() {
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('close-balance-modal').addEventListener('click', hideModal);
 
+    // Aplicar formato de moneda a los inputs
     document.querySelectorAll('.cost-input-cop').forEach(input => {
         input.addEventListener('focus', (e) => unformatCurrencyInput(e.target));
         input.addEventListener('blur', (e) => formatCurrencyInput(e.target));
@@ -6832,35 +6863,42 @@ async function showInitialBalanceModal() {
  */
 async function handleInitialBalanceSubmit(e) {
     e.preventDefault();
-    const submitButton = e.target.querySelector('button[type="submit"]');
-    submitButton.disabled = true;
-    submitButton.textContent = 'Guardando...';
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Leemos los valores de los saldos dinámicamente
-    const balancesToSave = {};
-    METODOS_DE_PAGO.forEach(metodo => {
-        const inputId = `balance-${metodo.toLowerCase()}`;
-        const value = unformatCurrency(document.getElementById(inputId).value);
-        balancesToSave[metodo] = value;
-    });
-    // --- FIN DE LA CORRECCIÓN ---
+    // PASO 1: Leer los valores del formulario PRIMERO.
+    const newBalances = {
+        Efectivo: unformatCurrency(document.getElementById('balance-efectivo').value),
+        Nequi: unformatCurrency(document.getElementById('balance-nequi').value),
+        Davivienda: unformatCurrency(document.getElementById('balance-davivienda').value),
+        Bancolombia: unformatCurrency(document.getElementById('balance-bancolombia').value),
+        Consignacion: unformatCurrency(document.getElementById('balance-consignacion').value),
+    };
+
+    // PASO 2: Ahora sí, mostrar el mensaje de carga.
+    showModalMessage("Guardando saldos...", true);
 
     try {
-        const setBalances = httpsCallable(functions, 'setInitialBalances');
-        await setBalances(balancesToSave);
+        const setInitialBalances = httpsCallable(functions, 'setInitialBalances');
+        await setInitialBalances(newBalances);
 
-        // Actualizamos la variable global
-        initialBalances = balancesToSave;
+        // Actualizamos la variable global para uso inmediato
+        initialBalances = newBalances;
 
-        Swal.fire('¡Éxito!', 'Saldos iniciales guardados correctamente.', 'success');
-        hideModal();
+        hideModal(); // Cierra el modal de carga/saldos
+        showTemporaryMessage("Saldos iniciales guardados.", "success");
+
+        // Disparamos la actualización del dashboard que está visible
+        const yearSelect = document.getElementById('summary-year');
+        const monthSelect = document.getElementById('summary-month');
+        if (yearSelect && monthSelect) {
+            await updateDashboard(
+                parseInt(yearSelect.value),
+                parseInt(monthSelect.value)
+            );
+        }
+
     } catch (error) {
-        console.error("Error al guardar saldos:", error);
-        Swal.fire('Error', 'No se pudieron guardar los saldos.', 'error');
-    } finally {
-        submitButton.disabled = false;
-        submitButton.textContent = 'Guardar Saldos';
+        console.error("Error al guardar saldos iniciales:", error);
+        showModalMessage(`Error: ${error.message}`);
     }
 }
 

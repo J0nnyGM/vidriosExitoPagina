@@ -26,7 +26,7 @@ const storage = getStorage(app);
 const messaging = getMessaging(app);
 
 let unsubscribeReports = null;
-const functions = getFunctions(app);
+const functions = getFunctions(app, 'us-central1');
 let unsubscribePurchaseOrders = null;
 let unsubscribeInventory = null;
 let unsubscribeStock = null;
@@ -3491,33 +3491,40 @@ case 'edit-catalog-item': {
             }
             break;
         }
-        case 'request-material': {
-            modalConfirmBtn.disabled = true;
-            modalConfirmBtn.textContent = 'Procesando...';
+case 'request-material': {
+    modalConfirmBtn.disabled = true;
+    modalConfirmBtn.textContent = 'Procesando...';
 
-            const requestData = {
-                projectId: currentProject.id,
-                materialId: data.materialId,
-                quantity: parseInt(data.quantity),
-                subItemId: data.subItemId,
-            };
+    const requestData = {
+        projectId: currentProject.id,
+        materialId: data.materialId,
+        quantity: parseInt(data.quantity),
+        subItemId: data.subItemId,
+    };
 
-            try {
-                // Prepara y llama a la nueva Cloud Function
-                const requestMaterial = httpsCallable(functions, 'requestMaterialFIFO');
-                const result = await requestMaterial(requestData);
+    try {
+        // --- LÍNEA DE DEPURACIÓN AÑADIDA ---
+        console.log("DEBUG: Verificando usuario antes de llamar a la función:", auth.currentUser);
+        // ------------------------------------
 
-                alert(result.data.message);
-                closeMainModal();
-
-            } catch (error) {
-                console.error("Error al llamar a la Cloud Function 'requestMaterialFIFO':", error);
-                alert("Error al crear la solicitud: " + error.message);
-            } finally {
-                modalConfirmBtn.disabled = false;
-            }
-            break;
+        if (!auth.currentUser) {
+            throw new Error("El estado de autenticación es nulo. Intenta recargar la página.");
         }
+
+        const requestMaterial = httpsCallable(functions, 'requestMaterialFIFO');
+        const result = await requestMaterial(requestData);
+        
+        alert(result.data.message);
+        closeMainModal();
+
+    } catch (error) {
+        console.error("Error al llamar a la Cloud Function 'requestMaterialFIFO':", error);
+        alert("Error al crear la solicitud: " + error.message);
+    } finally {
+        modalConfirmBtn.disabled = false;
+    }
+    break;
+}
         case 'add-anticipo-payment':
         case 'add-corte-payment':
         case 'add-other-payment':
@@ -4403,384 +4410,199 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-    // MANEJADOR DE EVENTOS CENTRALIZADO para el contenido principal
-    document.getElementById('main-content').addEventListener('click', async (e) => {
-        const target = e.target;
-        const button = target.closest('button[data-action]');
+// ====================================================================
+//      INICIO: EVENT LISTENER UNIFICADO (VERSIÓN FINAL Y COMPLETA)
+// ====================================================================
+document.body.addEventListener('click', async (e) => {
+    const target = e.target;
 
-        // Manejo de clics en imágenes
-        if (target.dataset.action === 'view-image' && target.tagName === 'IMG') {
-            const imageUrl = target.getAttribute('src');
-            if (imageUrl) openImageModal(imageUrl);
-            return;
-        }
+    // --- 1. MANEJO DE CLICS QUE NO SON BOTONES DE ACCIÓN (Pestañas, Imágenes, etc.) ---
+    const tabButton = target.closest('#project-details-tabs .tab-button');
+    if (tabButton) {
+        switchProjectTab(tabButton.dataset.tab);
+        return; // Detenemos aquí, es solo un cambio de pestaña.
+    }
 
-        if (!button) return;
-        const action = button.dataset.action;
+    const uploadCard = target.closest('.document-upload-card[data-action="upload-doc"]');
+    if (uploadCard && !target.closest('button')) {
+        uploadCard.querySelector('input[type="file"]')?.click();
+        return;
+    }
 
+    if (target.dataset.action === 'view-image' && target.tagName === 'IMG') {
+        openImageModal(target.getAttribute('src'));
+        return;
+    }
+
+    // --- 2. LÓGICA PRINCIPAL PARA BOTONES CON 'data-action' ---
+    const button = target.closest('button[data-action]');
+    if (!button) return; // Si no es un botón con acción, no hacemos nada.
+
+    const action = button.dataset.action;
+
+    // --- 3. LÓGICA POR CONTEXTO ESPECÍFICO ---
+
+    // CONTEXTO: Clic en una tarjeta de proyecto (Dashboard)
+    const projectCard = button.closest('.project-card');
+    if (projectCard) {
+        const projectId = projectCard.dataset.id;
+        const projectName = projectCard.dataset.name;
         switch (action) {
-            // -- Acciones de Dashboard --
-            case 'view-details': {
-                const projectId = projectCard?.dataset.id;
+            case 'view-details':
                 const docSnap = await getDoc(doc(db, "projects", projectId));
                 if (docSnap.exists()) showProjectDetails({ id: docSnap.id, ...docSnap.data() });
                 break;
-            }
-            case 'archive': {
-                const projectId = projectCard?.dataset.id;
-                const projectName = projectCard?.dataset.name;
-                openConfirmModal(`¿Estás seguro de archivar el proyecto "${projectName}"?`, () => archiveProject(projectId));
+            case 'archive':
+                openConfirmModal(`¿Archivar el proyecto "${projectName}"?`, () => archiveProject(projectId));
                 break;
-            }
-            case 'restore': {
-                const projectId = projectCard?.dataset.id;
-                const projectName = projectCard?.dataset.name;
+            case 'restore':
                 openConfirmModal(`¿Restaurar el proyecto "${projectName}"?`, () => restoreProject(projectId));
                 break;
+            case 'delete':
+                openConfirmModal(`¿Eliminar el proyecto "${projectName}"?`, () => deleteProject(projectId));
+                break;
+        }
+        return; // Terminamos la ejecución para este contexto.
+    }
+
+    // CONTEXTO: Clic en una fila de la tabla de ítems
+    const itemRow = button.closest('tr[data-id]');
+    if (itemRow) {
+        const itemId = itemRow.dataset.id;
+        const itemDoc = await getDoc(doc(db, "items", itemId));
+        if (itemDoc.exists()) {
+            const itemData = { id: itemDoc.id, ...itemDoc.data() };
+            switch(action) {
+                case 'view-item-details': showSubItems(itemData); break;
+                case 'edit-item': openMainModal('editItem', itemData); break;
+                case 'delete-item': openConfirmModal(`¿Eliminar "${itemData.name}"?`, () => deleteItem(itemId)); break;
             }
-            case 'delete': {
-                const projectId = projectCard?.dataset.id;
-                const projectName = projectCard?.dataset.name;
-                openConfirmModal(`¿Estás seguro de eliminar el proyecto "${projectName}"?`, () => deleteProject(projectId));
-                break;
-            }
-            case 'return-material': {
-                const requestId = button.dataset.id;
-                const requestRef = doc(db, "projects", currentProject.id, "materialRequests", requestId);
-                const requestSnap = await getDoc(requestRef);
-                if (requestSnap.exists()) {
-                    openMainModal('return-material', { id: requestSnap.id, ...requestSnap.data() });
-                }
-                break;
-            }
-
-            case 'add-stock':
-                openMainModal('add-stock');
-                break;
-
-            // Añade un nuevo case para editar
-            case 'edit-catalog-item': {
-                const materialId = button.dataset.id;
-                const materialRef = doc(db, "materialCatalog", materialId);
-                const materialSnap = await getDoc(materialRef);
-                if (materialSnap.exists()) {
-                    openMainModal('edit-catalog-item', { id: materialSnap.id, ...materialSnap.data() });
-                }
-                break;
-            }
-            // Renombra 'add-purchase' a 'add-catalog-item'
-            case 'add-catalog-item':
-                openMainModal('add-catalog-item');
-                break;
-
-
-            case 'request-material': {
-                // 1. Muestra un indicador de carga porque esta operación puede tardar un momento
-                loadingOverlay.classList.remove('hidden');
-
-                try {
-                    // 2. Obtiene los datos necesarios en paralelo para mayor eficiencia
-                    const [
-                        inventorySnapshot,
-                        itemsSnapshot,
-                        subItemsSnapshot
-                    ] = await Promise.all([
-                        getDocs(query(collection(db, "inventory"))),
-                        getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id))),
-                        getDocs(query(collection(db, "subItems"), where("projectId", "==", currentProject.id)))
-                    ]);
-
-                    // 3. Prepara la lista de materiales del inventario general
-                    const inventory = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-                    // 4. Prepara la lista de sub-ítems del proyecto, añadiendo el nombre del ítem padre para mayor claridad
-                    const itemsMap = new Map(itemsSnapshot.docs.map(doc => [doc.id, doc.data()]));
-                    const subItems = subItemsSnapshot.docs.map(doc => {
-                        const data = doc.data();
-                        const parentName = itemsMap.get(data.itemId)?.name || 'Ítem Desconocido';
-                        return { id: doc.id, parentName, ...data };
-                    });
-
-                    // 5. Llama a la ventana flotante y le pasa toda la información preparada
-                    openMainModal('request-material', { inventory, subItems });
-
-                } catch (error) {
-                    console.error("Error al preparar los datos para la solicitud de material:", error);
-                    alert("No se pudieron cargar los datos para la solicitud.");
-                } finally {
-                    // 6. Oculta el indicador de carga
-                    loadingOverlay.classList.add('hidden');
-                }
-                break;
-            }
-
-            case 'approve-request':
-                await updateDoc(doc(db, "projects", currentProject.id, "materialRequests", button.dataset.id), { status: 'aprobado' });
-                break;
-
-            case 'reject-request':
-                await updateDoc(doc(db, "projects", currentProject.id, "materialRequests", button.dataset.id), { status: 'rechazado' });
-                break;
-            case 'view-purchase-order': {
-                const poId = button.dataset.id;
-                openPurchaseOrderModal(poId);
-                break;
-            }
-
-            case 'deliver-material':
-                await updateDoc(doc(db, "projects", currentProject.id, "materialRequests", button.dataset.id), {
-                    status: 'entregado',
-                    responsibleId: currentUser.uid // El usuario de bodega que entrega es el responsable
-                });
-                break;
-            case 'add-purchase-order': {
+        }
+        return;
+    }
+    
+    // --- 4. ACCIONES GENERALES Y DE MODALES (MANEJADAS POR UN SWITCH) ---
+    const elementId = button.dataset.id || button.dataset.corteId || button.dataset.poId;
+    
+    switch(action) {
+        // Navegación Global
+        case 'logout': handleLogout(); break;
+        case 'toggle-menu': document.getElementById('sidebar').classList.toggle('-translate-x-full'); break;
+        
+        // Vistas Principales
+        case 'new-project': openMainModal('newProject'); break;
+        case 'new-purchase-order':
+        case 'add-purchase-order':
+            loadingOverlay.classList.remove('hidden');
+            try {
                 const catalogSnapshot = await getDocs(query(collection(db, "materialCatalog")));
                 const catalog = catalogSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 openMainModal('new-purchase-order', { catalog });
-                break;
+            } catch (error) { console.error("Error al preparar PO:", error); } 
+            finally { loadingOverlay.classList.add('hidden'); }
+            break;
+        case 'view-purchase-order':
+            openPurchaseOrderModal(elementId);
+            break;
+
+        // Acciones dentro de la Vista de un Proyecto
+        case 'back-to-dashboard': showDashboard(); break;
+        case 'back-to-project': showProjectDetails(currentProject); break;
+        case 'edit-project-info': openMainModal('editProjectInfo', currentProject); break;
+        
+        // Pestaña Ítems
+        case 'add-item': openMainModal('addItem'); break;
+        case 'import-items': document.getElementById('import-modal').style.display = 'flex'; break;
+        case 'export-pdf': exportProjectToPDF(); break;
+
+        // Pestaña Cortes
+        case 'back-to-project-details-cortes': showProjectDetails(currentProject, 'cortes'); break;
+        case 'set-corte-type': {
+            const type = button.dataset.type;
+            document.querySelectorAll('.corte-type-btn').forEach(btn => {
+                const isSelected = btn.dataset.type === type;
+                // Quitamos y ponemos las clases de forma segura
+                btn.classList.toggle('bg-blue-500', isSelected);
+                btn.classList.toggle('text-white', isSelected);
+                btn.classList.toggle('bg-gray-200', !isSelected);
+                btn.classList.toggle('text-gray-700', !isSelected);
+            });
+            setupCorteSelection(type);
+            break;
+        }
+        case 'generate-corte': generateCorte(); break;
+        case 'cancel-corte-selection': closeCorteSelectionView(); break;
+        case 'view-corte-details':
+        case 'approve-corte':
+        case 'deny-corte':
+        case 'export-corte-pdf':
+            const corteRef = doc(db, "projects", currentProject.id, "cortes", elementId);
+            const corteSnap = await getDoc(corteRef);
+            if (corteSnap.exists()) {
+                const corteData = { id: corteSnap.id, ...corteSnap.data() };
+                if (action === 'view-corte-details') showCorteDetails(corteData);
+                if (action === 'approve-corte') openConfirmModal("¿Aprobar este corte?", () => approveCorte(currentProject.id, elementId));
+                if (action === 'deny-corte') openConfirmModal("¿Denegar y eliminar este corte?", () => denyCorte(currentProject.id, elementId));
+                if (action === 'export-corte-pdf') exportCorteToPDF(currentProject, corteData, button.dataset.type);
             }
-            case 'new-purchase-order': {
-                // Muestra un indicador de carga mientras preparamos los datos
+            break;
+
+        // Pestaña Pagos
+        case 'add-other-payment': openMainModal('add-other-payment'); break;
+        case 'delete-payment':
+            openConfirmModal('¿Eliminar este movimiento?', () => deleteDoc(doc(db, "projects", currentProject.id, "payments", elementId)));
+            break;
+        case 'add-corte-payment':
+             openMainModal('add-corte-payment', { corteId: elementId, corteNumber: button.dataset.corteNumber });
+            break;
+
+        // Pestaña Materiales
+        case 'request-material':
+            loadingOverlay.classList.remove('hidden');
+            try {
+                const [inventorySnapshot, itemsSnapshot, subItemsSnapshot] = await Promise.all([
+                    getDocs(query(collection(db, "materialCatalog"))),
+                    getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id))),
+                    getDocs(query(collection(db, "subItems"), where("projectId", "==", currentProject.id)))
+                ]);
+                const inventory = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const itemsMap = new Map(itemsSnapshot.docs.map(doc => [doc.id, doc.data()]));
+                const subItems = subItemsSnapshot.docs.map(doc => ({ id: doc.id, parentName: itemsMap.get(doc.data().itemId)?.name || 'N/A', ...doc.data() }));
+                openMainModal('request-material', { inventory, subItems });
+            } catch (error) { console.error("Error al preparar solicitud:", error); } 
+            finally { loadingOverlay.classList.add('hidden'); }
+            break;
+        case 'return-material':
+            const requestRef = doc(db, "projects", currentProject.id, "materialRequests", elementId);
+            const requestSnap = await getDoc(requestRef);
+            if (requestSnap.exists()) openMainModal('return-material', { id: requestSnap.id, ...requestSnap.data() });
+            break;
+
+        // Acciones de PO Modal
+        case 'receive-purchase-order':
+            openConfirmModal('¿Confirmas la recepción? Esto actualizará el stock.', async () => {
                 loadingOverlay.classList.remove('hidden');
                 try {
-                    // Obtenemos los materiales del catálogo para el desplegable
-                    const catalogSnapshot = await getDocs(query(collection(db, "materialCatalog")));
-                    const catalog = catalogSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-                    // Abrimos el modal y le pasamos la lista de materiales
-                    openMainModal('new-purchase-order', { catalog });
+                    const receivePO = httpsCallable(functions, 'receivePurchaseOrder');
+                    const result = await receivePO({ poId: elementId });
+                    alert(result.data.message);
+                    closePurchaseOrderModal();
                 } catch (error) {
-                    console.error("Error al preparar la orden de compra:", error);
-                    alert("No se pudieron cargar los materiales del catálogo.");
+                    alert("Error: " + error.message);
                 } finally {
                     loadingOverlay.classList.add('hidden');
                 }
-                break;
-            }
-
-            // -- Acciones de la tabla de Ítems --
-            case 'view-item-details':
-            case 'edit-item':
-            case 'delete-item': {
-                const itemId = itemRow?.dataset.id;
-                if (!itemId) return;
-                const itemDoc = await getDoc(doc(db, "items", itemId));
-                if (!itemDoc.exists()) return;
-                const itemData = { id: itemDoc.id, ...itemDoc.data() };
-
-                if (action === 'view-item-details') showSubItems(itemData);
-                if (action === 'edit-item') openMainModal('editItem', itemData);
-                if (action === 'delete-item') openConfirmModal(`¿Seguro que quieres eliminar el ítem "${itemData.name}"?`, () => deleteItem(itemId));
-                break;
-            }
-
-            // -- Acciones de Cortes --
-            case 'view-corte-details': {
-                const corteId = button.dataset.corteId;
-                const corteRef = doc(db, "projects", currentProject.id, "cortes", corteId);
-                const corteSnap = await getDoc(corteRef);
-                if (corteSnap.exists()) {
-                    showCorteDetails({ id: corteSnap.id, ...corteSnap.data() });
-                }
-                break;
-            }
-            case 'export-corte-pdf': {
-                const corteId = button.dataset.corteId;
-                const exportType = button.dataset.type;
-                const corteRef = doc(db, "projects", currentProject.id, "cortes", corteId);
-                const corteSnap = await getDoc(corteRef);
-                if (corteSnap.exists()) {
-                    exportCorteToPDF(currentProject, { id: corteSnap.id, ...corteSnap.data() }, exportType);
-                }
-                break;
-            }
-            case 'approve-corte': {
-                const corteId = button.dataset.corteId;
-                openConfirmModal("¿Estás seguro de que quieres aprobar este corte? Esta acción es final.", () => approveCorte(currentProject.id, corteId));
-                break;
-            }
-            case 'deny-corte': {
-                const corteId = button.dataset.corteId;
-                openConfirmModal("¿Estás seguro de que quieres denegar y eliminar este corte? No se podrá recuperar.", () => denyCorte(currentProject.id, corteId));
-                break;
-            }
-            case 'cancel-corte-selection':
-                closeCorteSelectionView();
-                break;
-            case 'generate-corte':
-                generateCorte();
-                break;
-            case 'set-corte-type': {
-                const type = button.dataset.type;
-                document.querySelectorAll('.corte-type-btn').forEach(btn => {
-                    btn.classList.toggle('bg-blue-500', btn.dataset.type === type);
-                    btn.classList.toggle('text-white', btn.dataset.type === type);
-                });
-                setupCorteSelection(type);
-                break;
-            }
-
-            // -- Acciones de Personas de Interés --
-            case 'add-interest-person':
-                openMainModal('addInterestPerson');
-                break;
-            case 'delete-interest-person': {
-                const personId = button.dataset.id;
-                openConfirmModal('¿Estás seguro de eliminar a esta persona?', () => deleteDoc(doc(db, "projects", currentProject.id, "peopleOfInterest", personId)));
-                break;
-            }
-
-            // -- Acciones Generales --
-            case 'logout': handleLogout(); break;
-            case 'new-project': openMainModal('newProject'); break;
-            case 'toggle-menu': document.getElementById('sidebar').classList.toggle('-translate-x-full'); break;
-            case 'back-to-dashboard': showDashboard(); break;
-            case 'back-to-project': showProjectDetails(currentProject); break;
-            case 'add-item': openMainModal('addItem'); break;
-            case 'import-items': document.getElementById('import-modal').style.display = 'flex'; break;
-            case 'export-pdf': exportProjectToPDF(); break;
-            case 'edit-project-info': openMainModal('editProjectInfo', currentProject); break;
-            case 'back-to-project-details-cortes':
-                showProjectDetails(currentProject, 'cortes'); // <--- Pasamos 'cortes' como el tab por defecto
-                break;
-            case 'view-image':
-                const imageUrl = target.getAttribute('src');
-                if (imageUrl) openImageModal(imageUrl);
-                break;
-            case 'add-anticipo-payment':
-                openMainModal('add-anticipo-payment');
-                break;
-            case 'add-corte-payment':
-                // Pasamos los datos del corte al modal
-                openMainModal('add-corte-payment', {
-                    corteId: button.dataset.corteId,
-                    corteNumber: button.dataset.corteNumber
-                });
-                break;
-            case 'add-other-payment':
-                openMainModal('add-other-payment');
-                break;
-            case 'delete-payment':
-                const paymentId = button.dataset.id;
-                openConfirmModal(
-                    '¿Estás seguro de que quieres eliminar este movimiento? Esta acción no se puede deshacer.',
-                    () => deleteDoc(doc(db, "projects", currentProject.id, "payments", paymentId))
-                );
-                break;
-            case 'view-purchase-order': {
-                const poId = button.dataset.id;
-                openPurchaseOrderModal(poId);
-                break;
-            }
-        }
-    });
-
-
-
-    // --- Listener Secundario (SOLO para los botones de los modales) ---
-    document.body.addEventListener('click', async (e) => {
-        const button = e.target.closest('button[data-action]');
-        if (!button) return;
-
-        const action = button.dataset.action;
-        const poId = button.dataset.id;
-
-        if (action === 'receive-purchase-order') {
-            openConfirmModal(
-                '¿Confirmas que has recibido toda la mercancía? Esta acción actualizará el stock y no se puede deshacer.',
-                async () => {
-                    loadingOverlay.classList.remove('hidden');
-
-                    try {
-                        // Prepara la llamada a la Cloud Function
-                        const receivePO = httpsCallable(functions, 'receivePurchaseOrder');
-                        const result = await receivePO({ poId: poId });
-
-                        // Muestra el mensaje de éxito del backend
-                        alert(result.data.message);
-                        closePurchaseOrderModal();
-
-                    } catch (error) {
-                        console.error("Error al llamar a la Cloud Function 'receivePurchaseOrder':", error);
-                        alert("Error al procesar la orden: " + error.message);
-                    } finally {
-                        loadingOverlay.classList.add('hidden');
-                    }
-                }
-            );
-        }
-
-        if (action === 'reject-purchase-order') {
-            openConfirmModal(
-                '¿Confirmas que has recibido toda la mercancía de esta orden? Esta acción actualizará el stock y no se puede deshacer.',
-                async () => {
-                    loadingOverlay.classList.remove('hidden'); // 1. Mostramos la carga
-                    const poRef = doc(db, "purchaseOrders", poId);
-
-                    try {
-                        await runTransaction(db, async (transaction) => {
-                            // ... (toda la lógica de la transacción se mantiene igual)
-                            const poDoc = await transaction.get(poRef);
-                            if (!poDoc.exists() || poDoc.data().status !== 'pendiente') {
-                                throw new Error("Esta orden ya fue procesada o no existe.");
-                            }
-
-                            const materialsToUpdate = new Map();
-                            poDoc.data().items.forEach(item => {
-                                const currentQty = materialsToUpdate.get(item.materialId) || 0;
-                                materialsToUpdate.set(item.materialId, currentQty + item.quantity);
-                            });
-
-                            const materialRefs = Array.from(materialsToUpdate.keys()).map(id => doc(db, "materialCatalog", id));
-                            const materialDocs = await Promise.all(materialRefs.map(ref => transaction.get(ref)));
-
-                            materialDocs.forEach((materialDoc, index) => {
-                                if (!materialDoc.exists()) {
-                                    throw new Error(`Uno de los materiales en la orden ya no existe.`);
-                                }
-                                const materialId = materialRefs[index].id;
-                                const currentStock = materialDoc.data().quantityInStock || 0;
-                                const receivedQuantity = materialsToUpdate.get(materialId);
-                                transaction.update(materialRefs[index], { quantityInStock: currentStock + receivedQuantity });
-                            });
-
-                            transaction.update(poRef, { status: 'recibida', receivedAt: new Date(), receivedBy: currentUser.uid });
-                        });
-
-                        loadingOverlay.classList.add('hidden'); // 2. Ocultamos la carga ANTES de la alerta
-                        alert("¡Orden de compra recibida y stock actualizado con éxito!"); // 3. Mostramos el mensaje
-                        closePurchaseOrderModal(); // 4. Cerramos el modal de detalles
-
-                    } catch (error) {
-                        loadingOverlay.classList.add('hidden'); // También ocultamos la carga si hay un error
-                        console.error("Error al recibir la orden de compra:", error);
-                        alert("Error al procesar la orden: " + error.message);
-                    }
-                }
-            );
-        }
-
-        // --- ACCIÓN: RECHAZAR ORDEN DE COMPRA (SIN CAMBIOS) ---
-        if (action === 'reject-purchase-order') {
-            openConfirmModal(
-                '¿Estás seguro de que quieres rechazar y eliminar esta orden de compra? Esta acción no se puede deshacer.',
-                async () => {
-                    loadingOverlay.classList.remove('hidden');
-                    try {
-                        const poRef = doc(db, "purchaseOrders", poId);
-                        await deleteDoc(poRef);
-                        alert("La orden de compra ha sido eliminada.");
-                        closePurchaseOrderModal();
-                    } catch (error) {
-                        console.error("Error al eliminar la orden de compra:", error);
-                        alert("No se pudo eliminar la orden de compra.");
-                    } finally {
-                        loadingOverlay.classList.add('hidden');
-                    }
-                }
-            );
-        }
-    });
+            });
+            break;
+        case 'reject-purchase-order':
+            openConfirmModal('¿Seguro que quieres eliminar esta orden?', async () => {
+                await deleteDoc(doc(db, "purchaseOrders", elementId));
+                alert("La orden ha sido eliminada.");
+                closePurchaseOrderModal();
+            });
+            break;
+    }
+});
 
     // ==============================================================
     //      INICIO: LISTENERS PARA EL MODAL DE ORDEN DE COMPRA

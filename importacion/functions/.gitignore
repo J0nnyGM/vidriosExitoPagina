@@ -2,3 +2,5 @@ node_modules/
 *.local
 subirjs/
 importacion/.firebaserc
+.env*
+importacion/.firebaserc

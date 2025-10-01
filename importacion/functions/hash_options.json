@@ -1,0 +1,7 @@
+{
+  "hashAlgorithm": "SCRYPT",
+  "signerKey": "2sqpBQ4j3+9tybXgzgPA/A+/r9YsQiAKYHztFnIhD+ArpbhR9ANGkfdUvlz1Oxyq5HDNibIBcKGHpokuRE1uw==",
+  "saltSeparator": "Bw==",
+  "rounds": 8,
+  "memoryCost": 14
+}

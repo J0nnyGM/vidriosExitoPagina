@@ -823,6 +823,77 @@
 
             </div>
 
+            <div id="corte-details-view" class="hidden">
+                <header class="mb-6">
+                    <button data-action="back-to-project-details-cortes"
+                        class="text-blue-600 hover:text-blue-800 font-semibold mb-2 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20"
+                            fill="currentColor">
+                            <path fill-rule="evenodd"
+                                d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                                clip-rule="evenodd" />
+                        </svg>
+                        Volver a Cortes
+                    </button>
+                    <h1 id="corte-details-title" class="text-3xl font-bold text-gray-700">Cargando detalles...</h1>
+                    <p id="corte-details-summary" class="text-gray-500 mt-1"></p>
+                </header>
+
+                <div id="corte-details-list" class="space-y-4">
+                </div>
+            </div>
+
+            <div id="sub-items-view" class="hidden">
+                <header class="mb-6">
+                    <button data-action="back-to-project"
+                        class="text-blue-600 hover:text-blue-800 font-semibold mb-2 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20"
+                            fill="currentColor">
+                            <path fill-rule="evenodd"
+                                d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                                clip-rule="evenodd" />
+                        </svg>
+                        Volver al Proyecto
+                    </button>
+                    <h1 id="item-name-header" class="text-3xl font-bold text-gray-700"></h1>
+                    <p id="item-summary-header" class="text-gray-500 mt-1"></p>
+                </header>
+
+                <div class="mb-4">
+                    <button id="register-multiple-progress-btn" disabled
+                        class="bg-green-500 text-white font-bold py-2 px-4 rounded-lg shadow-md disabled:bg-gray-300 disabled:cursor-not-allowed">
+                        Registrar Avance para Seleccionados
+                    </button>
+                </div>
+                <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left text-gray-500 responsive-table">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3">
+                                        <input type="checkbox" id="select-all-subitems-checkbox"
+                                            class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                                    </th>
+                                    <th class="px-6 py-3">N°</th>
+                                    <th class="px-6 py-3">Lugar de Instalación</th>
+
+                                    <th class="px-6 py-3">Fabricante</th>
+                                    <th class="px-6 py-3">Instalador</th>
+                                    <th class="px-6 py-3">Fecha de Instalación</th>
+                                    <th class="px-6 py-3 text-center">Estado</th>
+                                    <th class="px-6 py-3 text-center">Evidencia</th>
+                                    <th class="px-6 py-3 text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sub-items-table-body"></tbody>
+                        </table>
+                        <div id="loading-sub-items" class="text-center py-10">
+                            <p class="text-gray-500">Cargando detalles...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div id="catalog-view" class="hidden">
                 <div class="flex justify-between items-center mb-6">
                     <h1 class="text-3xl font-bold text-gray-700">Catálogo de Materiales</h1>
@@ -903,7 +974,6 @@
                         </button>
                     </div>
                 </div>
-                </div>
 
                 <div id="report-results-container" class="hidden">
                     <div class="bg-white p-6 rounded-lg shadow-md">
@@ -927,78 +997,10 @@
                     </div>
                 </div>
             </div>
-
-            <div id="corte-details-view" class="hidden">
-                <header class="mb-6">
-                    <button data-action="back-to-project-details-cortes"
-                        class="text-blue-600 hover:text-blue-800 font-semibold mb-2 flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20"
-                            fill="currentColor">
-                            <path fill-rule="evenodd"
-                                d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                                clip-rule="evenodd" />
-                        </svg>
-                        Volver a Cortes
-                    </button>
-                    <h1 id="corte-details-title" class="text-3xl font-bold text-gray-700">Cargando detalles...</h1>
-                    <p id="corte-details-summary" class="text-gray-500 mt-1"></p>
-                </header>
-
-                <div id="corte-details-list" class="space-y-4">
-                </div>
-            </div>
-
-            <div id="sub-items-view" class="hidden">
-                <header class="mb-6">
-                    <button data-action="back-to-project"
-                        class="text-blue-600 hover:text-blue-800 font-semibold mb-2 flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20"
-                            fill="currentColor">
-                            <path fill-rule="evenodd"
-                                d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                                clip-rule="evenodd" />
-                        </svg>
-                        Volver al Proyecto
-                    </button>
-                    <h1 id="item-name-header" class="text-3xl font-bold text-gray-700"></h1>
-                    <p id="item-summary-header" class="text-gray-500 mt-1"></p>
-                </header>
-
-                <div class="mb-4">
-                    <button id="register-multiple-progress-btn" disabled
-                        class="bg-green-500 text-white font-bold py-2 px-4 rounded-lg shadow-md disabled:bg-gray-300 disabled:cursor-not-allowed">
-                        Registrar Avance para Seleccionados
-                    </button>
-                </div>
-                <div class="bg-white rounded-lg shadow-lg overflow-hidden">
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm text-left text-gray-500 responsive-table">
-                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
-                                <tr>
-                                    <th class="px-6 py-3">
-                                        <input type="checkbox" id="select-all-subitems-checkbox"
-                                            class="h-4 w-4 text-blue-600 border-gray-300 rounded">
-                                    </th>
-                                    <th class="px-6 py-3">N°</th>
-                                    <th class="px-6 py-3">Lugar de Instalación</th>
-
-                                    <th class="px-6 py-3">Fabricante</th>
-                                    <th class="px-6 py-3">Instalador</th>
-                                    <th class="px-6 py-3">Fecha de Instalación</th>
-                                    <th class="px-6 py-3 text-center">Estado</th>
-                                    <th class="px-6 py-3 text-center">Evidencia</th>
-                                    <th class="px-6 py-3 text-center">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody id="sub-items-table-body"></tbody>
-                        </table>
-                        <div id="loading-sub-items" class="text-center py-10">
-                            <p class="text-gray-500">Cargando detalles...</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
+
+
+    </div>
     </div>
 
 

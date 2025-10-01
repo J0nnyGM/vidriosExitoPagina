@@ -20,7 +20,7 @@ const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 
-const BUCKET_NAME = "vidrioexpres1.firebasestorage.app";
+const BUCKET_NAME = "importadorave-7d1a0.firebasestorage.app";
 
 // **** INICIO DE LA NUEVA FUNCIÓN ****
 /**
@@ -1169,7 +1169,8 @@ exports.setMyUserAsAdmin = functions.https.onRequest(async (req, res) => {
 */
 exports.setUserStatus = functions.https.onCall(async (data, context) => {
     // 1. Verificar que el que llama es un administrador
-    if (!context.auth || !context.auth.token.admin) {
+    if (!context.auth || context.auth.token.role !== 'admin') {
+
         throw new functions.https.HttpsError(
             "permission-denied",
             "Solo los administradores pueden cambiar el estado de un usuario."
@@ -1281,16 +1282,16 @@ exports.checkMyClaims = functions.https.onRequest((req, res) => {
  * Solo puede ser llamada por un administrador.
  */
 exports.setInitialBalances = functions.https.onCall(async (data, context) => {
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Se ajusta la verificación para que coincida con el rol del usuario.
+    // 1. Verificar que el que llama es un administrador
     if (!context.auth || context.auth.token.role !== 'admin') {
+
         throw new functions.https.HttpsError(
             "permission-denied",
             "Solo los administradores pueden establecer los saldos iniciales."
         );
     }
-    // --- FIN DE LA CORRECCIÓN ---
 
+    // 2. Validar que los datos son números
     const balances = data;
     for (const key in balances) {
         if (typeof balances[key] !== 'number') {
@@ -1302,8 +1303,9 @@ exports.setInitialBalances = functions.https.onCall(async (data, context) => {
     }
 
     try {
+        // 3. Guardar los datos en un documento específico en Firestore
         const balanceDocRef = admin.firestore().collection("saldosIniciales").doc("current");
-        await balanceDocRef.set(balances, { merge: true });
+        await balanceDocRef.set(balances, { merge: true }); // 'merge: true' actualiza los campos sin borrar los existentes
 
         return { success: true, message: "Saldos iniciales guardados correctamente." };
     } catch (error) {
