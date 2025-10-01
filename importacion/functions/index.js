@@ -1585,3 +1585,96 @@ exports.getSignedUrl = functions.https.onCall(async (data, context) => {
         );
     }
 });
+
+exports.repairRutUrls = functions.runWith({ timeoutSeconds: 540, memory: '1GB' }).https.onCall(async (data, context) => {
+    if (!context.auth || context.auth.token.role !== 'admin') {
+        throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden ejecutar esta operación.");
+    }
+
+    const log = functions.logger;
+    log.info("--- INICIANDO DIAGNÓSTICO DE URLs DE RUTs ---");
+
+    const bucket = admin.storage().bucket();
+    let updatedCount = 0;
+    const NEW_PROJECT_ID = "vidrioexpres1";
+
+    // --- DIAGNÓSTICO PARA CLIENTES ---
+    log.info("--- Revisando Clientes ---");
+    const clientesSnapshot = await db.collection("clientes").get();
+    log.info(`Encontrados ${clientesSnapshot.docs.length} clientes.`);
+
+    for (const doc of clientesSnapshot.docs) {
+        const data = doc.data();
+        log.info(`[Cliente: ${doc.id}] Revisando...`);
+
+        if (data.rutUrl && data.rutUrl.trim() !== '') {
+            log.info(` -> URL encontrada: ${data.rutUrl}`);
+            const isIncorrect = !data.rutUrl.includes(NEW_PROJECT_ID);
+            log.info(` -> ¿La URL es incorrecta? (No incluye '${NEW_PROJECT_ID}'): ${isIncorrect}`);
+
+            if (isIncorrect) {
+                log.warn(` -> ¡URL INCORRECTA DETECTADA! Intentando actualizar...`);
+                try {
+                    const oldUrl = new URL(data.rutUrl);
+                    const decodedPath = decodeURIComponent(oldUrl.pathname);
+                    const fileName = decodedPath.substring(decodedPath.lastIndexOf('/') + 1);
+                    const file = bucket.file(`ruts_clientes/${fileName}`);
+                    const [exists] = await file.exists();
+
+                    if(exists) {
+                        const [newUrl] = await file.getSignedUrl({ action: 'read', expires: '03-09-2491' });
+                        await doc.ref.update({ rutUrl: newUrl });
+                        updatedCount++;
+                        log.info(` -> ÉXITO: URL del cliente ${doc.id} actualizada.`);
+                    } else {
+                        log.error(` -> ERROR DE REPARACIÓN: El archivo 'ruts_clientes/${fileName}' no existe en el nuevo Storage.`);
+                    }
+                } catch (error) {
+                    log.error(` -> ERROR DE REPARACIÓN: Falló la actualización para el cliente ${doc.id}:`, error.message);
+                }
+            }
+        } else {
+            log.info(` -> No tiene 'rutUrl' o está vacía. Saltando.`);
+        }
+    }
+
+    // --- DIAGNÓSTICO PARA PROVEEDORES (lógica idéntica) ---
+    log.info("--- Revisando Proveedores ---");
+    const proveedoresSnapshot = await db.collection("proveedores").get();
+    log.info(`Encontrados ${proveedoresSnapshot.docs.length} proveedores.`);
+    for (const doc of proveedoresSnapshot.docs) {
+        const data = doc.data();
+        log.info(`[Proveedor: ${doc.id}] Revisando...`);
+        if (data.rutUrl && data.rutUrl.trim() !== '') {
+            log.info(` -> URL encontrada: ${data.rutUrl}`);
+            const isIncorrect = !data.rutUrl.includes(NEW_PROJECT_ID);
+            log.info(` -> ¿La URL es incorrecta? (No incluye '${NEW_PROJECT_ID}'): ${isIncorrect}`);
+            if (isIncorrect) {
+                log.warn(` -> ¡URL INCORRECTA DETECTADA! Intentando actualizar...`);
+                 try {
+                    const oldUrl = new URL(data.rutUrl);
+                    const decodedPath = decodeURIComponent(oldUrl.pathname);
+                    const fileName = decodedPath.substring(decodedPath.lastIndexOf('/') + 1);
+                    const file = bucket.file(`ruts_proveedores/${fileName}`);
+                     const [exists] = await file.exists();
+                     if(exists) {
+                        const [newUrl] = await file.getSignedUrl({ action: 'read', expires: '03-09-2491' });
+                        await doc.ref.update({ rutUrl: newUrl });
+                        updatedCount++;
+                        log.info(` -> ÉXITO: URL del proveedor ${doc.id} actualizada.`);
+                     } else {
+                         log.error(` -> ERROR DE REPARACIÓN: El archivo 'ruts_proveedores/${fileName}' no existe en el nuevo Storage.`);
+                     }
+                } catch (error) {
+                    log.error(` -> ERROR DE REPARACIÓN: Falló la actualización para el proveedor ${doc.id}:`, error.message);
+                }
+            }
+        } else {
+             log.info(` -> No tiene 'rutUrl' o está vacía. Saltando.`);
+        }
+    }
+
+    const resultMessage = `Diagnóstico completado. Se intentaron actualizar ${updatedCount} enlaces de RUTs.`;
+    log.info(resultMessage);
+    return { success: true, message: resultMessage };
+});

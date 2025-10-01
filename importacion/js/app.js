@@ -4176,14 +4176,39 @@ function calcularCostoDeCortes(totalCortes) {
     return { costo: 20000, descripcion: `Cargo especial por ${totalCortes} cortes`, ivaIncluido: true };
 }
 
+// REEMPLAZA esta función en tu app.js
 function showEditClientModal(cliente) {
     let rutHtml = '';
+
     if (cliente.rutUrl) {
+        // --- INICIO DE LA CORRECCIÓN UNIVERSAL ---
+        let rutPath = '';
+        try {
+            const urlString = cliente.rutUrl;
+            // 1. Encontrar el final del nombre del bucket (después de .app/ o .com/)
+            const bucketEndMarker = '.app/';
+            const bucketEndIndex = urlString.indexOf(bucketEndMarker);
+
+            if (bucketEndIndex !== -1) {
+                // 2. Encontrar el inicio de los parámetros de la URL (el '?')
+                const queryStartIndex = urlString.indexOf('?');
+                // 3. La ruta es lo que está entre esos dos puntos
+                const encodedPath = urlString.substring(bucketEndIndex + bucketEndMarker.length, queryStartIndex);
+                rutPath = decodeURIComponent(encodedPath);
+            } else {
+                 throw new Error("La URL no contiene un nombre de bucket reconocible (.app/).");
+            }
+        } catch (e) {
+            console.error("Error al procesar la URL del RUT del cliente:", e.message, cliente.rutUrl);
+            rutPath = '';
+        }
+        // --- FIN DE LA CORRECCIÓN UNIVERSAL ---
+
         rutHtml = `
             <div class="mt-4 pt-4 border-t">
                 <p class="block text-sm font-medium text-gray-700 mb-2">Gestión de RUT</p>
                 <div class="flex gap-2">
-                    <button type="button" data-file-url="${cliente.rutUrl}" data-file-title="RUT de ${cliente.nombre}" class="view-file-btn flex-1 text-center bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Ver</button>
+                    <button type="button" data-file-path="${rutPath}" data-file-title="RUT de ${cliente.nombre}" class="flex-1 text-center bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Ver</button>
                     <button type="button" id="btn-actualizar-rut-cliente" class="flex-1 bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-600">Actualizar</button>
                 </div>
                 <div id="rut-upload-container-cliente" class="hidden mt-2">
@@ -4210,9 +4235,7 @@ function showEditClientModal(cliente) {
                 <input type="tel" id="edit-cliente-telefono1" value="${cliente.telefono1 || ''}" placeholder="Teléfono 1" class="w-full p-3 border rounded-lg" required oninput="this.value = this.value.replace(/[^0-9]/g, '')">
                 <input type="tel" id="edit-cliente-telefono2" value="${cliente.telefono2 || ''}" placeholder="Teléfono 2" class="w-full p-3 border rounded-lg" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
                 <input type="text" id="edit-cliente-nit" value="${cliente.nit || ''}" placeholder="NIT" class="w-full p-3 border rounded-lg">
-                
                 ${rutHtml}
-
                 <div class="mt-6 flex justify-end gap-3">
                     <button type="button" id="cancel-edit-client" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button>
                     <button type="submit" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Guardar Cambios</button>
@@ -4230,20 +4253,41 @@ function showEditClientModal(cliente) {
             btnActualizarRutCliente.classList.add('hidden');
         });
     }
+
     document.getElementById('cancel-edit-client').addEventListener('click', () => {
         document.getElementById('modal').classList.add('hidden');
     });
 }
 
 function showEditProviderModal(proveedor) {
-    // Generar los botones del RUT de forma condicional
     let rutHtml = '';
+
     if (proveedor.rutUrl) {
+        // --- INICIO DE LA CORRECCIÓN UNIVERSAL ---
+        let rutPath = '';
+        try {
+            const urlString = proveedor.rutUrl;
+            const bucketEndMarker = '.app/';
+            const bucketEndIndex = urlString.indexOf(bucketEndMarker);
+
+            if (bucketEndIndex !== -1) {
+                const queryStartIndex = urlString.indexOf('?');
+                const encodedPath = urlString.substring(bucketEndIndex + bucketEndMarker.length, queryStartIndex);
+                rutPath = decodeURIComponent(encodedPath);
+            } else {
+                 throw new Error("La URL no contiene un nombre de bucket reconocible (.app/).");
+            }
+        } catch (e) {
+            console.error("Error al procesar la URL del RUT del proveedor:", e.message, proveedor.rutUrl);
+            rutPath = '';
+        }
+        // --- FIN DE LA CORRECCIÓN UNIVERSAL ---
+
         rutHtml = `
             <div class="mt-4 pt-4 border-t">
                 <p class="block text-sm font-medium text-gray-700 mb-2">Gestión de RUT</p>
                 <div class="flex gap-2">
-                    <button type="button" data-file-url="${proveedor.rutUrl}" data-file-title="RUT de ${proveedor.nombre}" class="view-file-btn flex-1 text-center bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Ver</button>
+                    <button type="button" data-file-path="${rutPath}" data-file-title="RUT de ${proveedor.nombre}" class="flex-1 text-center bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Ver</button>
                     <button type="button" id="btn-actualizar-rut" class="flex-1 bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-600">Actualizar</button>
                 </div>
                 <div id="rut-upload-container" class="hidden mt-2">
@@ -4254,7 +4298,7 @@ function showEditProviderModal(proveedor) {
     } else {
         rutHtml = `
             <div class="mt-4 pt-4 border-t">
-                <label for="edit-proveedor-rut" class="block text-sm font-medium text-gray-700">Subir RUT</label>
+                <label for="edit-proveedor-rut" class="block text-sm font-medium text-gray-700">Subir RUT (Opcional)</label>
                 <input type="file" id="edit-proveedor-rut" class="mt-1 w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"/>
             </div>
         `;
@@ -4268,9 +4312,7 @@ function showEditProviderModal(proveedor) {
                 <input type="text" id="edit-proveedor-contacto" value="${proveedor.contacto || ''}" placeholder="Nombre de Contacto" class="w-full p-3 border rounded-lg mb-2">
                 <input type="tel" id="edit-proveedor-telefono" value="${proveedor.telefono || ''}" placeholder="Teléfono" class="w-full p-3 border rounded-lg mb-2">
                 <input type="email" id="edit-proveedor-email" value="${proveedor.email || ''}" placeholder="Correo" class="w-full p-3 border rounded-lg">
-                
                 ${rutHtml}
-                
                 <div class="mt-6 flex justify-end gap-3">
                     <button type="button" id="cancel-edit-provider" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button>
                     <button type="submit" class="bg-teal-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-teal-700">Guardar Cambios</button>
@@ -4281,7 +4323,6 @@ function showEditProviderModal(proveedor) {
     document.getElementById('modal-content').innerHTML = modalContent;
     document.getElementById('modal').classList.remove('hidden');
 
-    // Listener para el botón "Actualizar RUT"
     const btnActualizarRut = document.getElementById('btn-actualizar-rut');
     if (btnActualizarRut) {
         btnActualizarRut.addEventListener('click', () => {
@@ -4290,11 +4331,11 @@ function showEditProviderModal(proveedor) {
         });
     }
 
-    // Listener para el botón de cancelar
     document.getElementById('cancel-edit-provider').addEventListener('click', () => {
         document.getElementById('modal').classList.add('hidden');
     });
 }
+
 // UBICADA DENTRO DE /importacion/js/app.js
 // ---> ESTA ES LA SOLUCIÓN FINAL Y DEFINITIVA PARA EL ERROR DE CACHÉ EN IOS <---
 
@@ -7226,11 +7267,14 @@ function showFileModal(url, title = 'Visualizador de Archivos') {
 }
 
 document.body.addEventListener('click', (e) => {
-    const pdfButton = e.target.closest('.view-pdf-btn, .view-factura-pdf-btn');
-    if (pdfButton) {
-        const path = pdfButton.dataset.pdfPath;
-        const num = pdfButton.dataset.remisionNum || 'Archivo';
-        const title = pdfButton.classList.contains('view-factura-pdf-btn') ? `Factura N° ${num}` : `Remisión N° ${num}`;
+    // Este selector busca cualquier botón que tenga data-file-path
+    const secureFileButton = e.target.closest('[data-file-path]');
+    
+    if (secureFileButton) {
+        const path = secureFileButton.dataset.filePath;
+        const title = secureFileButton.dataset.fileTitle || 'Visualizador de Archivo';
+        
+        // Llama a la función segura que ya creamos
         viewSecureFile(path, title);
     }
 });
@@ -7272,3 +7316,31 @@ async function viewSecureFile(filePath, title) {
         Swal.fire('Error', 'No se pudo obtener el enlace para ver el archivo. Por favor, intenta de nuevo.', 'error');
     }
 }
+
+// --- HERRAMIENTA DE REPARACIÓN TEMPORAL ---
+// Puedes borrar esta función después de usarla.
+window.runRutRepair = async () => {
+  try {
+    console.log("Iniciando reparación de URLs de RUTs...");
+    Swal.fire({
+        title: 'Reparando enlaces de RUTs...',
+        text: 'Este proceso puede tardar unos segundos. Por favor, espera.',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+
+    // Como esta función está dentro de app.js, sí tiene acceso a 'httpsCallable' y 'functions'
+    const repairFunction = httpsCallable(functions, 'repairRutUrls');
+    const result = await repairFunction();
+
+    Swal.close();
+    console.log("¡Éxito!", result.data.message);
+    Swal.fire('¡Reparación Completada!', result.data.message, 'success');
+
+  } catch (error) {
+    console.error("Error al ejecutar la reparación:", error);
+    Swal.fire('Error', `Ocurrió un error al ejecutar la reparación: ${error.message}`, 'error');
+  }
+};
