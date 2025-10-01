@@ -115,8 +115,8 @@ function formatColombianPhone(phone) {
 async function sendWhatsAppRemision(toPhoneNumber, customerName, remisionNumber, status, pdfUrl) {
     const formattedPhone = formatColombianPhone(toPhoneNumber);
     if (!formattedPhone) {
-        functions.logger.error(`Número de teléfono inválido: ${toPhoneNumber}`);
-        return;
+        functions.logger.error(`Número de teléfono inválido o no se pudo formatear a E.164: ${toPhoneNumber}`);
+        return; // Devuelve undefined implícitamente
     }
 
     const API_VERSION = "v19.0";
@@ -133,9 +133,9 @@ async function sendWhatsAppRemision(toPhoneNumber, customerName, remisionNumber,
         ],
     }];
 
-    // Solo añadimos el encabezado con el documento SI la URL existe
-    if (pdfUrl) {
-        components.unshift({ // unshift lo añade al principio del array
+    // Solo añadimos el encabezado con el documento SI la URL es válida
+    if (pdfUrl && pdfUrl.startsWith('http')) {
+        components.unshift({ // unshift() lo añade al principio del array
             type: "header",
             parameters: [{
                 type: "document",
@@ -156,14 +156,18 @@ async function sendWhatsAppRemision(toPhoneNumber, customerName, remisionNumber,
         },
     };
 
-    const headers = { "Authorization": `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" };
+    const headers = {
+        "Authorization": `Bearer ${WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json",
+    };
 
     try {
+        functions.logger.info("Enviando el siguiente payload a WhatsApp:", JSON.stringify(payload, null, 2));
         await axios.post(url, payload, { headers });
-        functions.logger.info(`Solicitud de WhatsApp para ${formattedPhone} aceptada.`);
+        functions.logger.info(`Solicitud de envío a WhatsApp para ${formattedPhone} fue aceptada por Meta.`);
     } catch (error) {
         if (error.response) {
-            functions.logger.error(`Error de la API de WhatsApp para ${formattedPhone}:`, JSON.stringify(error.response.data, null, 2));
+            functions.logger.error(`WhatsApp API Error Detallado para ${formattedPhone}:`, JSON.stringify(error.response.data, null, 2));
         }
         throw new Error(`Falló el envío de WhatsApp a ${formattedPhone}: ${error.message}`);
     }
