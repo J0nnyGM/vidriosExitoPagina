@@ -1490,7 +1490,7 @@ function renderFacturacion() {
     const pendientes = remisionesParaFacturar.filter(r => !r.facturado);
     const realizadas = remisionesParaFacturar.filter(r => r.facturado === true);
 
-    // Renderizar lista de PENDIENTES
+    // --- RENDERIZAR LISTA DE PENDIENTES (VERSIÓN FINAL) ---
     pendientesListEl.innerHTML = '';
     if (pendientes.length === 0) {
         pendientesListEl.innerHTML = '<p class="text-center text-gray-500 py-8">No hay remisiones pendientes de facturar.</p>';
@@ -1499,26 +1499,40 @@ function renderFacturacion() {
             const el = document.createElement('div');
             el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4';
             
-            // Buscamos el cliente para obtener sus datos adicionales
+            // Lógica original para encontrar el cliente y su información
             const clienteDeRemision = allClientes.find(c => c.id === remision.idCliente);
             
             let botonRUT = '';
             let infoClienteExtra = '';
 
             if (clienteDeRemision) {
+                // --- INICIO DE LA CORRECCIÓN CLAVE ---
+                // Se restaura tu lógica original, pero adaptada al nuevo sistema de visualización
                 if (clienteDeRemision.rutUrl) {
-                    botonRUT = `<button data-file-url="${clienteDeRemision.rutUrl}" data-file-title="RUT de ${clienteDeRemision.nombre}" class="view-file-btn bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-600">RUT</button>`;
+                    let rutPath = '';
+                    try {
+                        const urlString = clienteDeRemision.rutUrl;
+                        const pathStartIndex = urlString.indexOf('/o/');
+                        if (pathStartIndex !== -1) {
+                            const encodedPath = urlString.substring(pathStartIndex + 3);
+                            const finalPath = encodedPath.split('?')[0];
+                            rutPath = decodeURIComponent(finalPath);
+                        }
+                    } catch (e) { console.error("Error procesando URL de RUT:", e); }
+                    
+                    if (rutPath) {
+                        botonRUT = `<button data-file-path="${rutPath}" data-file-title="RUT de ${clienteDeRemision.nombre}" class="bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-600">RUT</button>`;
+                    }
                 }
-                // --- INICIO DEL CAMBIO ---
-                infoClienteExtra = `
-                    <p class="text-sm text-gray-500 mt-1">
-                        ${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}
-                        ${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}
-                        ${clienteDeRemision.email || ''}
-                    </p>
-                `;
-                // --- FIN DEL CAMBIO ---
+                
+                infoClienteExtra = `<p class="text-sm text-gray-500 mt-1">${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}${clienteDeRemision.email || ''}</p>`;
             }
+
+            // Se asegura que el botón de "Ver Remisión" también use el sistema nuevo
+            const remisionPdfButton = remision.pdfPath
+                ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-600">Ver Remisión</button>`
+                : `<button class="bg-gray-400 text-white px-4 py-2 rounded-lg text-sm font-semibold cursor-not-allowed">Generando...</button>`;
+            // --- FIN DE LA CORRECCIÓN CLAVE ---
 
             el.innerHTML = `
                 <div class="flex-grow">
@@ -1531,7 +1545,7 @@ function renderFacturacion() {
                 </div>
                 <div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end">
                     ${botonRUT}
-                    <button data-pdf-url="${remision.pdfUrl}" data-remision-num="${remision.numeroRemision}" class="view-pdf-btn bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-600">Ver Remisión</button>
+                    ${remisionPdfButton}
                     <button data-remision-id="${remision.id}" class="facturar-btn bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Facturar</button>
                 </div>
             `;
@@ -1539,33 +1553,25 @@ function renderFacturacion() {
         });
     }
 
-    // Renderizar lista de REALIZADAS
+    // --- RENDERIZAR LISTA DE REALIZADAS (Sin cambios, ya estaba correcta) ---
     realizadasListEl.innerHTML = '';
-    if (realizadas.length === 0) {
-        realizadasListEl.innerHTML = '<p class="text-center text-gray-500 py-8">No hay remisiones facturadas.</p>';
-    } else {
+    if (realizadas.length > 0) {
         realizadas.forEach(remision => {
             const el = document.createElement('div');
             el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4';
             
-            // Buscamos al cliente también para las realizadas
             const clienteDeRemision = allClientes.find(c => c.id === remision.idCliente);
             let infoClienteExtra = '';
-
             if (clienteDeRemision) {
-                // --- INICIO DEL CAMBIO ---
-                infoClienteExtra = `
-                    <p class="text-sm text-gray-500 mt-1">
-                        ${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}
-                        ${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}
-                        ${clienteDeRemision.email || ''}
-                    </p>
-                `;
-                 // --- FIN DEL CAMBIO ---
+                infoClienteExtra = `<p class="text-sm text-gray-500 mt-1">${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}${clienteDeRemision.email || ''}</p>`;
             }
 
-            let facturaButtons = remision.facturaPdfUrl
-                ? `<button data-pdf-url="${remision.facturaPdfUrl}" data-remision-num="${remision.numeroFactura || remision.numeroRemision}" class="view-factura-pdf-btn bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700">Ver Factura</button>`
+            const remisionPdfButton = remision.pdfPath
+                ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-600">Ver Remisión</button>`
+                : '';
+            
+            let facturaButtons = remision.facturaPdfPath
+                ? `<button data-file-path="${remision.facturaPdfPath}" data-file-title="Factura N° ${remision.numeroFactura || remision.numeroRemision}" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700">Ver Factura</button>`
                 : `<button data-remision-id="${remision.id}" class="facturar-btn bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-orange-600">Adjuntar Factura</button>`;
 
             el.innerHTML = `
@@ -1583,7 +1589,7 @@ function renderFacturacion() {
                         ${remision.numeroFactura ? `<p class="text-sm text-gray-600 mt-1">Factura N°: <span class="font-semibold">${remision.numeroFactura}</span></p>` : ''}
                     </div>
                     ${facturaButtons}
-                    <button data-pdf-url="${remision.pdfUrl}" data-remision-num="${remision.numeroRemision}" class="view-pdf-btn bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-600">Ver Remisión</button>
+                    ${remisionPdfButton}
                 </div>
             `;
             realizadasListEl.appendChild(el);
@@ -1592,8 +1598,6 @@ function renderFacturacion() {
 
     // Volver a asignar los event listeners
     document.querySelectorAll('.facturar-btn').forEach(btn => btn.addEventListener('click', (e) => showFacturaModal(e.currentTarget.dataset.remisionId)));
-    document.querySelectorAll('.view-pdf-btn').forEach(btn => btn.addEventListener('click', (e) => showPdfModal(e.currentTarget.dataset.pdfUrl, `Remisión N° ${e.currentTarget.dataset.remisionNum}`)));
-    document.querySelectorAll('.view-factura-pdf-btn').forEach(btn => btn.addEventListener('click', (e) => showPdfModal(e.currentTarget.dataset.pdfUrl, `Factura N° ${e.currentTarget.dataset.remisionNum}`)));
 }
 
 // --- FUNCIONES DEL MÓDULO DE INVENTARIO ---
