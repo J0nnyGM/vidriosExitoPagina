@@ -1,8 +1,9 @@
 // Importaciones de Firebase
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
-import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup  } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-messaging.js";
 
@@ -24,9 +25,10 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 const storage = getStorage(app);
 const messaging = getMessaging(app);
+const functions = getFunctions(app, 'us-central1'); // ASEGÚRATE DE QUE ESTA LÍNEA EXISTA
+
 
 let unsubscribeReports = null;
-const functions = getFunctions(app, 'us-central1');
 let unsubscribePurchaseOrders = null;
 let unsubscribeInventory = null;
 let unsubscribeStock = null;
@@ -156,7 +158,6 @@ onAuthStateChanged(auth, async (user) => {
             await signOut(auth);
         }
     } else {
-        showView('auth-view'); // <--- ESTA ES LA CORRECCIÓN
         currentUser = null;
         currentUserRole = null;
         authContainer.classList.remove('hidden');
@@ -274,10 +275,10 @@ function showDashboard() {
 
     if (currentUser) {
         loadProjects();
-    }else if (viewName === 'reports') {
-    showView('reports');
-    loadReportsView();
-}
+    } else if (viewName === 'reports') {
+        showView('reports');
+        loadReportsView();
+    }
 }
 
 let unsubscribeCatalog = null; // Renombra la variable global
@@ -287,7 +288,7 @@ function loadCatalogView() {
     if (!tableBody) return;
 
     if (unsubscribeCatalog) unsubscribeCatalog();
-    
+
     const catalogQuery = query(collection(db, "materialCatalog"), orderBy("name"));
     unsubscribeCatalog = onSnapshot(catalogQuery, (snapshot) => {
         tableBody.innerHTML = '';
@@ -299,7 +300,7 @@ function loadCatalogView() {
             const material = { id: doc.id, ...doc.data() };
             const stock = material.quantityInStock || 0;
             const minStock = material.minStockThreshold || 0;
-            
+
             let stockStatusIndicator = '<div class="h-3 w-3 rounded-full bg-green-500 mx-auto" title="Stock OK"></div>';
             if (minStock > 0 && stock <= minStock) {
                 stockStatusIndicator = '<div class="h-3 w-3 rounded-full bg-red-500 mx-auto" title="Stock Bajo"></div>';
@@ -380,7 +381,7 @@ function loadComprasView() {
 
 async function loadReportsView() {
     const projectFilter = document.getElementById('report-project-filter');
-    
+
     // Rellenar el filtro de proyectos
     const projectsSnapshot = await getDocs(query(collection(db, "projects")));
     projectFilter.innerHTML = '<option value="all">Todos los Proyectos</option>'; // Reset
@@ -418,13 +419,13 @@ async function generateMaterialReport() {
 
     // 3. Obtener y procesar los datos
     const snapshot = await getDocs(requestsQuery);
-    let requests = snapshot.docs.map(doc => ({projectId: doc.ref.parent.parent.id, ...doc.data()}));
-    
+    let requests = snapshot.docs.map(doc => ({ projectId: doc.ref.parent.parent.id, ...doc.data() }));
+
     // Filtro manual por proyecto si es necesario
     if (projectId !== 'all') {
         requests = requests.filter(req => req.projectId === projectId);
     }
-    
+
     // 4. Renderizar resultados
     tableBody.innerHTML = '';
     if (requests.length === 0) {
@@ -436,7 +437,7 @@ async function generateMaterialReport() {
                 const projectDoc = await getDoc(doc(db, "projects", req.projectId));
                 projectNames.set(req.projectId, projectDoc.data()?.name || 'Proyecto Desconocido');
             }
-            
+
             const row = document.createElement('tr');
             row.className = 'bg-white border-b';
             row.innerHTML = `
@@ -3256,19 +3257,80 @@ function openMainModal(type, data = {}) {
         </div>`;
             break;
 
-        case 'request-material':
-            title = 'Solicitar Material del Inventario General';
-            btnText = 'Crear Solicitud';
-            btnClass = 'bg-green-500 hover:bg-green-600';
-            const materialOptions = data.inventory.map(mat => `<option value="${mat.id}">${mat.name} (${mat.quantity} ${mat.unit} en stock)</option>`).join('');
-            const subItemOptions = data.subItems.map(si => `<option value="${si.id}">${si.parentName} - Unidad #${si.number}</option>`).join('');
-            bodyHtml = `
+case 'request-material': {
+    title = 'Crear Solicitud de Material';
+    btnText = 'Enviar Solicitud';
+    btnClass = 'bg-green-500 hover:bg-green-600';
+    
+    const inventory = data.inventory || [];
+    const subItems = data.subItems || [];
+
+    const materialOptions = inventory
+        .filter(mat => mat.quantityInStock > 0)
+        .map(mat => `<option value="${mat.id}">${mat.name} (${mat.quantityInStock || 0} ${mat.unit})</option>`).join('');
+    
+    const subItemCheckboxes = subItems.map(si => `
+        <label class="flex items-center space-x-2 p-1 hover:bg-gray-100 rounded-md">
+            <input type="checkbox" name="subItemIds" value="${si.id}" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+            <span class="text-sm">${si.parentName} - Unidad #${si.number}</span>
+        </label>
+    `).join('');
+
+    bodyHtml = `
         <div class="space-y-4">
-            <div><label class="block text-sm font-medium">Material del Inventario</label><select name="materialId" required class="mt-1 w-full border p-2 rounded-md bg-white">${materialOptions}</select></div>
-            <div><label class="block text-sm font-medium">Cantidad Solicitada</label><input type="number" name="quantity" required class="mt-1 w-full border p-2 rounded-md"></div>
-            <div><label class="block text-sm font-medium">Vincular a Sub-Ítem</label><select name="subItemId" required class="mt-1 w-full border p-2 rounded-md bg-white">${subItemOptions}</select></div>
+            <div class="border p-3 rounded-lg">
+                <h4 class="font-semibold text-gray-700 mb-2">1. Añadir Materiales a la Solicitud</h4>
+                <div class="flex items-end gap-2">
+                    <div class="flex-grow"><label class="block text-xs font-medium">Material</label><select id="new-request-material" class="w-full border p-2 rounded-md bg-white text-sm">${materialOptions}</select></div>
+                    <div><label class="block text-xs font-medium">Cantidad</label><input type="number" id="new-request-quantity" class="w-24 border p-2 rounded-md"></div>
+                    <button type="button" id="add-material-to-request-btn" class="bg-blue-500 text-white py-2 px-3 rounded-md text-sm">Añadir</button>
+                </div>
+                <div id="request-items-list" class="mt-3 space-y-2"></div>
+            </div>
+            <div class="border p-3 rounded-lg">
+                <h4 class="font-semibold text-gray-700 mb-2">2. ¿Para qué Ítems se usará este material?</h4>
+                <div class="max-h-48 overflow-y-auto space-y-1 pr-2">${subItemCheckboxes}</div>
+            </div>
         </div>`;
-            break;
+
+    setTimeout(() => {
+        const addBtn = document.getElementById('add-material-to-request-btn');
+        const materialSelect = document.getElementById('new-request-material');
+        const quantityInput = document.getElementById('new-request-quantity');
+        const itemsListDiv = document.getElementById('request-items-list');
+
+        addBtn.addEventListener('click', () => {
+            const selectedOption = materialSelect.options[materialSelect.selectedIndex];
+            if (!selectedOption) return; // Si no hay materiales, no hacer nada
+            
+            const materialId = selectedOption.value;
+            const materialName = selectedOption.text.split(' (')[0];
+            const quantity = parseInt(quantityInput.value);
+
+            if (materialId && quantity > 0) {
+                const listItem = document.createElement('div');
+                listItem.className = 'flex justify-between items-center bg-gray-100 p-2 rounded-md text-sm';
+                // LÍNEAS CLAVE: Guardamos los datos directamente en el elemento
+                listItem.dataset.materialId = materialId;
+                listItem.dataset.quantity = quantity;
+
+                listItem.innerHTML = `
+                    <span>${quantity} x ${materialName}</span>
+                    <button type="button" class="remove-request-item-btn text-red-500 font-bold text-lg leading-none">&times;</button>
+                `;
+                itemsListDiv.appendChild(listItem);
+                quantityInput.value = '';
+            }
+        });
+        
+        itemsListDiv.addEventListener('click', (e) => {
+            if (e.target.classList.contains('remove-request-item-btn')) {
+                e.target.parentElement.remove();
+            }
+        });
+    }, 100);
+    break;
+}
         case 'editProfile':
             title = 'Mi Perfil'; btnText = 'Guardar Cambios'; btnClass = 'bg-blue-500 hover:bg-blue-600';
             bodyHtml = `<div class="space-y-4">
@@ -3347,27 +3409,27 @@ modalForm.addEventListener('submit', async (e) => {
                 showCorteDetails({ id: corteSnap.id, ...corteSnap.data() });
             }
             break;
-case 'add-catalog-item': {
-    const catalogData = {
-        name: data.name,
-        reference: data.reference,
-        unit: data.unit,
-        minStockThreshold: parseInt(data.minStockThreshold) || 0, // <-- AÑADE ESTA LÍNEA
-        quantityInStock: 0
-    };
-    await addDoc(collection(db, "materialCatalog"), catalogData);
-    break;
-}
-case 'edit-catalog-item': {
-    const updatedData = {
-        name: data.name,
-        reference: data.reference,
-        unit: data.unit,
-        minStockThreshold: parseInt(data.minStockThreshold) || 0 // <-- AÑADE ESTA LÍNEA
-    };
-    await updateDoc(doc(db, "materialCatalog", id), updatedData);
-    break;
-}
+        case 'add-catalog-item': {
+            const catalogData = {
+                name: data.name,
+                reference: data.reference,
+                unit: data.unit,
+                minStockThreshold: parseInt(data.minStockThreshold) || 0, // <-- AÑADE ESTA LÍNEA
+                quantityInStock: 0
+            };
+            await addDoc(collection(db, "materialCatalog"), catalogData);
+            break;
+        }
+        case 'edit-catalog-item': {
+            const updatedData = {
+                name: data.name,
+                reference: data.reference,
+                unit: data.unit,
+                minStockThreshold: parseInt(data.minStockThreshold) || 0 // <-- AÑADE ESTA LÍNEA
+            };
+            await updateDoc(doc(db, "materialCatalog", id), updatedData);
+            break;
+        }
         case 'return-material': {
             modalConfirmBtn.disabled = true;
             modalConfirmBtn.textContent = 'Procesando...';
@@ -3495,31 +3557,92 @@ case 'request-material': {
     modalConfirmBtn.disabled = true;
     modalConfirmBtn.textContent = 'Procesando...';
 
-    const requestData = {
-        projectId: currentProject.id,
-        materialId: data.materialId,
-        quantity: parseInt(data.quantity),
-        subItemId: data.subItemId,
-    };
-
     try {
-        // --- LÍNEA DE DEPURACIÓN AÑADIDA ---
-        console.log("DEBUG: Verificando usuario antes de llamar a la función:", auth.currentUser);
-        // ------------------------------------
+        // 1. Recolectar los materiales de forma segura desde los data-attributes
+        const materials = [];
+        document.querySelectorAll('#request-items-list > div').forEach(itemEl => {
+            if (itemEl.dataset.materialId && itemEl.dataset.quantity) {
+                materials.push({
+                    materialId: itemEl.dataset.materialId,
+                    quantity: parseInt(itemEl.dataset.quantity)
+                });
+            }
+        });
 
-        if (!auth.currentUser) {
-            throw new Error("El estado de autenticación es nulo. Intenta recargar la página.");
+        // 2. Recolectar los sub-ítems seleccionados
+        const subItemIds = Array.from(modalForm.querySelectorAll('input[name="subItemIds"]:checked')).map(cb => cb.value);
+
+        // 3. Validación robusta
+        if (materials.length === 0 || subItemIds.length === 0) {
+            throw new Error("Debes añadir al menos un material y seleccionar al menos un ítem de destino.");
         }
 
-        const requestMaterial = httpsCallable(functions, 'requestMaterialFIFO');
-        const result = await requestMaterial(requestData);
-        
-        alert(result.data.message);
+        // 4. Ejecutar la transacción FIFO en el frontend
+        await runTransaction(db, async (transaction) => {
+            let totalRequestCost = 0;
+            const allConsumedBatches = [];
+            const allMaterialNames = [];
+
+            for (const material of materials) {
+                const materialRef = doc(db, "materialCatalog", material.materialId);
+                const materialDoc = await transaction.get(materialRef);
+
+                if (!materialDoc.exists()) throw new Error(`El material ${material.materialId} no existe.`);
+                
+                const materialData = materialDoc.data();
+                if ((materialData.quantityInStock || 0) < material.quantity) {
+                    throw new Error(`No hay stock de ${materialData.name}. Solicitado: ${material.quantity}, Disponible: ${materialData.quantityInStock}.`);
+                }
+
+                // Leer todos los lotes y procesarlos en memoria para evitar errores de índice
+                const batchesCollectionRef = collection(db, "materialCatalog", material.materialId, "stockBatches");
+                const batchesSnapshot = await transaction.get(query(batchesCollectionRef));
+                
+                const availableBatches = batchesSnapshot.docs
+                    .map(d => ({ id: d.id, ref: d.ref, ...d.data() }))
+                    .filter(b => b.quantityRemaining > 0)
+                    .sort((a, b) => a.purchaseDate.toMillis() - b.purchaseDate.toMillis());
+
+                let remainingToFulfill = material.quantity;
+                let materialCost = 0;
+
+                for (const batch of availableBatches) {
+                    if (remainingToFulfill <= 0) break;
+                    const consume = Math.min(batch.quantityRemaining, remainingToFulfill);
+                    transaction.update(batch.ref, { quantityRemaining: increment(-consume) });
+                    materialCost += consume * batch.unitCost;
+                    remainingToFulfill -= consume;
+                    allConsumedBatches.push({ materialId: material.materialId, batchId: batch.id, quantityConsumed: consume });
+                }
+
+                if (remainingToFulfill > 0) throw new Error(`Inconsistencia en el stock para ${materialData.name}.`);
+                
+                transaction.update(materialRef, { quantityInStock: increment(-material.quantity) });
+                totalRequestCost += materialCost;
+                allMaterialNames.push(`${material.quantity} x ${materialData.name}`);
+            }
+
+            // Crear la solicitud unificada
+            const requestRef = doc(collection(db, "projects", currentProject.id, "materialRequests"));
+            transaction.set(requestRef, {
+                materials: materials,
+                subItemIds: subItemIds,
+                materialName: allMaterialNames.join(', '),
+                quantity: materials.reduce((sum, mat) => sum + mat.quantity, 0),
+                requesterId: currentUser.uid,
+                createdAt: new Date(),
+                status: "solicitado",
+                totalCost: totalRequestCost,
+                consumedBatches: allConsumedBatches,
+            });
+        });
+
+        alert("¡Solicitud creada con éxito!");
         closeMainModal();
 
     } catch (error) {
-        console.error("Error al llamar a la Cloud Function 'requestMaterialFIFO':", error);
-        alert("Error al crear la solicitud: " + error.message);
+        console.error("Error al crear la solicitud de material:", error);
+        alert("Error: " + error.message);
     } finally {
         modalConfirmBtn.disabled = false;
     }
@@ -4272,7 +4395,7 @@ function loadNotifications() {
             notificationItem.dataset.projectId = notification.projectId || '';
             notificationItem.dataset.itemId = notification.itemId || '';
             notificationItem.dataset.link = notification.link || '';
-            
+
             notificationItem.innerHTML = `
                 <p class="text-sm font-bold">${notification.channel ? 'Alerta de Sistema' : 'Acción Requerida'}</p>
                 <p class="text-sm">${notification.message}</p>
@@ -4319,7 +4442,7 @@ function loadNotifications() {
                 showSubItems({ id: itemId, ...itemDoc.data() });
             }
         }
-        
+
         // Ocultar el menú desplegable
         document.getElementById('notifications-dropdown').classList.add('hidden');
     });
@@ -4410,199 +4533,199 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-// ====================================================================
-//      INICIO: EVENT LISTENER UNIFICADO (VERSIÓN FINAL Y COMPLETA)
-// ====================================================================
-document.body.addEventListener('click', async (e) => {
-    const target = e.target;
+    // ====================================================================
+    //      INICIO: EVENT LISTENER UNIFICADO (VERSIÓN FINAL Y COMPLETA)
+    // ====================================================================
+    document.body.addEventListener('click', async (e) => {
+        const target = e.target;
 
-    // --- 1. MANEJO DE CLICS QUE NO SON BOTONES DE ACCIÓN (Pestañas, Imágenes, etc.) ---
-    const tabButton = target.closest('#project-details-tabs .tab-button');
-    if (tabButton) {
-        switchProjectTab(tabButton.dataset.tab);
-        return; // Detenemos aquí, es solo un cambio de pestaña.
-    }
+        // --- 1. MANEJO DE CLICS QUE NO SON BOTONES DE ACCIÓN (Pestañas, Imágenes, etc.) ---
+        const tabButton = target.closest('#project-details-tabs .tab-button');
+        if (tabButton) {
+            switchProjectTab(tabButton.dataset.tab);
+            return; // Detenemos aquí, es solo un cambio de pestaña.
+        }
 
-    const uploadCard = target.closest('.document-upload-card[data-action="upload-doc"]');
-    if (uploadCard && !target.closest('button')) {
-        uploadCard.querySelector('input[type="file"]')?.click();
-        return;
-    }
+        const uploadCard = target.closest('.document-upload-card[data-action="upload-doc"]');
+        if (uploadCard && !target.closest('button')) {
+            uploadCard.querySelector('input[type="file"]')?.click();
+            return;
+        }
 
-    if (target.dataset.action === 'view-image' && target.tagName === 'IMG') {
-        openImageModal(target.getAttribute('src'));
-        return;
-    }
+        if (target.dataset.action === 'view-image' && target.tagName === 'IMG') {
+            openImageModal(target.getAttribute('src'));
+            return;
+        }
 
-    // --- 2. LÓGICA PRINCIPAL PARA BOTONES CON 'data-action' ---
-    const button = target.closest('button[data-action]');
-    if (!button) return; // Si no es un botón con acción, no hacemos nada.
+        // --- 2. LÓGICA PRINCIPAL PARA BOTONES CON 'data-action' ---
+        const button = target.closest('button[data-action]');
+        if (!button) return; // Si no es un botón con acción, no hacemos nada.
 
-    const action = button.dataset.action;
+        const action = button.dataset.action;
 
-    // --- 3. LÓGICA POR CONTEXTO ESPECÍFICO ---
+        // --- 3. LÓGICA POR CONTEXTO ESPECÍFICO ---
 
-    // CONTEXTO: Clic en una tarjeta de proyecto (Dashboard)
-    const projectCard = button.closest('.project-card');
-    if (projectCard) {
-        const projectId = projectCard.dataset.id;
-        const projectName = projectCard.dataset.name;
+        // CONTEXTO: Clic en una tarjeta de proyecto (Dashboard)
+        const projectCard = button.closest('.project-card');
+        if (projectCard) {
+            const projectId = projectCard.dataset.id;
+            const projectName = projectCard.dataset.name;
+            switch (action) {
+                case 'view-details':
+                    const docSnap = await getDoc(doc(db, "projects", projectId));
+                    if (docSnap.exists()) showProjectDetails({ id: docSnap.id, ...docSnap.data() });
+                    break;
+                case 'archive':
+                    openConfirmModal(`¿Archivar el proyecto "${projectName}"?`, () => archiveProject(projectId));
+                    break;
+                case 'restore':
+                    openConfirmModal(`¿Restaurar el proyecto "${projectName}"?`, () => restoreProject(projectId));
+                    break;
+                case 'delete':
+                    openConfirmModal(`¿Eliminar el proyecto "${projectName}"?`, () => deleteProject(projectId));
+                    break;
+            }
+            return; // Terminamos la ejecución para este contexto.
+        }
+
+        // CONTEXTO: Clic en una fila de la tabla de ítems
+        const itemRow = button.closest('tr[data-id]');
+        if (itemRow) {
+            const itemId = itemRow.dataset.id;
+            const itemDoc = await getDoc(doc(db, "items", itemId));
+            if (itemDoc.exists()) {
+                const itemData = { id: itemDoc.id, ...itemDoc.data() };
+                switch (action) {
+                    case 'view-item-details': showSubItems(itemData); break;
+                    case 'edit-item': openMainModal('editItem', itemData); break;
+                    case 'delete-item': openConfirmModal(`¿Eliminar "${itemData.name}"?`, () => deleteItem(itemId)); break;
+                }
+            }
+            return;
+        }
+
+        // --- 4. ACCIONES GENERALES Y DE MODALES (MANEJADAS POR UN SWITCH) ---
+        const elementId = button.dataset.id || button.dataset.corteId || button.dataset.poId;
+
         switch (action) {
-            case 'view-details':
-                const docSnap = await getDoc(doc(db, "projects", projectId));
-                if (docSnap.exists()) showProjectDetails({ id: docSnap.id, ...docSnap.data() });
-                break;
-            case 'archive':
-                openConfirmModal(`¿Archivar el proyecto "${projectName}"?`, () => archiveProject(projectId));
-                break;
-            case 'restore':
-                openConfirmModal(`¿Restaurar el proyecto "${projectName}"?`, () => restoreProject(projectId));
-                break;
-            case 'delete':
-                openConfirmModal(`¿Eliminar el proyecto "${projectName}"?`, () => deleteProject(projectId));
-                break;
-        }
-        return; // Terminamos la ejecución para este contexto.
-    }
+            // Navegación Global
+            case 'logout': handleLogout(); break;
+            case 'toggle-menu': document.getElementById('sidebar').classList.toggle('-translate-x-full'); break;
 
-    // CONTEXTO: Clic en una fila de la tabla de ítems
-    const itemRow = button.closest('tr[data-id]');
-    if (itemRow) {
-        const itemId = itemRow.dataset.id;
-        const itemDoc = await getDoc(doc(db, "items", itemId));
-        if (itemDoc.exists()) {
-            const itemData = { id: itemDoc.id, ...itemDoc.data() };
-            switch(action) {
-                case 'view-item-details': showSubItems(itemData); break;
-                case 'edit-item': openMainModal('editItem', itemData); break;
-                case 'delete-item': openConfirmModal(`¿Eliminar "${itemData.name}"?`, () => deleteItem(itemId)); break;
-            }
-        }
-        return;
-    }
-    
-    // --- 4. ACCIONES GENERALES Y DE MODALES (MANEJADAS POR UN SWITCH) ---
-    const elementId = button.dataset.id || button.dataset.corteId || button.dataset.poId;
-    
-    switch(action) {
-        // Navegación Global
-        case 'logout': handleLogout(); break;
-        case 'toggle-menu': document.getElementById('sidebar').classList.toggle('-translate-x-full'); break;
-        
-        // Vistas Principales
-        case 'new-project': openMainModal('newProject'); break;
-        case 'new-purchase-order':
-        case 'add-purchase-order':
-            loadingOverlay.classList.remove('hidden');
-            try {
-                const catalogSnapshot = await getDocs(query(collection(db, "materialCatalog")));
-                const catalog = catalogSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                openMainModal('new-purchase-order', { catalog });
-            } catch (error) { console.error("Error al preparar PO:", error); } 
-            finally { loadingOverlay.classList.add('hidden'); }
-            break;
-        case 'view-purchase-order':
-            openPurchaseOrderModal(elementId);
-            break;
-
-        // Acciones dentro de la Vista de un Proyecto
-        case 'back-to-dashboard': showDashboard(); break;
-        case 'back-to-project': showProjectDetails(currentProject); break;
-        case 'edit-project-info': openMainModal('editProjectInfo', currentProject); break;
-        
-        // Pestaña Ítems
-        case 'add-item': openMainModal('addItem'); break;
-        case 'import-items': document.getElementById('import-modal').style.display = 'flex'; break;
-        case 'export-pdf': exportProjectToPDF(); break;
-
-        // Pestaña Cortes
-        case 'back-to-project-details-cortes': showProjectDetails(currentProject, 'cortes'); break;
-        case 'set-corte-type': {
-            const type = button.dataset.type;
-            document.querySelectorAll('.corte-type-btn').forEach(btn => {
-                const isSelected = btn.dataset.type === type;
-                // Quitamos y ponemos las clases de forma segura
-                btn.classList.toggle('bg-blue-500', isSelected);
-                btn.classList.toggle('text-white', isSelected);
-                btn.classList.toggle('bg-gray-200', !isSelected);
-                btn.classList.toggle('text-gray-700', !isSelected);
-            });
-            setupCorteSelection(type);
-            break;
-        }
-        case 'generate-corte': generateCorte(); break;
-        case 'cancel-corte-selection': closeCorteSelectionView(); break;
-        case 'view-corte-details':
-        case 'approve-corte':
-        case 'deny-corte':
-        case 'export-corte-pdf':
-            const corteRef = doc(db, "projects", currentProject.id, "cortes", elementId);
-            const corteSnap = await getDoc(corteRef);
-            if (corteSnap.exists()) {
-                const corteData = { id: corteSnap.id, ...corteSnap.data() };
-                if (action === 'view-corte-details') showCorteDetails(corteData);
-                if (action === 'approve-corte') openConfirmModal("¿Aprobar este corte?", () => approveCorte(currentProject.id, elementId));
-                if (action === 'deny-corte') openConfirmModal("¿Denegar y eliminar este corte?", () => denyCorte(currentProject.id, elementId));
-                if (action === 'export-corte-pdf') exportCorteToPDF(currentProject, corteData, button.dataset.type);
-            }
-            break;
-
-        // Pestaña Pagos
-        case 'add-other-payment': openMainModal('add-other-payment'); break;
-        case 'delete-payment':
-            openConfirmModal('¿Eliminar este movimiento?', () => deleteDoc(doc(db, "projects", currentProject.id, "payments", elementId)));
-            break;
-        case 'add-corte-payment':
-             openMainModal('add-corte-payment', { corteId: elementId, corteNumber: button.dataset.corteNumber });
-            break;
-
-        // Pestaña Materiales
-        case 'request-material':
-            loadingOverlay.classList.remove('hidden');
-            try {
-                const [inventorySnapshot, itemsSnapshot, subItemsSnapshot] = await Promise.all([
-                    getDocs(query(collection(db, "materialCatalog"))),
-                    getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id))),
-                    getDocs(query(collection(db, "subItems"), where("projectId", "==", currentProject.id)))
-                ]);
-                const inventory = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                const itemsMap = new Map(itemsSnapshot.docs.map(doc => [doc.id, doc.data()]));
-                const subItems = subItemsSnapshot.docs.map(doc => ({ id: doc.id, parentName: itemsMap.get(doc.data().itemId)?.name || 'N/A', ...doc.data() }));
-                openMainModal('request-material', { inventory, subItems });
-            } catch (error) { console.error("Error al preparar solicitud:", error); } 
-            finally { loadingOverlay.classList.add('hidden'); }
-            break;
-        case 'return-material':
-            const requestRef = doc(db, "projects", currentProject.id, "materialRequests", elementId);
-            const requestSnap = await getDoc(requestRef);
-            if (requestSnap.exists()) openMainModal('return-material', { id: requestSnap.id, ...requestSnap.data() });
-            break;
-
-        // Acciones de PO Modal
-        case 'receive-purchase-order':
-            openConfirmModal('¿Confirmas la recepción? Esto actualizará el stock.', async () => {
+            // Vistas Principales
+            case 'new-project': openMainModal('newProject'); break;
+            case 'new-purchase-order':
+            case 'add-purchase-order':
                 loadingOverlay.classList.remove('hidden');
                 try {
-                    const receivePO = httpsCallable(functions, 'receivePurchaseOrder');
-                    const result = await receivePO({ poId: elementId });
-                    alert(result.data.message);
-                    closePurchaseOrderModal();
-                } catch (error) {
-                    alert("Error: " + error.message);
-                } finally {
-                    loadingOverlay.classList.add('hidden');
+                    const catalogSnapshot = await getDocs(query(collection(db, "materialCatalog")));
+                    const catalog = catalogSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    openMainModal('new-purchase-order', { catalog });
+                } catch (error) { console.error("Error al preparar PO:", error); }
+                finally { loadingOverlay.classList.add('hidden'); }
+                break;
+            case 'view-purchase-order':
+                openPurchaseOrderModal(elementId);
+                break;
+
+            // Acciones dentro de la Vista de un Proyecto
+            case 'back-to-dashboard': showDashboard(); break;
+            case 'back-to-project': showProjectDetails(currentProject); break;
+            case 'edit-project-info': openMainModal('editProjectInfo', currentProject); break;
+
+            // Pestaña Ítems
+            case 'add-item': openMainModal('addItem'); break;
+            case 'import-items': document.getElementById('import-modal').style.display = 'flex'; break;
+            case 'export-pdf': exportProjectToPDF(); break;
+
+            // Pestaña Cortes
+            case 'back-to-project-details-cortes': showProjectDetails(currentProject, 'cortes'); break;
+            case 'set-corte-type': {
+                const type = button.dataset.type;
+                document.querySelectorAll('.corte-type-btn').forEach(btn => {
+                    const isSelected = btn.dataset.type === type;
+                    // Quitamos y ponemos las clases de forma segura
+                    btn.classList.toggle('bg-blue-500', isSelected);
+                    btn.classList.toggle('text-white', isSelected);
+                    btn.classList.toggle('bg-gray-200', !isSelected);
+                    btn.classList.toggle('text-gray-700', !isSelected);
+                });
+                setupCorteSelection(type);
+                break;
+            }
+            case 'generate-corte': generateCorte(); break;
+            case 'cancel-corte-selection': closeCorteSelectionView(); break;
+            case 'view-corte-details':
+            case 'approve-corte':
+            case 'deny-corte':
+            case 'export-corte-pdf':
+                const corteRef = doc(db, "projects", currentProject.id, "cortes", elementId);
+                const corteSnap = await getDoc(corteRef);
+                if (corteSnap.exists()) {
+                    const corteData = { id: corteSnap.id, ...corteSnap.data() };
+                    if (action === 'view-corte-details') showCorteDetails(corteData);
+                    if (action === 'approve-corte') openConfirmModal("¿Aprobar este corte?", () => approveCorte(currentProject.id, elementId));
+                    if (action === 'deny-corte') openConfirmModal("¿Denegar y eliminar este corte?", () => denyCorte(currentProject.id, elementId));
+                    if (action === 'export-corte-pdf') exportCorteToPDF(currentProject, corteData, button.dataset.type);
                 }
-            });
-            break;
-        case 'reject-purchase-order':
-            openConfirmModal('¿Seguro que quieres eliminar esta orden?', async () => {
-                await deleteDoc(doc(db, "purchaseOrders", elementId));
-                alert("La orden ha sido eliminada.");
-                closePurchaseOrderModal();
-            });
-            break;
-    }
-});
+                break;
+
+            // Pestaña Pagos
+            case 'add-other-payment': openMainModal('add-other-payment'); break;
+            case 'delete-payment':
+                openConfirmModal('¿Eliminar este movimiento?', () => deleteDoc(doc(db, "projects", currentProject.id, "payments", elementId)));
+                break;
+            case 'add-corte-payment':
+                openMainModal('add-corte-payment', { corteId: elementId, corteNumber: button.dataset.corteNumber });
+                break;
+
+            // Pestaña Materiales
+            case 'request-material':
+                loadingOverlay.classList.remove('hidden');
+                try {
+                    const [inventorySnapshot, itemsSnapshot, subItemsSnapshot] = await Promise.all([
+                        getDocs(query(collection(db, "materialCatalog"))),
+                        getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id))),
+                        getDocs(query(collection(db, "subItems"), where("projectId", "==", currentProject.id)))
+                    ]);
+                    const inventory = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    const itemsMap = new Map(itemsSnapshot.docs.map(doc => [doc.id, doc.data()]));
+                    const subItems = subItemsSnapshot.docs.map(doc => ({ id: doc.id, parentName: itemsMap.get(doc.data().itemId)?.name || 'N/A', ...doc.data() }));
+                    openMainModal('request-material', { inventory, subItems });
+                } catch (error) { console.error("Error al preparar solicitud:", error); }
+                finally { loadingOverlay.classList.add('hidden'); }
+                break;
+            case 'return-material':
+                const requestRef = doc(db, "projects", currentProject.id, "materialRequests", elementId);
+                const requestSnap = await getDoc(requestRef);
+                if (requestSnap.exists()) openMainModal('return-material', { id: requestSnap.id, ...requestSnap.data() });
+                break;
+
+            // Acciones de PO Modal
+            case 'receive-purchase-order':
+                openConfirmModal('¿Confirmas la recepción? Esto actualizará el stock.', async () => {
+                    loadingOverlay.classList.remove('hidden');
+                    try {
+                        const receivePO = httpsCallable(functions, 'receivePurchaseOrder');
+                        const result = await receivePO({ poId: elementId });
+                        alert(result.data.message);
+                        closePurchaseOrderModal();
+                    } catch (error) {
+                        alert("Error: " + error.message);
+                    } finally {
+                        loadingOverlay.classList.add('hidden');
+                    }
+                });
+                break;
+            case 'reject-purchase-order':
+                openConfirmModal('¿Seguro que quieres eliminar esta orden?', async () => {
+                    await deleteDoc(doc(db, "purchaseOrders", elementId));
+                    alert("La orden ha sido eliminada.");
+                    closePurchaseOrderModal();
+                });
+                break;
+        }
+    });
 
     // ==============================================================
     //      INICIO: LISTENERS PARA EL MODAL DE ORDEN DE COMPRA

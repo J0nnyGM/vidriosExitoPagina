@@ -11,45 +11,28 @@ const fcm = admin.messaging();
  * Esta función es "callable", lo que significa que la llamaremos directamente desde nuestro app.js.
  */
 exports.receivePurchaseOrder = functions.https.onCall(async (data, context) => {
-  // Verificación de autenticación
   if (!context.auth) {
-    throw new functions.https.HttpsError(
-      "unauthenticated",
-      "El usuario debe estar autenticado.",
-    );
+    throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado.");
   }
-
   const poId = data.poId;
   const uid = context.auth.uid;
-
   if (!poId) {
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "Se requiere el ID de la orden de compra.",
-    );
+    throw new functions.https.HttpsError("invalid-argument", "Se requiere el ID de la orden de compra.");
   }
-
   const poRef = db.collection("purchaseOrders").doc(poId);
-
   try {
     await db.runTransaction(async (transaction) => {
       const poDoc = await transaction.get(poRef);
-
       if (!poDoc.exists) {
         throw new Error("La orden de compra no existe.");
       }
       if (poDoc.data().status !== "pendiente") {
         throw new Error("Esta orden ya fue procesada.");
       }
-
       const poItems = poDoc.data().items;
-      let totalStockUpdate = 0;
-
-      // Por cada ítem en la orden de compra, creamos un nuevo lote de stock
       for (const item of poItems) {
         const materialRef = db.collection("materialCatalog").doc(item.materialId);
         const batchRef = materialRef.collection("stockBatches").doc();
-
         transaction.set(batchRef, {
           purchaseDate: poDoc.data().createdAt,
           quantityReceived: item.quantity,
@@ -57,28 +40,20 @@ exports.receivePurchaseOrder = functions.https.onCall(async (data, context) => {
           unitCost: item.unitCost,
           purchaseOrderId: poId,
         });
-
-        // Usamos FieldValue para sumar la nueva cantidad al stock total del material
         transaction.update(materialRef, {
-            quantityInStock: admin.firestore.FieldValue.increment(item.quantity)
+          quantityInStock: admin.firestore.FieldValue.increment(item.quantity),
         });
       }
-
-      // Finalmente, actualizamos el estado de la orden de compra
       transaction.update(poRef, {
         status: "recibida",
         receivedAt: new Date(),
         receivedBy: uid,
       });
     });
-
-    return {success: true, message: "Stock actualizado con éxito."};
+    return { success: true, message: "Stock actualizado con éxito." };
   } catch (error) {
     console.error("Error en la transacción de recepción:", error);
-    throw new functions.https.HttpsError(
-      "internal",
-      "No se pudo completar la recepción de la orden: " + error.message,
-    );
+    throw new functions.https.HttpsError("internal", "No se pudo completar la recepción: " + error.message);
   }
 });
 
@@ -91,110 +66,73 @@ exports.requestMaterialFIFO = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado.");
   }
 
-  const {projectId, materialId, quantity, subItemId} = data;
+  const { projectId, materials, subItemIds } = data; // Nuevos parámetros
   const uid = context.auth.uid;
 
-  if (!projectId || !materialId || !quantity || !subItemId) {
+  if (!projectId || !materials || !subItemIds || materials.length === 0 || subItemIds.length === 0) {
     throw new functions.https.HttpsError("invalid-argument", "Faltan datos para la solicitud.");
   }
-
-  const materialRef = db.collection("materialCatalog").doc(materialId);
+  
   const requestRef = db.collection("projects").doc(projectId).collection("materialRequests").doc();
 
   try {
     await db.runTransaction(async (transaction) => {
-      // 1. Leer el documento principal del material
-      const materialDoc = await transaction.get(materialRef);
-      if (!materialDoc.exists) {
-        throw new Error("El material solicitado no existe en el catálogo.");
-      }
-      
-      const materialData = materialDoc.data();
-      if (materialData.quantityInStock < quantity) {
-        throw new Error(`No hay suficiente stock. Solicitado: ${quantity}, Disponible: ${materialData.quantityInStock}.`);
-      }
+      let totalRequestCost = 0;
+      let allConsumedBatches = [];
+      let allMaterialNames = [];
 
-      // 2. Leer todos los lotes de stock, ordenados por fecha (FIFO)
-      const batchesQuery = materialRef.collection("stockBatches")
-        .where("quantityRemaining", ">", 0)
-        .orderBy("quantityRemaining")
-        .orderBy("purchaseDate");
-      
-      const batchesSnapshot = await transaction.get(batchesQuery);
+      // Procesamos cada material solicitado en la misma transacción
+      for (const material of materials) {
+        const materialRef = db.collection("materialCatalog").doc(material.materialId);
+        const materialDoc = await transaction.get(materialRef);
 
-      let remainingToFulfill = quantity;
-      let totalCost = 0;
-      const consumedBatches = []; // Para registrar de dónde salió el material
+        if (!materialDoc.exists) throw new Error(`El material ${material.materialId} no existe.`);
+        const materialData = materialDoc.data();
+        if (materialData.quantityInStock < material.quantity) {
+          throw new Error(`No hay stock de ${materialData.name}. Solicitado: ${material.quantity}, Disponible: ${materialData.quantityInStock}.`);
+        }
 
-      // 3. Recorrer los lotes y "consumirlos"
-      for (const batchDoc of batchesSnapshot.docs) {
-        if (remainingToFulfill <= 0) break;
-
-        const batchData = batchDoc.data();
-        const availableInBatch = batchData.quantityRemaining;
-        const consumeFromBatch = Math.min(availableInBatch, remainingToFulfill);
-
-        const newRemaining = availableInBatch - consumeFromBatch;
-        transaction.update(batchDoc.ref, { quantityRemaining: newRemaining });
-
-        totalCost += consumeFromBatch * batchData.unitCost;
-        remainingToFulfill -= consumeFromBatch;
+        const batchesQuery = materialRef.collection("stockBatches").where("quantityRemaining", ">", 0).orderBy("purchaseDate", "asc");
+        const batchesSnapshot = await transaction.get(batchesQuery);
         
-        consumedBatches.push({
-            batchId: batchDoc.id,
-            quantityConsumed: consumeFromBatch,
-            unitCost: batchData.unitCost
-        });
+        let remainingToFulfill = material.quantity;
+        let materialCost = 0;
+
+        for (const batchDoc of batchesSnapshot.docs) {
+          if (remainingToFulfill <= 0) break;
+          const batchData = batchDoc.data();
+          const consume = Math.min(batchData.quantityRemaining, remainingToFulfill);
+          transaction.update(batchDoc.ref, { quantityRemaining: admin.firestore.FieldValue.increment(-consume) });
+          materialCost += consume * batchData.unitCost;
+          remainingToFulfill -= consume;
+          allConsumedBatches.push({ materialId: material.materialId, batchId: batchDoc.id, quantityConsumed: consume });
+        }
+        
+        if (remainingToFulfill > 0) throw new Error(`Inconsistencia en el stock para ${materialData.name}.`);
+
+        transaction.update(materialRef, { quantityInStock: admin.firestore.FieldValue.increment(-material.quantity) });
+        totalRequestCost += materialCost;
+        allMaterialNames.push(`${material.quantity} x ${materialData.name}`);
       }
 
-      if (remainingToFulfill > 0) {
-        // Esto no debería ocurrir si la cantidad total en stock es correcta.
-        throw new Error("Inconsistencia en el stock. No se pudo cumplir la solicitud.");
-      }
-
-// 4. Actualizar la cantidad total en el documento principal del material
-      const newStock = materialData.quantityInStock - quantity;
-      transaction.update(materialRef, {
-        quantityInStock: newStock
-      });
-
-      // ======== INICIO: LÓGICA DE ALERTA DE STOCK MÍNIMO ========
-      const minStockThreshold = materialData.minStockThreshold || 0;
-      if (minStockThreshold > 0 && newStock <= minStockThreshold) {
-          // Si el nuevo stock está por debajo del umbral, creamos una notificación
-          const notificationRef = db.collection("notifications").doc();
-          transaction.set(notificationRef, {
-              // Dirigimos la notificación a un "canal" de administradores
-              channel: "admins_bodega", 
-              message: `Alerta de Stock Bajo: El material "${materialData.name}" ha alcanzado el umbral mínimo (${newStock} / ${minStockThreshold}).`,
-              read: false,
-              createdAt: new Date(),
-              link: "/catalog" // Para que al hacer clic, los lleve al catálogo
-          });
-      }
-      // ==========================================================
-
-      // 5. Crear el documento de la solicitud con el costo calculado
+      // Creamos la solicitud unificada
       transaction.set(requestRef, {
-        materialId: materialId,
-        materialName: materialData.name,
-        quantity: quantity,
-        subItemId: subItemId,
+        materials: materials, // Array de materiales
+        subItemIds: subItemIds, // Array de sub-ítems
+        materialName: allMaterialNames.join(', '), // Un resumen para la vista rápida
+        quantity: materials.reduce((sum, mat) => sum + mat.quantity, 0), // Cantidad total de items
         requesterId: uid,
         createdAt: new Date(),
         status: "solicitado",
-        totalCost: totalCost, // <-- ¡EL COSTO FIFO CALCULADO!
-        consumedBatches: consumedBatches // <-- Trazabilidad completa
+        totalCost: totalRequestCost,
+        consumedBatches: allConsumedBatches,
       });
     });
     
     return { success: true, message: "Solicitud creada con éxito." };
   } catch (error) {
     console.error("Error en la transacción FIFO:", error);
-    throw new functions.https.HttpsError(
-      "internal",
-      "No se pudo completar la solicitud: " + error.message,
-    );
+    throw new functions.https.HttpsError("internal", "No se pudo completar la solicitud: " + error.message);
   }
 });
 
@@ -208,8 +146,7 @@ exports.returnMaterial = functions.https.onCall(async (data, context) => {
   }
 
   const { projectId, requestId, quantityToReturn } = data;
-  const uid = context.auth.uid;
-
+  
   if (!projectId || !requestId || !quantityToReturn || quantityToReturn <= 0) {
     throw new functions.https.HttpsError("invalid-argument", "Faltan datos para la devolución.");
   }
@@ -227,42 +164,34 @@ exports.returnMaterial = functions.https.onCall(async (data, context) => {
       const materialId = requestData.materialId;
       const materialRef = db.collection("materialCatalog").doc(materialId);
 
-      // Verificamos que la cantidad a devolver no sea mayor a la solicitada
       const alreadyReturned = requestData.returnedQuantity || 0;
       if (quantityToReturn > (requestData.quantity - alreadyReturned)) {
-          throw new Error("No se puede devolver más material del que se solicitó.");
+        throw new Error("No se puede devolver más material del que se solicitó.");
       }
 
-      // Añadimos la cantidad de vuelta al stock total del material
       transaction.update(materialRef, {
         quantityInStock: admin.firestore.FieldValue.increment(quantityToReturn),
       });
 
-      // Creamos un nuevo lote de stock para el material devuelto
-      // Esto es más simple y seguro que intentar revertir lotes antiguos
       const batchRef = materialRef.collection("stockBatches").doc();
       transaction.set(batchRef, {
-        purchaseDate: new Date(), // Fecha de la devolución
+        purchaseDate: new Date(),
         quantityReceived: quantityToReturn,
         quantityRemaining: quantityToReturn,
-        unitCost: 0, // El material devuelto no tiene costo de compra
+        unitCost: 0,
         notes: `Devolución de solicitud ${requestId}`,
       });
       
-      // Actualizamos la solicitud original para reflejar la devolución
       transaction.update(requestRef, {
-          returnedQuantity: admin.firestore.FieldValue.increment(quantityToReturn),
-          status: 'Devolución Parcial'
+        returnedQuantity: admin.firestore.FieldValue.increment(quantityToReturn),
+        status: 'Devolución Parcial',
       });
     });
 
     return { success: true, message: "Devolución registrada con éxito." };
   } catch (error) {
     console.error("Error en la transacción de devolución:", error);
-    throw new functions.https.HttpsError(
-      "internal",
-      "No se pudo completar la devolución: " + error.message
-    );
+    throw new functions.https.HttpsError("internal", "No se pudo completar la devolución: " + error.message);
   }
 });
 

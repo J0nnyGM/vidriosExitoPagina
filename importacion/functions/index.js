@@ -679,11 +679,10 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
         const remisionId = context.params.remisionId;
         const log = (message) => functions.logger.log(`[Actualización ${remisionId}] ${message}`);
 
-        // --- INICIO DE LA CORRECCIÓN CLAVE ---
-        // La función de notificación ahora genera su propio enlace temporal
+        // Función interna para enviar notificaciones de forma segura
         const sendNotifications = async (motivo) => {
             try {
-                // Generamos un enlace temporal para el PDF actualizado
+                // Genera un enlace temporal para el PDF actualizado
                 const bucket = admin.storage().bucket();
                 const file = bucket.file(afterData.pdfPath); // Usa la ruta del archivo ya guardada
                 const [whatsappUrl] = await file.getSignedUrl({
@@ -696,7 +695,6 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                     const clienteData = clienteDoc.data();
                     const telefonos = [clienteData.telefono1, clienteData.telefono2].filter(Boolean);
                     for (const telefono of telefonos) {
-                        // Pasamos el enlace temporal a la función de envío
                         await sendWhatsAppRemision(telefono, afterData.clienteNombre, afterData.numeroRemision.toString(), afterData.estado, whatsappUrl);
                     }
                 }
@@ -704,7 +702,6 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 log(`Error crítico al enviar notificaciones (${motivo}):`, error);
             }
         };
-        // --- FIN DE LA CORRECCIÓN CLAVE ---
 
         const estadoCambio = beforeData.estado !== afterData.estado;
         const pagoFinalizado = false; // Asume tu lógica de pagos aquí si es necesario
@@ -713,7 +710,7 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
         if (beforeData.estado !== "Anulada" && afterData.estado === "Anulada") {
             log("Detectada anulación. Regenerando PDFs, restaurando stock y notificando...");
             try {
-                // Restaurar inventario
+                // 1. Restaurar inventario
                 const batch = admin.firestore().batch();
                 (afterData.items || []).forEach(item => {
                     if (item.itemId && item.cantidad > 0) {
@@ -724,7 +721,7 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 await batch.commit();
                 log("Inventario restaurado.");
 
-                // Regenerar y guardar PDFs
+                // 2. Regenerar y guardar PDFs
                 const pdfBufferCliente = await generarPDFCliente(afterData);
                 const pdfBufferAdmin = await generarPDF(afterData, false);
                 const pdfBufferPlanta = await generarPDF(afterData, true);
@@ -732,20 +729,23 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 const bucket = admin.storage().bucket();
                 const filePathAdmin = `remisiones/${afterData.numeroRemision}.pdf`;
                 await bucket.file(filePathAdmin).save(pdfBufferAdmin);
-
                 const filePathPlanta = `remisiones/planta-${afterData.numeroRemision}.pdf`;
                 await bucket.file(filePathPlanta).save(pdfBufferPlanta);
 
-                // Actualizar Firestore solo con las rutas
+                // 3. Actualizar Firestore solo con las rutas
                 await change.after.ref.update({
                     pdfPath: filePathAdmin,
                     pdfPlantaPath: filePathPlanta
                 });
                 log("Rutas de PDFs actualizadas para anulación.");
 
-                // Enviar notificaciones
+                // 4. Enviar notificaciones (correo y WhatsApp)
                 try {
-                    const msg = { /* ... configuración del correo de anulación ... */ };
+                    const msg = {
+                         to: afterData.clienteEmail, from: FROM_EMAIL, subject: `Anulación de Remisión N° ${afterData.numeroRemision}`,
+                         html: `<p>Hola ${afterData.clienteNombre},</p><p>Te informamos que la remisión N° <strong>${afterData.numeroRemision}</strong> ha sido <strong>ANULADA</strong>.</p>`,
+                         attachments: [{ content: pdfBufferCliente.toString("base64"), filename: `Remision-ANULADA-${afterData.numeroRemision}.pdf` }],
+                    };
                     await sgMail.send(msg);
                 } catch (e) { log("Error de SendGrid:", e.message); }
                 
@@ -755,10 +755,11 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 log("Error al procesar anulación:", error);
             }
         }
-        // --- Caso 2: Otro cambio de estado ---
-        else if (estadoCambio && afterData.estado !== "Anulada") {
-            log("Detectado cambio de estado. Regenerando PDFs y notificando.");
+        // --- Caso 2: La remisión es ENTREGADA (ignorando otros estados) ---
+        else if (beforeData.estado !== "Entregado" && afterData.estado === "Entregado") {
+            log("Detectada entrega. Regenerando PDFs y notificando.");
             try {
+                // 1. Regenerar PDFs (la lógica es similar a la anulación)
                 const pdfBufferCliente = await generarPDFCliente(afterData);
                 const pdfBufferAdmin = await generarPDF(afterData, false);
                 const pdfBufferPlanta = await generarPDF(afterData, true);
@@ -766,7 +767,6 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 const bucket = admin.storage().bucket();
                 const filePathAdmin = `remisiones/${afterData.numeroRemision}.pdf`;
                 await bucket.file(filePathAdmin).save(pdfBufferAdmin);
-
                 const filePathPlanta = `remisiones/planta-${afterData.numeroRemision}.pdf`;
                 await bucket.file(filePathPlanta).save(pdfBufferPlanta);
 
@@ -774,19 +774,22 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                     pdfPath: filePathAdmin,
                     pdfPlantaPath: filePathPlanta
                 });
-                log("Rutas de PDFs actualizadas por cambio de estado.");
+                log("Rutas de PDFs actualizadas por entrega.");
 
-                // Enviar notificaciones
-                if (afterData.estado === "Entregado") {
-                    try {
-                        const msg = { /* ... configuración del correo de entrega ... */ };
-                        await sgMail.send(msg);
-                    } catch (e) { log("Error de SendGrid:", e.message); }
-                }
-                await sendNotifications("Actualización de Estado");
+                // 2. Enviar notificaciones
+                try {
+                    const msg = {
+                         to: afterData.clienteEmail, from: FROM_EMAIL, subject: `Tu orden N° ${afterData.numeroRemision} ha sido entregada`,
+                         html: `<p>Hola ${afterData.clienteNombre},</p><p>Te informamos que tu orden N° <strong>${afterData.numeroRemision}</strong> ha sido completada y marcada como <strong>ENTREGADA</strong>.</p>`,
+                         attachments: [{ content: pdfBufferCliente.toString("base64"), filename: `Remision-ENTREGADA-${afterData.numeroRemision}.pdf` }],
+                    };
+                    await sgMail.send(msg);
+                } catch (e) { log("Error de SendGrid:", e.message); }
+                
+                await sendNotifications("Entrega");
 
             } catch (error) {
-                log("Error al procesar actualización:", error);
+                log("Error al procesar entrega:", error);
             }
         }
 
@@ -808,32 +811,35 @@ exports.getFirebaseConfig = functions.https.onCall((data, context) => {
 });
 
 exports.applyDiscount = functions.https.onCall(async (data, context) => {
-    if (!context.auth) {
-        throw new functions.https.HttpsError("unauthenticated", "El usuario no está autenticado.");
+    // 1. Verificación de permisos de administrador
+    if (!context.auth || context.auth.token.role !== 'admin') {
+        throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden aplicar descuentos.");
     }
 
     const { remisionId, discountPercentage } = data;
     if (!remisionId || discountPercentage === undefined) {
-        throw new functions.https.HttpsError("invalid-argument", "Faltan datos (remisionId, discountPercentage).");
+        throw new functions.https.HttpsError("invalid-argument", "Faltan datos para aplicar el descuento.");
     }
 
     const remisionRef = admin.firestore().collection("remisiones").doc(remisionId);
+    const log = functions.logger;
 
     try {
         const remisionDoc = await remisionRef.get();
-        const docExists = remisionDoc && (typeof remisionDoc.exists === "function" ? remisionDoc.exists() : remisionDoc.exists);
-        if (!docExists) {
+        if (!remisionDoc.exists) {
             throw new functions.https.HttpsError("not-found", "La remisión no existe.");
         }
 
         const remisionData = remisionDoc.data();
+        
+        // 2. Calcular el nuevo total con el descuento
         const subtotal = remisionData.subtotal;
         const discountAmount = subtotal * (discountPercentage / 100);
         const subtotalWithDiscount = subtotal - discountAmount;
         const newIva = remisionData.incluyeIVA ? subtotalWithDiscount * 0.19 : 0;
         const newTotal = subtotalWithDiscount + newIva;
 
-        const updatedData = {
+        const updatedDataForFirestore = {
             valorTotal: newTotal,
             valorIVA: newIva,
             discount: {
@@ -844,50 +850,72 @@ exports.applyDiscount = functions.https.onCall(async (data, context) => {
             },
         };
 
-        await remisionRef.update(updatedData);
-
-        const finalRemisionData = { ...remisionData, ...updatedData };
-        const pdfBuffer = generarPDF(finalRemisionData, false);
-        const pdfPlantaBuffer = generarPDF(finalRemisionData, true);
+        // 3. Regenerar y guardar los PDFs actualizados
+        const finalRemisionData = { ...remisionData, ...updatedDataForFirestore };
+        const pdfBufferCliente = await generarPDFCliente(finalRemisionData);
+        const pdfBufferAdmin = await generarPDF(finalRemisionData, false);
+        const pdfBufferPlanta = await generarPDF(finalRemisionData, true);
 
         const bucket = admin.storage().bucket();
-
-        const filePath = `remisiones/${finalRemisionData.numeroRemision}.pdf`;
-        const file = bucket.file(filePath);
-        await file.save(pdfBuffer, { metadata: { contentType: "application/pdf" } });
+        const filePathAdmin = `remisiones/${finalRemisionData.numeroRemision}.pdf`;
+        const fileAdmin = bucket.file(filePathAdmin);
+        await fileAdmin.save(pdfBufferAdmin);
 
         const filePathPlanta = `remisiones/planta-${finalRemisionData.numeroRemision}.pdf`;
-        const filePlanta = bucket.file(filePathPlanta);
-        await filePlanta.save(pdfPlantaBuffer, { metadata: { contentType: "application/pdf" } });
+        await bucket.file(filePathPlanta).save(pdfBufferPlanta);
 
-        const [url] = await file.getSignedUrl({ action: "read", expires: "03-09-2491" });
-        const [urlPlanta] = await filePlanta.getSignedUrl({ action: "read", expires: "03-09-2491" });
+        // 4. Actualizar el documento en Firestore con las rutas y borrando las URLs antiguas
+        await remisionRef.update({
+            ...updatedDataForFirestore,
+            pdfPath: filePathAdmin,
+            pdfPlantaPath: filePathPlanta,
+            pdfUrl: admin.firestore.FieldValue.delete(),
+            pdfPlantaUrl: admin.firestore.FieldValue.delete()
+        });
+        log(`Descuento aplicado y PDFs regenerados para la remisión ${remisionId}.`);
+        
+        // 5. Enviar notificaciones (Correo y WhatsApp)
+        try {
+            const msg = {
+                to: finalRemisionData.clienteEmail,
+                from: FROM_EMAIL,
+                subject: `Descuento aplicado a tu Remisión N° ${finalRemisionData.numeroRemision}`,
+                html: `<p>Hola ${finalRemisionData.clienteNombre}, se ha aplicado un descuento. El nuevo total es: <strong>${formatCurrency(newTotal)}</strong>.</p>`,
+                attachments: [{
+                    content: pdfBufferCliente.toString("base64"),
+                    filename: `Remision-Actualizada-${finalRemisionData.numeroRemision}.pdf`,
+                    type: "application/pdf",
+                    disposition: "attachment",
+                }],
+            };
+            await sgMail.send(msg);
+        } catch (e) {
+            log("Error de SendGrid al notificar descuento:", e.message);
+        }
 
-        await remisionRef.update({ pdfUrl: url, pdfPlantaUrl: urlPlanta });
+        try {
+            // Generar enlace temporal para WhatsApp
+            const [whatsappUrl] = await fileAdmin.getSignedUrl({
+                action: 'read',
+                expires: Date.now() + 15 * 60 * 1000, // Válido por 15 minutos
+            });
 
-        const msg = {
-            to: finalRemisionData.clienteEmail,
-            from: FROM_EMAIL,
-            subject: `Descuento aplicado a tu Remisión N° ${finalRemisionData.numeroRemision}`,
-            html: `<p>Hola ${finalRemisionData.clienteNombre},</p>
-                   <p>Se ha aplicado un descuento del <strong>${discountPercentage.toFixed(2)}%</strong> a tu remisión N° ${finalRemisionData.numeroRemision}.</p>
-                   <p>El nuevo total es: <strong>${formatCurrency(newTotal)}</strong>.</p>
-                   <p>Adjuntamos la remisión actualizada.</p>
-                   <p><strong>Importadora Vidrio Express</strong></p>`,
-            attachments: [{
-                content: pdfBuffer.toString("base64"),
-                filename: `Remision-Actualizada-${finalRemisionData.numeroRemision}.pdf`,
-                type: "application/pdf",
-                disposition: "attachment",
-            }],
-        };
+            const clienteDoc = await admin.firestore().collection("clientes").doc(remisionData.idCliente).get();
+            if (clienteDoc.exists) {
+                const clienteData = clienteDoc.data();
+                const telefonos = [clienteData.telefono1, clienteData.telefono2].filter(Boolean);
+                for (const telefono of telefonos) {
+                    await sendWhatsAppRemision(telefono, remisionData.clienteNombre, remisionData.numeroRemision.toString(), "Descuento Aplicado", whatsappUrl);
+                }
+            }
+        } catch (e) {
+            log("Error al enviar notificación de descuento por WhatsApp:", e);
+        }
 
-        await sgMail.send(msg);
-
-        return { success: true, message: "Descuento aplicado y correo enviado." };
+        return { success: true, message: "Descuento aplicado y notificaciones enviadas." };
 
     } catch (error) {
-        functions.logger.error(`Error al aplicar descuento para ${remisionId}:`, error);
+        log(`Error al aplicar descuento para ${remisionId}:`, error);
         throw new functions.https.HttpsError("internal", "No se pudo aplicar el descuento.");
     }
 });
