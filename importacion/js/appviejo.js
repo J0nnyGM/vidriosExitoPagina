@@ -1496,7 +1496,6 @@ function renderFacturacion() {
     const pendientes = remisionesParaFacturar.filter(r => !r.facturado);
     const realizadas = remisionesParaFacturar.filter(r => r.facturado === true);
 
-    // Renderizar lista de PENDIENTES
     pendientesListEl.innerHTML = '';
     if (pendientes.length === 0) {
         pendientesListEl.innerHTML = '<p class="text-center text-gray-500 py-8">No hay remisiones pendientes de facturar.</p>';
@@ -1504,48 +1503,32 @@ function renderFacturacion() {
         pendientes.forEach(remision => {
             const el = document.createElement('div');
             el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4';
-            
-            // Buscamos el cliente para obtener sus datos adicionales
             const clienteDeRemision = allClientes.find(c => c.id === remision.idCliente);
-            
             let botonRUT = '';
             let infoClienteExtra = '';
-
             if (clienteDeRemision) {
                 if (clienteDeRemision.rutUrl) {
-                    botonRUT = `<button data-file-url="${clienteDeRemision.rutUrl}" data-file-title="RUT de ${clienteDeRemision.nombre}" class="view-file-btn bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-600">RUT</button>`;
+                    let rutPath = '';
+                    try {
+                        const urlString = clienteDeRemision.rutUrl;
+                        const pathStartIndex = urlString.indexOf('/o/');
+                        if (pathStartIndex !== -1) {
+                            const encodedPath = urlString.substring(pathStartIndex + 3);
+                            rutPath = decodeURIComponent(encodedPath.split('?')[0]);
+                        }
+                    } catch (e) { console.error("Error procesando URL de RUT:", e); }
+                    if (rutPath) {
+                        botonRUT = `<button data-file-path="${rutPath}" data-file-title="RUT de ${clienteDeRemision.nombre}" class="bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-600">RUT</button>`;
+                    }
                 }
-                // --- INICIO DEL CAMBIO ---
-                infoClienteExtra = `
-                    <p class="text-sm text-gray-500 mt-1">
-                        ${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}
-                        ${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}
-                        ${clienteDeRemision.email || ''}
-                    </p>
-                `;
-                // --- FIN DEL CAMBIO ---
+                infoClienteExtra = `<p class="text-sm text-gray-500 mt-1">${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}${clienteDeRemision.email || ''}</p>`;
             }
-
-            el.innerHTML = `
-                <div class="flex-grow">
-                    <div class="flex items-center gap-3 flex-wrap">
-                        <span class="remision-id">N° ${remision.numeroRemision}</span>
-                        <p class="font-semibold text-lg">${remision.clienteNombre}</p>
-                    </div>
-                    ${infoClienteExtra} 
-                    <p class="text-sm text-gray-600 mt-1">Fecha: ${remision.fechaRecibido} &bull; Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>
-                </div>
-                <div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end">
-                    ${botonRUT}
-                    <button data-pdf-url="${remision.pdfUrl}" data-remision-num="${remision.numeroRemision}" class="view-pdf-btn bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-600">Ver Remisión</button>
-                    <button data-remision-id="${remision.id}" class="facturar-btn bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Facturar</button>
-                </div>
-            `;
+            const remisionPdfButton = remision.pdfPath ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-600">Ver Remisión</button>` : `<button class="bg-gray-400 text-white px-4 py-2 rounded-lg text-sm font-semibold cursor-not-allowed">Generando...</button>`;
+            el.innerHTML = `<div class="flex-grow"><div class="flex items-center gap-3 flex-wrap"><span class="remision-id">N° ${remision.numeroRemision}</span><p class="font-semibold text-lg">${remision.clienteNombre}</p></div>${infoClienteExtra}<p class="text-sm text-gray-600 mt-1">Fecha: ${remision.fechaRecibido} &bull; Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p></div><div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end">${botonRUT}${remisionPdfButton}<button data-remision-id="${remision.id}" class="facturar-btn bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Facturar</button></div>`;
             pendientesListEl.appendChild(el);
         });
     }
 
-    // Renderizar lista de REALIZADAS
     realizadasListEl.innerHTML = '';
     if (realizadas.length === 0) {
         realizadasListEl.innerHTML = '<p class="text-center text-gray-500 py-8">No hay remisiones facturadas.</p>';
@@ -1553,55 +1536,29 @@ function renderFacturacion() {
         realizadas.forEach(remision => {
             const el = document.createElement('div');
             el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4';
-            
-            // Buscamos al cliente también para las realizadas
             const clienteDeRemision = allClientes.find(c => c.id === remision.idCliente);
             let infoClienteExtra = '';
-
             if (clienteDeRemision) {
-                // --- INICIO DEL CAMBIO ---
-                infoClienteExtra = `
-                    <p class="text-sm text-gray-500 mt-1">
-                        ${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}
-                        ${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}
-                        ${clienteDeRemision.email || ''}
-                    </p>
-                `;
-                 // --- FIN DEL CAMBIO ---
+                infoClienteExtra = `<p class="text-sm text-gray-500 mt-1">${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}${clienteDeRemision.email || ''}</p>`;
             }
-
-            let facturaButtons = remision.facturaPdfUrl
-                ? `<button data-pdf-url="${remision.facturaPdfUrl}" data-remision-num="${remision.numeroFactura || remision.numeroRemision}" class="view-factura-pdf-btn bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700">Ver Factura</button>`
+            
+            // --- INICIO DE LA CORRECCIÓN CLAVE ---
+            // 1. Botón de Ver Remisión usa la ruta
+            const remisionPdfButton = remision.pdfPath ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-600">Ver Remisión</button>` : '';
+            
+            // 2. Lógica de Factura ahora busca 'facturaPdfPath'
+            let facturaButtons = remision.facturaPdfPath
+                ? `<button data-file-path="${remision.facturaPdfPath}" data-file-title="Factura N° ${remision.numeroFactura || remision.numeroRemision}" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700">Ver Factura</button>`
                 : `<button data-remision-id="${remision.id}" class="facturar-btn bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-orange-600">Adjuntar Factura</button>`;
+            // --- FIN DE LA CORRECCIÓN CLAVE ---
 
-            el.innerHTML = `
-                <div class="flex-grow">
-                    <div class="flex items-center gap-3 flex-wrap">
-                        <span class="remision-id">N° ${remision.numeroRemision}</span>
-                        <p class="font-semibold text-lg">${remision.clienteNombre}</p>
-                    </div>
-                    ${infoClienteExtra}
-                    <p class="text-sm text-gray-600 mt-1">Fecha: ${remision.fechaRecibido} &bull; Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>
-                </div>
-                <div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end">
-                    <div class="text-right">
-                        <span class="status-badge status-entregado">Facturado</span>
-                        ${remision.numeroFactura ? `<p class="text-sm text-gray-600 mt-1">Factura N°: <span class="font-semibold">${remision.numeroFactura}</span></p>` : ''}
-                    </div>
-                    ${facturaButtons}
-                    <button data-pdf-url="${remision.pdfUrl}" data-remision-num="${remision.numeroRemision}" class="view-pdf-btn bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-600">Ver Remisión</button>
-                </div>
-            `;
+            el.innerHTML = `<div class="flex-grow"><div class="flex items-center gap-3 flex-wrap"><span class="remision-id">N° ${remision.numeroRemision}</span><p class="font-semibold text-lg">${remision.clienteNombre}</p></div>${infoClienteExtra}<p class="text-sm text-gray-600 mt-1">Fecha: ${remision.fechaRecibido} &bull; Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p></div><div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end"><div class="text-right"><span class="status-badge status-entregado">Facturado</span>${remision.numeroFactura ? `<p class="text-sm text-gray-600 mt-1">Factura N°: <span class="font-semibold">${remision.numeroFactura}</span></p>` : ''}</div>${facturaButtons}${remisionPdfButton}</div>`;
             realizadasListEl.appendChild(el);
         });
     }
-
-    // Volver a asignar los event listeners
+    
     document.querySelectorAll('.facturar-btn').forEach(btn => btn.addEventListener('click', (e) => showFacturaModal(e.currentTarget.dataset.remisionId)));
-    document.querySelectorAll('.view-pdf-btn').forEach(btn => btn.addEventListener('click', (e) => showPdfModal(e.currentTarget.dataset.pdfUrl, `Remisión N° ${e.currentTarget.dataset.remisionNum}`)));
-    document.querySelectorAll('.view-factura-pdf-btn').forEach(btn => btn.addEventListener('click', (e) => showPdfModal(e.currentTarget.dataset.pdfUrl, `Factura N° ${e.currentTarget.dataset.remisionNum}`)));
 }
-
 // --- FUNCIONES DEL MÓDULO DE INVENTARIO ---
 function loadImportaciones() {
     const q = query(collection(db, "importaciones"), orderBy("numeroImportacion", "desc"));
@@ -6149,16 +6106,20 @@ function showFacturaModal(remisionId) {
 
         showModalMessage("Subiendo factura y actualizando...", true);
         try {
-            const storageRef = ref(storage, `facturas/${remisionId}-${file.name}`);
-            const snapshot = await uploadBytes(storageRef, file);
-            const downloadURL = await getDownloadURL(snapshot.ref);
+            // --- INICIO DE LA CORRECCIÓN ---
+            // 1. Se define la ruta del archivo en lugar de la URL
+            const storagePath = `facturas/${remisionId}-${file.name}`;
+            const storageRef = ref(storage, storagePath);
+            await uploadBytes(storageRef, file);
 
+            // 2. Se guarda la ruta (facturaPdfPath) en la base de datos
             await updateDoc(doc(db, "remisiones", remisionId), {
                 facturado: true,
                 numeroFactura: numeroFactura,
-                facturaPdfUrl: downloadURL,
+                facturaPdfPath: storagePath, // <-- CAMBIO CLAVE
                 fechaFacturado: new Date()
             });
+            // --- FIN DE LA CORRECCIÓN ---
 
             hideModal();
             showTemporaryMessage("¡Remisión facturada con éxito!", "success");
