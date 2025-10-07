@@ -1,78 +1,92 @@
 const functions = require("firebase-functions");
-const admin = require("firebase-admin");
+// Sintaxis moderna para importar los servicios de Firebase Admin
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { initializeApp, getApps } = require("firebase-admin/app");
+const { getAuth } = require("firebase-admin/auth");
 
-admin.initializeApp();
+// Inicialización segura para evitar que la app se inicie varias veces
+if (getApps().length === 0) {
+  initializeApp();
+}
 
-const db = admin.firestore();
-const fcm = admin.messaging();
+const db = getFirestore();
+const auth = getAuth();
 
-  /**
- * Cloud Function para recibir una orden de compra y actualizar el inventario por lotes (FIFO).
- * Esta función es "callable", lo que significa que la llamaremos directamente desde nuestro app.js.
+/**
+ * Cloud Function para recibir una orden de compra, crear lotes de stock y actualizar el inventario.
  */
 exports.receivePurchaseOrder = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
-    throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado.");
+    throw new functions.https.HttpsError("unauthenticated", "La función debe ser llamada por un usuario autenticado.");
   }
-  const poId = data.poId;
   const uid = context.auth.uid;
-  if (!poId) {
-    throw new functions.https.HttpsError("invalid-argument", "Se requiere el ID de la orden de compra.");
+
+  const userDoc = await db.collection("users").doc(uid).get();
+  if (!userDoc.exists) {
+    throw new functions.https.HttpsError("not-found", "El usuario que realiza la llamada no existe.");
   }
+  const userRole = userDoc.data().role;
+  if (userRole !== 'admin' && userRole !== 'bodega') {
+    throw new functions.https.HttpsError("permission-denied", "No tienes permisos (admin/bodega) para esta acción.");
+  }
+
+  const poId = data.poId;
+  if (!poId) {
+    throw new functions.https.HttpsError("invalid-argument", "Se requiere un ID de orden de compra (poId).");
+  }
+
   const poRef = db.collection("purchaseOrders").doc(poId);
+
   try {
     await db.runTransaction(async (transaction) => {
       const poDoc = await transaction.get(poRef);
-      if (!poDoc.exists) {
-        throw new Error("La orden de compra no existe.");
-      }
-      if (poDoc.data().status !== "pendiente") {
-        throw new Error("Esta orden ya fue procesada.");
-      }
-      const poItems = poDoc.data().items;
-      for (const item of poItems) {
+      if (!poDoc.exists) throw new functions.https.HttpsError("not-found", "La orden de compra no existe.");
+      
+      const poData = poDoc.data();
+      if (poData.status !== "pendiente") throw new functions.https.HttpsError("failed-precondition", "Esta orden ya fue procesada.");
+      if (!Array.isArray(poData.items) || poData.items.length === 0) throw new Error("La orden de compra no contiene materiales.");
+
+      for (const item of poData.items) {
+        if (!item.materialId || typeof item.quantity !== 'number' || item.quantity <= 0) {
+          throw new Error(`El item en la orden tiene un formato o cantidad incorrecta.`);
+        }
+        
         const materialRef = db.collection("materialCatalog").doc(item.materialId);
         const batchRef = materialRef.collection("stockBatches").doc();
+
         transaction.set(batchRef, {
-          purchaseDate: poDoc.data().createdAt,
-          quantityReceived: item.quantity,
-          quantityRemaining: item.quantity,
-          unitCost: item.unitCost,
-          purchaseOrderId: poId,
+            purchaseDate: new Date(),
+            quantityInitial: item.quantity,
+            quantityRemaining: item.quantity,
+            unitCost: item.unitCost || 0,
+            purchaseOrderId: poId,
         });
-        transaction.update(materialRef, {
-          quantityInStock: admin.firestore.FieldValue.increment(item.quantity),
-        });
+        transaction.update(materialRef, { quantityInStock: FieldValue.increment(item.quantity) });
       }
-      transaction.update(poRef, {
-        status: "recibida",
-        receivedAt: new Date(),
-        receivedBy: uid,
-      });
+      transaction.update(poRef, { status: "recibida", receivedAt: new Date(), receivedBy: uid });
     });
-    return { success: true, message: "Stock actualizado con éxito." };
+    return { message: "¡Mercancía recibida y stock actualizado correctamente!" };
   } catch (error) {
-    console.error("Error en la transacción de recepción:", error);
-    throw new functions.https.HttpsError("internal", "No se pudo completar la recepción: " + error.message);
+    console.error(`CRASH en la transacción para PO ${poId}:`, error.message);
+    throw new functions.https.HttpsError("internal", error.message || "Ocurrió un error interno en la transacción.");
   }
 });
 
 /**
- * Cloud Function para procesar una solicitud de material usando el método FIFO.
- * Descuenta el stock de los lotes más antiguos y calcula el costo real.
+ * Cloud Function para procesar una solicitud de material usando FIFO.
  */
 exports.requestMaterialFIFO = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado.");
   }
 
-  const { projectId, materials, subItemIds } = data; // Nuevos parámetros
+  const { projectId, materials, subItemIds } = data;
   const uid = context.auth.uid;
 
   if (!projectId || !materials || !subItemIds || materials.length === 0 || subItemIds.length === 0) {
     throw new functions.https.HttpsError("invalid-argument", "Faltan datos para la solicitud.");
   }
-  
+
   const requestRef = db.collection("projects").doc(projectId).collection("materialRequests").doc();
 
   try {
@@ -81,20 +95,21 @@ exports.requestMaterialFIFO = functions.https.onCall(async (data, context) => {
       let allConsumedBatches = [];
       let allMaterialNames = [];
 
-      // Procesamos cada material solicitado en la misma transacción
       for (const material of materials) {
         const materialRef = db.collection("materialCatalog").doc(material.materialId);
-        const materialDoc = await transaction.get(materialRef);
-
-        if (!materialDoc.exists) throw new Error(`El material ${material.materialId} no existe.`);
-        const materialData = materialDoc.data();
-        if (materialData.quantityInStock < material.quantity) {
-          throw new Error(`No hay stock de ${materialData.name}. Solicitado: ${material.quantity}, Disponible: ${materialData.quantityInStock}.`);
-        }
-
         const batchesQuery = materialRef.collection("stockBatches").where("quantityRemaining", ">", 0).orderBy("purchaseDate", "asc");
+        
+        // En el SDK de Admin, las consultas SÍ se pueden hacer dentro de la transacción
         const batchesSnapshot = await transaction.get(batchesQuery);
         
+        // Hacemos una validación de stock real antes de continuar
+        const realStock = batchesSnapshot.docs.reduce((sum, doc) => sum + doc.data().quantityRemaining, 0);
+        if (realStock < material.quantity) {
+            const materialDoc = await transaction.get(materialRef);
+            const materialName = materialDoc.exists() ? materialDoc.data().name : material.materialId;
+            throw new Error(`No hay stock real de ${materialName}. Solicitado: ${material.quantity}, Disponible: ${realStock}.`);
+        }
+
         let remainingToFulfill = material.quantity;
         let materialCost = 0;
 
@@ -102,25 +117,29 @@ exports.requestMaterialFIFO = functions.https.onCall(async (data, context) => {
           if (remainingToFulfill <= 0) break;
           const batchData = batchDoc.data();
           const consume = Math.min(batchData.quantityRemaining, remainingToFulfill);
-          transaction.update(batchDoc.ref, { quantityRemaining: admin.firestore.FieldValue.increment(-consume) });
+
+          // SINTAXIS CORREGIDA: Usamos FieldValue directamente
+          transaction.update(batchDoc.ref, { quantityRemaining: FieldValue.increment(-consume) });
           materialCost += consume * batchData.unitCost;
           remainingToFulfill -= consume;
           allConsumedBatches.push({ materialId: material.materialId, batchId: batchDoc.id, quantityConsumed: consume });
         }
-        
-        if (remainingToFulfill > 0) throw new Error(`Inconsistencia en el stock para ${materialData.name}.`);
 
-        transaction.update(materialRef, { quantityInStock: admin.firestore.FieldValue.increment(-material.quantity) });
+        // SINTAXIS CORREGIDA: Usamos FieldValue directamente
+        transaction.update(materialRef, { quantityInStock: FieldValue.increment(-material.quantity) });
+        
+        const materialDoc = await transaction.get(materialRef);
+        const materialName = materialDoc.exists() ? materialDoc.data().name : material.materialId;
+
         totalRequestCost += materialCost;
-        allMaterialNames.push(`${material.quantity} x ${materialData.name}`);
+        allMaterialNames.push(`${material.quantity} x ${materialName}`);
       }
 
-      // Creamos la solicitud unificada
       transaction.set(requestRef, {
-        materials: materials, // Array de materiales
-        subItemIds: subItemIds, // Array de sub-ítems
-        materialName: allMaterialNames.join(', '), // Un resumen para la vista rápida
-        quantity: materials.reduce((sum, mat) => sum + mat.quantity, 0), // Cantidad total de items
+        materials,
+        subItemIds,
+        materialName: allMaterialNames.join(', '),
+        quantity: materials.reduce((sum, mat) => sum + mat.quantity, 0),
         requesterId: uid,
         createdAt: new Date(),
         status: "solicitado",
@@ -137,8 +156,7 @@ exports.requestMaterialFIFO = functions.https.onCall(async (data, context) => {
 });
 
 /**
- * Cloud Function para procesar la devolución de material al inventario.
- * Revierte la salida de material, añadiéndolo de vuelta al lote más reciente.
+ * Cloud Function para procesar la devolución de material.
  */
 exports.returnMaterial = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
@@ -156,35 +174,40 @@ exports.returnMaterial = functions.https.onCall(async (data, context) => {
   try {
     await db.runTransaction(async (transaction) => {
       const requestDoc = await transaction.get(requestRef);
-      if (!requestDoc.exists) {
-        throw new Error("La solicitud original no existe.");
-      }
+      if (!requestDoc.exists) throw new Error("La solicitud original no existe.");
 
       const requestData = requestDoc.data();
-      const materialId = requestData.materialId;
+      // Asumiendo que las solicitudes ahora pueden tener MÚLTIPLES materiales, esta lógica necesita un ajuste.
+      // Por ahora, la mantenemos simple asumiendo que solo se devuelve el PRIMER material de la solicitud.
+      const materialId = requestData.materials[0].materialId;
+      if (!materialId) throw new Error("La solicitud no tiene un ID de material válido.");
+
       const materialRef = db.collection("materialCatalog").doc(materialId);
 
       const alreadyReturned = requestData.returnedQuantity || 0;
-      if (quantityToReturn > (requestData.quantity - alreadyReturned)) {
-        throw new Error("No se puede devolver más material del que se solicitó.");
+      const totalRequested = requestData.materials[0].quantity;
+      if (quantityToReturn > (totalRequested - alreadyReturned)) {
+        throw new Error("No se puede devolver más material del que se solicitó originalmente.");
       }
 
+      // SINTAXIS CORREGIDA: Usamos FieldValue directamente
       transaction.update(materialRef, {
-        quantityInStock: admin.firestore.FieldValue.increment(quantityToReturn),
+        quantityInStock: FieldValue.increment(quantityToReturn),
       });
 
+      // Creamos un nuevo lote para el material devuelto
       const batchRef = materialRef.collection("stockBatches").doc();
       transaction.set(batchRef, {
         purchaseDate: new Date(),
-        quantityReceived: quantityToReturn,
+        quantityInitial: quantityToReturn,
         quantityRemaining: quantityToReturn,
-        unitCost: 0,
+        unitCost: 0, // El material devuelto no tiene costo de compra
         notes: `Devolución de solicitud ${requestId}`,
       });
       
+      // SINTAXIS CORREGIDA: Usamos FieldValue directamente
       transaction.update(requestRef, {
-        returnedQuantity: admin.firestore.FieldValue.increment(quantityToReturn),
-        status: 'Devolución Parcial',
+        returnedQuantity: FieldValue.increment(quantityToReturn),
       });
     });
 
@@ -194,4 +217,3 @@ exports.returnMaterial = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError("internal", "No se pudo completar la devolución: " + error.message);
   }
 });
-

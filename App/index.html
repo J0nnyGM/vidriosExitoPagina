@@ -10,7 +10,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
+    <meta http-equiv="Content-Security-Policy"
+        content="script-src 'self' 'unsafe-inline' https://www.gstatic.com/ https://www.google.com/recaptcha/ https://apis.google.com https://cdn.jsdelivr.net; frame-src 'self' https://www.google.com/recaptcha/;">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
     <link rel="stylesheet" href="css/styles.css">
 </head>
 
@@ -210,6 +213,18 @@
                                 <span class="whitespace-nowrap">Empleados</span>
                             </a>
                         </li>
+                        <li>
+                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
+                                data-view="proveedores">
+                                <svg class="h-6 w-6 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+                                    stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283-.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm-9 3a2 2 0 11-4 0 2 2 0 014 0z">
+                                    </path>
+                                </svg>
+                                <span class="whitespace-nowrap">Proveedores</span>
+                            </a>
+                        </li>
                         <li id="inventory-nav-link" class="hidden">
                             <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
                                 data-view="catalog">
@@ -245,8 +260,6 @@
                                 </svg>
                                 <span class="whitespace-nowrap">Reportes</span>
                             </a>
-                        </li>
-                        <li id="admin-nav-link" class="hidden">
                         </li>
                         <li id="admin-nav-link" class="hidden">
                             <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
@@ -321,7 +334,10 @@
                                 d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                         </svg>
                     </button>
-
+                    <button data-action="sync-inventory" id="sync-stock-btn"
+                        class="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg">
+                        Sincronizar Inventario
+                    </button>
                     <button data-action="logout"
                         class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg">Cerrar
                         Sesión</button>
@@ -365,6 +381,94 @@
                 <h1 class="text-3xl font-bold text-gray-700">Empleados</h1>
             </div>
 
+            <div id="proveedores-view" class="hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <h1 class="text-3xl font-bold text-gray-700">Proveedores</h1>
+                    <button data-action="new-supplier"
+                        class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">
+                        + Nuevo Proveedor
+                    </button>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3">Nombre del Proveedor</th>
+                                    <th class="px-6 py-3">NIT</th>
+                                    <th class="px-6 py-3">Contacto</th>
+                                    <th class="px-6 py-3">Teléfono</th>
+                                    <th class="px-6 py-3 text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="suppliers-table-body">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="supplier-details-view" class="hidden">
+                <header class="mb-4">
+                    <button data-action="back-to-suppliers"
+                        class="text-blue-600 hover:text-blue-800 font-semibold mb-2 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20"
+                            fill="currentColor">
+                            <path fill-rule="evenodd"
+                                d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                                clip-rule="evenodd" />
+                        </svg>
+                        Volver a Proveedores
+                    </button>
+                    <h1 id="supplier-details-name" class="text-3xl font-bold text-gray-800">Cargando...</h1>
+                </header>
+
+                <div id="supplier-details-content" class="space-y-6">
+                </div>
+
+                <div id="supplier-pos-card" class="bg-white p-4 rounded-lg shadow-sm border">
+                    <h4 class="text-lg font-bold text-gray-800 mb-3">Historial de Órdenes de Compra</h4>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3">Fecha</th>
+                                    <th class="px-6 py-3 text-right">Costo Total</th>
+                                    <th class="px-6 py-3 text-center">Estado</th>
+                                    <th class="px-6 py-3 text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="supplier-pos-table-body">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="supplier-payments-card" class="bg-white p-4 rounded-lg shadow-sm border">
+                    <div class="flex justify-between items-center mb-3">
+                        <h4 class="text-lg font-bold text-gray-800">Historial de Pagos</h4>
+                        <button data-action="new-supplier-payment"
+                            class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-3 rounded-lg text-sm">
+                            + Registrar Pago
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3">Fecha</th>
+                                    <th class="px-6 py-3">Método de Pago</th>
+                                    <th class="px-6 py-3 text-right">Monto</th>
+                                    <th class="px-6 py-3 text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="supplier-payments-table-body">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <div id="admin-panel-view" class="hidden">
                 <header class="mb-6">
                     <h1 class="text-3xl font-bold text-gray-700">Gestionar Usuarios</h1>
@@ -383,11 +487,10 @@
                         <table class="w-full text-sm text-left text-gray-500 responsive-table">
                             <thead class="text-xs text-gray-700 uppercase bg-gray-50">
                                 <tr>
-                                    <th class="px-6 py-3"></th>
-                                    <th class="px-6 py-3">Nombre del Material</th>
-                                    <th class="px-6 py-3">Referencia / SKU</th>
-                                    <th class="px-6 py-3">Unidad</th>
-                                    <th class="px-6 py-3 text-right">Cantidad en Stock</th>
+                                    <th class="px-6 py-3">Nombre</th>
+                                    <th class="px-6 py-3">Correo</th>
+                                    <th class="px-6 py-3">Rol</th>
+                                    <th class="px-6 py-3">Estado</th>
                                     <th class="px-6 py-3 text-center">Acciones</th>
                                 </tr>
                             </thead>
@@ -907,6 +1010,8 @@
                         <table class="w-full text-sm text-left">
                             <thead class="text-xs text-gray-700 uppercase bg-gray-50">
                                 <tr>
+                                    <th class="px-6 py-3"></th>
+
                                     <th class="px-6 py-3">Nombre del Material</th>
                                     <th class="px-6 py-3">Referencia / SKU</th>
                                     <th class="px-6 py-3">Unidad</th>
@@ -934,6 +1039,7 @@
                         <table class="w-full text-sm text-left">
                             <thead class="text-xs text-gray-700 uppercase bg-gray-50">
                                 <tr>
+                                    <th class="px-6 py-3">ID Orden</th>
                                     <th class="px-6 py-3">Fecha</th>
                                     <th class="px-6 py-3">Proveedor</th>
                                     <th class="px-6 py-3 text-right">Costo Total</th>
@@ -949,37 +1055,43 @@
             </div>
 
             <div id="reports-view" class="hidden">
-                <h1 class="text-3xl font-bold text-gray-700 mb-6">Reporte de Consumo de Materiales</h1>
+                <header class="mb-6">
+                    <h1 class="text-3xl font-bold text-gray-800">Reporte de Consumo</h1>
+                    <p class="text-gray-500 mt-1">Filtra y visualiza el consumo de materiales por proyecto y rango de
+                        fechas.</p>
+                </header>
 
-                <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+                <div class="bg-white p-4 sm:p-6 rounded-lg shadow-md mb-6 border">
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                         <div>
-                            <label for="report-start-date" class="block text-sm font-medium">Fecha de Inicio</label>
-                            <input type="date" id="report-start-date" class="mt-1 w-full border p-2 rounded-md">
+                            <label for="report-project-filter"
+                                class="block text-sm font-medium text-gray-700">Proyecto</label>
+                            <select id="report-project-filter"
+                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2"></select>
                         </div>
                         <div>
-                            <label for="report-end-date" class="block text-sm font-medium">Fecha de Fin</label>
-                            <input type="date" id="report-end-date" class="mt-1 w-full border p-2 rounded-md">
+                            <label for="report-start-date" class="block text-sm font-medium text-gray-700">Desde</label>
+                            <input type="date" id="report-start-date"
+                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2">
                         </div>
                         <div>
-                            <label for="report-project-filter" class="block text-sm font-medium">Proyecto
-                                (Opcional)</label>
-                            <select id="report-project-filter" class="mt-1 w-full border p-2 rounded-md bg-white">
-                                <option value="all">Todos los Proyectos</option>
-                            </select>
+                            <label for="report-end-date" class="block text-sm font-medium text-gray-700">Hasta</label>
+                            <input type="date" id="report-end-date"
+                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2">
                         </div>
-                        <button id="generate-report-btn"
-                            class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg w-full">
-                            Generar Reporte
-                        </button>
+                        <div>
+                            <button id="generate-report-btn"
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                                Generar Reporte
+                            </button>
+                        </div>
                     </div>
                 </div>
 
                 <div id="report-results-container" class="hidden">
-                    <div class="bg-white p-6 rounded-lg shadow-md">
+                    <div class="bg-white p-4 sm:p-6 rounded-lg shadow-md border">
                         <h3 class="text-xl font-bold text-gray-800 mb-4">Resultados del Reporte</h3>
-                        <div id="report-summary" class="mb-4 grid grid-cols-2 gap-4">
-                        </div>
+                        <div id="report-summary" class="mb-4"></div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-sm text-left">
                                 <thead class="text-xs text-gray-700 uppercase bg-gray-50">
@@ -998,12 +1110,7 @@
                 </div>
             </div>
         </div>
-
-
     </div>
-    </div>
-
-
 
     <div id="documents-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
         <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto p-6 max-h-[90vh] flex flex-col">
@@ -1034,7 +1141,8 @@
     </div>
 
     <div id="main-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
+        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto p-6">
+
             <h3 id="modal-title" class="text-xl font-bold mb-4"></h3>
             <form id="modal-form">
                 <div id="modal-body"></div>
@@ -1321,7 +1429,25 @@
             </div>
         </div>
     </div>
+    <div id="request-details-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h3 id="request-details-title" class="text-xl font-bold">Detalles de la Solicitud</h3>
+                <button id="request-details-close-btn" data-action="close-details-modal"
+                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
 
+            </div>
+
+            <div id="request-details-content" class="p-4 sm:p-6 overflow-y-auto bg-gray-50 space-y-4">
+            </div>
+
+            <div class="mt-auto p-4 border-t flex justify-end">
+                <button type="button" id="request-details-cancel-btn" data-action="close-details-modal"
+                    class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg">Cerrar</button>
+
+            </div>
+        </div>
+    </div>
     <div id="po-details-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
         <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto max-h-[90vh] flex flex-col">
             <div class="flex justify-between items-center p-4 border-b">
@@ -1330,18 +1456,76 @@
                     class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
             </div>
 
-            <div class="p-6 overflow-y-auto space-y-4">
-                <div id="po-details-summary"></div>
-
-                <div>
-                    <h4 class="font-semibold text-gray-700 mb-2">Materiales en esta orden:</h4>
-                    <div id="po-details-items-list" class="space-y-2"></div>
-                </div>
+            <div id="po-details-content" class="p-4 sm:p-6 overflow-y-auto bg-gray-50 space-y-4">
             </div>
 
             <div id="po-details-actions" class="mt-auto p-6 border-t flex justify-end gap-3">
                 <button type="button" id="po-details-cancel-btn"
                     class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="inventory-details-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-3xl mx-auto max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h3 id="inventory-details-title" class="text-xl font-bold">Detalle de Inventario</h3>
+                <button data-action="close-inventory-details"
+                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
+            </div>
+
+            <div class="p-4 sm:p-6 overflow-y-auto bg-gray-50 space-y-4">
+                <div class="mb-4 border-b border-gray-200">
+                    <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                        <button data-tab="complete-stock"
+                            class="inventory-tab tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm active">
+                            Unidades Completas
+                        </button>
+                        <button data-tab="remnant-stock"
+                            class="inventory-tab tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                            Retazos / Sobrantes
+                        </button>
+                    </nav>
+                </div>
+
+                <div id="complete-stock-content" class="inventory-tab-content">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-100">
+                                <tr>
+                                    <th class="px-4 py-2">Fecha de Compra</th>
+                                    <th class="px-4 py-2">Cantidad Inicial</th>
+                                    <th class="px-4 py-2">Cantidad Restante</th>
+                                    <th class="px-4 py-2">Orden de Compra</th>
+                                </tr>
+                            </thead>
+                            <tbody id="complete-stock-table-body">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="remnant-stock-content" class="inventory-tab-content hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-100">
+                                <tr>
+                                    <th class="px-4 py-2">Fecha de Creación</th>
+                                    <th class="px-4 py-2">Medida</th>
+                                    <th class="px-4 py-2">Cantidad</th>
+                                    <th class="px-4 py-2">Origen</th>
+                                </tr>
+                            </thead>
+                            <tbody id="remnant-stock-table-body">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-auto p-4 border-t flex justify-end">
+                <button data-action="close-inventory-details"
+                    class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg">Cerrar</button>
             </div>
         </div>
     </div>

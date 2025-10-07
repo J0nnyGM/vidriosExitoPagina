@@ -1,36 +1,75 @@
-style
-        body { font-family: 'Inter', sans-serif; }
-        .hero-bg { background-image: url('https://images.pexels.com/photos/220769/pexels-photo-220769.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1'); }
-        .chart-container { position: relative; height: 250px; width: 100%; max-width: 500px; margin: auto; }
-        .logo-ticker-container .logo-ticker { display: flex; align-items: center; animation: ticker 80s linear infinite; }
-        @keyframes ticker {
-            0% { transform: translateX(0); }
-            100% { transform: translateX(-50%); }
-        }
-        .logo-ticker-container:hover .logo-ticker { animation-play-state: paused; }
-        .client-logo img {
-            max-height: 64px;
-            width: auto;
-            object-fit: contain;
-            filter: grayscale(100%);
-            opacity: 0.7;
-            transition: all 0.3s ease-in-out;
-        }
-        .client-logo:hover img {
-            filter: grayscale(0%);
-            opacity: 1;
-            transform: scale(1.1);
-        }
-        .nav-link.active { color: #2563eb; border-bottom: 2px solid #2563eb; }
-        .spinner {
-            border: 4px solid rgba(0, 0, 0, 0.1);
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            border-left-color: #09f;
-            animation: spin 1s ease infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+style body {
+    font-family: 'Inter', sans-serif;
+}
+
+.hero-bg {
+    background-image: url('https://images.pexels.com/photos/220769/pexels-photo-220769.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1');
+}
+
+.chart-container {
+    position: relative;
+    height: 250px;
+    width: 100%;
+    max-width: 500px;
+    margin: auto;
+}
+
+.logo-ticker-container .logo-ticker {
+    display: flex;
+    align-items: center;
+    animation: ticker 80s linear infinite;
+}
+
+@keyframes ticker {
+    0% {
+        transform: translateX(0);
+    }
+
+    100% {
+        transform: translateX(-50%);
+    }
+}
+
+.logo-ticker-container:hover .logo-ticker {
+    animation-play-state: paused;
+}
+
+.client-logo img {
+    max-height: 64px;
+    width: auto;
+    object-fit: contain;
+    filter: grayscale(100%);
+    opacity: 0.7;
+    transition: all 0.3s ease-in-out;
+}
+
+.client-logo:hover img {
+    filter: grayscale(0%);
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.nav-link.active {
+    color: #2563eb;
+    border-bottom: 2px solid #2563eb;
+}
+
+.spinner {
+    border: 4px solid rgba(0, 0, 0, 0.1);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border-left-color: #09f;
+    animation: spin 1s ease infinite;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
