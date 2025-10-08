@@ -314,12 +314,11 @@ function loadCatalogView() {
                 stockStatusIndicator = '<div class="h-3 w-3 rounded-full bg-red-500 mx-auto" title="Stock Bajo"></div>';
             }
 
-            // --- INICIO DE LA CORRECCIÓN ---
-            // Nos aseguramos de que el data-id siempre se genere correctamente.
+            // =================== INICIO DE LA MODIFICACIÓN ===================
+            // Se restauró el estilo de fondo sólido (bg-color) manteniendo el tamaño grande.
             const viewInventoryBtn = material.isDivisible
-                ? `<button data-action="view-inventory" data-id="${material.id}" data-name="${material.name}" class="text-blue-600 font-semibold hover:underline ml-4">Ver Inventario</button>`
+                ? `<button data-action="view-inventory" data-id="${material.id}" data-name="${material.name}" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors">Ver Inventario</button>`
                 : '';
-            // --- FIN DE LA CORRECCIÓN ---
 
             const row = document.createElement('tr');
             row.className = 'bg-white border-b';
@@ -330,10 +329,14 @@ function loadCatalogView() {
                 <td class="px-6 py-4">${material.unit}</td>
                 <td class="px-6 py-4 text-right font-bold text-lg">${stock}</td>
                 <td class="px-6 py-4 text-center">
-                    <button data-action="edit-catalog-item" data-id="${material.id}" class="text-yellow-600 font-semibold hover:underline">Editar</button>
-                    ${viewInventoryBtn}
+                    <div class="flex justify-center items-center gap-2">
+                        <button data-action="edit-catalog-item" data-id="${material.id}" class="bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors">Editar</button>
+                        ${viewInventoryBtn}
+                    </div>
                 </td>
             `;
+            // =================== FIN DE LA MODIFICACIÓN ===================
+            
             tableBody.appendChild(row);
         });
     });
@@ -347,14 +350,11 @@ async function openInventoryDetailsModal(materialId, materialName) {
     const modal = document.getElementById('inventory-details-modal');
     if (!modal) return;
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // 1. Verificación de seguridad: Nos aseguramos de que el ID del material exista.
     if (!materialId) {
         console.error("Se intentó abrir el detalle de inventario sin un ID de material.");
         alert("Error: No se pudo identificar el material seleccionado.");
         return;
     }
-    // --- FIN DE LA CORRECCIÓN ---
 
     document.getElementById('inventory-details-title').textContent = `Inventario de: ${materialName}`;
 
@@ -362,12 +362,11 @@ async function openInventoryDetailsModal(materialId, materialName) {
     const remnantStockBody = document.getElementById('remnant-stock-table-body');
 
     completeStockBody.innerHTML = `<tr><td colspan="4" class="text-center py-4">Cargando...</td></tr>`;
-    remnantStockBody.innerHTML = `<tr><td colspan="4" class="text-center py-4">Cargando...</td></tr>`;
+    remnantStockBody.innerHTML = `<tr><td colspan-4" class="text-center py-4">Cargando...</td></tr>`;
 
     modal.style.display = 'flex';
 
     try {
-        // 2. Cargamos las Unidades Completas (lotes de stock)
         const batchesQuery = query(collection(db, "materialCatalog", materialId, "stockBatches"), orderBy("purchaseDate", "desc"));
         const batchesSnapshot = await getDocs(batchesQuery);
         
@@ -375,7 +374,6 @@ async function openInventoryDetailsModal(materialId, materialName) {
         if (batchesSnapshot.empty) {
             completeStockBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-500">No hay unidades completas en stock.</td></tr>`;
         } else {
-            // (La lógica para mostrar los lotes no cambia)
             const poIds = [...new Set(batchesSnapshot.docs.map(doc => doc.data().purchaseOrderId).filter(id => id))];
             let poMap = new Map();
             if (poIds.length > 0) {
@@ -383,16 +381,36 @@ async function openInventoryDetailsModal(materialId, materialName) {
                 const poSnapshot = await getDocs(poQuery);
                 poSnapshot.forEach(doc => poMap.set(doc.id, doc.data().poNumber || doc.id.substring(0, 6)));
             }
+
+            // =================== INICIO DE LA MODIFICACIÓN ===================
             batchesSnapshot.forEach(doc => {
                 const batch = doc.data();
-                const poIdentifier = poMap.get(batch.purchaseOrderId) || 'N/A';
+                let originText = 'N/A';
+                let rowClass = 'bg-white';
+
+                // Ahora priorizamos el ID de devolución
+                if (batch.returnId) {
+                    originText = `<span class="font-semibold text-yellow-700">Devolución (${batch.returnId})</span>`;
+                    rowClass = 'bg-yellow-50';
+                } 
+                else if (batch.purchaseOrderId) {
+                    const poIdentifier = poMap.get(batch.purchaseOrderId) || 'N/A';
+                    originText = `Compra (PO: ${poIdentifier})`;
+                }
+
                 const row = document.createElement('tr');
-                row.innerHTML = `<td class="px-4 py-2">${batch.purchaseDate.toDate().toLocaleDateString('es-CO')}</td><td class="px-4 py-2">${batch.quantityInitial}</td><td class="px-4 py-2 font-bold">${batch.quantityRemaining}</td><td class="px-4 py-2 font-mono text-xs">${poIdentifier}</td>`;
+                row.className = `${rowClass} border-b`;
+                row.innerHTML = `
+                    <td class="px-4 py-2">${batch.purchaseDate.toDate().toLocaleDateString('es-CO')}</td>
+                    <td class="px-4 py-2">${batch.quantityInitial}</td>
+                    <td class="px-4 py-2 font-bold">${batch.quantityRemaining}</td>
+                    <td class="px-4 py-2 text-xs">${originText}</td>
+                `;
                 completeStockBody.appendChild(row);
             });
+            // =================== FIN DE LA MODIFICACIÓN ===================
         }
 
-        // 3. Cargamos los Retazos / Sobrantes (la lógica no cambia)
         const remnantsQuery = query(collection(db, "materialCatalog", materialId, "remnantStock"), orderBy("createdAt", "desc"));
         const remnantsSnapshot = await getDocs(remnantsQuery);
         remnantStockBody.innerHTML = '';
@@ -424,7 +442,6 @@ function loadComprasView() {
     unsubscribePurchaseOrders = onSnapshot(poQuery, (snapshot) => {
         tableBody.innerHTML = '';
         if (snapshot.empty) {
-            // Corregimos el colspan para que coincida con las 6 columnas
             tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-gray-500">No hay órdenes de compra.</td></tr>`;
             return;
         }
@@ -445,11 +462,9 @@ function loadComprasView() {
                         statusText = 'Pendiente'; statusColor = 'bg-yellow-100 text-yellow-800';
                 }
 
-                // --- INICIO DE LA MODIFICACIÓN ---
-                // Usamos el poNumber si existe, o un ID corto como alternativa para órdenes antiguas.
                 const poIdentifier = po.poNumber || po.id.substring(0, 6).toUpperCase();
-                // --- FIN DE LA MODIFICACIÓN ---
-
+                
+                // =================== INICIO DE LA MODIFICACIÓN ===================
                 const row = document.createElement('tr');
                 row.className = 'bg-white border-b';
                 row.innerHTML = `
@@ -459,9 +474,10 @@ function loadComprasView() {
                     <td class="px-6 py-4 text-right font-semibold">${currencyFormatter.format(po.totalCost || 0)}</td>
                     <td class="px-6 py-4 text-center"><span class="px-2 py-1 text-xs font-semibold rounded-full ${statusColor}">${statusText}</span></td>
                     <td class="px-6 py-4 text-center">
-                        <button data-action="view-purchase-order" data-id="${po.id}" class="text-blue-600 font-semibold hover-underline">Ver</button>
+                        <button data-action="view-purchase-order" data-id="${po.id}" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors w-32 text-center">Ver</button>
                     </td>
                 `;
+                // =================== FIN DE LA MODIFICACIÓN ===================
                 tableBody.appendChild(row);
 
             } catch (error) {
@@ -483,25 +499,21 @@ async function loadReportsView() {
 
     if (!projectFilter) return;
 
-    // 1. MEJORA: Establecemos la fecha "Hasta" con el día de hoy por defecto.
     const today = new Date().toISOString().split('T')[0];
     endDateInput.value = today;
 
-    // 2. CORRECCIÓN: Cargamos la lista de proyectos de la forma más simple y segura.
     projectFilter.innerHTML = '<option value="">Cargando proyectos...</option>';
     try {
-        // Usamos una consulta simple que trae todos los proyectos, evitando errores de filtros.
         const projectsQuery = query(collection(db, "projects"), orderBy("name"));
         const snapshot = await getDocs(projectsQuery);
 
         projectFilter.innerHTML = '<option value="all">Todos los Proyectos</option>';
         if (snapshot.empty) {
-            console.warn("No se encontraron proyectos para el reporte. La colección 'projects' podría estar vacía.");
+            console.warn("No se encontraron proyectos para el reporte.");
         } else {
-            console.log(`Se encontraron ${snapshot.size} proyectos.`);
             snapshot.forEach(doc => {
                 const project = { id: doc.id, ...doc.data() };
-                if (project.name) { // Nos aseguramos de que el proyecto tenga un nombre
+                if (project.name) {
                     const option = document.createElement('option');
                     option.value = project.id;
                     option.textContent = project.name;
@@ -510,12 +522,10 @@ async function loadReportsView() {
             });
         }
     } catch (error) {
-        console.error("Error CRÍTICO al cargar la lista de proyectos:", error);
-        projectFilter.innerHTML = '<option value="all">Error al cargar proyectos</option>';
-        alert("Error al cargar la lista de proyectos: " + error.message);
+        console.error("Error al cargar la lista de proyectos:", error);
+        projectFilter.innerHTML = '<option value="all">Error al cargar</option>';
     }
 
-    // 3. Añadimos el listener al botón para generar el reporte
     if (generateReportBtn && !generateReportBtn.dataset.listenerAttached) {
         generateReportBtn.dataset.listenerAttached = 'true';
         generateReportBtn.addEventListener('click', async () => {
@@ -523,7 +533,6 @@ async function loadReportsView() {
             const startDate = startDateInput.value;
             const endDate = endDateInput.value;
 
-            // CORRECCIÓN: Validamos que la fecha de inicio no esté vacía.
             if (!startDate) {
                 alert("Por favor, selecciona una fecha de inicio.");
                 return;
@@ -545,25 +554,26 @@ async function loadReportsView() {
 
                 const requestsSnapshot = await getDocs(requestsQuery);
                 if (requestsSnapshot.empty) {
-                    reportTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">No se encontraron datos en este rango de fechas.</td></tr>`;
+                    reportTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">No se encontraron datos.</td></tr>`;
                     reportSummary.innerHTML = '';
                     return;
                 }
 
-                // Lógica para procesar y mostrar los resultados (optimizada)
                 const projectsMap = new Map();
                 const materialsMap = new Map();
                 let totalCost = 0;
                 let reportRowsHtml = '';
 
-                for (const doc of requestsSnapshot.docs) {
-                    const request = doc.data();
+                // =================== INICIO DE LA CORRECCIÓN ===================
+                // Se cambió la variable 'doc' por 'requestDoc' para evitar conflictos.
+                for (const requestDoc of requestsSnapshot.docs) {
+                    const request = requestDoc.data();
                     const items = request.consumedItems || request.materials || [];
-                    const projectId = doc.ref.parent.parent.id;
+                    const projectId = requestDoc.ref.parent.parent.id;
                     let projectName = projectsMap.get(projectId);
 
                     if (!projectName) {
-                        const projectSnap = await getDoc(doc.ref.parent.parent);
+                        const projectSnap = await getDoc(requestDoc.ref.parent.parent);
                         projectName = projectSnap.exists() ? projectSnap.data().name : 'Proyecto Desconocido';
                         projectsMap.set(projectId, projectName);
                     }
@@ -572,23 +582,28 @@ async function loadReportsView() {
                     for (const item of items) {
                         let materialInfo = materialsMap.get(item.materialId);
                         if (item.materialId && !materialInfo) {
+                            // Aquí ocurría el error. Ahora 'doc' se refiere a la función de Firebase.
                             const materialSnap = await getDoc(doc(db, "materialCatalog", item.materialId));
                             materialInfo = materialSnap.exists() ? materialSnap.data() : { name: 'Material Desconocido', unit: '' };
                             materialsMap.set(item.materialId, materialInfo);
                         }
                         
                         const quantity = item.quantityConsumed || item.quantity || 0;
+                        const materialName = materialInfo ? materialInfo.name : (item.itemName || 'N/A');
+                        const materialUnit = materialInfo ? materialInfo.unit : '';
+                        
                         reportRowsHtml += `
                             <tr class="bg-white border-b">
                                 <td class="px-6 py-4">${request.createdAt.toDate().toLocaleDateString('es-CO')}</td>
                                 <td class="px-6 py-4 font-medium">${projectName}</td>
-                                <td class="px-6 py-4">${materialInfo?.name || 'N/A'}</td>
-                                <td class="px-6 py-4 text-center">${quantity} ${materialInfo?.unit || ''}</td>
+                                <td class="px-6 py-4">${materialName}</td>
+                                <td class="px-6 py-4 text-center">${quantity} ${materialUnit}</td>
                                 <td class="px-6 py-4 text-right">${currencyFormatter.format(request.totalCost || 0)}</td>
                             </tr>
                         `;
                     }
                 }
+                // =================== FIN DE LA CORRECCIÓN ===================
                 
                 reportTableBody.innerHTML = reportRowsHtml;
                 reportSummary.innerHTML = `
@@ -604,77 +619,6 @@ async function loadReportsView() {
             }
         });
     }
-}
-
-async function generateMaterialReport() {
-    loadingOverlay.classList.remove('hidden');
-    const resultsContainer = document.getElementById('report-results-container');
-    const summaryContainer = document.getElementById('report-summary');
-    const tableBody = document.getElementById('report-table-body');
-
-    // 1. Obtener valores de los filtros
-    const startDate = new Date(document.getElementById('report-start-date').value);
-    const endDate = new Date(document.getElementById('report-end-date').value);
-    endDate.setHours(23, 59, 59); // Incluir todo el día de fin
-    const projectId = document.getElementById('report-project-filter').value;
-
-    // 2. Construir la consulta a Firestore
-    let requestsQuery = collectionGroup(db, 'materialRequests');
-    requestsQuery = query(requestsQuery, where('createdAt', '>=', startDate), where('createdAt', '<=', endDate));
-    if (projectId !== 'all') {
-        // Firestore no permite filtrar por un campo y luego por el path del documento.
-        // Haremos el filtro del proyecto en el cliente.
-    }
-
-    // 3. Obtener y procesar los datos
-    const snapshot = await getDocs(requestsQuery);
-    let requests = snapshot.docs.map(doc => ({ projectId: doc.ref.parent.parent.id, ...doc.data() }));
-
-    // Filtro manual por proyecto si es necesario
-    if (projectId !== 'all') {
-        requests = requests.filter(req => req.projectId === projectId);
-    }
-
-    // 4. Renderizar resultados
-    tableBody.innerHTML = '';
-    if (requests.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">No se encontraron solicitudes en el rango de fechas.</td></tr>`;
-    } else {
-        const projectNames = new Map(); // Para no consultar el nombre del proyecto cada vez
-        for (const req of requests) {
-            if (!projectNames.has(req.projectId)) {
-                const projectDoc = await getDoc(doc(db, "projects", req.projectId));
-                projectNames.set(req.projectId, projectDoc.data()?.name || 'Proyecto Desconocido');
-            }
-
-            const row = document.createElement('tr');
-            row.className = 'bg-white border-b';
-            row.innerHTML = `
-                <td class="px-6 py-4">${req.createdAt.toDate().toLocaleDateString('es-CO')}</td>
-                <td class="px-6 py-4 font-medium">${projectNames.get(req.projectId)}</td>
-                <td class="px-6 py-4">${req.materialName}</td>
-                <td class="px-6 py-4 text-center">${req.quantity}</td>
-                <td class="px-6 py-4 text-right font-semibold">${currencyFormatter.format(req.totalCost || 0)}</td>
-            `;
-            tableBody.appendChild(row);
-        }
-    }
-
-    // 5. Calcular y mostrar resumen
-    const totalCost = requests.reduce((sum, req) => sum + (req.totalCost || 0), 0);
-    summaryContainer.innerHTML = `
-        <div class="bg-gray-50 p-4 rounded-lg">
-            <p class="text-sm font-medium text-gray-500">Costo Total de Materiales</p>
-            <p class="text-2xl font-bold text-gray-800">${currencyFormatter.format(totalCost)}</p>
-        </div>
-        <div class="bg-gray-50 p-4 rounded-lg">
-            <p class="text-sm font-medium text-gray-500">N° de Solicitudes</p>
-            <p class="text-2xl font-bold text-gray-800">${requests.length}</p>
-        </div>
-    `;
-
-    resultsContainer.classList.remove('hidden');
-    loadingOverlay.classList.add('hidden');
 }
 
 /**
@@ -1028,7 +972,7 @@ function loadProveedoresView() {
     const tableBody = document.getElementById('suppliers-table-body');
     if (!tableBody) return;
 
-    if (unsubscribeSuppliers) unsubscribeSuppliers(); // Cancela el listener anterior si existe
+    if (unsubscribeSuppliers) unsubscribeSuppliers();
 
     const suppliersQuery = query(collection(db, "suppliers"), orderBy("name"));
     unsubscribeSuppliers = onSnapshot(suppliersQuery, (snapshot) => {
@@ -1041,16 +985,24 @@ function loadProveedoresView() {
             const supplier = { id: doc.id, ...doc.data() };
             const row = document.createElement('tr');
             row.className = 'bg-white border-b hover:bg-gray-50';
+
+            // =================== INICIO DE LA MODIFICACIÓN ===================
+            const baseButtonClasses = "text-sm font-semibold py-2 px-4 rounded-lg transition-colors w-32 text-center";
+
             row.innerHTML = `
                 <td class="px-6 py-4 font-medium text-gray-900">${supplier.name}</td>
                 <td class="px-6 py-4">${supplier.nit || 'N/A'}</td>
                 <td class="px-6 py-4">${supplier.contactName || 'N/A'}</td>
                 <td class="px-6 py-4">${supplier.contactPhone || 'N/A'}</td>
                 <td class="px-6 py-4 text-center">
-                    <button data-action="edit-supplier" data-id="${supplier.id}" class="text-yellow-600 font-semibold hover:underline">Editar</button>
-                    <button data-action="view-supplier-details" data-id="${supplier.id}" class="text-blue-600 font-semibold hover:underline ml-4">Ver Detalles</button>
+                    <div class="flex justify-center items-center gap-2">
+                        <button data-action="edit-supplier" data-id="${supplier.id}" class="bg-yellow-500 hover:bg-yellow-600 text-white ${baseButtonClasses}">Editar</button>
+                        <button data-action="view-supplier-details" data-id="${supplier.id}" class="bg-blue-500 hover:bg-blue-600 text-white ${baseButtonClasses}">Ver Detalles</button>
+                    </div>
                 </td>
             `;
+            // =================== FIN DE LA MODIFICACIÓN ===================
+            
             tableBody.appendChild(row);
         });
     });
@@ -1064,142 +1016,123 @@ async function loadSupplierDetailsView(supplierId) {
     currentSupplierId = supplierId;
     showView('supplierDetails');
 
-    const contentContainer = document.getElementById('supplier-details-content');
+    // =================== INICIO DE LA MODIFICACIÓN ===================
+    // Referencias a los nuevos contenedores
+    const summaryContent = document.getElementById('summary-content');
     const posTableBody = document.getElementById('supplier-pos-table-body');
     const paymentsTableBody = document.getElementById('supplier-payments-table-body');
+    
+    // Limpiar contenido previo
+    summaryContent.innerHTML = '<div class="text-center py-10"><div class="loader mx-auto"></div></div>';
+    posTableBody.innerHTML = '';
+    paymentsTableBody.innerHTML = '';
 
-    // Muestra un loader principal mientras se cargan los datos iniciales
-    contentContainer.innerHTML = '<div class="text-center py-10"><div class="loader mx-auto"></div><p class="mt-2 text-sm text-gray-500">Cargando detalles...</p></div>';
+    if (unsubscribeSupplierPOs) unsubscribeSupplierPOs();
+    if (unsubscribeSupplierPayments) unsubscribeSupplierPayments();
 
-    // Ocultamos las tarjetas de historial al principio
-    document.getElementById('supplier-pos-card').classList.add('hidden');
-    document.getElementById('supplier-payments-card').classList.add('hidden');
+    const tabsContainer = document.getElementById('supplier-details-tabs');
+    const tabContents = document.querySelectorAll('.supplier-tab-content');
+
+    const switchSupplierTab = (tabName) => {
+        tabsContainer.querySelectorAll('.tab-button').forEach(button => {
+            const isActive = button.dataset.tab === tabName;
+            button.classList.toggle('border-blue-500', isActive);
+            button.classList.toggle('text-blue-600', isActive);
+            button.classList.toggle('border-transparent', !isActive);
+            button.classList.toggle('text-gray-500', !isActive);
+        });
+        tabContents.forEach(content => {
+            content.classList.toggle('hidden', content.id !== `${tabName}-content`);
+        });
+    };
+
+    tabsContainer.addEventListener('click', (e) => {
+        const button = e.target.closest('.tab-button');
+        if (button) {
+            switchSupplierTab(button.dataset.tab);
+        }
+    });
 
     try {
         const supplierRef = doc(db, "suppliers", supplierId);
         const supplierSnap = await getDoc(supplierRef);
-        if (!supplierSnap.exists()) {
-            throw new Error("Proveedor no encontrado");
-        }
+        if (!supplierSnap.exists()) throw new Error("Proveedor no encontrado");
+        
         const supplier = supplierSnap.data();
         document.getElementById('supplier-details-name').textContent = supplier.name;
+        
+        // Cargar Pestaña "Resumen" (Información General + Estado de Cuenta)
+        const infoCardHTML = `
+            <div class="bg-white p-4 rounded-lg shadow-sm border">
+                <h4 class="text-lg font-bold text-gray-800 mb-3">Datos del Proveedor</h4>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+                    <div><p class="text-gray-500">NIT/Cédula</p><p class="font-semibold">${supplier.nit || 'N/A'}</p></div>
+                    <div><p class="text-gray-500">Email</p><p class="font-semibold">${supplier.email || 'N/A'}</p></div>
+                    <div><p class="text-gray-500">Dirección</p><p class="font-semibold">${supplier.address || 'N/A'}</p></div>
+                    <div><p class="text-gray-500">Contacto</p><p class="font-semibold">${supplier.contactName || 'N/A'}</p></div>
+                    <div><p class="text-gray-500">Teléfono</p><p class="font-semibold">${supplier.contactPhone || 'N/A'}</p></div>
+                </div>
+            </div>`;
+        
+        const allPOsQuery = query(collection(db, "purchaseOrders"), where("supplierId", "==", supplierId));
+        const allPaymentsQuery = query(collection(db, "suppliers", supplierId, "payments"));
+        const [poSnapshot, paymentsSnapshot] = await Promise.all([getDocs(allPOsQuery), getDocs(allPaymentsQuery)]);
+        const totalBilled = poSnapshot.docs.reduce((sum, doc) => sum + (doc.data().totalCost || 0), 0);
+        const totalPaid = paymentsSnapshot.docs.reduce((sum, doc) => sum + (doc.data().amount || 0), 0);
+        
+        const balanceCardHTML = `
+            <div class="bg-white p-4 rounded-lg shadow-sm border">
+                <h4 class="text-lg font-bold text-gray-800 mb-3">Estado de Cuenta General</h4>
+                <div class="grid grid-cols-3 gap-4 text-center">
+                    <div><p class="text-sm text-gray-500">Total Facturado</p><p class="text-xl font-bold text-gray-800">${currencyFormatter.format(totalBilled)}</p></div>
+                    <div><p class="text-sm text-gray-500">Total Pagado</p><p class="text-xl font-bold text-green-600">${currencyFormatter.format(totalPaid)}</p></div>
+                    <div><p class="text-sm text-red-700">Saldo Pendiente</p><p class="text-2xl font-bold text-red-600">${currencyFormatter.format(totalBilled - totalPaid)}</p></div>
+                </div>
+            </div>`;
+            
+        summaryContent.innerHTML = infoCardHTML + balanceCardHTML;
 
-        // Función interna para recalcular y redibujar el balance y la info
-        const updateSupplierBalanceAndInfo = async () => {
-            const poSnapshot = await getDocs(query(collection(db, "purchaseOrders"), where("supplierId", "==", supplierId)));
-            const paymentsSnapshot = await getDocs(query(collection(db, "suppliers", supplierId, "payments")));
-
-            const totalBilled = poSnapshot.docs.reduce((sum, doc) => sum + (doc.data().totalCost || 0), 0);
-            const totalPaid = paymentsSnapshot.docs.reduce((sum, doc) => sum + (doc.data().amount || 0), 0);
-            const balance = totalBilled - totalPaid;
-
-            // Tarjeta 1: Información del Proveedor
-            const infoCard = `
-                <div class="bg-white p-4 rounded-lg shadow-sm border">
-                    <h4 class="text-lg font-bold text-gray-800 mb-3">Datos del Proveedor</h4>
-                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
-                        <div><p class="text-gray-500">NIT/Cédula</p><p class="font-semibold">${supplier.nit || 'N/A'}</p></div>
-                        <div><p class="text-gray-500">Email</p><p class="font-semibold">${supplier.email || 'N/A'}</p></div>
-                        <div><p class="text-gray-500">Dirección</p><p class="font-semibold">${supplier.address || 'N/A'}</p></div>
-                        <div><p class="text-gray-500">Contacto</p><p class="font-semibold">${supplier.contactName || 'N/A'}</p></div>
-                        <div><p class="text-gray-500">Teléfono</p><p class="font-semibold">${supplier.contactPhone || 'N/A'}</p></div>
-                    </div>
-                    <div class="mt-4 pt-3 border-t">
-                         <p class="text-gray-500 text-sm mb-2">Datos Bancarios</p>
-                         <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
-                            <div><p class="text-gray-500">Banco</p><p class="font-semibold">${supplier.bankName || 'N/A'}</p></div>
-                            <div><p class="text-gray-500">Tipo de Cuenta</p><p class="font-semibold">${supplier.accountType || 'N/A'}</p></div>
-                            <div><p class="text-gray-500">Número de Cuenta</p><p class="font-semibold">${supplier.accountNumber || 'N/A'}</p></div>
-                         </div>
-                    </div>
-                </div>`;
-
-            // Tarjeta 2: Estado de Cuenta
-            const balanceCard = `
-                <div class="bg-white p-4 rounded-lg shadow-sm border">
-                    <h4 class="text-lg font-bold text-gray-800 mb-3">Estado de Cuenta</h4>
-                    <div class="grid grid-cols-3 gap-4 text-center">
-                        <div>
-                            <p class="text-sm text-gray-500">Total Facturado</p>
-                            <p class="text-xl font-bold text-gray-800">${currencyFormatter.format(totalBilled)}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-500">Total Pagado</p>
-                            <p class="text-xl font-bold text-green-600">${currencyFormatter.format(totalPaid)}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-red-700">Saldo Pendiente</p>
-                            <p class="text-2xl font-bold text-red-600">${currencyFormatter.format(balance)}</p>
-                        </div>
-                    </div>
-                </div>`;
-
-            contentContainer.innerHTML = infoCard + balanceCard;
-        };
-
-        // Cancelamos listeners anteriores para evitar duplicados
-        if (unsubscribeSupplierPOs) unsubscribeSupplierPOs();
-        if (unsubscribeSupplierPayments) unsubscribeSupplierPayments();
-
-        // Listener para las órdenes de compra
+        // Cargar Pestaña de Órdenes de Compra (la lógica no cambia)
         const poQuery = query(collection(db, "purchaseOrders"), where("supplierId", "==", supplierId), orderBy("createdAt", "desc"));
-        unsubscribeSupplierPOs = onSnapshot(poQuery, (poSnapshot) => {
-            document.getElementById('supplier-pos-card').classList.remove('hidden');
-            if (!posTableBody) return;
+        unsubscribeSupplierPOs = onSnapshot(poQuery, (snapshot) => {
             posTableBody.innerHTML = '';
-            const purchaseOrders = poSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-            if (purchaseOrders.length === 0) {
+            if (snapshot.empty) {
                 posTableBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-500">No hay órdenes de compra.</td></tr>`;
             } else {
-                purchaseOrders.forEach(po => {
+                snapshot.forEach(doc => {
+                    const po = { id: doc.id, ...doc.data() };
                     const row = document.createElement('tr');
                     const statusText = po.status === 'recibida' ? 'Recibida' : 'Pendiente';
                     const statusColor = po.status === 'recibida' ? 'text-green-600' : 'text-yellow-600';
-                    row.innerHTML = `
-                        <td class="px-6 py-4">${po.createdAt.toDate().toLocaleDateString('es-CO')}</td>
-                        <td class="px-6 py-4 text-right font-semibold">${currencyFormatter.format(po.totalCost || 0)}</td>
-                        <td class="px-6 py-4 text-center font-bold ${statusColor}">${statusText}</td>
-                        <td class="px-6 py-4 text-center">
-                            <button data-action="view-purchase-order" data-id="${po.id}" class="text-blue-600 font-semibold hover:underline">Ver</button>
-                        </td>
-                    `;
+                    row.innerHTML = `<td class="px-6 py-4">${po.createdAt.toDate().toLocaleDateString('es-CO')}</td><td class="px-6 py-4 text-right font-semibold">${currencyFormatter.format(po.totalCost || 0)}</td><td class="px-6 py-4 text-center font-bold ${statusColor}">${statusText}</td><td class="px-6 py-4 text-center"><button data-action="view-purchase-order" data-id="${po.id}" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-4 rounded-lg w-32 text-center">Ver</button></td>`;
                     posTableBody.appendChild(row);
                 });
             }
-            updateSupplierBalanceAndInfo();
         });
 
-        // Listener para los pagos
+        // Cargar Pestaña de Pagos (la lógica no cambia)
         const paymentsQuery = query(collection(db, "suppliers", supplierId, "payments"), orderBy("date", "desc"));
-        unsubscribeSupplierPayments = onSnapshot(paymentsQuery, (paymentsSnapshot) => {
-            document.getElementById('supplier-payments-card').classList.remove('hidden');
-            if (!paymentsTableBody) return;
+        unsubscribeSupplierPayments = onSnapshot(paymentsQuery, (snapshot) => {
             paymentsTableBody.innerHTML = '';
-            const payments = paymentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-            if (payments.length === 0) {
+            if (snapshot.empty) {
                 paymentsTableBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-500">No hay pagos registrados.</td></tr>`;
             } else {
-                payments.forEach(p => {
+                snapshot.forEach(doc => {
+                    const p = { id: doc.id, ...doc.data() };
                     const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td class="px-6 py-4">${new Date(p.date + 'T00:00:00').toLocaleDateString('es-CO')}</td>
-                        <td class="px-6 py-4">${p.paymentMethod || 'N/A'}</td>
-                        <td class="px-6 py-4 text-right font-semibold">${currencyFormatter.format(p.amount || 0)}</td>
-                        <td class="px-6 py-4 text-center">
-                            <button data-action="delete-supplier-payment" data-id="${p.id}" class="text-red-500 font-semibold hover:underline">Eliminar</button>
-                        </td>
-                    `;
+                    row.innerHTML = `<td class="px-6 py-4">${new Date(p.date + 'T00:00:00').toLocaleDateString('es-CO')}</td><td class="px-6 py-4">${p.paymentMethod || 'N/A'}</td><td class="px-6 py-4 text-right font-semibold">${currencyFormatter.format(p.amount || 0)}</td><td class="px-6 py-4 text-center"><button data-action="delete-supplier-payment" data-id="${p.id}" class="bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2 px-4 rounded-lg w-32 text-center">Eliminar</button></td>`;
                     paymentsTableBody.appendChild(row);
                 });
             }
-            updateSupplierBalanceAndInfo();
         });
+        
+        // Activar la nueva pestaña "Resumen" por defecto
+        switchSupplierTab('summary');
+        // =================== FIN DE LA MODIFICACIÓN ===================
 
     } catch (error) {
         console.error("Error al cargar los detalles del proveedor:", error);
-        contentContainer.innerHTML = `<p class="text-center text-red-500 py-10">${error.message}</p>`;
+        summaryContent.innerHTML = `<p class="text-center text-red-500 py-10">${error.message}</p>`;
     }
 }
 
@@ -1254,29 +1187,33 @@ function createUserRow(user) {
     const statusColor = user.status === 'active' ? 'text-green-600' : (user.status === 'pending' ? 'text-yellow-600' : 'text-gray-500');
     const statusText = user.status === 'active' ? 'Activo' : (user.status === 'pending' ? 'Pendiente' : 'Archivado');
 
+    // =================== INICIO DE LA MODIFICACIÓN ===================
+    const baseButtonClasses = "text-sm font-semibold py-2 px-4 rounded-lg transition-colors w-32 text-center";
     let actionsHtml = '';
+
     if (user.status === 'archived') {
         actionsHtml = `
-            <button class="restore-user-btn text-green-600 hover:underline font-semibold">Restaurar</button>
-            <button class="delete-user-btn text-red-600 hover:underline font-semibold">Eliminar</button>
+            <button class="restore-user-btn bg-green-500 hover:bg-green-600 text-white ${baseButtonClasses}">Restaurar</button>
+            <button class="delete-user-btn bg-red-500 hover:bg-red-600 text-white ${baseButtonClasses}">Eliminar</button>
         `;
     } else {
+        const toggleStatusText = user.status === 'active' ? 'Desactivar' : 'Activar';
+        const toggleStatusColor = user.status === 'active' ? 'bg-gray-500 hover:bg-gray-600' : 'bg-green-500 hover:bg-green-600';
+        
         actionsHtml = `
-            <button class="edit-user-btn text-yellow-600 hover:underline font-semibold">Editar</button>
-            <button class="archive-user-btn text-gray-600 hover:underline font-semibold">Archivar</button>
-            <button class="toggle-status-btn bg-blue-500 text-white px-3 py-1 rounded-md text-sm" data-status="${user.status}">
-                ${user.status === 'active' ? 'Desactivar' : 'Activar'}
+            <button class="edit-user-btn bg-yellow-500 hover:bg-yellow-600 text-white ${baseButtonClasses}">Editar</button>
+            <button class="toggle-status-btn ${toggleStatusColor} text-white ${baseButtonClasses}" data-status="${user.status}">
+                ${toggleStatusText}
             </button>
         `;
     }
 
     row.innerHTML = `
-   
         <td class="px-6 py-4 font-medium text-gray-900" data-label="Nombre">${user.firstName} ${user.lastName}</td>
         <td class="px-6 py-4" data-label="Correo">${user.email}</td>
         <td class="px-6 py-4" data-label="Rol">
             <select class="user-role-select border rounded-md p-1 bg-white" data-userid="${user.id}">
-                <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Administrador </option>
+                <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Administrador</option>
                 <option value="sst" ${user.role === 'sst' ? 'selected' : ''}>SST</option>
                 <option value="bodega" ${user.role === 'bodega' ? 'selected' : ''}>Bodega</option>
                 <option value="operario" ${user.role === 'operario' ? 'selected' : ''}>Operario</option>
@@ -1289,6 +1226,7 @@ function createUserRow(user) {
             </div>
         </td>
     `;
+    // =================== FIN DE LA MODIFICACIÓN ===================
 
     row.querySelector('.user-role-select').addEventListener('change', (e) => {
         updateUserRole(user.id, e.target.value);
@@ -1298,11 +1236,10 @@ function createUserRow(user) {
         row.querySelector('.toggle-status-btn').addEventListener('click', (e) => {
             const newStatus = e.target.dataset.status === 'active' ? 'pending' : 'active';
             updateUserStatus(user.id, newStatus);
-        }); openMainModal
-        row.querySelector('.edit-user-btn').addEventListener('click', () => openMainModal('editUser', user));
-        row.querySelector('.archive-user-btn').addEventListener('click', () => {
-            openConfirmModal(`¿Seguro que quieres archivar al usuario ${user.email}?`, () => updateUserStatus(user.id, 'archived'));
         });
+        row.querySelector('.edit-user-btn').addEventListener('click', () => openMainModal('editUser', user));
+        
+        // Se elimina el botón "Archivar", ya que se puede desactivar el usuario
     } else {
         row.querySelector('.restore-user-btn').addEventListener('click', () => {
             openConfirmModal(`¿Seguro que quieres restaurar al usuario ${user.email}?`, () => updateUserStatus(user.id, 'pending'));
@@ -4310,82 +4247,89 @@ modalForm.addEventListener('submit', async (e) => {
 
             try {
                 const requestId = modalForm.dataset.id;
-                const requestRef = doc(db, "projects", currentProject.id, "materialRequests", requestId);
-
-                // 1. Recolectamos todas las devoluciones especificadas en el formulario.
-                const returnsToProcess = [];
-                document.querySelectorAll('.material-return-item').forEach(itemDiv => {
-                    const materialId = itemDiv.dataset.materialId;
-                    // Usamos .querySelector para asegurarnos de que solo buscamos dentro del itemDiv actual.
-                    const returnType = itemDiv.querySelector(`input[name="type_${materialId}"]:checked`)?.value || 'complete';
-
-                    if (returnType === 'complete') {
-                        const quantityInput = itemDiv.querySelector(`input[name="quantity_${materialId}"]`);
-                        const quantityToReturn = parseInt(quantityInput.value);
-                        if (quantityToReturn > 0) {
-                            returnsToProcess.push({ type: 'complete', materialId, quantity: quantityToReturn });
-                        }
-                    } else if (returnType === 'remnant') {
-                        const remnants = [];
-                        itemDiv.querySelectorAll('.remnant-item').forEach(remnantDiv => {
-                            const lengthInput = remnantDiv.querySelector(`input[name^="remnant_length_"]`);
-                            const quantityInput = remnantDiv.querySelector(`input[name^="remnant_quantity_"]`);
-                            const length = parseFloat(lengthInput.value);
-                            const quantity = parseInt(quantityInput.value);
-                            if (length > 0 && quantity > 0) {
-                                remnants.push({ length, quantity });
-                            }
-                        });
-                        if (remnants.length > 0) {
-                            returnsToProcess.push({ type: 'remnant', materialId, remnants });
-                        }
-                    }
-                });
-
-                if (returnsToProcess.length === 0) {
-                    throw new Error("No se especificó ninguna cantidad o medida a devolver.");
-                }
-
-                // 2. Ejecutamos una transacción para garantizar la integridad de los datos.
+                
+                // =================== INICIO DE LA MODIFICACIÓN ===================
                 await runTransaction(db, async (transaction) => {
-                    const requestDoc = await transaction.get(requestRef);
-                    if (!requestDoc.exists()) throw new Error("La solicitud original no existe.");
-                    const existingReturnedItems = requestDoc.data().returnedItems || [];
+                    const returnCounterRef = doc(db, "counters", "materialReturns");
+                    const counterDoc = await transaction.get(returnCounterRef);
+                    if (!counterDoc.exists()) {
+                        throw new Error("El contador de devoluciones 'materialReturns' no existe en Firestore. Por favor, créalo.");
+                    }
+                    
+                    const newReturnCount = (counterDoc.data().count || 0) + 1;
+                    const returnId = `DEV-${String(newReturnCount).padStart(4, '0')}`; // Formato: DEV-0001
+
+                    const returnsToProcess = [];
+                    document.querySelectorAll('.material-return-item').forEach(itemDiv => {
+                        const materialId = itemDiv.dataset.materialId;
+                        const returnType = itemDiv.querySelector(`input[name="type_${materialId}"]:checked`)?.value || 'complete';
+
+                        if (returnType === 'complete') {
+                            const quantityToReturn = parseInt(itemDiv.querySelector(`input[name="quantity_${materialId}"]`).value);
+                            if (quantityToReturn > 0) {
+                                returnsToProcess.push({ type: 'complete', materialId, quantity: quantityToReturn });
+                            }
+                        } else if (returnType === 'remnant') {
+                            // La lógica para retazos no cambia, pero se ejecutará dentro de la transacción
+                            const remnants = [];
+                            itemDiv.querySelectorAll('.remnant-item').forEach(remnantDiv => {
+                                const length = parseFloat(remnantDiv.querySelector(`input[name^="remnant_length_"]`).value);
+                                const quantity = parseInt(remnantDiv.querySelector(`input[name^="remnant_quantity_"]`).value);
+                                if (length > 0 && quantity > 0) {
+                                    remnants.push({ length, quantity });
+                                }
+                            });
+                            if (remnants.length > 0) {
+                                returnsToProcess.push({ type: 'remnant', materialId, remnants });
+                            }
+                        }
+                    });
+
+                    if (returnsToProcess.length === 0) {
+                        throw new Error("No se especificó ninguna cantidad a devolver.");
+                    }
 
                     for (const process of returnsToProcess) {
                         const materialRef = doc(db, "materialCatalog", process.materialId);
 
-                        // --- Lógica para devolver Unidades Completas ---
                         if (process.type === 'complete') {
                             const batchRef = doc(collection(materialRef, "stockBatches"));
                             transaction.set(batchRef, {
                                 purchaseDate: new Date(),
                                 quantityInitial: process.quantity,
                                 quantityRemaining: process.quantity,
-                                unitCost: 0, // El material devuelto no tiene costo de compra
-                                notes: `Devolución de solicitud ${requestId}`,
+                                unitCost: 0,
+                                // Guardamos el nuevo ID y la referencia a la solicitud original
+                                returnId: returnId,
+                                sourceRequestId: requestId,
+                                notes: `Devolución (${returnId}) de Solicitud ${requestId.substring(0, 6)}...`,
                             });
                             transaction.update(materialRef, { quantityInStock: increment(process.quantity) });
-                            
-                            // Actualizamos el array de devoluciones en la solicitud original
-                            // (Esta lógica es compleja, la simplificamos por ahora actualizando un contador)
-                            transaction.update(requestRef, { returnedQuantity: increment(process.quantity) });
                         } 
-                        // --- Lógica para devolver Retazos ---
                         else if (process.type === 'remnant') {
                             for (const remnant of process.remnants) {
                                 const remnantRef = doc(collection(materialRef, "remnantStock"));
                                 transaction.set(remnantRef, {
                                     length: remnant.length,
                                     quantity: remnant.quantity,
-                                    unit: 'm', // Puedes hacerlo dinámico si es necesario
+                                    unit: 'm',
                                     createdAt: new Date(),
-                                    notes: `Sobrante de solicitud ${requestId}`
+                                    notes: `Sobrante de Devolución (${returnId})`
                                 });
                             }
                         }
                     }
+                    
+                    // Actualizamos el array de devoluciones en la solicitud original para un mejor seguimiento
+                    const requestRef = doc(db, "projects", currentProject.id, "materialRequests", requestId);
+                    transaction.update(requestRef, { 
+                        returnedItems: arrayUnion(...returnsToProcess) 
+                    });
+                    
+                    // Finalmente, actualizamos el contador
+                    transaction.update(returnCounterRef, { count: newReturnCount });
                 });
+                // =================== FIN DE LA MODIFICACIÓN ===================
 
                 alert("¡Devolución registrada con éxito!");
                 closeMainModal();
@@ -4395,6 +4339,7 @@ modalForm.addEventListener('submit', async (e) => {
                 alert("Error: " + error.message);
             } finally {
                 modalConfirmBtn.disabled = false;
+                modalConfirmBtn.textContent = 'Confirmar Devolución';
             }
             break;
         }
@@ -4540,7 +4485,7 @@ modalForm.addEventListener('submit', async (e) => {
             modalConfirmBtn.textContent = 'Procesando...';
 
             try {
-                // 1. Recolectamos los materiales de la "canasta", diferenciando entre unidades completas y retazos.
+                // Recolectamos los materiales y los ítems de destino desde la interfaz de usuario
                 const requestedItems = [];
                 document.querySelectorAll('#request-items-list > div').forEach(itemEl => {
                     requestedItems.push({
@@ -4552,15 +4497,11 @@ modalForm.addEventListener('submit', async (e) => {
                     });
                 });
 
-                // 2. Recolectamos los ítems de destino del proyecto.
                 const targetItems = [];
                 document.querySelectorAll('.request-item-quantity').forEach(input => {
                     const quantity = parseInt(input.value);
                     if (quantity > 0) {
-                        targetItems.push({
-                            itemId: input.dataset.itemId,
-                            quantity: quantity
-                        });
+                        targetItems.push({ itemId: input.dataset.itemId, quantity: quantity });
                     }
                 });
 
@@ -4570,72 +4511,93 @@ modalForm.addEventListener('submit', async (e) => {
                     throw new Error("Debes añadir al menos un material y especificar la cantidad para al menos un ítem de destino.");
                 }
 
-                // 3. Ejecutamos la transacción en el frontend.
-                await runTransaction(db, async (transaction) => {
-                    let totalRequestCost = 0;
-                    const allConsumedItems = [];
-                    const allMaterialNames = [];
+                // =================== INICIO DE LA CORRECCIÓN ===================
+                
+                // 1. Planificamos todos los cambios que haremos en la base de datos ANTES de la transacción.
+                const transactionPlan = {
+                    batchUpdates: [],
+                    remnantUpdates: [],
+                    mainStockUpdates: [],
+                    totalCost: 0,
+                    consumedItems: [],
+                    materialNames: []
+                };
 
-                    for (const item of requestedItems) {
-                        const materialRef = doc(db, "materialCatalog", item.materialId);
+                for (const item of requestedItems) {
+                    const materialRef = doc(db, "materialCatalog", item.materialId);
 
-                        // --- LÓGICA PARA DESCONTAR RETAZOS ---
-                        if (item.isRemnant) {
-                            const remnantRef = doc(db, "materialCatalog", item.materialId, "remnantStock", item.remnantId);
-                            const remnantDoc = await transaction.get(remnantRef);
-                            if (!remnantDoc.exists() || remnantDoc.data().quantity < item.quantity) {
-                                throw new Error(`El retazo que intentas solicitar (${item.itemName}) ya no está disponible o no tiene suficiente cantidad.`);
-                            }
-                            // Descontamos la cantidad del retazo específico.
-                            transaction.update(remnantRef, { quantity: increment(-item.quantity) });
-                            
-                            allConsumedItems.push({ type: 'remnant', ...item });
-                            allMaterialNames.push(item.itemName);
-                        } 
-                        // --- LÓGICA PARA DESCONTAR UNIDADES COMPLETAS (FIFO) ---
-                        else {
-                            // Las consultas deben hacerse fuera de la transacción en el cliente.
-                            const batchesQuery = query(collection(materialRef, "stockBatches"), where("quantityRemaining", ">", 0), orderBy("purchaseDate", "asc"));
-                            const batchesSnapshot = await getDocs(batchesQuery);
-                            
-                            const realStock = batchesSnapshot.docs.reduce((sum, doc) => sum + doc.data().quantityRemaining, 0);
-                            if (realStock < item.quantity) {
-                                const materialDocSnap = await getDoc(materialRef);
-                                const materialName = materialDocSnap.exists() ? materialDocSnap.data().name : item.materialId;
-                                throw new Error(`No hay stock suficiente de ${materialName}. Solicitado: ${item.quantity}, Disponible: ${realStock}.`);
-                            }
-
-                            let remainingToFulfill = item.quantity;
-                            let materialCost = 0;
-                            for (const batchDoc of batchesSnapshot.docs) {
-                                if (remainingToFulfill <= 0) break;
-                                const batchData = batchDoc.data();
-                                const consume = Math.min(batchData.quantityRemaining, remainingToFulfill);
-                                transaction.update(batchDoc.ref, { quantityRemaining: increment(-consume) });
-                                materialCost += consume * (batchData.unitCost || 0);
-                                remainingToFulfill -= consume;
-                            }
-                            
-                            transaction.update(materialRef, { quantityInStock: increment(-item.quantity) });
-                            totalRequestCost += materialCost;
-                            allConsumedItems.push({ type: 'full_unit', ...item });
-                            allMaterialNames.push(item.itemName);
+                    if (item.isRemnant) { // Lógica para retazos
+                        const remnantRef = doc(materialRef, "remnantStock", item.remnantId);
+                        transactionPlan.remnantUpdates.push({ ref: remnantRef, deduct: item.quantity });
+                        transactionPlan.consumedItems.push({ type: 'remnant', ...item });
+                        transactionPlan.materialNames.push(item.itemName);
+                    } else { // Lógica para unidades completas (FIFO)
+                        const batchesQuery = query(collection(materialRef, "stockBatches"), where("quantityRemaining", ">", 0), orderBy("purchaseDate", "asc"));
+                        const batchesSnapshot = await getDocs(batchesQuery);
+                        
+                        const availableStock = batchesSnapshot.docs.reduce((sum, doc) => sum + doc.data().quantityRemaining, 0);
+                        if (availableStock < item.quantity) {
+                            const materialSnap = await getDoc(materialRef);
+                            const materialName = materialSnap.exists() ? materialSnap.data().name : item.materialId;
+                            throw new Error(`No hay stock suficiente de ${materialName}. Solicitado: ${item.quantity}, Disponible: ${availableStock}.`);
                         }
+
+                        let remainingToFulfill = item.quantity;
+                        for (const batchDoc of batchesSnapshot.docs) {
+                            if (remainingToFulfill <= 0) break;
+                            const batchData = batchDoc.data();
+                            const consume = Math.min(batchData.quantityRemaining, remainingToFulfill);
+                            
+                            transactionPlan.batchUpdates.push({ ref: batchDoc.ref, deduct: consume });
+                            transactionPlan.totalCost += consume * (batchData.unitCost || 0);
+                            remainingToFulfill -= consume;
+                        }
+                        
+                        transactionPlan.mainStockUpdates.push({ ref: materialRef, deduct: item.quantity });
+                        transactionPlan.consumedItems.push({ type: 'full_unit', ...item });
+                        transactionPlan.materialNames.push(item.itemName);
+                    }
+                }
+                
+                // 2. Ejecutamos la transacción atómica con nuestro plan.
+                await runTransaction(db, async (transaction) => {
+                    // A. Verificamos y actualizamos los lotes de stock
+                    for (const update of transactionPlan.batchUpdates) {
+                        const batchDoc = await transaction.get(update.ref);
+                        if (!batchDoc.exists() || batchDoc.data().quantityRemaining < update.deduct) {
+                            throw new Error("El stock cambió mientras se procesaba la solicitud. Por favor, inténtalo de nuevo.");
+                        }
+                        transaction.update(update.ref, { quantityRemaining: increment(-update.deduct) });
+                    }
+                    
+                    // B. Verificamos y actualizamos los retazos
+                    for (const update of transactionPlan.remnantUpdates) {
+                        const remnantDoc = await transaction.get(update.ref);
+                        if (!remnantDoc.exists() || remnantDoc.data().quantity < update.deduct) {
+                            throw new Error("El retazo solicitado ya no está disponible. Por favor, inténtalo de nuevo.");
+                        }
+                        transaction.update(update.ref, { quantity: increment(-update.deduct) });
                     }
 
-                    // 4. Creamos el documento final de la solicitud.
+                    // C. Actualizamos el contador general de stock
+                    for (const update of transactionPlan.mainStockUpdates) {
+                        transaction.update(update.ref, { quantityInStock: increment(-update.deduct) });
+                    }
+
+                    // D. Creamos el documento de la solicitud
                     const requestRef = doc(collection(db, "projects", currentProject.id, "materialRequests"));
                     transaction.set(requestRef, {
-                        consumedItems: allConsumedItems,
+                        consumedItems: transactionPlan.consumedItems,
                         targetItems,
-                        materialName: allMaterialNames.join(', '),
+                        materialName: transactionPlan.materialNames.join(', '),
                         quantity: requestedItems.reduce((sum, item) => sum + item.quantity, 0),
                         requesterId: selectedRequesterId,
                         createdAt: new Date(),
                         status: "solicitado",
-                        totalCost: totalRequestCost,
+                        totalCost: transactionPlan.totalCost,
                     });
                 });
+                // =================== FIN DE LA CORRECCIÓN ===================
                 
                 alert("Solicitud creada con éxito.");
                 closeMainModal();
@@ -4645,6 +4607,7 @@ modalForm.addEventListener('submit', async (e) => {
                 alert("Error: " + error.message);
             } finally {
                 modalConfirmBtn.disabled = false;
+                modalConfirmBtn.textContent = 'Enviar Solicitud';
             }
             break;
         }
@@ -5523,7 +5486,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     };
 
-    document.getElementById('generate-report-btn').addEventListener('click', generateMaterialReport);
 
     document.getElementById('po-details-close-btn').addEventListener('click', closePurchaseOrderModal);
     document.getElementById('po-details-cancel-btn').addEventListener('click', closePurchaseOrderModal);
@@ -6392,14 +6354,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     loadUsers('active');
                 } else if (viewName === 'proveedores') {
                     showView('proveedores');
-                    loadProveedoresView(); // Llamamos a la nueva función
-                } else if (viewName === 'catalog') { // <-- LÍNEA AÑADIDA
+                    loadProveedoresView();
+                } else if (viewName === 'catalog') {
                     showView('catalog');
                     loadCatalogView();
-                } else if (viewName === 'compras') { // <-- LÍNEA AÑADIDA
+                } else if (viewName === 'compras') {
                     showView('compras');
                     loadComprasView();
-                } else {
+                }
+                // =================== INICIO DE LA CORRECCIÓN ===================
+                else if (viewName === 'reports') {
+                    showView('reports');
+                    loadReportsView(); // Esta línea faltaba
+                }
+                // =================== FIN DE LA CORRECCIÓN ===================
+                else {
                     showView(viewName);
                 }
 
@@ -6732,7 +6701,8 @@ async function loadMaterialsTab(project) {
 
         requestsTableBody.innerHTML = '';
         if (snapshot.empty) {
-            requestsTableBody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-gray-500">No hay solicitudes de material.</td></tr>`;
+            // Se ajustó el colspan a 6 columnas
+            requestsTableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-gray-500">No hay solicitudes de material.</td></tr>`;
             return;
         }
 
@@ -6754,33 +6724,32 @@ async function loadMaterialsTab(project) {
 
             const solicitante = usersMap.get(request.requesterId)?.firstName || 'Desconocido';
             const responsable = usersMap.get(request.responsibleId)?.firstName || 'N/A';
+            
+            const baseButtonClasses = "text-sm font-semibold py-2 px-4 rounded-lg transition-colors w-32 text-center";
 
-            // --- INICIO DE LA MODIFICACIÓN DEL DISEÑO ---
-
-            // Estilo de botón para "Ver Detalles"
-            let viewDetailsBtn = `<button data-action="view-request-details" data-id="${request.id}" class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-1 px-3 rounded-lg transition-colors">Ver Detalles</button>`;
+            const viewDetailsBtn = `<button data-action="view-request-details" data-id="${request.id}" class="bg-blue-500 hover:bg-blue-600 text-white ${baseButtonClasses}">Ver Detalles</button>`;
 
             let statusText, statusColor, actionsHtml = '';
             switch (request.status) {
                 case 'solicitado':
                     statusText = 'Solicitado'; statusColor = 'bg-yellow-100 text-yellow-800';
                     if (currentUserRole === 'admin' || currentUserRole === 'bodega') {
-                        // Estilo de botón para "Aprobar" y "Rechazar"
-                        actionsHtml = `<button data-action="approve-request" data-id="${request.id}" class="bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-1 px-3 rounded-lg transition-colors">Aprobar</button>
-                                       <button data-action="reject-request" data-id="${request.id}" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-1 px-3 rounded-lg transition-colors">Rechazar</button>`;
+                        actionsHtml = `
+                            <button data-action="approve-request" data-id="${request.id}" class="bg-green-500 hover:bg-green-600 text-white ${baseButtonClasses}">Aprobar</button>
+                            <button data-action="reject-request" data-id="${request.id}" class="bg-red-500 hover:bg-red-600 text-white ${baseButtonClasses}">Rechazar</button>
+                        `;
                     }
                     break;
                 case 'aprobado':
                     statusText = 'Aprobado'; statusColor = 'bg-blue-100 text-blue-800';
                     if (currentUserRole === 'bodega' || currentUserRole === 'admin') {
-                        // Estilo de botón para "Marcar Entregado"
-                        actionsHtml = `<button data-action="deliver-material" data-id="${request.id}" class="bg-teal-500 hover:bg-teal-600 text-white text-xs font-bold py-1 px-3 rounded-lg transition-colors">Marcar Entregado</button>`;
+                        actionsHtml = `<button data-action="deliver-material" data-id="${request.id}" class="bg-teal-500 hover:bg-teal-600 text-white ${baseButtonClasses}">Entregado</button>`;
                     }
                     break;
                 case 'entregado':
                     statusText = 'Entregado'; statusColor = 'bg-green-100 text-green-800';
                     if (request.quantity > (request.returnedQuantity || 0) && (currentUserRole === 'admin' || currentUserRole === 'operario')) {
-                        actionsHtml = `<button data-action="return-material" data-id="${request.id}" class="bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-bold py-1 px-3 rounded-lg transition-colors">Devolver</button>`;
+                        actionsHtml = `<button data-action="return-material" data-id="${request.id}" class="bg-yellow-500 hover:bg-yellow-600 text-white ${baseButtonClasses}">Devolver</button>`;
                     }
                     break;
                 case 'rechazado':
@@ -6789,13 +6758,12 @@ async function loadMaterialsTab(project) {
                 default:
                     statusText = 'Desconocido'; statusColor = 'bg-gray-100 text-gray-800';
             }
-            // --- FIN DE LA MODIFICACIÓN DEL DISEÑO ---
 
             const row = document.createElement('tr');
+            // =================== INICIO DE LA MODIFICACIÓN ===================
+            // Se eliminaron las celdas <td> para material y cantidad
             row.innerHTML = `
                 <td class="px-6 py-4">${request.createdAt.toDate().toLocaleDateString('es-CO')}</td>
-                <td class="px-6 py-4 font-medium">${request.materialName}</td>
-                <td class="px-6 py-4 text-center">${request.quantity}</td>
                 <td class="px-6 py-4">${solicitante}</td>
                 <td class="px-6 py-4">${targetItemName}</td>
                 <td class="px-6 py-4 text-center"><span class="px-2 py-1 text-xs font-semibold rounded-full ${statusColor}">${statusText}</span></td>
@@ -6807,6 +6775,7 @@ async function loadMaterialsTab(project) {
                     </div>
                 </td>
             `;
+            // =================== FIN DE LA MODIFICACIÓN ===================
             requestsTableBody.appendChild(row);
         });
     });

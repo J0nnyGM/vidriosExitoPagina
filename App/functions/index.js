@@ -1,4 +1,4 @@
-const functions = require("firebase-functions");
+/* const functions = require("firebase-functions");
 // Sintaxis moderna para importar los servicios de Firebase Admin
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { initializeApp, getApps } = require("firebase-admin/app");
@@ -10,12 +10,12 @@ if (getApps().length === 0) {
 }
 
 const db = getFirestore();
-const auth = getAuth();
+const auth = getAuth();*/
 
 /**
  * Cloud Function para recibir una orden de compra, crear lotes de stock y actualizar el inventario.
  */
-exports.receivePurchaseOrder = functions.https.onCall(async (data, context) => {
+/*exports.receivePurchaseOrder = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError("unauthenticated", "La función debe ser llamada por un usuario autenticado.");
   }
@@ -70,12 +70,12 @@ exports.receivePurchaseOrder = functions.https.onCall(async (data, context) => {
     console.error(`CRASH en la transacción para PO ${poId}:`, error.message);
     throw new functions.https.HttpsError("internal", error.message || "Ocurrió un error interno en la transacción.");
   }
-});
+});*/
 
 /**
  * Cloud Function para procesar una solicitud de material usando FIFO.
  */
-exports.requestMaterialFIFO = functions.https.onCall(async (data, context) => {
+/*exports.requestMaterialFIFO = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado.");
   }
@@ -153,12 +153,12 @@ exports.requestMaterialFIFO = functions.https.onCall(async (data, context) => {
     console.error("Error en la transacción FIFO:", error);
     throw new functions.https.HttpsError("internal", "No se pudo completar la solicitud: " + error.message);
   }
-});
+});*/
 
 /**
  * Cloud Function para procesar la devolución de material.
  */
-exports.returnMaterial = functions.https.onCall(async (data, context) => {
+/*exports.returnMaterial = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado.");
   }
@@ -216,4 +216,4 @@ exports.returnMaterial = functions.https.onCall(async (data, context) => {
     console.error("Error en la transacción de devolución:", error);
     throw new functions.https.HttpsError("internal", "No se pudo completar la devolución: " + error.message);
   }
-});
+});*/

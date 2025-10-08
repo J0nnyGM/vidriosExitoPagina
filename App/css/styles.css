@@ -454,3 +454,59 @@ dl dd span.block {
 dl dd span.block:last-child {
   margin-bottom: 0;
 }
+
+/* Estado por defecto: Menú expandido (como en móvil) */
+
+#sidebar .full-title {
+    display: inline;
+}
+#sidebar .initials-title {
+    display: none;
+}
+
+/* Estado 1: Menú colapsado */
+#sidebar.is-collapsed .full-title {
+    display: none;
+}
+#sidebar.is-collapsed .initials-title {
+    display: inline;
+}
+
+/* Estado 2: Menú colapsado, pero expandido temporalmente por el hover del mouse */
+#sidebar.is-collapsed.is-expanded-hover .full-title {
+    display: inline;
+}
+#sidebar.is-collapsed.is-expanded-hover .initials-title {
+    display: none;
+}
+
+/* =============================================================== */
+/* ANIMACIÓN PARA EL TEXTO DEL SIDEBAR (AÑADIR AL FINAL)     */
+/* =============================================================== */
+
+/* 1. Estilos base para el texto del menú */
+.sidebar-text {
+    /* Define la transición: se animará la opacidad y la posición */
+    transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+}
+
+/* 2. Cuando el sidebar está colapsado... */
+#sidebar.is-collapsed .sidebar-text {
+    /* Hacemos el texto completamente transparente */
+    opacity: 0;
+    /* Lo movemos un poco a la izquierda para el efecto de deslizamiento */
+    transform: translateX(-10px);
+    /* Ocultamos para que no interfiera */
+    visibility: hidden;
+}
+
+/* 3. Cuando el sidebar colapsado se expande al pasar el mouse... */
+#sidebar.is-collapsed.is-expanded-hover .sidebar-text {
+    /* Hacemos el texto visible de nuevo */
+    opacity: 1;
+    /* Lo devolvemos a su posición original */
+    transform: translateX(0);
+    visibility: visible;
+    /* Añadimos un pequeño retraso para que la animación se vea más suave */
+    transition-delay: 0.1s;
+}
