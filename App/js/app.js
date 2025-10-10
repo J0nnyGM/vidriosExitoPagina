@@ -1324,6 +1324,7 @@ async function deleteUser(uid) {
 function setupResponsiveTabs() {
     const desktopButtons = document.querySelectorAll('#project-details-tabs .tab-button');
     const dropdownMenuContainer = document.getElementById('dropdown-menu-items');
+    const dropdownMenu = document.getElementById('project-tabs-dropdown-menu'); // Referencia al menú
 
     if (!dropdownMenuContainer || !desktopButtons.length) return;
 
@@ -1338,6 +1339,31 @@ function setupResponsiveTabs() {
         menuItem.className = 'block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100';
         dropdownMenuContainer.appendChild(menuItem);
     });
+
+    // ====================================================================
+    //      INICIO: LÓGICA AÑADIDA PARA CORREGIR EL ERROR
+    // ====================================================================
+    // Se añade un listener al contenedor de los ítems del menú.
+    dropdownMenuContainer.addEventListener('click', (e) => {
+        e.preventDefault(); // Previene que la página salte al inicio
+        const target = e.target;
+        
+        // Verificamos que se hizo clic en una opción del menú
+        if (target.dataset.tab) {
+            const tabName = target.dataset.tab;
+            
+            // Llamamos a la función que ya tienes para cambiar de pestaña
+            switchProjectTab(tabName);
+            
+            // Ocultamos el menú desplegable
+            if (dropdownMenu) {
+                dropdownMenu.classList.add('hidden');
+            }
+        }
+    });
+    // ====================================================================
+    //      FIN: LÓGICA AÑADIDA
+    // ====================================================================
 }
 
 
@@ -4619,7 +4645,20 @@ modalForm.addEventListener('submit', async (e) => {
             }
 
             await createItem(data);
-            loadItems(currentProject.id); // Recarga la lista de ítems
+            // ====================================================================
+            //      INICIO: LÓGICA AÑADIDA PARA ACTUALIZAR LA VISTA
+            // ====================================================================
+            // Después de crear el ítem, volvemos a cargar los detalles del proyecto.
+            // La función showProjectDetails se encargará de recalcular todo y
+            // actualizar la "Información General" automáticamente.
+            const projectDoc = await getDoc(doc(db, "projects", currentProject.id));
+            if (projectDoc.exists()) {
+                currentProject = { id: projectDoc.id, ...projectDoc.data() }; // Actualizamos la data local del proyecto
+                showProjectDetails(currentProject, 'items'); // Recargamos la vista, manteniéndonos en la pestaña de ítems
+            }
+            // ====================================================================
+            //      FIN: LÓGICA AÑADIDA
+            // ====================================================================
             break;
         }
         case 'editItem': { // Se usan llaves para crear un bloque de alcance
@@ -4647,7 +4686,18 @@ modalForm.addEventListener('submit', async (e) => {
             }
 
             await updateItem(id, data);
-            loadItems(currentProject.id); // Recarga la lista de ítems
+            // ====================================================================
+            //      INICIO: LÓGICA AÑADIDA PARA ACTUALIZAR LA VISTA
+            // ====================================================================
+            // Misma lógica que al añadir: recargamos los detalles del proyecto.
+            const projectDoc = await getDoc(doc(db, "projects", currentProject.id));
+            if (projectDoc.exists()) {
+                currentProject = { id: projectDoc.id, ...projectDoc.data() };
+                showProjectDetails(currentProject, 'items');
+            }
+            // ====================================================================
+            //      FIN: LÓGICA AÑADIDA
+            // ====================================================================
             break;
         }
         case 'editUser':
@@ -6230,6 +6280,41 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+        // ====================================================================
+    //      INICIO: CORRECCIÓN PARA MENÚ DESPLEGABLE EN VISTA DE PROYECTO
+    // ====================================================================
+    const projectTabsDropdownBtn = document.getElementById('project-tabs-dropdown-btn');
+    const projectTabsDropdownMenu = document.getElementById('project-tabs-dropdown-menu');
+
+    if (projectTabsDropdownBtn && projectTabsDropdownMenu) {
+        // 1. Lógica para ABRIR/CERRAR el menú desplegable
+        projectTabsDropdownBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Evita que otros listeners interfieran
+            projectTabsDropdownMenu.classList.toggle('hidden');
+        });
+
+        // 2. Lógica para CAMBIAR de pestaña al hacer clic en una opción
+        projectTabsDropdownMenu.addEventListener('click', (e) => {
+            const link = e.target.closest('a[data-tab]');
+            if (link) {
+                e.preventDefault();
+                const tabName = link.dataset.tab;
+                switchProjectTab(tabName); // Reutilizamos la función que ya existe
+                projectTabsDropdownMenu.classList.add('hidden'); // Ocultamos el menú
+            }
+        });
+
+        // 3. Lógica para CERRAR el menú si se hace clic fuera de él
+        document.addEventListener('click', (e) => {
+            if (!projectTabsDropdownBtn.contains(e.target) && !projectTabsDropdownMenu.contains(e.target)) {
+                projectTabsDropdownMenu.classList.add('hidden');
+            }
+        });
+    }
+    // ====================================================================
+    //      FIN: CORRECCIÓN
+    // ====================================================================
 
     initializeDesktopSidebar();
 
