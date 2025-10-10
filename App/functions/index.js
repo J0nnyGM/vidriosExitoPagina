@@ -115,6 +115,7 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
  * Cloud Function programada que audita y sincroniza el stock de todos los materiales.
  * Se recomienda programarla para que se ejecute una vez al día (ej. cada madrugada).
  */
+
 exports.scheduledInventorySync = onSchedule("every 24 hours", async (event) => {
     console.log("Executing scheduled inventory audit...");
 
