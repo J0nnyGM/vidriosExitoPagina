@@ -1622,3 +1622,109 @@ exports.repairRutUrls = functions.runWith({ timeoutSeconds: 540, memory: '1GB' }
     log.info(resultMessage);
     return { success: true, message: resultMessage };
 });
+
+exports.recordTransfer = functions.https.onCall(async (data, context) => {
+    if (!context.auth || context.auth.token.role !== 'admin') {
+        throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden registrar transferencias.");
+    }
+
+const { cuentaOrigen, cuentaDestino, monto, referencia, fechaTransferencia } = data;
+    if (!cuentaOrigen || !cuentaDestino || !monto || monto <= 0 || cuentaOrigen === cuentaDestino || !fechaTransferencia) { // <-- Se añade validación de fecha
+        throw new functions.https.HttpsError("invalid-argument", "Datos de transferencia inválidos o incompletos.");
+    }
+
+    try {
+        await db.collection("transferencias").add({
+            fechaRegistro: admin.firestore.FieldValue.serverTimestamp(), // Se renombra el campo de timestamp
+            fechaTransferencia: fechaTransferencia, // <-- Se guarda la fecha proporcionada
+            cuentaOrigen,
+            cuentaDestino,
+            monto,
+            referencia: referencia || '',
+            estado: 'pendiente',
+            registradoPor: context.auth.uid
+        });
+        return { success: true };
+    } catch (error) {
+        functions.logger.error("Error al registrar transferencia:", error);
+        throw new functions.https.HttpsError("internal", "No se pudo guardar la transferencia.");
+    }
+});
+
+// NUEVA FUNCIÓN en index.js
+exports.confirmTransfer = functions.https.onCall(async (data, context) => {
+    if (!context.auth || context.auth.token.role !== 'admin') {
+        throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden confirmar transferencias.");
+    }
+
+    const { transferId } = data;
+    if (!transferId) {
+        throw new functions.https.HttpsError("invalid-argument", "Falta el ID de la transferencia.");
+    }
+
+    const transferRef = db.collection("transferencias").doc(transferId);
+    const gastosRef = db.collection("gastos");
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const transferDoc = await transaction.get(transferRef);
+            if (!transferDoc.exists) {
+                throw new Error("La transferencia no existe.");
+            }
+            const transferData = transferDoc.data();
+
+            if (transferData.estado !== 'pendiente') {
+                throw new Error("Esta transferencia ya fue procesada o no está pendiente.");
+            }
+            if (transferData.registradoPor === context.auth.uid) {
+                throw new Error("No puedes confirmar una transferencia registrada por ti mismo.");
+            }
+
+            // Marcar la transferencia como confirmada
+            transaction.update(transferRef, {
+                estado: 'confirmada',
+                confirmadoPor: context.auth.uid,
+                confirmadoEn: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+// Se usa la fecha de la transferencia para los gastos
+            const fechaGasto = transferData.fechaTransferencia; 
+            const timestamp = admin.firestore.FieldValue.serverTimestamp(); // Se mantiene el timestamp de registro
+
+            
+            
+            // Gasto de SALIDA
+            const gastoSalida = {
+                fecha: fechaGasto, // <-- Usa la fecha correcta
+                proveedorNombre: `Transferencia Salida -> ${transferData.cuentaDestino}`,
+                valorTotal: transferData.monto,
+                fuentePago: transferData.cuentaOrigen, // Dinero sale de aquí
+                registradoPor: context.auth.uid,
+                timestamp: timestamp,
+                isTransfer: true,
+                transferId: transferId,
+                referencia: transferData.referencia || ''
+            };
+            transaction.set(gastosRef.doc(), gastoSalida);
+
+            // Gasto de ENTRADA (valor negativo)
+            const gastoEntrada = {
+                fecha: fechaGasto,
+                proveedorNombre: `Transferencia Entrada <- ${transferData.cuentaOrigen}`,
+                valorTotal: -transferData.monto, // Valor negativo para simular ingreso
+                fuentePago: transferData.cuentaDestino, // Dinero entra aquí
+                registradoPor: context.auth.uid,
+                timestamp: timestamp,
+                isTransfer: true,
+                transferId: transferId,
+                referencia: transferData.referencia || ''
+            };
+            transaction.set(gastosRef.doc(), gastoEntrada);
+        });
+
+        return { success: true };
+    } catch (error) {
+        functions.logger.error(`Error al confirmar transferencia ${transferId}:`, error);
+        throw new functions.https.HttpsError("internal", `No se pudo confirmar la transferencia: ${error.message}`);
+    }
+});

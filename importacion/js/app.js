@@ -9,13 +9,13 @@ import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/12.0.
 
 // --- INICIALIZACIÓN Y CONFIGURACIÓN ---
 const firebaseConfig = {
-  apiKey: "AIzaSyCBTjIT0q2X5K_aSnyTgZSRSyZc6Cc3FJ4",
-  authDomain: "vidrioexpres1.firebaseapp.com",
-  projectId: "vidrioexpres1",
-  storageBucket: "vidrioexpres1.firebasestorage.app",
-  messagingSenderId: "59380378063",
-  appId: "1:59380378063:web:de9accc5f9ddc48d274aba",
-  measurementId: "G-BXZJWX9ZKG"
+    apiKey: "AIzaSyCBTjIT0q2X5K_aSnyTgZSRSyZc6Cc3FJ4",
+    authDomain: "vidrioexpres1.firebaseapp.com",
+    projectId: "vidrioexpres1",
+    storageBucket: "vidrioexpres1.firebasestorage.app",
+    messagingSenderId: "59380378063",
+    appId: "1:59380378063:web:de9accc5f9ddc48d274aba",
+    measurementId: "G-BXZJWX9ZKG"
 };
 let app, auth, db, storage, functions, analytics;
 try {
@@ -44,6 +44,8 @@ let dynamicElementCounter = 0;
 let isRegistering = false;
 let modalTimeout;
 let initialBalances = {};
+let unsubscribePendingTransfers = null;
+
 const METODOS_DE_PAGO_IMPORTACION = ['Efectivo', 'Nequi', 'Bancolombia', 'Transferencia'];
 const METODOS_DE_PAGO = ['Efectivo', 'Nequi', 'Bancolombia'];
 const ESTADOS_REMISION = ['Recibido', 'En Proceso', 'Procesado', 'Entregado'];
@@ -345,7 +347,7 @@ function loadViewTemplates() {
     document.getElementById('view-facturacion').innerHTML = `<div class="bg-white p-6 rounded-xl shadow-md max-w-6xl mx-auto"><h2 class="text-2xl font-semibold mb-4">Gestión de Facturación</h2><div class="border-b border-gray-200 mb-6"><nav id="facturacion-nav" class="-mb-px flex space-x-6"><button id="tab-pendientes" class="dashboard-tab-btn active py-3 px-1 font-semibold">Pendientes</button><button id="tab-realizadas" class="dashboard-tab-btn py-3 px-1 font-semibold">Realizadas</button></nav></div><div id="view-pendientes"><h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Pendientes de Facturar</h3><div id="facturacion-pendientes-list" class="space-y-3"></div></div><div id="view-realizadas" class="hidden"><h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Facturadas</h3><div id="facturacion-realizadas-list" class="space-y-3"></div></div></div>`;
     document.getElementById('view-clientes').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Cliente</h2><form id="add-cliente-form" class="space-y-4"><input type="text" id="nuevo-cliente-nombre-empresa" placeholder="Nombre Empresa" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="text" id="nuevo-cliente-contacto" placeholder="Nombre del Contacto" class="w-full p-3 border border-gray-300 rounded-lg"><input type="email" id="nuevo-cliente-email" placeholder="Correo Electrónico" class="w-full p-3 border border-gray-300 rounded-lg"><input type="tel" id="nuevo-cliente-telefono1" placeholder="Teléfono 1" class="w-full p-3 border border-gray-300 rounded-lg" required oninput="this.value = this.value.replace(/[^0-9]/g, '')"><input type="tel" id="nuevo-cliente-telefono2" placeholder="Teléfono 2 (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg" oninput="this.value = this.value.replace(/[^0-9]/g, '')"><input type="text" id="nuevo-cliente-nit" placeholder="NIT (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg"><div class="space-y-1"><label for="nuevo-cliente-rut" class="block text-sm font-medium text-gray-700">RUT (Opcional)</label><input type="file" id="nuevo-cliente-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/></div><button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Clientes</h2><input type="search" id="search-clientes" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="clientes-list" class="space-y-3"></div></div></div>`;
     document.getElementById('view-proveedores').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Proveedor</h2><form id="add-proveedor-form" class="space-y-4"><input type="text" id="nuevo-proveedor-nombre" placeholder="Nombre del Proveedor" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="text" id="nuevo-proveedor-contacto" placeholder="Nombre de Contacto" class="w-full p-3 border border-gray-300 rounded-lg"><input type="tel" id="nuevo-proveedor-telefono" placeholder="Teléfono" class="w-full p-3 border border-gray-300 rounded-lg"><input type="email" id="nuevo-proveedor-email" placeholder="Correo" class="w-full p-3 border border-gray-300 rounded-lg"><div><label for="nuevo-proveedor-rut" class="block text-sm font-medium text-gray-700">RUT</Opcional></label><input type="file" id="nuevo-proveedor-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"/></div><button type="submit" class="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Proveedores</h2><input type="search" id="search-proveedores" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="proveedores-list" class="space-y-3"></div></div></div>`;
-    
+
     document.getElementById('view-gastos').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
     <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
         <h2 class="text-xl font-semibold mb-4">Nuevo Gasto</h2>
@@ -400,7 +402,7 @@ function loadViewTemplates() {
     </div>
 </div>`;
     document.getElementById('view-empleados').innerHTML = `<div class="bg-white p-6 rounded-xl shadow-md max-w-4xl mx-auto"><h2 class="text-xl font-semibold mb-4">Gestión de Empleados</h2><div id="empleados-list" class="space-y-3"></div></div>`;
-    
+
     // Se mueven los listeners al final para asegurar que todos los elementos existan
     document.getElementById('show-policy-link').addEventListener('click', (e) => { e.preventDefault(); showPolicyModal(); });
     document.getElementById('show-login-link-register').addEventListener('click', (e) => { e.preventDefault(); registerForm.classList.add('hidden'); loginForm.classList.remove('hidden'); });
@@ -1262,8 +1264,8 @@ function renderClientes() {
 
         // --- INICIO DEL CAMBIO ---
         // Se añade una línea para mostrar el nombre del contacto
-        const nombreContactoHtml = cliente.contacto 
-            ? `<p class="text-sm text-gray-700"><span class="font-medium">Contacto:</span> ${cliente.contacto}</p>` 
+        const nombreContactoHtml = cliente.contacto
+            ? `<p class="text-sm text-gray-700"><span class="font-medium">Contacto:</span> ${cliente.contacto}</p>`
             : '';
         // --- FIN DEL CAMBIO ---
 
@@ -1535,11 +1537,11 @@ function renderFacturacion() {
             if (clienteDeRemision) {
                 infoClienteExtra = `<p class="text-sm text-gray-500 mt-1">${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}${clienteDeRemision.email || ''}</p>`;
             }
-            
+
             // --- INICIO DE LA CORRECCIÓN CLAVE ---
             // 1. Botón de Ver Remisión usa la ruta
             const remisionPdfButton = remision.pdfPath ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-600">Ver Remisión</button>` : '';
-            
+
             // 2. Lógica de Factura ahora busca 'facturaPdfPath'
             let facturaButtons = remision.facturaPdfPath
                 ? `<button data-file-path="${remision.facturaPdfPath}" data-file-title="Factura N° ${remision.numeroFactura || remision.numeroRemision}" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700">Ver Factura</button>`
@@ -1550,7 +1552,7 @@ function renderFacturacion() {
             realizadasListEl.appendChild(el);
         });
     }
-    
+
     document.querySelectorAll('.facturar-btn').forEach(btn => btn.addEventListener('click', (e) => showFacturaModal(e.currentTarget.dataset.remisionId)));
 }
 
@@ -2207,6 +2209,20 @@ async function showNacionalModal(compra = null) {
         });
 
         document.getElementById('add-abono-nacional-btn')?.addEventListener('click', () => handleAbonoNacionalSubmit(compra.id));
+    }
+}
+
+// Al cerrar el modal, detenemos el listener de transferencias
+function hideModal() {
+    const modal = document.getElementById('modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        // --- LÍNEA AÑADIDA ---
+        // Detener listener de transferencias si está activo al cerrar CUALQUIER modal
+        if (unsubscribePendingTransfers) {
+            unsubscribePendingTransfers();
+            unsubscribePendingTransfers = null;
+        }
     }
 }
 
@@ -4129,7 +4145,7 @@ function showEditClientModal(cliente) {
                 const encodedPath = urlString.substring(bucketEndIndex + bucketEndMarker.length, queryStartIndex);
                 rutPath = decodeURIComponent(encodedPath);
             } else {
-                 throw new Error("La URL no contiene un nombre de bucket reconocible (.app/).");
+                throw new Error("La URL no contiene un nombre de bucket reconocible (.app/).");
             }
         } catch (e) {
             console.error("Error al procesar la URL del RUT del cliente:", e.message, cliente.rutUrl);
@@ -4208,7 +4224,7 @@ function showEditProviderModal(proveedor) {
                 const encodedPath = urlString.substring(bucketEndIndex + bucketEndMarker.length, queryStartIndex);
                 rutPath = decodeURIComponent(encodedPath);
             } else {
-                 throw new Error("La URL no contiene un nombre de bucket reconocible (.app/).");
+                throw new Error("La URL no contiene un nombre de bucket reconocible (.app/).");
             }
         } catch (e) {
             console.error("Error al procesar la URL del RUT del proveedor:", e.message, proveedor.rutUrl);
@@ -4301,13 +4317,13 @@ function showPaymentModal(remision) {
 
     const metodosDePagoHTML = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
 
-    const paymentsHTML = (remision.payments || []).sort((a,b) => new Date(b.date) - new Date(a.date)).map((p, index) => {
+    const paymentsHTML = (remision.payments || []).sort((a, b) => new Date(b.date) - new Date(a.date)).map((p, index) => {
         let statusBadge = '';
         let confirmButton = '';
 
         if (p.status === 'por confirmar') {
             statusBadge = `<span class="text-xs font-semibold bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">Por Confirmar</span>`;
-            
+
             // --- INICIO DE LA CORRECCIÓN CLAVE ---
             if (currentUserData.role === 'admin') {
                 if (p.registeredBy !== currentUser.uid) {
@@ -4336,7 +4352,7 @@ function showPaymentModal(remision) {
 
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
     modalContentWrapper.innerHTML = `<div class="bg-white rounded-lg p-6 shadow-xl max-w-3xl w-full mx-auto text-left"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Gestionar Pagos (Remisión N° ${remision.numeroRemision})</h2><button id="close-payment-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button></div><div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 text-center"><div class="bg-blue-50 p-3 rounded-lg"><div class="text-sm text-blue-800">VALOR TOTAL</div><div class="font-bold text-lg">${formatCurrency(remision.valorTotal)}</div></div><div class="bg-green-50 p-3 rounded-lg"><div class="text-sm text-green-800">PAGADO (CONF.)</div><div class="font-bold text-lg">${formatCurrency(totalConfirmado)}</div></div><div class="bg-yellow-50 p-3 rounded-lg"><div class="text-sm text-yellow-800">POR CONFIRMAR</div><div class="font-bold text-lg">${formatCurrency(totalPorConfirmar)}</div></div><div class="bg-red-50 p-3 rounded-lg"><div class="text-sm text-red-800">SALDO PENDIENTE</div><div class="font-bold text-lg">${formatCurrency(saldoPendiente)}</div></div></div><div class="grid grid-cols-1 md:grid-cols-2 gap-6"><div><h3 class="font-semibold mb-2">Historial de Pagos</h3><div class="border rounded-lg max-h-60 overflow-y-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="p-2 text-left">Fecha</th><th class="p-2 text-left">Método</th><th class="p-2 text-right">Monto</th><th class="p-2 text-left">Estado</th><th></th></tr></thead><tbody>${paymentsHTML || '<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay pagos registrados.</td></tr>'}</tbody></table></div></div><div><h3 class="font-semibold mb-2">Registrar Nuevo Pago</h3>${saldoRealPendiente > 0 ? `<form id="add-payment-form" class="space-y-3 bg-gray-50 p-4 rounded-lg"><div><label for="new-payment-amount" class="text-sm font-medium">Monto del Abono</label><input type="text" inputmode="numeric" id="new-payment-amount" class="w-full p-2 border rounded-md mt-1" max="${saldoRealPendiente}" required></div><div><label for="new-payment-date" class="text-sm font-medium">Fecha del Pago</label><input type="date" id="new-payment-date" class="w-full p-2 border rounded-md mt-1" value="${new Date().toISOString().split('T')[0]}" required></div><div><label for="new-payment-method" class="text-sm font-medium">Método de Pago</label><select id="new-payment-method" class="w-full p-2 border rounded-md mt-1 bg-white" required>${metodosDePagoHTML}</select></div><button type="submit" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700">Registrar Pago</button></form>` : '<div class="bg-green-100 text-green-800 p-4 rounded-lg text-center font-semibold">Esta remisión ya ha sido pagada en su totalidad.</div>'}</div></div></div>`;
-    
+
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('close-payment-modal').addEventListener('click', hideModal);
 
@@ -4428,6 +4444,9 @@ async function showDashboardModal() {
             <h2 class="text-xl font-semibold">Resumen Financiero</h2>
             <div class="flex items-center gap-4">
                 ${initialBalanceButtonHTML}
+
+                <button id="show-transfer-modal-btn" class="bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-700">Transferir Fondos</button>
+
                 <button id="download-report-btn" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Descargar Reporte PDF</button>
                 <button id="close-dashboard-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
             </div>
@@ -4482,10 +4501,36 @@ async function showDashboardModal() {
             </div>
             <div id="top-clientes-list" class="space-y-3"></div>
         </div>
+
+        <div id="dashboard-transferencias-view" class="p-6 hidden flex-grow overflow-y-auto">
+            <h3 class="font-semibold mb-2 text-xl">Historial de Transferencias Confirmadas</h3>
+             <div class="flex flex-col sm:flex-row gap-4 my-4 p-4 bg-gray-50 rounded-lg">
+                 <div class="flex-1">
+                     <label for="filter-transfer-month" class="text-sm font-medium text-gray-700">Mes</label>
+                     <select id="filter-transfer-month" class="p-2 border rounded-lg bg-white w-full mt-1"></select>
+                 </div>
+                 <div class="flex-1">
+                     <label for="filter-transfer-year" class="text-sm font-medium text-gray-700">Año</label>
+                     <select id="filter-transfer-year" class="p-2 border rounded-lg bg-white w-full mt-1"></select>
+                 </div>
+             </div>
+            <div id="transferencias-list" class="space-y-3"></div>
+        </div>
+
+        <div id="pending-transfers-section" class="p-6 border-t mt-4 hidden">
+            <h3 class="font-semibold mb-2 text-lg text-yellow-800">Transferencias Pendientes de Confirmación</h3>
+            <div id="pending-transfers-list" class="space-y-3"></div>
+        </div>
+
     </div>
     `;
+
     document.getElementById('modal').classList.remove('hidden');
-    document.getElementById('close-dashboard-modal').addEventListener('click', hideModal);
+    document.getElementById('close-dashboard-modal').addEventListener('click', () => {
+        if (unsubscribePendingTransfers) unsubscribePendingTransfers();
+        if (unsubscribeConfirmedTransfers) unsubscribeConfirmedTransfers(); // Detener nuevo listener
+        hideModal();
+    });
 
     const initialBalanceBtn = document.getElementById('set-initial-balance-btn');
     if (initialBalanceBtn) {
@@ -4552,11 +4597,243 @@ async function showDashboardModal() {
         carteraView.classList.add('hidden');
     });
 
-    document.getElementById('download-report-btn').addEventListener('click', showReportDateRangeModal);
+    const tabs = {
+        summary: document.getElementById('dashboard-tab-summary'),
+        cartera: document.getElementById('dashboard-tab-cartera'),
+        clientes: document.getElementById('dashboard-tab-clientes'),
+        transferencias: document.getElementById('dashboard-tab-transferencias') // Nueva pestaña
+    };
+    const views = {
+        summary: document.getElementById('dashboard-summary-view'),
+        cartera: document.getElementById('dashboard-cartera-view'),
+        clientes: document.getElementById('dashboard-clientes-view'),
+        transferencias: document.getElementById('dashboard-transferencias-view') // Nueva vista
+    };
 
+    Object.keys(tabs).forEach(key => {
+        if (tabs[key]) {
+            tabs[key].addEventListener('click', () => {
+                Object.values(tabs).forEach(t => t?.classList.remove('active'));
+                Object.values(views).forEach(v => v?.classList.add('hidden'));
+                tabs[key].classList.add('active');
+                views[key].classList.remove('hidden');
+            });
+        }
+    });
+
+    document.getElementById('download-report-btn').addEventListener('click', showReportDateRangeModal);
+    document.getElementById('show-transfer-modal-btn')?.addEventListener('click', showTransferModal);
+
+    renderPendingTransfers(); // (Crearemos esta función más adelante)
     updateDashboardView();
     renderCartera();
     renderTopClientes();
+}
+
+// NUEVA FUNCIÓN en app.js
+function showTransferModal() {
+    const modalContentWrapper = document.getElementById('modal-content-wrapper');
+
+    // Opciones para origen y destino (excluyendo la seleccionada)
+    const origenOptions = METODOS_DE_PAGO.map(m => `<option value="${m}">${m}</option>`).join('');
+
+    modalContentWrapper.innerHTML = `
+        <div class="bg-white rounded-lg p-6 shadow-xl max-w-md w-full mx-auto text-left">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Registrar Transferencia Interna</h2>
+                <button id="close-transfer-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            </div>
+            <form id="transfer-form" class="space-y-4">
+                <div>
+                    <label for="transfer-origen" class="block text-sm font-medium">Cuenta Origen</label>
+                    <select id="transfer-origen" class="w-full p-2 border rounded-lg mt-1 bg-white" required>
+                        <option value="">-- Seleccionar --</option>
+                        ${origenOptions}
+                    </select>
+                </div>
+                <div>
+                    <label for="transfer-destino" class="block text-sm font-medium">Cuenta Destino</label>
+                    <select id="transfer-destino" class="w-full p-2 border rounded-lg mt-1 bg-white" required>
+                        <option value="">-- Seleccionar --</option>
+                        {/* Las opciones se llenarán dinámicamente */}
+                    </select>
+                </div>
+                <div>
+                    <label for="transfer-fecha" class="block text-sm font-medium">Fecha de Transferencia</label>
+                    <input type="date" id="transfer-fecha" class="w-full p-2 border rounded-lg mt-1" value="${new Date().toISOString().split('T')[0]}" required>
+                </div>
+                 <div>
+                    <label for="transfer-amount" class="block text-sm font-medium">Monto (COP)</label>
+                    <input type="text" id="transfer-amount" inputmode="numeric" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                 <div>
+                    <label for="transfer-reference" class="block text-sm font-medium">Referencia (Opcional)</label>
+                    <input type="text" id="transfer-reference" class="w-full p-2 border rounded-lg mt-1">
+                </div>
+                <button type="submit" class="w-full bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-700">Registrar Transferencia</button>
+            </form>
+        </div>
+    `;
+
+    document.getElementById('modal').classList.remove('hidden');
+    document.getElementById('close-transfer-modal').addEventListener('click', hideModal);
+
+    const origenSelect = document.getElementById('transfer-origen');
+    const destinoSelect = document.getElementById('transfer-destino');
+    const amountInput = document.getElementById('transfer-amount');
+
+    // Llenar dinámicamente las opciones de destino excluyendo el origen
+    origenSelect.addEventListener('change', () => {
+        const origen = origenSelect.value;
+        destinoSelect.innerHTML = '<option value="">-- Seleccionar --</option>'; // Limpiar
+        METODOS_DE_PAGO.forEach(m => {
+            if (m !== origen) {
+                destinoSelect.innerHTML += `<option value="${m}">${m}</option>`;
+            }
+        });
+    });
+
+    amountInput.addEventListener('focus', (e) => unformatCurrencyInput(e.target));
+    amountInput.addEventListener('blur', (e) => formatCurrencyInput(e.target));
+
+    document.getElementById('transfer-form').addEventListener('submit', handleTransferSubmit);
+}
+
+async function handleTransferSubmit(e) {
+    e.preventDefault();
+    const origen = document.getElementById('transfer-origen').value;
+    const destino = document.getElementById('transfer-destino').value;
+    const amount = unformatCurrency(document.getElementById('transfer-amount').value);
+    const reference = document.getElementById('transfer-reference').value;
+    // --- LÍNEA AÑADIDA ---
+    const fechaTransferencia = document.getElementById('transfer-fecha').value;
+
+    if (!origen || !destino || origen === destino) { /* ... (Validaciones sin cambios) ... */ }
+    if (isNaN(amount) || amount <= 0) { /* ... (Validaciones sin cambios) ... */ }
+    // --- NUEVA VALIDACIÓN ---
+    if (!fechaTransferencia) {
+        showModalMessage("Debes seleccionar la fecha de la transferencia.");
+        return;
+    }
+
+    showModalMessage("Registrando transferencia...", true);
+    try {
+        const recordTransfer = httpsCallable(functions, 'recordTransfer');
+        await recordTransfer({
+            cuentaOrigen: origen,
+            cuentaDestino: destino,
+            monto: amount,
+            referencia: reference,
+            fechaTransferencia: fechaTransferencia // <-- Enviar la fecha
+        });
+        hideModal();
+        showTemporaryMessage("Transferencia registrada. Pendiente de confirmación.", "success");
+    } catch (error) {
+        console.error("Error al registrar transferencia:", error);
+        showModalMessage(`Error: ${error.message}`);
+    }
+}
+
+
+function renderPendingTransfers() {
+    const container = document.getElementById('pending-transfers-list');
+    const section = document.getElementById('pending-transfers-section');
+
+    // Detener cualquier listener anterior para evitar duplicados
+    if (unsubscribePendingTransfers) {
+        unsubscribePendingTransfers();
+        unsubscribePendingTransfers = null;
+    }
+
+    if (!container || !section || !currentUserData || currentUserData.role !== 'admin') {
+        section?.classList.add('hidden');
+        return; // Salir si no es admin o los elementos no existen
+    }
+
+    const q = query(collection(db, "transferencias"), where("estado", "==", "pendiente"));
+
+    // Guardamos la función para detener el listener cuando ya no sea necesario
+    unsubscribePendingTransfers = onSnapshot(q, (snapshot) => {
+        const pendingTransfers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        if (pendingTransfers.length === 0) {
+            container.innerHTML = '<p class="text-sm text-gray-500">No hay transferencias pendientes.</p>';
+            section.classList.add('hidden'); // Oculta si no hay pendientes
+            return;
+        }
+
+        section.classList.remove('hidden'); // Muestra la sección
+        container.innerHTML = ''; // Limpia la lista
+
+        pendingTransfers.forEach(transfer => {
+            const el = document.createElement('div');
+            el.className = 'border p-3 rounded-lg flex justify-between items-center';
+
+            const canConfirm = currentUser.uid !== transfer.registradoPor;
+            const confirmButton = `
+                <button
+                    data-transfer-id="${transfer.id}"
+                    class="confirm-transfer-btn bg-green-500 text-white text-xs px-3 py-1 rounded hover:bg-green-600 ${!canConfirm ? 'opacity-50 cursor-not-allowed' : ''}"
+                    ${!canConfirm ? 'disabled title="Otro administrador debe confirmar esta transferencia."' : ''}>
+                    Confirmar
+                </button>
+            `;
+            // Corrección: Asegurarse de que 'transfer.fecha' existe antes de acceder a 'seconds'
+            const fechaRegistro = transfer.fechaRegistro ? new Date(transfer.fechaRegistro.seconds * 1000).toLocaleDateString() : 'Fecha no disponible';
+            const fechaMostrar = transfer.fechaTransferencia || fechaRegistro;
+
+
+            el.innerHTML = `
+                <div>
+                    <p class="font-semibold">${formatCurrency(transfer.monto)}</p>
+                    <p class="text-sm text-gray-600">${transfer.cuentaOrigen} &rarr; ${transfer.cuentaDestino}</p>
+                    <p class="text-xs text-gray-400">Fecha Transferencia: ${fechaMostrar}</p>
+                    ${transfer.referencia ? `<p class="text-xs text-gray-500">Ref: ${transfer.referencia}</p>` : ''}
+                </div>
+                ${confirmButton}
+            `;
+            container.appendChild(el);
+        });
+
+    }, (error) => { // Manejo de errores del listener
+        console.error("Error en el listener de transferencias pendientes:", error);
+        container.innerHTML = '<p class="text-sm text-red-500">Error al cargar transferencias.</p>';
+        section.classList.remove('hidden');
+    });
+
+    // Usar Delegación de Eventos para los botones de confirmar
+    container.removeEventListener('click', handleConfirmTransferClick); // Limpiar listener previo
+    container.addEventListener('click', handleConfirmTransferClick);
+}
+
+// Asegúrate de que esta función auxiliar también exista
+function handleConfirmTransferClick(e) {
+    const confirmButton = e.target.closest('.confirm-transfer-btn:not([disabled])');
+    if (confirmButton) {
+        handleConfirmTransfer(e); // Llama a la función que ya tenías
+    }
+}
+
+
+async function handleConfirmTransfer(e) {
+    const transferId = e.target.dataset.transferId;
+    if (!transferId) return;
+
+    if (!confirm("¿Estás seguro de que quieres confirmar esta transferencia? Esta acción registrará los gastos correspondientes.")) {
+        return;
+    }
+
+    showModalMessage("Confirmando transferencia y registrando gastos...", true);
+    try {
+        const confirmTransfer = httpsCallable(functions, 'confirmTransfer');
+        await confirmTransfer({ transferId: transferId });
+        hideModal();
+        showTemporaryMessage("¡Transferencia confirmada y gastos registrados!", "success");
+        // El dashboard se actualizará automáticamente porque los gastos cambiaron
+    } catch (error) {
+        console.error("Error al confirmar transferencia:", error);
+        showModalMessage(`Error: ${error.message}`);
+    }
 }
 
 /**
@@ -4633,7 +4910,7 @@ async function updateDashboard(year, month) {
         const m = d.getMonth();
         const y = d.getFullYear();
         labels.push(monthNames[m]);
-        
+
         // --- INICIO DE LA CORRECCIÓN ---
         const monthlySales = allRemisiones.flatMap(r => r.payments || []).filter(p => { const pDate = new Date(p.date + 'T00:00:00'); return pDate.getMonth() === m && pDate.getFullYear() === y; }).reduce((sum, p) => sum + p.amount, 0);
         const monthlyExpenses = allGastos.filter(g => { const gDate = new Date(g.fecha + 'T00:00:00'); return gDate.getMonth() === m && gDate.getFullYear() === y; }).reduce((sum, g) => sum + g.valorTotal, 0);
@@ -4914,12 +5191,6 @@ function showModalMessage(message, isLoader = false, duration = 0) {
         }
     }
 }
-function hideModal() {
-    const modal = document.getElementById('modal'); // <-- Se obtiene el modal aquí
-    if (modal) {
-        modal.classList.add('hidden');
-    }
-}
 
 /**
  * Detecta si el usuario está en un dispositivo móvil (iOS o Android).
@@ -5121,7 +5392,7 @@ function generateSummaryPDF(startYear, startMonth, endYear, endMonth) {
 
     allRemisiones.forEach(r => (r.payments || []).forEach(p => { if (accountBalances[p.method] !== undefined) accountBalances[p.method] += p.amount; }));
     allGastos.forEach(g => { if (accountBalances[g.fuentePago] !== undefined) accountBalances[g.fuentePago] -= g.valorTotal; });
-    
+
     const totalCartera = allRemisiones.filter(r => r.estado !== 'Anulada').reduce((sum, r) => { const totalPagado = (r.payments || []).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
 
     // 2. Generamos las filas de la tabla dinámicamente
@@ -7046,7 +7317,7 @@ document.body.addEventListener('submit', async (e) => {
             await addDoc(collection(db, 'clientes'), clienteData);
 
             Swal.fire('¡Cliente Registrado!', 'El nuevo cliente ha sido guardado con éxito.', 'success');
-            
+
             e.target.reset();
 
         } catch (error) {
@@ -7205,7 +7476,7 @@ document.body.addEventListener('submit', async (e) => {
                         const oldFileRef = ref(storage, clienteActual.rutUrl);
                         await deleteObject(oldFileRef);
                     } catch (storageError) {
-                         console.warn("No se pudo eliminar el archivo antiguo, puede que ya no exista:", storageError);
+                        console.warn("No se pudo eliminar el archivo antiguo, puede que ya no exista:", storageError);
                     }
                 }
 
@@ -7250,7 +7521,7 @@ function showFileModal(url, title = 'Visualizador de Archivos') {
             </div>
         </div>
     `;
-    
+
     modal.classList.remove('hidden');
 
     // El listener para cerrar debe estar dentro para capturar el botón recién creado
@@ -7264,12 +7535,12 @@ function showFileModal(url, title = 'Visualizador de Archivos') {
 document.body.addEventListener('click', (e) => {
     // Este selector busca cualquier botón que tenga el atributo data-file-path
     const secureFileButton = e.target.closest('[data-file-path]');
-    
+
     if (secureFileButton) {
         e.preventDefault(); // Previene cualquier otra acción del botón
         const path = secureFileButton.dataset.filePath;
         const title = secureFileButton.dataset.fileTitle || 'Visualizador de Archivo';
-        
+
         // Llama a la función segura que ya creamos
         if (path) {
             viewSecureFile(path, title);
@@ -7306,7 +7577,7 @@ async function viewSecureFile(filePath, title) {
         const result = await getSignedUrl({ filePath: filePath });
 
         const secureUrl = result.data.url;
-        
+
         // Muestra el archivo en el modal que ya teníamos
         showFileModal(secureUrl, title);
         Swal.close(); // Cierra la alerta de "cargando"
@@ -7320,28 +7591,28 @@ async function viewSecureFile(filePath, title) {
 // --- HERRAMIENTA DE REPARACIÓN TEMPORAL ---
 // Puedes borrar esta función después de usarla.
 window.runRutRepair = async () => {
-  try {
-    console.log("Iniciando reparación de URLs de RUTs...");
-    Swal.fire({
-        title: 'Reparando enlaces de RUTs...',
-        text: 'Este proceso puede tardar unos segundos. Por favor, espera.',
-        allowOutsideClick: false,
-        didOpen: () => {
-            Swal.showLoading();
-        }
-    });
+    try {
+        console.log("Iniciando reparación de URLs de RUTs...");
+        Swal.fire({
+            title: 'Reparando enlaces de RUTs...',
+            text: 'Este proceso puede tardar unos segundos. Por favor, espera.',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
 
-    // Como esta función está dentro de app.js, sí tiene acceso a 'httpsCallable' y 'functions'
-    const repairFunction = httpsCallable(functions, 'repairRutUrls');
-    const result = await repairFunction();
+        // Como esta función está dentro de app.js, sí tiene acceso a 'httpsCallable' y 'functions'
+        const repairFunction = httpsCallable(functions, 'repairRutUrls');
+        const result = await repairFunction();
 
-    Swal.close();
-    console.log("¡Éxito!", result.data.message);
-    Swal.fire('¡Reparación Completada!', result.data.message, 'success');
+        Swal.close();
+        console.log("¡Éxito!", result.data.message);
+        Swal.fire('¡Reparación Completada!', result.data.message, 'success');
 
-  } catch (error) {
-    console.error("Error al ejecutar la reparación:", error);
-    Swal.fire('Error', `Ocurrió un error al ejecutar la reparación: ${error.message}`, 'error');
-  }
+    } catch (error) {
+        console.error("Error al ejecutar la reparación:", error);
+        Swal.fire('Error', `Ocurrió un error al ejecutar la reparación: ${error.message}`, 'error');
+    }
 };
 
