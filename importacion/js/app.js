@@ -45,8 +45,8 @@ let isRegistering = false;
 let modalTimeout;
 let initialBalances = {};
 let unsubscribePendingTransfers = null;
-
-const METODOS_DE_PAGO_IMPORTACION = ['Efectivo', 'Nequi', 'Bancolombia', 'Transferencia'];
+let unsubscribeConfirmedTransfers = null;
+const METODOS_DE_PAGO_IMPORTACION = ['Efectivo', 'Nequi', 'Bancolombia'];
 const METODOS_DE_PAGO = ['Efectivo', 'Nequi', 'Bancolombia'];
 const ESTADOS_REMISION = ['Recibido', 'En Proceso', 'Procesado', 'Entregado'];
 const ALL_MODULES = ['remisiones', 'facturacion', 'inventario', 'clientes', 'gastos', 'proveedores', 'prestamos', 'empleados', 'items'];
@@ -153,7 +153,6 @@ document.addEventListener('DOMContentLoaded', () => {
 function startApp() {
     if (isAppInitialized) return;
 
-    console.log("Iniciando la aplicación principal...");
 
     // 1. Ajustar la visibilidad de la UI según los permisos del usuario.
     updateUIVisibility(currentUserData);
@@ -198,7 +197,6 @@ function startApp() {
     setupSearchInputs();
 
     isAppInitialized = true;
-    console.log("Aplicación inicializada correctamente.");
 }
 
 // --- LÓGICA DE CARGA DE DATOS ---
@@ -1374,8 +1372,18 @@ function renderRemisiones() {
         const esEntregada = remision.estado === 'Entregado';
         el.className = `border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${esAnulada ? 'remision-anulada' : ''}`;
 
-        const totalPagadoConfirmado = (remision.payments || []).filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
+        // --- INICIO DE LA CORRECCIÓN ---
+        // Asegurarse de que remision.payments sea un array antes de usar filter/reduce
+        const paymentsArray = Array.isArray(remision.payments) ? remision.payments : [];
+
+        const totalPagadoConfirmado = paymentsArray // Usar paymentsArray en lugar de (remision.payments || [])
+            .filter(p => p.status === 'confirmado')
+            .reduce((sum, p) => sum + p.amount, 0);
+
+        // También actualizamos el cálculo del saldo para usar paymentsArray
         const saldoPendiente = remision.valorTotal - totalPagadoConfirmado;
+        // --- FIN DE LA CORRECCIÓN ---
+
 
         let paymentStatusBadge = '';
         if (!esAnulada) {
@@ -1429,8 +1437,14 @@ function renderRemisiones() {
     // Reasignar listeners para los otros botones
     remisionesListEl.querySelectorAll('.anular-btn').forEach(button => button.addEventListener('click', (e) => { const remisionId = e.currentTarget.dataset.remisionId; if (confirm(`¿Estás seguro de que quieres ANULAR esta remisión?`)) { handleAnularRemision(remisionId); } }));
     remisionesListEl.querySelectorAll('.status-update-btn').forEach(button => button.addEventListener('click', (e) => { const remisionId = e.currentTarget.dataset.remisionId; const currentStatus = e.currentTarget.dataset.currentStatus; handleStatusUpdate(remisionId, currentStatus); }));
-    remisionesListEl.querySelectorAll('.payment-btn').forEach(button => button.addEventListener('click', (e) => { const remision = JSON.parse(e.currentTarget.dataset.remisionJson); showPaymentModal(remision); }));
-    remisionesListEl.querySelectorAll('.discount-btn').forEach(button => button.addEventListener('click', (e) => { const remision = JSON.parse(e.currentTarget.dataset.remisionJson); showDiscountModal(remision); }));
+    remisionesListEl.querySelectorAll('.payment-btn').forEach(button => button.addEventListener('click', (e) => {
+        const remisionData = JSON.parse(e.currentTarget.dataset.remisionJson);
+        // Asegurar que payments sea un array aquí también antes de pasar a showPaymentModal
+        if (!Array.isArray(remisionData.payments)) {
+            remisionData.payments = [];
+        }
+        showPaymentModal(remisionData); // Pasar la remisión con payments asegurado como array
+    })); remisionesListEl.querySelectorAll('.discount-btn').forEach(button => button.addEventListener('click', (e) => { const remision = JSON.parse(e.currentTarget.dataset.remisionJson); showDiscountModal(remision); }));
 }
 function loadGastos() {
     const q = query(collection(db, "gastos"), orderBy("fecha", "desc"));
@@ -2214,15 +2228,23 @@ async function showNacionalModal(compra = null) {
 
 // Al cerrar el modal, detenemos el listener de transferencias
 function hideModal() {
-    const modal = document.getElementById('modal');
-    if (modal) {
-        modal.classList.add('hidden');
-        // --- LÍNEA AÑADIDA ---
-        // Detener listener de transferencias si está activo al cerrar CUALQUIER modal
+    const primaryModal = document.getElementById('modal');
+    if (primaryModal) {
+        primaryModal.classList.add('hidden');
+        primaryModal.querySelector('#modal-content-wrapper').innerHTML = '';
+
+        // Detener listener de PENDIENTES
         if (unsubscribePendingTransfers) {
             unsubscribePendingTransfers();
             unsubscribePendingTransfers = null;
         }
+        // --- ASEGÚRATE DE TENER ESTO ---
+        // Detener listener de CONFIRMADAS
+        if (unsubscribeConfirmedTransfers) {
+            unsubscribeConfirmedTransfers();
+            unsubscribeConfirmedTransfers = null;
+        }
+        // --- FIN DE LA VERIFICACIÓN ---
     }
 }
 
@@ -4309,222 +4331,287 @@ function showPdfModal(pdfUrl, title) {
     }
 }
 
+/**
+ * Muestra el modal SECUNDARIO para gestionar los pagos de una remisión.
+ * Incluye validación robusta para el array 'payments' y lógica de confirmación segura.
+ * @param {object} remision - El objeto completo de la remisión.
+ */
 function showPaymentModal(remision) {
-    const totalConfirmado = (remision.payments || []).filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
-    const totalPorConfirmar = (remision.payments || []).filter(p => p.status === 'por confirmar').reduce((sum, p) => sum + p.amount, 0);
+    // --- OBTENER REFERENCIAS AL MODAL SECUNDARIO ---
+    const secondaryModal = document.getElementById('modal-secondary');
+    const secondaryModalContentWrapper = document.getElementById('modal-secondary-content-wrapper');
+    if (!secondaryModal || !secondaryModalContentWrapper) {
+        console.error("Error: Contenedor de modal secundario no encontrado.");
+        // Podrías mostrar un error al usuario aquí si lo prefieres
+        showModalMessage("Error al abrir la gestión de pagos."); // Usa el modal primario para este error
+        return; // Salir si los elementos no existen
+    }
+
+    // --- Verificación robusta: Asegura que remision.payments sea un array ---
+    const paymentsArray = Array.isArray(remision.payments) ? remision.payments : [];
+
+    // --- Lógica existente para calcular datos (SIN CAMBIOS) ---
+    const totalConfirmado = paymentsArray.filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
+    const totalPorConfirmar = paymentsArray.filter(p => p.status === 'por confirmar').reduce((sum, p) => sum + p.amount, 0);
     const saldoPendiente = remision.valorTotal - totalConfirmado;
     const saldoRealPendiente = remision.valorTotal - totalConfirmado - totalPorConfirmar;
-
     const metodosDePagoHTML = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
 
-    const paymentsHTML = (remision.payments || []).sort((a, b) => new Date(b.date) - new Date(a.date)).map((p, index) => {
-        let statusBadge = '';
-        let confirmButton = '';
-
-        if (p.status === 'por confirmar') {
-            statusBadge = `<span class="text-xs font-semibold bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">Por Confirmar</span>`;
-
-            // --- INICIO DE LA CORRECCIÓN CLAVE ---
-            if (currentUserData.role === 'admin') {
-                if (p.registeredBy !== currentUser.uid) {
-                    // Si es un admin DIFERENTE, puede confirmar.
-                    confirmButton = `<button data-remision-id="${remision.id}" data-payment-index="${index}" class="confirm-payment-btn bg-green-500 text-white text-xs px-2 py-1 rounded hover:bg-green-600">Confirmar</button>`;
-                } else {
-                    // Si es el MISMO admin, el botón está deshabilitado.
-                    confirmButton = `<button class="bg-gray-400 text-white text-xs px-2 py-1 rounded cursor-not-allowed" title="Otro administrador debe confirmar este pago.">Confirmar</button>`;
+    // --- Usa paymentsArray para generar el HTML del historial (SIN CAMBIOS) ---
+    const paymentsHTML = paymentsArray
+        .sort((a, b) => new Date(b.date) - new Date(a.date)) // Ordenar por fecha descendente
+        .map((p, index) => {
+            let statusBadge = '';
+            let confirmButton = '';
+            if (p.status === 'por confirmar') {
+                statusBadge = `<span class="text-xs font-semibold bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">Por Confirmar</span>`;
+                if (currentUserData.role === 'admin') {
+                    if (p.registeredBy !== currentUser.uid) {
+                        confirmButton = `<button data-remision-id="${remision.id}" data-payment-index="${index}" class="confirm-payment-btn bg-green-500 text-white text-xs px-2 py-1 rounded hover:bg-green-600">Confirmar</button>`;
+                    } else {
+                        confirmButton = `<button class="bg-gray-400 text-white text-xs px-2 py-1 rounded cursor-not-allowed" title="Otro administrador debe confirmar este pago.">Confirmar</button>`;
+                    }
                 }
+            } else { // 'confirmado'
+                statusBadge = `<span class="text-xs font-semibold bg-green-200 text-green-800 px-2 py-1 rounded-full">Confirmado</span>`;
             }
-            // Si no es admin, no se muestra ningún botón.
-            // --- FIN DE LA CORRECCIÓN CLAVE ---
+            return `<tr class="border-b"> <td class="p-2">${p.date}</td> <td class="p-2">${p.method}</td> <td class="p-2 text-right">${formatCurrency(p.amount)}</td> <td class="p-2">${statusBadge}</td> <td class="p-2">${confirmButton}</td> </tr>`;
+        }).join('');
 
-        } else {
-            statusBadge = `<span class="text-xs font-semibold bg-green-200 text-green-800 px-2 py-1 rounded-full">Confirmado</span>`;
-        }
+    // --- INYECTAR HTML EN EL CONTENEDOR SECUNDARIO ---
+    secondaryModalContentWrapper.innerHTML = `
+        <div class="bg-white rounded-lg p-6 shadow-xl max-w-3xl w-full mx-auto text-left">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Gestionar Pagos (Remisión N° ${remision.numeroRemision})</h2>
+                <button id="close-secondary-payment-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 text-center">
+                 <div class="bg-blue-50 p-3 rounded-lg"><div class="text-sm text-blue-800">VALOR TOTAL</div><div class="font-bold text-lg">${formatCurrency(remision.valorTotal)}</div></div>
+                 <div class="bg-green-50 p-3 rounded-lg"><div class="text-sm text-green-800">PAGADO (CONF.)</div><div class="font-bold text-lg">${formatCurrency(totalConfirmado)}</div></div>
+                 <div class="bg-yellow-50 p-3 rounded-lg"><div class="text-sm text-yellow-800">POR CONFIRMAR</div><div class="font-bold text-lg">${formatCurrency(totalPorConfirmar)}</div></div>
+                 <div class="bg-red-50 p-3 rounded-lg"><div class="text-sm text-red-800">SALDO PENDIENTE</div><div class="font-bold text-lg">${formatCurrency(saldoPendiente)}</div></div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div>
+                     <h3 class="font-semibold mb-2">Historial de Pagos</h3>
+                     <div class="border rounded-lg max-h-60 overflow-y-auto">
+                         <table class="w-full text-sm">
+                             <thead class="bg-gray-50"><tr><th class="p-2 text-left">Fecha</th><th class="p-2 text-left">Método</th><th class="p-2 text-right">Monto</th><th class="p-2 text-left">Estado</th><th></th></tr></thead>
+                             <tbody>${paymentsHTML || '<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay pagos registrados.</td></tr>'}</tbody>
+                         </table>
+                     </div>
+                 </div>
+                 <div>
+                     <h3 class="font-semibold mb-2">Registrar Nuevo Pago</h3>
+                     ${saldoRealPendiente > 0.01 ? `
+                         <form id="add-payment-form" class="space-y-3 bg-gray-50 p-4 rounded-lg">
+                             <div> <label for="new-payment-amount" class="text-sm font-medium">Monto del Abono</label> <input type="text" inputmode="numeric" id="new-payment-amount" class="w-full p-2 border rounded-md mt-1" max="${saldoRealPendiente}" required> </div>
+                             <div> <label for="new-payment-date" class="text-sm font-medium">Fecha del Pago</label> <input type="date" id="new-payment-date" class="w-full p-2 border rounded-md mt-1" value="${new Date().toISOString().split('T')[0]}" required> </div>
+                             <div> <label for="new-payment-method" class="text-sm font-medium">Método de Pago</label> <select id="new-payment-method" class="w-full p-2 border rounded-md mt-1 bg-white" required>${metodosDePagoHTML}</select> </div>
+                             <button type="submit" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700">Registrar Pago</button>
+                         </form>
+                     ` : `
+                         <div class="bg-green-100 text-green-800 p-4 rounded-lg text-center font-semibold">Esta remisión ya ha sido pagada en su totalidad (considerando pagos por confirmar).</div>
+                     `}
+                 </div>
+             </div>
+        </div>
+    `;
 
-        return `<tr class="border-b">
-            <td class="p-2">${p.date}</td>
-            <td class="p-2">${p.method}</td>
-            <td class="p-2 text-right">${formatCurrency(p.amount)}</td>
-            <td class="p-2">${statusBadge}</td>
-            <td class="p-2">${confirmButton}</td>
-        </tr>`;
-    }).join('');
+    // --- MOSTRAR EL MODAL SECUNDARIO ---
+    secondaryModal.classList.remove('hidden');
 
-    const modalContentWrapper = document.getElementById('modal-content-wrapper');
-    modalContentWrapper.innerHTML = `<div class="bg-white rounded-lg p-6 shadow-xl max-w-3xl w-full mx-auto text-left"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Gestionar Pagos (Remisión N° ${remision.numeroRemision})</h2><button id="close-payment-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button></div><div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 text-center"><div class="bg-blue-50 p-3 rounded-lg"><div class="text-sm text-blue-800">VALOR TOTAL</div><div class="font-bold text-lg">${formatCurrency(remision.valorTotal)}</div></div><div class="bg-green-50 p-3 rounded-lg"><div class="text-sm text-green-800">PAGADO (CONF.)</div><div class="font-bold text-lg">${formatCurrency(totalConfirmado)}</div></div><div class="bg-yellow-50 p-3 rounded-lg"><div class="text-sm text-yellow-800">POR CONFIRMAR</div><div class="font-bold text-lg">${formatCurrency(totalPorConfirmar)}</div></div><div class="bg-red-50 p-3 rounded-lg"><div class="text-sm text-red-800">SALDO PENDIENTE</div><div class="font-bold text-lg">${formatCurrency(saldoPendiente)}</div></div></div><div class="grid grid-cols-1 md:grid-cols-2 gap-6"><div><h3 class="font-semibold mb-2">Historial de Pagos</h3><div class="border rounded-lg max-h-60 overflow-y-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="p-2 text-left">Fecha</th><th class="p-2 text-left">Método</th><th class="p-2 text-right">Monto</th><th class="p-2 text-left">Estado</th><th></th></tr></thead><tbody>${paymentsHTML || '<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay pagos registrados.</td></tr>'}</tbody></table></div></div><div><h3 class="font-semibold mb-2">Registrar Nuevo Pago</h3>${saldoRealPendiente > 0 ? `<form id="add-payment-form" class="space-y-3 bg-gray-50 p-4 rounded-lg"><div><label for="new-payment-amount" class="text-sm font-medium">Monto del Abono</label><input type="text" inputmode="numeric" id="new-payment-amount" class="w-full p-2 border rounded-md mt-1" max="${saldoRealPendiente}" required></div><div><label for="new-payment-date" class="text-sm font-medium">Fecha del Pago</label><input type="date" id="new-payment-date" class="w-full p-2 border rounded-md mt-1" value="${new Date().toISOString().split('T')[0]}" required></div><div><label for="new-payment-method" class="text-sm font-medium">Método de Pago</label><select id="new-payment-method" class="w-full p-2 border rounded-md mt-1 bg-white" required>${metodosDePagoHTML}</select></div><button type="submit" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700">Registrar Pago</button></form>` : '<div class="bg-green-100 text-green-800 p-4 rounded-lg text-center font-semibold">Esta remisión ya ha sido pagada en su totalidad.</div>'}</div></div></div>`;
+    // --- AJUSTAR EL BOTÓN DE CERRAR ---
+    secondaryModalContentWrapper.querySelector('#close-secondary-payment-modal').addEventListener('click', () => {
+        secondaryModal.classList.add('hidden');
+        secondaryModalContentWrapper.innerHTML = ''; // Limpiar contenido al cerrar
+    });
 
-    document.getElementById('modal').classList.remove('hidden');
-    document.getElementById('close-payment-modal').addEventListener('click', hideModal);
+    // --- ASIGNAR LISTENERS (BUSCANDO DENTRO DEL MODAL SECUNDARIO) ---
 
-    document.querySelectorAll('.confirm-payment-btn').forEach(btn => {
+    // Listener para botones de confirmación (usando transacción)
+    secondaryModalContentWrapper.querySelectorAll('.confirm-payment-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const remisionId = e.currentTarget.dataset.remisionId;
             const paymentIndex = parseInt(e.currentTarget.dataset.paymentIndex);
-            const remisionToUpdate = allRemisiones.find(r => r.id === remisionId); // <<<--- Encuentra la remisión local
+            const remisionRef = doc(db, "remisiones", remisionId);
 
-            if (remisionToUpdate && remisionToUpdate.payments[paymentIndex]) {
-                // --- INICIO DE LA MODIFICACIÓN ---
+            // Verificar índice básico antes de la transacción
+            // Usa 'paymentsArray' que ya está validado
+            if (paymentIndex < 0 || paymentIndex >= paymentsArray.length || !paymentsArray[paymentIndex]) {
+                 console.error("Error: Índice de pago inválido.", paymentIndex, paymentsArray);
+                 showModalMessage("Error interno al intentar confirmar el pago (índice inválido).");
+                 return;
+            }
 
-                // Prepara el objeto de actualización usando dot notation
-                const updateData = {};
-                updateData[`payments.${paymentIndex}.status`] = 'confirmado';
-                updateData[`payments.${paymentIndex}.confirmedBy`] = currentUser.uid;
-                updateData[`payments.${paymentIndex}.confirmedAt`] = new Date();
+            console.log("Datos del pago ANTES de confirmar (dentro del listener):", JSON.stringify(paymentsArray[paymentIndex])); // Usa paymentsArray
 
-                showModalMessage("Confirmando pago...", true);
-                try {
-                    // Actualiza SOLO los campos específicos en Firestore
-                    await updateDoc(doc(db, "remisiones", remisionId), updateData);
+            showModalMessage("Confirmando pago...", true); // Usa modal primario para loader
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const remisionDoc = await transaction.get(remisionRef);
+                    if (!remisionDoc.exists()) throw "¡La remisión no existe!";
 
-                    // Opcional: Actualizar también el objeto local 'remisionToUpdate' si
-                    // quieres que la UI refleje el cambio inmediatamente sin esperar
-                    // a que onSnapshot actualice 'allRemisiones'.
-                    remisionToUpdate.payments[paymentIndex].status = 'confirmado';
-                    remisionToUpdate.payments[paymentIndex].confirmedBy = currentUser.uid;
-                    remisionToUpdate.payments[paymentIndex].confirmedAt = new Date();
+                    const data = remisionDoc.data();
+                    const currentPaymentsArray = Array.isArray(data.payments) ? data.payments : [];
 
-                    hideModal();
-                    // Usaremos showTemporaryMessage para no cerrar el modal de pagos
-                    showTemporaryMessage("¡Pago confirmado!", "success");
-                    // Volver a renderizar el contenido del modal para reflejar el cambio
-                    showPaymentModal(remisionToUpdate);
+                    if (paymentIndex >= currentPaymentsArray.length || !currentPaymentsArray[paymentIndex]) {
+                         throw `Índice de pago (${paymentIndex}) fuera de rango en los datos actuales.`;
+                    }
 
-                } catch (error) {
-                    console.error("Error al confirmar pago:", error);
-                    showModalMessage("Error al confirmar el pago."); // Mantenemos el modal de error
-                }
-                // --- FIN DE LA MODIFICACIÓN ---
+                    // Modificar el objeto específico EN MEMORIA
+                    currentPaymentsArray[paymentIndex].status = 'confirmado';
+                    currentPaymentsArray[paymentIndex].confirmedBy = currentUser.uid;
+                    currentPaymentsArray[paymentIndex].confirmedAt = new Date();
+
+                    // Actualizar el documento completo CON EL ARRAY MODIFICADO
+                    transaction.update(remisionRef, { payments: currentPaymentsArray });
+                });
+
+                // --- Actualización local (UI) - Se ejecuta DESPUÉS de que la transacción tuvo éxito ---
+                // Modificamos la variable 'remision' que tiene este modal
+                remision.payments[paymentIndex].status = 'confirmado';
+                remision.payments[paymentIndex].confirmedBy = currentUser.uid;
+                remision.payments[paymentIndex].confirmedAt = new Date();
+
+                hideModal(); // Cierra el modal primario de carga
+                showTemporaryMessage("¡Pago confirmado!", "success"); // Notificación no invasiva
+                // Vuelve a renderizar ESTE modal secundario con la 'remision' actualizada
+                showPaymentModal(remision);
+
+            } catch (error) {
+                console.error("Error durante la transacción de confirmación:", error);
+                const errorMessage = typeof error === 'string' ? error : "Error al confirmar el pago.";
+                showModalMessage(errorMessage); // Muestra error en modal primario
             }
         });
     });
 
-    if (saldoRealPendiente > 0) {
-        const paymentAmountInput = document.getElementById('new-payment-amount');
+    // Listener para el formulario de añadir nuevo pago
+    if (saldoRealPendiente > 0.01) {
+        const paymentAmountInput = secondaryModalContentWrapper.querySelector('#new-payment-amount');
         paymentAmountInput.addEventListener('focus', (e) => unformatCurrencyInput(e.target));
         paymentAmountInput.addEventListener('blur', (e) => formatCurrencyInput(e.target));
-        document.getElementById('add-payment-form').addEventListener('submit', async (e) => {
+
+        secondaryModalContentWrapper.querySelector('#add-payment-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const amount = unformatCurrency(paymentAmountInput.value);
-            if (amount <= 0 || !amount) { showModalMessage("El monto debe ser mayor a cero."); return; }
-            if (amount > saldoRealPendiente + 0.01) {
-                showModalMessage(`El monto del pago no puede superar el saldo pendiente de ${formatCurrency(saldoRealPendiente)}.`);
+
+            // Recalcular saldo pendiente REAL justo antes de guardar
+            const currentRemision = allRemisiones.find(r => r.id === remision.id);
+            const currentPaymentsArray = Array.isArray(currentRemision?.payments) ? currentRemision.payments : []; // Añadir verificación de currentRemision
+            const currentTotalConfirmado = currentPaymentsArray.filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
+            const currentTotalPorConfirmar = currentPaymentsArray.filter(p => p.status === 'por confirmar').reduce((sum, p) => sum + p.amount, 0);
+            const currentSaldoRealPendiente = (currentRemision?.valorTotal || 0) - currentTotalConfirmado - currentTotalPorConfirmar; // Usar valorTotal seguro
+
+
+            if (amount <= 0 || isNaN(amount)) {
+                showModalMessage("El monto debe ser mayor a cero.");
+                return;
+            }
+            if (amount > currentSaldoRealPendiente + 0.01) {
+                showModalMessage(`El monto no puede superar el saldo pendiente de ${formatCurrency(currentSaldoRealPendiente)}.`);
                 return;
             }
 
             const newPayment = {
                 amount: amount,
-                date: document.getElementById('new-payment-date').value,
-                method: document.getElementById('new-payment-method').value,
+                date: secondaryModalContentWrapper.querySelector('#new-payment-date').value,
+                method: secondaryModalContentWrapper.querySelector('#new-payment-method').value,
                 registeredAt: new Date(),
                 registeredBy: currentUser.uid,
                 status: 'por confirmar'
             };
-            showModalMessage("Registrando pago...", true);
+
+            showModalMessage("Registrando pago...", true); // Usa modal primario
             try {
-                await updateDoc(doc(db, "remisiones", remision.id), { payments: arrayUnion(newPayment) });
-                hideModal();
-                showModalMessage("¡Pago registrado! Pendiente de confirmación.", false, 2000);
+                await updateDoc(doc(db, "remisiones", remision.id), {
+                    payments: arrayUnion(newPayment)
+                });
+
+                hideModal(); // Cierra modal primario
+                showTemporaryMessage("¡Pago registrado! Pendiente de confirmación.", "success");
+                // La UI se actualizará por onSnapshot, no es estrictamente necesario
+                // volver a llamar a showPaymentModal aquí, pero podrías hacerlo
+                // si quieres la actualización visual inmediata en este modal secundario.
+                // const updatedRemision = allRemisiones.find(r => r.id === remision.id);
+                // if (updatedRemision) showPaymentModal(updatedRemision);
+
+
             } catch (error) {
                 console.error("Error al registrar pago:", error);
-                showModalMessage("Error al registrar el pago.");
+                showModalMessage("Error al registrar el pago."); // Usa modal primario
             }
         });
     }
 }
+
 /**
- * --- VERSIÓN MEJORADA CON BOTÓN CONDICIONAL ---
- * Muestra el modal de resumen. Revisa si los saldos iniciales ya han sido
- * establecidos. Si no, muestra el botón para configurarlos; de lo contrario, lo oculta.
+ * Muestra el modal de Resumen Financiero con pestañas para Resumen, Cartera, Clientes y Transferencias.
+ * Incluye lógica para filtros, listeners y gestión de listeners de Firestore.
  */
 async function showDashboardModal() {
-    const modalContentWrapper = document.getElementById('modal-content-wrapper');
+    const modalContentWrapper = document.getElementById('modal-content-wrapper'); //
 
-    const balanceDocRef = doc(db, "saldosIniciales", "current");
-    const balanceDoc = await getDoc(balanceDocRef);
-    const balancesExist = balanceDoc.exists();
+    // Cargar/Verificar saldos iniciales (sin cambios)
+    const balanceDocRef = doc(db, "saldosIniciales", "current"); //
+    const balanceDoc = await getDoc(balanceDocRef); //
+    const balancesExist = balanceDoc.exists(); //
+    if (!balancesExist && Object.keys(initialBalances).length === 0) { //
+        // Si no existen en DB ni en memoria, intentar cargarlos una vez
+        const balanceData = balanceDoc.data();
+        if (balanceData) {
+            initialBalances = balanceData; //
+        }
+    } //
+    let initialBalanceButtonHTML = ''; //
+    if (!balancesExist) { //
+        initialBalanceButtonHTML = `<button id="set-initial-balance-btn" class="bg-gray-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700">Saldos Iniciales</button>`; //
+    } //
 
-    let initialBalanceButtonHTML = '';
-    if (!balancesExist) {
-        initialBalanceButtonHTML = `<button id="set-initial-balance-btn" class="bg-gray-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700">Saldos Iniciales</button>`;
-    }
-
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Generamos dinámicamente las tarjetas de saldos a partir de nuestra constante
+    // Generar HTML para saldos (sin cambios)
     const saldosHTML = METODOS_DE_PAGO.map(metodo => `
         <div class="bg-gray-100 p-4 rounded-lg">
             <div class="text-sm font-semibold text-gray-800">${metodo.toUpperCase()}</div>
             <div id="summary-${metodo.toLowerCase()}" class="text-xl font-bold"></div>
         </div>
-    `).join('');
-    // --- FIN DE LA CORRECCIÓN ---
+    `).join(''); //
 
+    // --- HTML Completo del Modal ---
     modalContentWrapper.innerHTML = `
     <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl mx-auto text-left flex flex-col" style="height: 80vh;">
         <div class="flex justify-between items-center p-4 border-b flex-wrap gap-2">
             <h2 class="text-xl font-semibold">Resumen Financiero</h2>
-            <div class="flex items-center gap-4">
+            <div class="flex items-center gap-4 flex-wrap justify-end">
                 ${initialBalanceButtonHTML}
-
-                <button id="show-transfer-modal-btn" class="bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-700">Transferir Fondos</button>
-
-                <button id="download-report-btn" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Descargar Reporte PDF</button>
+                <button id="show-transfer-modal-btn" class="bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-700 whitespace-nowrap">Transferir Fondos</button>
+                <button id="download-report-btn" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 whitespace-nowrap">Descargar PDF</button>
                 <button id="close-dashboard-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
             </div>
         </div>
         <div class="border-b border-gray-200">
-            <nav class="-mb-px flex space-x-6 px-6">
-                <button id="dashboard-tab-summary" class="dashboard-tab-btn active py-4 px-1 font-semibold">Resumen Mensual</button>
-                <button id="dashboard-tab-cartera" class="dashboard-tab-btn py-4 px-1 font-semibold">Cartera</button>
-                <button id="dashboard-tab-clientes" class="dashboard-tab-btn py-4 px-1 font-semibold">Clientes</button>
+            <nav class="-mb-px flex space-x-6 px-6 overflow-x-auto">
+                <button id="dashboard-tab-summary" class="dashboard-tab-btn active py-4 px-1 font-semibold whitespace-nowrap">Resumen Mensual</button>
+                <button id="dashboard-tab-cartera" class="dashboard-tab-btn py-4 px-1 font-semibold whitespace-nowrap">Cartera</button>
+                <button id="dashboard-tab-clientes" class="dashboard-tab-btn py-4 px-1 font-semibold whitespace-nowrap">Clientes</button>
+                <button id="dashboard-tab-transferencias" class="dashboard-tab-btn py-4 px-1 font-semibold whitespace-nowrap">Transferencias</button>
             </nav>
         </div>
         <div id="dashboard-summary-view" class="p-6 space-y-6 overflow-y-auto flex-grow">
-            <div class="flex items-center gap-4">
-                <select id="summary-month" class="p-2 border rounded-lg"></select>
-                <select id="summary-year" class="p-2 border rounded-lg"></select>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div class="bg-green-100 p-4 rounded-lg"><div class="text-sm font-semibold text-green-800">VENTAS</div><div id="summary-sales" class="text-2xl font-bold"></div></div>
-                <div class="bg-red-100 p-4 rounded-lg"><div class="text-sm font-semibold text-red-800">GASTOS</div><div id="summary-expenses" class="text-2xl font-bold"></div></div>
-                <div class="bg-indigo-100 p-4 rounded-lg"><div class="text-sm font-semibold text-indigo-800">UTILIDAD/PÉRDIDA</div><div id="summary-profit" class="text-2xl font-bold"></div></div>
-                <div class="bg-yellow-100 p-4 rounded-lg"><div class="text-sm font-semibold text-yellow-800">CARTERA PENDIENTE (MES)</div><div id="summary-cartera" class="text-2xl font-bold"></div></div>
-            </div>
-            <div>
-                <h3 class="font-semibold mb-2">Saldos Estimados (Total)</h3>
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    ${saldosHTML}
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                    <div class="bg-gray-100 p-4 rounded-lg">
-                        <div class="text-sm font-semibold text-gray-800">CARTERA TOTAL</div>
-                        <div id="summary-cartera-total" class="text-xl font-bold"></div>
-                    </div>
-                    <div class="bg-teal-100 p-4 rounded-lg border-l-4 border-teal-500">
-                        <div class="text-sm font-semibold text-teal-800">VENTA DEL DÍA</div>
-                        <div id="summary-daily-sales" class="text-xl font-bold"></div>
-                    </div>
-                </div>
-            </div>
-            <div>
-                <h3 class="font-semibold mb-2">Utilidad/Pérdida (Últimos 6 Meses)</h3>
-                <div class="bg-gray-50 p-4 rounded-lg"><canvas id="profitLossChart"></canvas></div>
-            </div>
+             <div class="flex items-center gap-4"> <select id="summary-month" class="p-2 border rounded-lg"></select> <select id="summary-year" class="p-2 border rounded-lg"></select> </div>
+             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"> <div class="bg-green-100 p-4 rounded-lg"><div class="text-sm font-semibold text-green-800">VENTAS</div><div id="summary-sales" class="text-2xl font-bold"></div></div> <div class="bg-red-100 p-4 rounded-lg"><div class="text-sm font-semibold text-red-800">GASTOS</div><div id="summary-expenses" class="text-2xl font-bold"></div></div> <div class="bg-indigo-100 p-4 rounded-lg"><div class="text-sm font-semibold text-indigo-800">UTILIDAD/PÉRDIDA</div><div id="summary-profit" class="text-2xl font-bold"></div></div> <div class="bg-yellow-100 p-4 rounded-lg"><div class="text-sm font-semibold text-yellow-800">CARTERA PENDIENTE (MES)</div><div id="summary-cartera" class="text-2xl font-bold"></div></div> </div>
+             <div> <h3 class="font-semibold mb-2">Saldos Estimados (Total)</h3> <div class="grid grid-cols-1 sm:grid-cols-3 gap-4"> ${saldosHTML} </div> <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"> <div class="bg-gray-100 p-4 rounded-lg"> <div class="text-sm font-semibold text-gray-800">CARTERA TOTAL</div> <div id="summary-cartera-total" class="text-xl font-bold"></div> </div> <div class="bg-teal-100 p-4 rounded-lg border-l-4 border-teal-500"> <div class="text-sm font-semibold text-teal-800">VENTA DEL DÍA</div> <div id="summary-daily-sales" class="text-xl font-bold"></div> </div> </div> </div>
+             <div> <h3 class="font-semibold mb-2">Utilidad/Pérdida (Últimos 6 Meses)</h3> <div class="bg-gray-50 p-4 rounded-lg"><canvas id="profitLossChart"></canvas></div> </div>
         </div>
         <div id="dashboard-cartera-view" class="p-6 hidden flex-grow overflow-y-auto"><h3 class="font-semibold mb-2 text-xl">Cartera Pendiente de Cobro</h3><div id="cartera-list" class="space-y-4"></div><div id="cartera-total" class="text-right font-bold text-xl mt-4"></div></div>
         <div id="dashboard-clientes-view" class="p-6 hidden flex-grow overflow-y-auto">
             <h3 class="font-semibold mb-2 text-xl">Ranking de Clientes</h3>
-            <div class="flex flex-wrap items-center gap-4 mb-4 p-2 bg-gray-50 rounded-lg">
-                <div class="flex items-center gap-2"><label class="text-sm font-medium">Desde:</label><select id="rank-start-month" class="p-2 border rounded-lg"></select><select id="rank-start-year" class="p-2 border rounded-lg"></select></div>
-                <div class="flex items-center gap-2"><label class="text-sm font-medium">Hasta:</label><select id="rank-end-month" class="p-2 border rounded-lg"></select><select id="rank-end-year" class="p-2 border rounded-lg"></select></div>
-                <button id="rank-filter-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Filtrar</button>
-                <button id="rank-show-all-btn" class="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-700">Mostrar Todos</button>
-            </div>
+            <div class="flex flex-wrap items-center gap-4 mb-4 p-2 bg-gray-50 rounded-lg border"> <div class="flex items-center gap-2"><label class="text-sm font-medium">Desde:</label><select id="rank-start-month" class="p-2 border rounded-lg"></select><select id="rank-start-year" class="p-2 border rounded-lg"></select></div> <div class="flex items-center gap-2"><label class="text-sm font-medium">Hasta:</label><select id="rank-end-month" class="p-2 border rounded-lg"></select><select id="rank-end-year" class="p-2 border rounded-lg"></select></div> <button id="rank-filter-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Filtrar</button> <button id="rank-show-all-btn" class="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-700">Mostrar Todos</button> </div>
             <div id="top-clientes-list" class="space-y-3"></div>
         </div>
-
         <div id="dashboard-transferencias-view" class="p-6 hidden flex-grow overflow-y-auto">
             <h3 class="font-semibold mb-2 text-xl">Historial de Transferencias Confirmadas</h3>
-             <div class="flex flex-col sm:flex-row gap-4 my-4 p-4 bg-gray-50 rounded-lg">
+             <div class="flex flex-col sm:flex-row gap-4 my-4 p-4 bg-gray-50 rounded-lg border">
                  <div class="flex-1">
                      <label for="filter-transfer-month" class="text-sm font-medium text-gray-700">Mes</label>
                      <select id="filter-transfer-month" class="p-2 border rounded-lg bg-white w-full mt-1"></select>
@@ -4536,118 +4623,229 @@ async function showDashboardModal() {
              </div>
             <div id="transferencias-list" class="space-y-3"></div>
         </div>
-
-        <div id="pending-transfers-section" class="p-6 border-t mt-4 hidden">
+        <div id="pending-transfers-section" class="p-6 border-t mt-auto bg-yellow-50 hidden">
             <h3 class="font-semibold mb-2 text-lg text-yellow-800">Transferencias Pendientes de Confirmación</h3>
-            <div id="pending-transfers-list" class="space-y-3"></div>
+            <div id="pending-transfers-list" class="space-y-3 max-h-40 overflow-y-auto"></div>
         </div>
-
     </div>
-    `;
+    `; 
 
-    document.getElementById('modal').classList.remove('hidden');
-    document.getElementById('close-dashboard-modal').addEventListener('click', () => {
-        if (unsubscribePendingTransfers) unsubscribePendingTransfers();
-        if (unsubscribeConfirmedTransfers) unsubscribeConfirmedTransfers(); // Detener nuevo listener
-        hideModal();
-    });
+    document.getElementById('modal').classList.remove('hidden'); //
 
-    const initialBalanceBtn = document.getElementById('set-initial-balance-btn');
-    if (initialBalanceBtn) {
-        initialBalanceBtn.addEventListener('click', showInitialBalanceModal);
+    // --- Listener Botón Cerrar (CORREGIDO) ---
+    document.getElementById('close-dashboard-modal').addEventListener('click', () => { //
+        // Detener listener PENDIENTES
+        if (unsubscribePendingTransfers) { //
+             unsubscribePendingTransfers(); //
+             unsubscribePendingTransfers = null; //
+             console.log("Listener de transferencias pendientes detenido."); //
+        } //
+        // Detener listener CONFIRMADAS
+        if (unsubscribeConfirmedTransfers) { //
+            unsubscribeConfirmedTransfers(); //
+            unsubscribeConfirmedTransfers = null; //
+            console.log("Listener de transferencias confirmadas detenido."); //
+        } //
+        hideModal(); //
+    }); //
+
+    // Listener botón Saldos Iniciales (si existe)
+    const initialBalanceBtn = document.getElementById('set-initial-balance-btn'); //
+    if (initialBalanceBtn) initialBalanceBtn.addEventListener('click', showInitialBalanceModal); //
+
+    // Poblar filtros de fecha para Resumen y Ranking
+    const monthSelect = document.getElementById('summary-month'); //
+    const yearSelect = document.getElementById('summary-year'); //
+    const rankStartMonth = document.getElementById('rank-start-month'); //
+    const rankStartYear = document.getElementById('rank-start-year'); //
+    const rankEndMonth = document.getElementById('rank-end-month'); //
+    const rankEndYear = document.getElementById('rank-end-year'); //
+    const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]; //
+    const now = new Date(); //
+    [monthSelect, rankStartMonth, rankEndMonth].forEach(sel => { //
+        if (!sel) return; //
+        sel.innerHTML = ''; // Limpiar opciones previas
+        for (let i = 0; i < 12; i++) { const option = document.createElement('option'); option.value = i; option.textContent = monthNames[i]; if (i === now.getMonth()) option.selected = true; sel.appendChild(option); } //
+    }); //
+    [yearSelect, rankStartYear, rankEndYear].forEach(sel => { //
+         if (!sel) return; //
+         sel.innerHTML = ''; // Limpiar opciones previas
+        for (let i = 0; i < 5; i++) { const year = now.getFullYear() - i; const option = document.createElement('option'); option.value = year; option.textContent = year; sel.appendChild(option); } //
+    }); //
+
+    // Listeners para filtros Resumen y Ranking (sin cambios)
+    const updateDashboardView = () => updateDashboard(parseInt(yearSelect.value), parseInt(monthSelect.value)); //
+    if (monthSelect) monthSelect.addEventListener('change', updateDashboardView); //
+    if (yearSelect) yearSelect.addEventListener('change', updateDashboardView); //
+    const rankFilterBtn = document.getElementById('rank-filter-btn'); //
+    if(rankFilterBtn) rankFilterBtn.addEventListener('click', () => { //
+        const startDate = new Date(rankStartYear.value, rankStartMonth.value, 1); //
+        const endDate = new Date(rankEndYear.value, parseInt(rankEndMonth.value) + 1, 0); //
+        renderTopClientes(startDate, endDate); //
+    }); //
+    const rankShowAllBtn = document.getElementById('rank-show-all-btn'); //
+    if(rankShowAllBtn) rankShowAllBtn.addEventListener('click', () => renderTopClientes()); //
+
+    // --- Referencias y Listener Genérico para PESTAÑAS (ACTUALIZADO) ---
+    const tabs = { //
+        summary: document.getElementById('dashboard-tab-summary'), //
+        cartera: document.getElementById('dashboard-tab-cartera'), //
+        clientes: document.getElementById('dashboard-tab-clientes'), //
+        transferencias: document.getElementById('dashboard-tab-transferencias') // <-- Nueva
+    }; //
+    const views = { //
+        summary: document.getElementById('dashboard-summary-view'), //
+        cartera: document.getElementById('dashboard-cartera-view'), //
+        clientes: document.getElementById('dashboard-clientes-view'), //
+        transferencias: document.getElementById('dashboard-transferencias-view') // <-- Nueva
+    }; //
+
+    Object.keys(tabs).forEach(key => { //
+        if (tabs[key]) { //
+            tabs[key].addEventListener('click', () => { //
+                Object.values(tabs).forEach(t => t?.classList.remove('active')); //
+                Object.values(views).forEach(v => v?.classList.add('hidden')); //
+                tabs[key].classList.add('active'); //
+                if (views[key]) views[key].classList.remove('hidden'); //
+
+                // Si se activa la pestaña de transferencias, llamar a render
+                if (key === 'transferencias') { //
+                    renderConfirmedTransfers(); //
+                } //
+            }); //
+        } //
+    }); //
+
+    // --- Poblar y añadir Listeners para Filtros de TRANSFERENCIAS ---
+    populateDateFilters('filter-transfer'); // Llama a la función auxiliar
+    const transferMonthFilter = document.getElementById('filter-transfer-month'); //
+    const transferYearFilter = document.getElementById('filter-transfer-year'); //
+    if (transferMonthFilter) transferMonthFilter.addEventListener('change', renderConfirmedTransfers); //
+    if (transferYearFilter) transferYearFilter.addEventListener('change', renderConfirmedTransfers); //
+
+    // Listeners botones Descargar PDF y Transferir Fondos (sin cambios)
+    const downloadBtn = document.getElementById('download-report-btn'); //
+    if(downloadBtn) downloadBtn.addEventListener('click', showReportDateRangeModal); //
+    const transferBtn = document.getElementById('show-transfer-modal-btn'); //
+    if(transferBtn) transferBtn.addEventListener('click', showTransferModal); //
+
+    // --- Cargas Iniciales ---
+    renderPendingTransfers(); // Carga transferencias pendientes
+    updateDashboardView();    // Carga resumen
+    renderCartera();          // Carga cartera
+    renderTopClientes();      // Carga clientes
+    // renderConfirmedTransfers() se llama cuando se hace clic en su pestaña
+}
+
+/**
+ * Carga y muestra el historial de transferencias confirmadas,
+ * aplicando los filtros de mes y año seleccionados.
+ */
+function renderConfirmedTransfers() {
+    const listContainer = document.getElementById('transferencias-list');
+    const monthFilter = document.getElementById('filter-transfer-month');
+    const yearFilter = document.getElementById('filter-transfer-year');
+
+    if (!listContainer || !monthFilter || !yearFilter) {
+        console.warn("Elementos para renderizar transferencias confirmadas no encontrados.");
+        return;
     }
 
-    const monthSelect = document.getElementById('summary-month');
-    const yearSelect = document.getElementById('summary-year');
-    const rankStartMonth = document.getElementById('rank-start-month');
-    const rankStartYear = document.getElementById('rank-start-year');
-    const rankEndMonth = document.getElementById('rank-end-month');
-    const rankEndYear = document.getElementById('rank-end-year');
+    const selectedMonth = monthFilter.value;
+    const selectedYear = yearFilter.value;
 
-    const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-    const now = new Date();
+    if (unsubscribeConfirmedTransfers) {
+        unsubscribeConfirmedTransfers();
+        unsubscribeConfirmedTransfers = null;
+    }
 
-    [monthSelect, rankStartMonth, rankEndMonth].forEach(sel => {
-        for (let i = 0; i < 12; i++) { const option = document.createElement('option'); option.value = i; option.textContent = monthNames[i]; if (i === now.getMonth()) option.selected = true; sel.appendChild(option); }
-    });
-    [yearSelect, rankStartYear, rankEndYear].forEach(sel => {
-        for (let i = 0; i < 5; i++) { const year = now.getFullYear() - i; const option = document.createElement('option'); option.value = year; option.textContent = year; sel.appendChild(option); }
-    });
+    listContainer.innerHTML = '<p class="text-gray-500">Cargando historial...</p>';
 
-    const updateDashboardView = () => updateDashboard(parseInt(yearSelect.value), parseInt(monthSelect.value));
-    monthSelect.addEventListener('change', updateDashboardView);
-    yearSelect.addEventListener('change', updateDashboardView);
+    let q = query(collection(db, "transferencias"), where("estado", "==", "confirmada"));
 
-    document.getElementById('rank-filter-btn').addEventListener('click', () => {
-        const startDate = new Date(rankStartYear.value, rankStartMonth.value, 1);
-        const endDate = new Date(rankEndYear.value, parseInt(rankEndMonth.value) + 1, 0);
-        renderTopClientes(startDate, endDate);
-    });
-    document.getElementById('rank-show-all-btn').addEventListener('click', () => renderTopClientes());
-
-    const summaryTab = document.getElementById('dashboard-tab-summary');
-    const carteraTab = document.getElementById('dashboard-tab-cartera');
-    const clientesTab = document.getElementById('dashboard-tab-clientes');
-    const summaryView = document.getElementById('dashboard-summary-view');
-    const carteraView = document.getElementById('dashboard-cartera-view');
-    const clientesView = document.getElementById('dashboard-clientes-view');
-
-    summaryTab.addEventListener('click', () => {
-        summaryTab.classList.add('active');
-        carteraTab.classList.remove('active');
-        clientesTab.classList.remove('active');
-        summaryView.classList.remove('hidden');
-        carteraView.classList.add('hidden');
-        clientesView.classList.add('hidden');
-    });
-    carteraTab.addEventListener('click', () => {
-        carteraTab.classList.add('active');
-        summaryTab.classList.remove('active');
-        clientesTab.classList.remove('active');
-        carteraView.classList.remove('hidden');
-        summaryView.classList.add('hidden');
-        clientesView.classList.add('hidden');
-    });
-    clientesTab.addEventListener('click', () => {
-        clientesTab.classList.add('active');
-        summaryTab.classList.remove('active');
-        carteraTab.classList.remove('active');
-        clientesView.classList.remove('hidden');
-        summaryView.classList.add('hidden');
-        carteraView.classList.add('hidden');
-    });
-
-    const tabs = {
-        summary: document.getElementById('dashboard-tab-summary'),
-        cartera: document.getElementById('dashboard-tab-cartera'),
-        clientes: document.getElementById('dashboard-tab-clientes'),
-        transferencias: document.getElementById('dashboard-tab-transferencias') // Nueva pestaña
-    };
-    const views = {
-        summary: document.getElementById('dashboard-summary-view'),
-        cartera: document.getElementById('dashboard-cartera-view'),
-        clientes: document.getElementById('dashboard-clientes-view'),
-        transferencias: document.getElementById('dashboard-transferencias-view') // Nueva vista
-    };
-
-    Object.keys(tabs).forEach(key => {
-        if (tabs[key]) {
-            tabs[key].addEventListener('click', () => {
-                Object.values(tabs).forEach(t => t?.classList.remove('active'));
-                Object.values(views).forEach(v => v?.classList.add('hidden'));
-                tabs[key].classList.add('active');
-                views[key].classList.remove('hidden');
-            });
+    if (selectedYear !== 'all') {
+        const yearNum = parseInt(selectedYear);
+        let startDate, endDate;
+        if (selectedMonth !== 'all') {
+            const monthNum = parseInt(selectedMonth);
+            startDate = new Date(yearNum, monthNum, 1);
+            endDate = new Date(yearNum, monthNum + 1, 1); // Primer día del mes siguiente
+        } else {
+            startDate = new Date(yearNum, 0, 1);
+            endDate = new Date(yearNum + 1, 0, 1);
         }
+        // Usar 'confirmadoEn' para filtrar por fecha de confirmación
+        q = query(q, where("confirmadoEn", ">=", startDate), where("confirmadoEn", "<", endDate));
+    }
+
+    q = query(q, orderBy("confirmadoEn", "desc"));
+
+    unsubscribeConfirmedTransfers = onSnapshot(q, (snapshot) => {
+        if (snapshot.empty) {
+            listContainer.innerHTML = '<p class="text-center text-gray-500 py-4">No se encontraron transferencias confirmadas para este período.</p>';
+            return;
+        }
+
+        listContainer.innerHTML = ''; // Limpiar lista
+        snapshot.docs.forEach(doc => {
+            const transfer = doc.data();
+            const el = document.createElement('div');
+            // Añadido: Clases para un mejor diseño de tarjeta
+            el.className = 'bg-white p-4 rounded-lg shadow border border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-4 items-start';
+
+            // --- INICIO: EXTRACCIÓN Y FORMATEO DE DATOS ADICIONALES ---
+            let fechaConfirmacionStr = 'N/A';
+            let horaConfirmacionStr = '';
+            if (transfer.confirmadoEn && transfer.confirmadoEn.seconds) {
+                const confirmDate = new Date(transfer.confirmadoEn.seconds * 1000);
+                fechaConfirmacionStr = confirmDate.toLocaleDateString();
+                horaConfirmacionStr = confirmDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }
+
+            let fechaRegistroStr = 'N/A';
+            if (transfer.fechaRegistro && transfer.fechaRegistro.seconds) {
+                fechaRegistroStr = new Date(transfer.fechaRegistro.seconds * 1000).toLocaleDateString();
+            }
+            // Asegurarse de mostrar la fecha de transferencia si existe
+             const fechaTransferenciaStr = transfer.fechaTransferencia ? new Date(transfer.fechaTransferencia + 'T00:00:00').toLocaleDateString() : fechaRegistroStr;
+
+
+            // Buscar nombres de usuario (asegúrate que 'allUsers' esté disponible globalmente)
+            const registradoPorNombre = allUsers.find(u => u.id === transfer.registradoPor)?.nombre || 'Desconocido';
+            const confirmadoPorNombre = allUsers.find(u => u.id === transfer.confirmadoPor)?.nombre || 'Desconocido';
+            // --- FIN: EXTRACCIÓN Y FORMATEO ---
+
+            // --- HTML de la tarjeta mejorado ---
+            el.innerHTML = `
+                <div class="md:col-span-1 space-y-1">
+                    <p class="font-bold text-xl text-indigo-700">${formatCurrency(transfer.monto)}</p>
+                    <p class="text-sm font-semibold text-gray-800">
+                        <span class="text-red-600">${transfer.cuentaOrigen}</span> &rarr; <span class="text-green-600">${transfer.cuentaDestino}</span>
+                    </p>
+                     <p class="text-xs text-gray-500">Fecha Transferencia: ${fechaTransferenciaStr}</p>
+                    ${transfer.referencia ? `<p class="text-xs text-gray-600 italic break-all">Ref: ${transfer.referencia}</p>` : ''}
+                </div>
+
+                <div class="md:col-span-1 text-xs text-gray-600 border-t md:border-t-0 md:border-l md:pl-4 pt-2 md:pt-0">
+                    <p class="font-semibold text-gray-800">Registrado:</p>
+                    <p>Por: ${registradoPorNombre}</p>
+                    <p>Fecha: ${fechaRegistroStr}</p>
+                </div>
+
+                <div class="md:col-span-1 text-xs text-gray-600 border-t md:border-t-0 md:border-l md:pl-4 pt-2 md:pt-0">
+                    <p class="font-semibold text-gray-800">Confirmado:</p>
+                    <p>Por: ${confirmadoPorNombre}</p>
+                    <p>Fecha: ${fechaConfirmacionStr}</p>
+                    <p>Hora: ${horaConfirmacionStr}</p>
+                </div>
+            `;
+            listContainer.appendChild(el);
+        });
+
+    }, (error) => {
+        console.error("Error escuchando transferencias confirmadas:", error);
+        listContainer.innerHTML = '<p class="text-red-500 text-center">Error al cargar el historial de transferencias.</p>';
     });
-
-    document.getElementById('download-report-btn').addEventListener('click', showReportDateRangeModal);
-    document.getElementById('show-transfer-modal-btn')?.addEventListener('click', showTransferModal);
-
-    renderPendingTransfers(); // (Crearemos esta función más adelante)
-    updateDashboardView();
-    renderCartera();
-    renderTopClientes();
 }
 
 // NUEVA FUNCIÓN en app.js
@@ -4675,7 +4873,6 @@ function showTransferModal() {
                     <label for="transfer-destino" class="block text-sm font-medium">Cuenta Destino</label>
                     <select id="transfer-destino" class="w-full p-2 border rounded-lg mt-1 bg-white" required>
                         <option value="">-- Seleccionar --</option>
-                        {/* Las opciones se llenarán dinámicamente */}
                     </select>
                 </div>
                 <div>
@@ -4870,11 +5067,24 @@ async function updateDashboard(year, month) {
         }
     }
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Se añade 'T00:00:00' para evitar errores de zona horaria al comparar fechas.
-    const salesThisMonth = allRemisiones.flatMap(r => r.payments || []).filter(p => { const d = new Date(p.date + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year; }).reduce((sum, p) => sum + p.amount, 0);
+    // --- INICIO DE LA CORRECCIÓN (salesThisMonth) ---
+    // Asegurar que r.payments sea array antes de flatMap y filter/reduce
+    const salesThisMonth = allRemisiones
+        .flatMap(r => Array.isArray(r.payments) ? r.payments : []) // Usar array vacío si no es array
+        .filter(p => { const d = new Date(p.date + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year; })
+        .reduce((sum, p) => sum + p.amount, 0);
+    // --- FIN DE LA CORRECCIÓN ---
+
     const expensesThisMonth = allGastos.filter(g => { const d = new Date(g.fecha + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year; }).reduce((sum, g) => sum + g.valorTotal, 0);
-    const carteraThisMonth = allRemisiones.filter(r => { const d = new Date(r.fechaRecibido + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year && r.estado !== 'Anulada'; }).reduce((sum, r) => { const totalPagado = (r.payments || []).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
+
+    // --- INICIO DE LA CORRECCIÓN (carteraThisMonth) ---
+    const carteraThisMonth = allRemisiones.filter(r => { const d = new Date(r.fechaRecibido + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year && r.estado !== 'Anulada'; })
+        .reduce((sum, r) => {
+            const paymentsArray = Array.isArray(r.payments) ? r.payments : []; // Asegurar array
+            const totalPagado = paymentsArray.reduce((s, p) => s + p.amount, 0);
+            const saldo = r.valorTotal - totalPagado;
+            return sum + (saldo > 0 ? saldo : 0);
+        }, 0);
     // --- FIN DE LA CORRECCIÓN ---
 
     document.getElementById('summary-sales').textContent = formatCurrency(salesThisMonth);
@@ -4882,7 +5092,15 @@ async function updateDashboard(year, month) {
     document.getElementById('summary-profit').textContent = formatCurrency(salesThisMonth - expensesThisMonth);
     document.getElementById('summary-cartera').textContent = formatCurrency(carteraThisMonth);
 
-    const totalCartera = allRemisiones.filter(r => r.estado !== 'Anulada').reduce((sum, r) => { const totalPagado = (r.payments || []).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
+    // --- INICIO DE LA CORRECCIÓN (totalCartera) ---
+    const totalCartera = allRemisiones.filter(r => r.estado !== 'Anulada')
+        .reduce((sum, r) => {
+            const paymentsArray = Array.isArray(r.payments) ? r.payments : []; // Asegurar array
+            const totalPagado = paymentsArray.reduce((s, p) => s + p.amount, 0);
+            const saldo = r.valorTotal - totalPagado;
+            return sum + (saldo > 0 ? saldo : 0);
+        }, 0);
+    // --- FIN DE LA CORRECCIÓN ---
     document.getElementById('summary-cartera-total').textContent = formatCurrency(totalCartera);
 
     const accountBalances = {};
@@ -4890,11 +5108,17 @@ async function updateDashboard(year, month) {
         accountBalances[metodo] = initialBalances[metodo] || 0;
     });
 
-    allRemisiones.forEach(r => (r.payments || []).forEach(p => {
-        if (accountBalances[p.method] !== undefined) {
-            accountBalances[p.method] += p.amount;
-        }
-    }));
+    // --- INICIO DE LA CORRECCIÓN (accountBalances) ---
+    allRemisiones.forEach(r => {
+        const paymentsArray = Array.isArray(r.payments) ? r.payments : []; // Asegurar array
+        paymentsArray.forEach(p => {
+            if (accountBalances[p.method] !== undefined) {
+                accountBalances[p.method] += p.amount;
+            }
+        });
+    });
+    // --- FIN DE LA CORRECCIÓN ---
+
     allGastos.forEach(g => {
         if (accountBalances[g.fuentePago] !== undefined) {
             accountBalances[g.fuentePago] -= g.valorTotal;
@@ -4932,9 +5156,11 @@ async function updateDashboard(year, month) {
         labels.push(monthNames[m]);
 
         // --- INICIO DE LA CORRECCIÓN ---
-        const monthlySales = allRemisiones.flatMap(r => r.payments || []).filter(p => { const pDate = new Date(p.date + 'T00:00:00'); return pDate.getMonth() === m && pDate.getFullYear() === y; }).reduce((sum, p) => sum + p.amount, 0);
-        const monthlyExpenses = allGastos.filter(g => { const gDate = new Date(g.fecha + 'T00:00:00'); return gDate.getMonth() === m && gDate.getFullYear() === y; }).reduce((sum, g) => sum + g.valorTotal, 0);
-        // --- FIN DE LA CORRECCIÓN ---
+        const monthlySales = allRemisiones
+            .flatMap(r => Array.isArray(r.payments) ? r.payments : []) // Asegurar array
+            .filter(p => { const pDate = new Date(p.date + 'T00:00:00'); return pDate.getMonth() === m && pDate.getFullYear() === y; })
+            .reduce((sum, p) => sum + p.amount, 0);
+        const monthlyExpenses = allGastos.filter(g => { const gDate = new Date(g.fecha + 'T00:00:00'); return gDate.getMonth() === m && gDate.getFullYear() === y; }).reduce((sum, g) => sum + g.valorTotal, 0);        // --- FIN DE LA CORRECCIÓN ---
 
         salesData.push(monthlySales);
         expensesData.push(monthlyExpenses);
@@ -4975,13 +5201,17 @@ function calculateOverdueDays(dateString) {
 function renderCartera() {
     const carteraListEl = document.getElementById('cartera-list');
     const carteraTotalEl = document.getElementById('cartera-total');
+
+    // Asegurar que 'payments' sea un array antes de filtrar
     const pendingRemisiones = allRemisiones.filter(r => {
         if (r.estado === 'Anulada') return false;
-        const totalPagado = (r.payments || []).reduce((sum, p) => sum + p.amount, 0);
+        const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
+        const totalPagado = paymentsArray.reduce((sum, p) => sum + p.amount, 0);
+        // Usar un pequeño margen (e.g., 0.01) para evitar problemas con decimales flotantes
         return r.valorTotal - totalPagado > 0.01;
     }).sort((a, b) => new Date(a.fechaRecibido) - new Date(b.fechaRecibido));
 
-    carteraListEl.innerHTML = ''; // Clear previous content
+    carteraListEl.innerHTML = ''; // Limpiar contenido previo
 
     if (pendingRemisiones.length === 0) {
         carteraListEl.innerHTML = '<p class="text-center text-gray-500 py-8">¡No hay cartera pendiente!</p>';
@@ -4991,7 +5221,9 @@ function renderCartera() {
 
     let totalCartera = 0;
     pendingRemisiones.forEach(r => {
-        const totalPagado = (r.payments || []).reduce((sum, p) => sum + p.amount, 0);
+        // Asegurar array para cálculo dentro del bucle
+        const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
+        const totalPagado = paymentsArray.reduce((sum, p) => sum + p.amount, 0);
         const saldoPendiente = r.valorTotal - totalPagado;
         totalCartera += saldoPendiente;
         const overdueDays = calculateOverdueDays(r.fechaRecibido);
@@ -5000,27 +5232,65 @@ function renderCartera() {
         if (overdueDays > 60) overdueColor = 'text-red-600';
 
         const card = document.createElement('div');
+        // Se añade `data-remision-json` al div principal para la delegación de eventos
         card.className = 'bg-white p-4 rounded-lg shadow-md border border-gray-200';
+        card.dataset.remisionJson = JSON.stringify(r); // Guardar datos de remisión aquí
+
         card.innerHTML = `
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-                    <div class="mb-2 sm:mb-0">
-                        <p class="font-bold text-gray-800">${r.clienteNombre}</p>
-                        <p class="text-sm text-gray-500">Remisión N° <span class="font-mono">${r.numeroRemision}</span> &bull; Recibido: ${r.fechaRecibido}</p>
-                    </div>
-                    <div class="text-left sm:text-right w-full sm:w-auto">
-                        <p class="text-sm text-gray-500">Saldo Pendiente</p>
-                        <p class="font-bold text-xl text-red-600">${formatCurrency(saldoPendiente)}</p>
-                    </div>
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                <div class="mb-2 sm:mb-0 flex-grow">
+                    <p class="font-bold text-gray-800">${r.clienteNombre}</p>
+                    <p class="text-sm text-gray-500">Remisión N° <span class="font-mono">${r.numeroRemision}</span> &bull; Recibido: ${r.fechaRecibido}</p>
                 </div>
-                <div class="mt-2 pt-2 border-t border-gray-200 text-sm flex justify-between items-center">
-                    <p><span class="font-semibold">Valor Total:</span> ${formatCurrency(r.valorTotal)}</p>
-                    <p class="${overdueColor} font-semibold">${overdueDays} días de vencido</p>
+                <div class="text-left sm:text-right w-full sm:w-auto flex-shrink-0"> 
+                    <p class="text-sm text-gray-500">Saldo Pendiente</p>
+                    <p class="font-bold text-xl text-red-600">${formatCurrency(saldoPendiente)}</p>
                 </div>
-            `;
+            </div>
+            <div class="mt-2 pt-2 border-t border-gray-200 text-sm flex justify-between items-center">
+                <p><span class="font-semibold">Valor Total:</span> ${formatCurrency(r.valorTotal)}</p>
+                <p class="${overdueColor} font-semibold">${overdueDays} días de vencido</p>
+                <button class="cartera-payment-btn bg-purple-600 text-white font-bold py-1 px-3 rounded-lg hover:bg-purple-700 text-xs">
+                    Gestionar Pagos
+                </button>
+            </div>
+        `;
         carteraListEl.appendChild(card);
     });
 
     carteraTotalEl.innerHTML = `Total Cartera: <span class="text-red-600">${formatCurrency(totalCartera)}</span>`;
+
+    // --- INICIO: Listener de eventos delegado para los botones ---
+    // Eliminar listener previo si existe para evitar duplicados
+    const oldListener = carteraListEl._paymentClickListener;
+    if (oldListener) {
+        carteraListEl.removeEventListener('click', oldListener);
+    }
+
+    // Crear la nueva función listener
+    const newListener = (event) => {
+        const paymentButton = event.target.closest('.cartera-payment-btn');
+        if (paymentButton) {
+            const cardElement = paymentButton.closest('[data-remision-json]');
+            if (cardElement && cardElement.dataset.remisionJson) {
+                try {
+                    const remisionData = JSON.parse(cardElement.dataset.remisionJson);
+                    // Asegurar que payments sea un array antes de llamar al modal
+                    if (!Array.isArray(remisionData.payments)) {
+                        remisionData.payments = [];
+                    }
+                    showPaymentModal(remisionData);
+                } catch (e) {
+                    console.error("Error al parsear datos de remisión desde el botón de cartera:", e);
+                }
+            }
+        }
+    };
+
+    // Añadir el nuevo listener y guardarlo para poder removerlo después
+    carteraListEl.addEventListener('click', newListener);
+    carteraListEl._paymentClickListener = newListener; // Guardar referencia
+    // --- FIN: Listener de eventos ---
 }
 
 /**
