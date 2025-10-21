@@ -4439,9 +4439,9 @@ function showPaymentModal(remision) {
             // Verificar índice básico antes de la transacción
             // Usa 'paymentsArray' que ya está validado
             if (paymentIndex < 0 || paymentIndex >= paymentsArray.length || !paymentsArray[paymentIndex]) {
-                 console.error("Error: Índice de pago inválido.", paymentIndex, paymentsArray);
-                 showModalMessage("Error interno al intentar confirmar el pago (índice inválido).");
-                 return;
+                console.error("Error: Índice de pago inválido.", paymentIndex, paymentsArray);
+                showModalMessage("Error interno al intentar confirmar el pago (índice inválido).");
+                return;
             }
 
             console.log("Datos del pago ANTES de confirmar (dentro del listener):", JSON.stringify(paymentsArray[paymentIndex])); // Usa paymentsArray
@@ -4456,7 +4456,7 @@ function showPaymentModal(remision) {
                     const currentPaymentsArray = Array.isArray(data.payments) ? data.payments : [];
 
                     if (paymentIndex >= currentPaymentsArray.length || !currentPaymentsArray[paymentIndex]) {
-                         throw `Índice de pago (${paymentIndex}) fuera de rango en los datos actuales.`;
+                        throw `Índice de pago (${paymentIndex}) fuera de rango en los datos actuales.`;
                     }
 
                     // Modificar el objeto específico EN MEMORIA
@@ -4497,20 +4497,20 @@ function showPaymentModal(remision) {
             e.preventDefault();
             const amount = unformatCurrency(paymentAmountInput.value);
 
-            // Recalcular saldo pendiente REAL justo antes de guardar
+            // Recalcular saldo pendiente REAL justo antes de guardar (sin cambios)
             const currentRemision = allRemisiones.find(r => r.id === remision.id);
-            const currentPaymentsArray = Array.isArray(currentRemision?.payments) ? currentRemision.payments : []; // Añadir verificación de currentRemision
+            const currentPaymentsArray = Array.isArray(currentRemision?.payments) ? currentRemision.payments : [];
             const currentTotalConfirmado = currentPaymentsArray.filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
             const currentTotalPorConfirmar = currentPaymentsArray.filter(p => p.status === 'por confirmar').reduce((sum, p) => sum + p.amount, 0);
-            const currentSaldoRealPendiente = (currentRemision?.valorTotal || 0) - currentTotalConfirmado - currentTotalPorConfirmar; // Usar valorTotal seguro
+            const currentSaldoRealPendiente = (currentRemision?.valorTotal || 0) - currentTotalConfirmado - currentTotalPorConfirmar;
 
 
             if (amount <= 0 || isNaN(amount)) {
-                showModalMessage("El monto debe ser mayor a cero.");
+                showModalMessage("El monto debe ser mayor a cero."); // Usa modal primario
                 return;
             }
             if (amount > currentSaldoRealPendiente + 0.01) {
-                showModalMessage(`El monto no puede superar el saldo pendiente de ${formatCurrency(currentSaldoRealPendiente)}.`);
+                showModalMessage(`El monto no puede superar el saldo pendiente de ${formatCurrency(currentSaldoRealPendiente)}.`); // Usa modal primario
                 return;
             }
 
@@ -4525,21 +4525,30 @@ function showPaymentModal(remision) {
 
             showModalMessage("Registrando pago...", true); // Usa modal primario
             try {
+                // Escribir en Firestore
                 await updateDoc(doc(db, "remisiones", remision.id), {
                     payments: arrayUnion(newPayment)
                 });
 
-                hideModal(); // Cierra modal primario
-                showTemporaryMessage("¡Pago registrado! Pendiente de confirmación.", "success");
-                // La UI se actualizará por onSnapshot, no es estrictamente necesario
-                // volver a llamar a showPaymentModal aquí, pero podrías hacerlo
-                // si quieres la actualización visual inmediata en este modal secundario.
-                // const updatedRemision = allRemisiones.find(r => r.id === remision.id);
-                // if (updatedRemision) showPaymentModal(updatedRemision);
+                hideModal(); // Cierra modal primario de carga
+                showTemporaryMessage("¡Pago registrado! Pendiente de confirmación.", "success"); // Notificación
 
+                // --- INICIO DE LA MODIFICACIÓN ---
+                // 1. Actualizar la variable 'remision' local añadiendo el nuevo pago
+                //    (Aseguramos que 'remision.payments' sea un array si no lo era)
+                if (!Array.isArray(remision.payments)) {
+                    remision.payments = [];
+                }
+                remision.payments.push(newPayment);
+
+                // 2. Volver a llamar a showPaymentModal con la remisión actualizada
+                //    para refrescar la vista del modal secundario
+                showPaymentModal(remision);
+                // --- FIN DE LA MODIFICACIÓN ---
 
             } catch (error) {
                 console.error("Error al registrar pago:", error);
+                hideModal(); // Asegúrate de cerrar el loader primario en caso de error
                 showModalMessage("Error al registrar el pago."); // Usa modal primario
             }
         });
@@ -4628,7 +4637,7 @@ async function showDashboardModal() {
             <div id="pending-transfers-list" class="space-y-3 max-h-40 overflow-y-auto"></div>
         </div>
     </div>
-    `; 
+    `;
 
     document.getElementById('modal').classList.remove('hidden'); //
 
@@ -4636,9 +4645,9 @@ async function showDashboardModal() {
     document.getElementById('close-dashboard-modal').addEventListener('click', () => { //
         // Detener listener PENDIENTES
         if (unsubscribePendingTransfers) { //
-             unsubscribePendingTransfers(); //
-             unsubscribePendingTransfers = null; //
-             console.log("Listener de transferencias pendientes detenido."); //
+            unsubscribePendingTransfers(); //
+            unsubscribePendingTransfers = null; //
+            console.log("Listener de transferencias pendientes detenido."); //
         } //
         // Detener listener CONFIRMADAS
         if (unsubscribeConfirmedTransfers) { //
@@ -4668,8 +4677,8 @@ async function showDashboardModal() {
         for (let i = 0; i < 12; i++) { const option = document.createElement('option'); option.value = i; option.textContent = monthNames[i]; if (i === now.getMonth()) option.selected = true; sel.appendChild(option); } //
     }); //
     [yearSelect, rankStartYear, rankEndYear].forEach(sel => { //
-         if (!sel) return; //
-         sel.innerHTML = ''; // Limpiar opciones previas
+        if (!sel) return; //
+        sel.innerHTML = ''; // Limpiar opciones previas
         for (let i = 0; i < 5; i++) { const year = now.getFullYear() - i; const option = document.createElement('option'); option.value = year; option.textContent = year; sel.appendChild(option); } //
     }); //
 
@@ -4678,13 +4687,13 @@ async function showDashboardModal() {
     if (monthSelect) monthSelect.addEventListener('change', updateDashboardView); //
     if (yearSelect) yearSelect.addEventListener('change', updateDashboardView); //
     const rankFilterBtn = document.getElementById('rank-filter-btn'); //
-    if(rankFilterBtn) rankFilterBtn.addEventListener('click', () => { //
+    if (rankFilterBtn) rankFilterBtn.addEventListener('click', () => { //
         const startDate = new Date(rankStartYear.value, rankStartMonth.value, 1); //
         const endDate = new Date(rankEndYear.value, parseInt(rankEndMonth.value) + 1, 0); //
         renderTopClientes(startDate, endDate); //
     }); //
     const rankShowAllBtn = document.getElementById('rank-show-all-btn'); //
-    if(rankShowAllBtn) rankShowAllBtn.addEventListener('click', () => renderTopClientes()); //
+    if (rankShowAllBtn) rankShowAllBtn.addEventListener('click', () => renderTopClientes()); //
 
     // --- Referencias y Listener Genérico para PESTAÑAS (ACTUALIZADO) ---
     const tabs = { //
@@ -4725,9 +4734,9 @@ async function showDashboardModal() {
 
     // Listeners botones Descargar PDF y Transferir Fondos (sin cambios)
     const downloadBtn = document.getElementById('download-report-btn'); //
-    if(downloadBtn) downloadBtn.addEventListener('click', showReportDateRangeModal); //
+    if (downloadBtn) downloadBtn.addEventListener('click', showReportDateRangeModal); //
     const transferBtn = document.getElementById('show-transfer-modal-btn'); //
-    if(transferBtn) transferBtn.addEventListener('click', showTransferModal); //
+    if (transferBtn) transferBtn.addEventListener('click', showTransferModal); //
 
     // --- Cargas Iniciales ---
     renderPendingTransfers(); // Carga transferencias pendientes
@@ -4807,7 +4816,7 @@ function renderConfirmedTransfers() {
                 fechaRegistroStr = new Date(transfer.fechaRegistro.seconds * 1000).toLocaleDateString();
             }
             // Asegurarse de mostrar la fecha de transferencia si existe
-             const fechaTransferenciaStr = transfer.fechaTransferencia ? new Date(transfer.fechaTransferencia + 'T00:00:00').toLocaleDateString() : fechaRegistroStr;
+            const fechaTransferenciaStr = transfer.fechaTransferencia ? new Date(transfer.fechaTransferencia + 'T00:00:00').toLocaleDateString() : fechaRegistroStr;
 
 
             // Buscar nombres de usuario (asegúrate que 'allUsers' esté disponible globalmente)
