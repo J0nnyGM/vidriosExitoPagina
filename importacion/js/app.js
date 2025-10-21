@@ -4360,20 +4360,40 @@ function showPaymentModal(remision) {
         btn.addEventListener('click', async (e) => {
             const remisionId = e.currentTarget.dataset.remisionId;
             const paymentIndex = parseInt(e.currentTarget.dataset.paymentIndex);
-            const remisionToUpdate = allRemisiones.find(r => r.id === remisionId);
+            const remisionToUpdate = allRemisiones.find(r => r.id === remisionId); // <<<--- Encuentra la remisión local
+
             if (remisionToUpdate && remisionToUpdate.payments[paymentIndex]) {
-                remisionToUpdate.payments[paymentIndex].status = 'confirmado';
-                remisionToUpdate.payments[paymentIndex].confirmedBy = currentUser.uid;
-                remisionToUpdate.payments[paymentIndex].confirmedAt = new Date();
+                // --- INICIO DE LA MODIFICACIÓN ---
+
+                // Prepara el objeto de actualización usando dot notation
+                const updateData = {};
+                updateData[`payments.${paymentIndex}.status`] = 'confirmado';
+                updateData[`payments.${paymentIndex}.confirmedBy`] = currentUser.uid;
+                updateData[`payments.${paymentIndex}.confirmedAt`] = new Date();
+
                 showModalMessage("Confirmando pago...", true);
                 try {
-                    await updateDoc(doc(db, "remisiones", remisionId), { payments: remisionToUpdate.payments });
+                    // Actualiza SOLO los campos específicos en Firestore
+                    await updateDoc(doc(db, "remisiones", remisionId), updateData);
+
+                    // Opcional: Actualizar también el objeto local 'remisionToUpdate' si
+                    // quieres que la UI refleje el cambio inmediatamente sin esperar
+                    // a que onSnapshot actualice 'allRemisiones'.
+                    remisionToUpdate.payments[paymentIndex].status = 'confirmado';
+                    remisionToUpdate.payments[paymentIndex].confirmedBy = currentUser.uid;
+                    remisionToUpdate.payments[paymentIndex].confirmedAt = new Date();
+
                     hideModal();
-                    showModalMessage("¡Pago confirmado!", false, 1500);
+                    // Usaremos showTemporaryMessage para no cerrar el modal de pagos
+                    showTemporaryMessage("¡Pago confirmado!", "success");
+                    // Volver a renderizar el contenido del modal para reflejar el cambio
+                    showPaymentModal(remisionToUpdate);
+
                 } catch (error) {
                     console.error("Error al confirmar pago:", error);
-                    showModalMessage("Error al confirmar el pago.");
+                    showModalMessage("Error al confirmar el pago."); // Mantenemos el modal de error
                 }
+                // --- FIN DE LA MODIFICACIÓN ---
             }
         });
     });
