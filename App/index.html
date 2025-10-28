@@ -373,8 +373,30 @@
             </div>
 
             <div id="tareas-view" class="hidden">
-                <h1 class="text-3xl font-bold text-gray-700">Tareas Asignadas</h1>
+                <div class="flex justify-between items-center mb-6 flex-wrap gap-2">
+                    <h1 class="text-3xl font-bold text-gray-700">Mis Tareas Asignadas</h1>
+                    <button id="new-task-btn" data-action="new-task"
+                        class="hidden bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md items-center transition-all">
+                        + Nueva Tarea
+                    </button>
+                </div>
+
+                <div class="mb-4 border-b border-gray-200">
+                    <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                        <button id="pending-tasks-tab" data-status-filter="pendiente"
+                            class="tab-button task-tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm active">Pendientes</button>
+                        <button id="completed-tasks-tab" data-status-filter="completada"
+                            class="tab-button task-tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Completadas</button>
+                    </nav>
+                </div>
+
+                <div id="tasks-container" class="space-y-4">
+                    <div id="loading-tasks" class="text-center py-10">
+                        <p class="text-gray-500">Cargando tareas...</p>
+                    </div>
+                </div>
             </div>
+
             <div id="herramienta-view" class="hidden">
                 <h1 class="text-3xl font-bold text-gray-700">Herramienta</h1>
             </div>

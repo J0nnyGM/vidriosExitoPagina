@@ -33,8 +33,7 @@ const storage = getStorage(app);
 const messaging = getMessaging(app);
 const functions = getFunctions(app, 'us-central1'); // ASEGÚRATE DE QUE ESTA LÍNEA EXISTA
 
-
-let unsubscribeReports = null;
+let unsubscribeTasks = null; // <-- AÑADE ESTA LÍNEAlet unsubscribeReports = null;
 let unsubscribePurchaseOrders = null;
 let unsubscribeInventory = null;
 let unsubscribeStock = null;
@@ -1347,14 +1346,14 @@ function setupResponsiveTabs() {
     dropdownMenuContainer.addEventListener('click', (e) => {
         e.preventDefault(); // Previene que la página salte al inicio
         const target = e.target;
-        
+
         // Verificamos que se hizo clic en una opción del menú
         if (target.dataset.tab) {
             const tabName = target.dataset.tab;
-            
+
             // Llamamos a la función que ya tienes para cambiar de pestaña
             switchProjectTab(tabName);
-            
+
             // Ocultamos el menú desplegable
             if (dropdownMenu) {
                 dropdownMenu.classList.add('hidden');
@@ -3212,7 +3211,7 @@ const modalBody = document.getElementById('modal-body');
 const modalForm = document.getElementById('modal-form');
 const modalConfirmBtn = document.getElementById('modal-confirm-btn');
 
-function openMainModal(type, data = {}) {
+async function openMainModal(type, data = {}) {
     let title, bodyHtml, btnText, btnClass;
     modalForm.reset();
     modalForm.dataset.type = type;
@@ -4007,11 +4006,11 @@ function openMainModal(type, data = {}) {
             break;
         }
         case 'request-material': {
-        title = 'Crear Solicitud de Material';
-        btnText = 'Enviar Solicitud';
-        btnClass = 'bg-green-500 hover:bg-green-600';
+            title = 'Crear Solicitud de Material';
+            btnText = 'Enviar Solicitud';
+            btnClass = 'bg-green-500 hover:bg-green-600';
 
-        bodyHtml = `
+            bodyHtml = `
         <div id="material-request-loader" class="text-center py-8">
         <div class="loader mx-auto"></div>
         <p class="mt-2 text-sm text-gray-500">Cargando datos del proyecto...</p>
@@ -4019,35 +4018,35 @@ function openMainModal(type, data = {}) {
         <div id="material-request-form-content" class="hidden"></div>
         `;
 
-        const loadDataAndBuildForm = async () => {
-        try {
-        const loader = document.getElementById('material-request-loader');
-        const formContent = document.getElementById('material-request-form-content');
+            const loadDataAndBuildForm = async () => {
+                try {
+                    const loader = document.getElementById('material-request-loader');
+                    const formContent = document.getElementById('material-request-form-content');
 
-        const [inventorySnapshot, itemsSnapshot] = await Promise.all([
-            getDocs(query(collection(db, "materialCatalog"))),
-            getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id)))
-        ]);
+                    const [inventorySnapshot, itemsSnapshot] = await Promise.all([
+                        getDocs(query(collection(db, "materialCatalog"))),
+                        getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id)))
+                    ]);
 
-        const inventory = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const items = itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    const inventory = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    const items = itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        const materialOptions = inventory.map(mat => ({
-            value: mat.id,
-            label: `${mat.name} (Stock: ${mat.quantityInStock || 0})`,
-            // --- AÑADE 'stock' A ESTA LÍNEA ---
-            customProperties: { isDivisible: mat.isDivisible, name: mat.name, defaultLength: mat.defaultSize?.length || 0, stock: mat.quantityInStock || 0 }
-        }));
+                    const materialOptions = inventory.map(mat => ({
+                        value: mat.id,
+                        label: `${mat.name} (Stock: ${mat.quantityInStock || 0})`,
+                        // --- AÑADE 'stock' A ESTA LÍNEA ---
+                        customProperties: { isDivisible: mat.isDivisible, name: mat.name, defaultLength: mat.defaultSize?.length || 0, stock: mat.quantityInStock || 0 }
+                    }));
 
-        let userSelectorHtml = '';
-        if (currentUserRole === 'admin' || currentUserRole === 'bodega') {
-            const userOptions = Array.from(usersMap.entries()).filter(([uid, user]) => user.status === 'active').map(([uid, user]) => `<option value="${uid}" ${uid === currentUser.uid ? 'selected' : ''}>${user.firstName} ${user.lastName}</option>`).join('');
-            userSelectorHtml = `<div class="border p-3 rounded-lg"><h4 class="font-semibold text-gray-700 mb-2">3. ¿Quién solicita?</h4><select id="request-as-user-select" class="w-full border p-2 rounded-md bg-white text-sm">${userOptions}</select></div>`;
-        }
+                    let userSelectorHtml = '';
+                    if (currentUserRole === 'admin' || currentUserRole === 'bodega') {
+                        const userOptions = Array.from(usersMap.entries()).filter(([uid, user]) => user.status === 'active').map(([uid, user]) => `<option value="${uid}" ${uid === currentUser.uid ? 'selected' : ''}>${user.firstName} ${user.lastName}</option>`).join('');
+                        userSelectorHtml = `<div class="border p-3 rounded-lg"><h4 class="font-semibold text-gray-700 mb-2">3. ¿Quién solicita?</h4><select id="request-as-user-select" class="w-full border p-2 rounded-md bg-white text-sm">${userOptions}</select></div>`;
+                    }
 
-        const itemInputsHtml = items.filter(item => item && item.id && item.name).map(item => `<div class="request-item-card p-2 border rounded-md bg-gray-50"><label class="block text-sm font-semibold">${item.name} <span class="text-xs font-normal text-gray-500">(${item.quantity} Unidades)</span></label><div class="flex items-center mt-1"><span class="text-sm mr-2">Cantidad:</span><input type="number" data-item-id="${item.id}" class="request-item-quantity w-24 border p-1 rounded-md text-sm" placeholder="0" min="0" max="${item.quantity}"></div></div>`).join('');
+                    const itemInputsHtml = items.filter(item => item && item.id && item.name).map(item => `<div class="request-item-card p-2 border rounded-md bg-gray-50"><label class="block text-sm font-semibold">${item.name} <span class="text-xs font-normal text-gray-500">(${item.quantity} Unidades)</span></label><div class="flex items-center mt-1"><span class="text-sm mr-2">Cantidad:</span><input type="number" data-item-id="${item.id}" class="request-item-quantity w-24 border p-1 rounded-md text-sm" placeholder="0" min="0" max="${item.quantity}"></div></div>`).join('');
 
-        formContent.innerHTML = `
+                    formContent.innerHTML = `
             <div class="space-y-4">
                 <div class="border p-3 rounded-lg">
                     <h4 class="font-semibold text-gray-700 mb-2">1. Añadir Materiales</h4>
@@ -4085,25 +4084,229 @@ function openMainModal(type, data = {}) {
                 ${userSelectorHtml}
             </div>`;
 
-        loader.classList.add('hidden');
-        formContent.classList.remove('hidden');
+                    loader.classList.add('hidden');
+                    formContent.classList.remove('hidden');
 
-        const choices = new Choices('#material-choices-select', {
-            choices: materialOptions,
-            searchEnabled: true, itemSelectText: 'Seleccionar', placeholder: true, placeholderValue: 'Escribe para buscar...',
-        });
+                    const choices = new Choices('#material-choices-select', {
+                        choices: materialOptions,
+                        searchEnabled: true, itemSelectText: 'Seleccionar', placeholder: true, placeholderValue: 'Escribe para buscar...',
+                    });
 
-        setupMaterialChoices(choices);
-        setupAddMaterialButton(choices);
-        setupCutManagement(choices);
-        setupRequestItemSearch();
+                    setupMaterialChoices(choices);
+                    setupAddMaterialButton(choices);
+                    setupCutManagement(choices);
+                    setupRequestItemSearch();
 
-        } catch (error) { console.error("Error al cargar datos para solicitud:", error); }
-        };
+                } catch (error) { console.error("Error al cargar datos para solicitud:", error); }
+            };
 
-        setTimeout(loadDataAndBuildForm, 50);
-        break;
+            setTimeout(loadDataAndBuildForm, 50);
+            break;
         }
+        case 'new-task':
+            title = 'Crear Nueva Tarea';
+            btnText = 'Guardar Tarea';
+            btnClass = 'bg-green-500 hover:bg-green-600';
+
+            // --- Cargar datos necesarios ANTES de construir el HTML ---
+            modalBody.innerHTML = '<div class="text-center py-5"><div class="loader mx-auto"></div> Cargando datos...</div>'; // Mostrar carga
+            mainModal.style.display = 'flex'; // Mostrar modal para ver la carga
+
+            let activeProjects = [];
+            let allActiveUsers = []; // Cambiado para incluir todos los roles activos
+            try {
+                // Obtener proyectos ACTIVOS
+                const projectsQuery = query(collection(db, "projects"), where("status", "==", "active"), orderBy("name"));
+                const projectsSnapshot = await getDocs(projectsQuery);
+                activeProjects = projectsSnapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
+
+                // Obtener TODOS los usuarios ACTIVOS (usando el usersMap global)
+                usersMap.forEach((user, userId) => {
+                    if (user.status === 'active') {
+                        allActiveUsers.push({ id: userId, name: `${user.firstName} ${user.lastName}` });
+                    }
+                });
+                // Ordenar usuarios alfabéticamente por nombre
+                allActiveUsers.sort((a, b) => a.name.localeCompare(b.name));
+
+
+            } catch (error) {
+                console.error("Error cargando datos para nueva tarea:", error);
+                closeMainModal();
+                alert("Error al cargar la información necesaria para crear la tarea.");
+                return; // Salir si hay error
+            }
+            // --- Fin de la carga de datos ---
+
+            // --- Construcción del HTML con las mejoras ---
+            bodyHtml = `
+                <div class="space-y-4">
+                    <div>
+                        <label for="task-project-choices" class="block text-sm font-medium">Proyecto (Activos)</label>
+                        <select id="task-project-choices" name="projectId" required placeholder="Buscar o seleccionar proyecto..."></select>
+                    </div>
+
+                    <div>
+                        <label for="task-assignee-choices" class="block text-sm font-medium">Asignar A (Principal)</label>
+                        <select id="task-assignee-choices" name="assigneeId" required placeholder="Buscar o seleccionar usuario..."></select>
+                    </div>
+
+                    <div id="task-items-selection" class="hidden border rounded-md p-3">
+                            <label class="block text-sm font-medium mb-2">Ítems Relacionados <span class="text-red-500">*</span></label>                        <div id="task-items-list" class="max-h-40 overflow-y-auto space-y-1 text-sm">
+                            <p class="text-gray-400">Selecciona un proyecto para ver sus ítems.</p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="task-description" class="block text-sm font-medium">Descripción de la Tarea</label>
+                        <textarea id="task-description" name="description" rows="2" required class="mt-1 w-full border rounded-md p-2" placeholder="Describe brevemente la tarea..."></textarea>
+                    </div>
+
+                    <div>
+                        <label for="task-additional-assignees-choices" class="block text-sm font-medium">Asignar a Personas Adicionales (Opcional)</label>
+                        <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple placeholder="Buscar o añadir más usuarios..."></select>
+                    </div>
+
+                    <div>
+                        <label for="task-dueDate" class="block text-sm font-medium">Fecha Límite (Opcional)</label>
+                        <input type="date" id="task-dueDate" name="dueDate" class="mt-1 w-full border rounded-md p-2">
+                    </div>
+
+                    <input type="hidden" name="projectName">
+                    <input type="hidden" name="assigneeName">
+                </div>`;
+
+            // Actualizamos el cuerpo del modal
+            modalBody.innerHTML = bodyHtml;
+            // Reasignamos título y botón
+            document.getElementById('modal-title').textContent = title;
+            const confirmBtn = document.getElementById('modal-confirm-btn');
+            confirmBtn.textContent = btnText;
+            confirmBtn.className = `text-white font-bold py-2 px-4 rounded-lg transition-all ${btnClass}`;
+
+
+            // --- Inicialización de Choices.js y Lógica Dinámica ---
+            setTimeout(() => {
+                // Inicializar Choices para Proyectos
+                const projectElement = document.getElementById('task-project-choices');
+                const projectChoices = new Choices(projectElement, {
+                    choices: activeProjects.map(p => ({ value: p.id, label: p.name })),
+                    searchPlaceholderValue: "Buscar proyecto...",
+                    itemSelectText: 'Seleccionar',
+                    allowHTML: false, // Por seguridad
+                });
+
+                // Inicializar Choices para Asignado Principal
+                const assigneeElement = document.getElementById('task-assignee-choices');
+                const assigneeChoices = new Choices(assigneeElement, {
+                    choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
+                    searchPlaceholderValue: "Buscar usuario...",
+                    itemSelectText: 'Seleccionar',
+                    allowHTML: false,
+                });
+
+                // Inicializar Choices para Asignados Adicionales (Multiple)
+                const additionalAssigneesElement = document.getElementById('task-additional-assignees-choices');
+                const additionalAssigneesChoices = new Choices(additionalAssigneesElement, {
+                    choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
+                    removeItemButton: true,
+                    searchPlaceholderValue: "Añadir más usuarios...",
+                    allowHTML: false,
+                });
+
+                // --- Lógica para cargar ítems al seleccionar proyecto ---
+                projectElement.addEventListener('change', async (event) => {
+                    const selectedProjectId = event.detail.value;
+                    const itemsSelectionDiv = document.getElementById('task-items-selection');
+                    const itemsListDiv = document.getElementById('task-items-list');
+                    const projectNameInput = modalForm.querySelector('input[name="projectName"]'); // Campo oculto
+
+                    // Guardar nombre del proyecto seleccionado
+                    const selectedProject = activeProjects.find(p => p.id === selectedProjectId);
+                    projectNameInput.value = selectedProject ? selectedProject.name : '';
+
+
+                    if (selectedProjectId) {
+                        itemsListDiv.innerHTML = '<p class="text-gray-400">Cargando ítems...</p>';
+                        itemsSelectionDiv.classList.remove('hidden');
+
+                        try {
+                            const itemsQuery = query(collection(db, "items"), where("projectId", "==", selectedProjectId), orderBy("name"));
+                            const itemsSnapshot = await getDocs(itemsQuery);
+                            if (itemsSnapshot.empty) {
+                                itemsListDiv.innerHTML = '<p class="text-gray-400">Este proyecto no tiene ítems definidos.</p>';
+                            } else {
+                                itemsListDiv.innerHTML = ''; // Limpiar
+                                itemsSnapshot.forEach(doc => {
+                                    const item = { id: doc.id, ...doc.data() };
+                                    // Creamos el HTML para cada ítem con el campo de cantidad
+                                    itemsListDiv.innerHTML += `
+                                        <div class="task-item-row flex items-center justify-between py-1">
+                                            <label class="inline-flex items-center flex-grow mr-2">
+                                                <input type="checkbox" name="selectedItemIds" value="${item.id}" data-item-quantity="${item.quantity}" class="item-checkbox rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                                                <span class="ml-2 truncate" title="${item.name}">${item.name}</span>
+                                            </label>
+                                            <input type="number" name="itemQuantity_${item.id}" min="1" max="${item.quantity}" placeholder="Cant." class="item-quantity-input w-20 border rounded-md p-1 text-sm bg-gray-100" disabled>
+                                        </div>
+                                    `;
+                                });
+
+                                // Añadimos un listener para habilitar/deshabilitar el input de cantidad
+                                itemsListDiv.addEventListener('change', (e) => {
+                                    if (e.target.classList.contains('item-checkbox')) {
+                                        const quantityInput = e.target.closest('.task-item-row').querySelector('.item-quantity-input');
+                                        if (quantityInput) {
+                                            quantityInput.disabled = !e.target.checked;
+                                            quantityInput.classList.toggle('bg-gray-100', !e.target.checked); // Visual feedback
+                                            if (!e.target.checked) {
+                                                quantityInput.value = ''; // Limpiar cantidad si se desmarca
+                                            } else {
+                                                // Opcional: poner 1 por defecto al marcar
+                                                // quantityInput.value = quantityInput.value || '1';
+                                                quantityInput.focus(); // Poner foco para ingresar cantidad
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                        } catch (error) {
+                            console.error("Error cargando ítems para la tarea:", error);
+                            itemsListDiv.innerHTML = '<p class="text-red-500">Error al cargar ítems.</p>';
+                        }
+                    } else {
+                        // Si se deselecciona el proyecto
+                        itemsSelectionDiv.classList.add('hidden');
+                        itemsListDiv.innerHTML = '<p class="text-gray-400">Selecciona un proyecto para ver sus ítems.</p>';
+                        projectNameInput.value = ''; // Limpiar nombre oculto
+                    }
+                });
+
+                // Guardar nombre del asignado principal
+                assigneeElement.addEventListener('change', (event) => {
+                    const selectedAssigneeId = event.detail.value;
+                    const assigneeNameInput = modalForm.querySelector('input[name="assigneeName"]'); // Campo oculto
+                    const selectedUser = allActiveUsers.find(u => u.id === selectedAssigneeId);
+                    assigneeNameInput.value = selectedUser ? selectedUser.name : '';
+                });
+
+
+                // Establecer fecha mínima para dueDate
+                const dueDateInput = modalBody.querySelector('#task-dueDate');
+                if (dueDateInput) {
+                    dueDateInput.min = new Date().toISOString().split("T")[0];
+                }
+
+                // Destruir instancias de Choices al cerrar el modal (Buena práctica)
+                mainModal.addEventListener('close', () => { // Asumiendo que hay un evento 'close' o similar
+                    projectChoices.destroy();
+                    assigneeChoices.destroy();
+                    additionalAssigneesChoices.destroy();
+                }, { once: true }); // Solo ejecutar una vez al cerrar
+
+
+            }, 150); // Aumentar ligeramente el delay para asegurar que el HTML esté listo
+
+            break;
         case 'editProfile':
             title = 'Mi Perfil'; btnText = 'Guardar Cambios'; btnClass = 'bg-blue-500 hover:bg-blue-600';
             bodyHtml = `<div class="space-y-4">
@@ -4131,6 +4334,11 @@ modalForm.addEventListener('submit', async (e) => {
     const data = Object.fromEntries(new FormData(modalForm).entries());
     const type = modalForm.dataset.type;
     const id = modalForm.dataset.id;
+
+    if (type === 'new-task') {
+        await createTask(data); // Llama a la nueva función para crear la tarea
+        return; // Salimos para no ejecutar el switch de abajo
+    }
 
     switch (type) {
         case 'newProject':
@@ -5531,7 +5739,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     views = {
         proyectos: document.getElementById('dashboard-view'),
-        tareas: document.getElementById('tareas-view'),
+        tareas: document.getElementById('tareas-view'), // <-- ASEGÚRATE DE QUE ESTA LÍNEA ESTÉ        
         herramienta: document.getElementById('herramienta-view'),
         dotacion: document.getElementById('dotacion-view'),
         cartera: document.getElementById('cartera-view'),
@@ -5730,6 +5938,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // Vistas Principales
             case 'new-project': openMainModal('newProject'); break;
 
+            case 'new-task':
+                openMainModal('new-task'); // Llama a la función para abrir el modal correcto
+                break; // <-- No olvides el break
+
             // Acciones de Documentos
             case 'view-documents': {
                 const docType = elementWithAction.dataset.docType;
@@ -5771,7 +5983,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const deliverFunction = httpsCallable(functions, 'deliverMaterial');
                         await deliverFunction({ projectId: currentProject.id, requestId: requestId });
                         alert("¡Material entregado con éxito! El stock ha sido actualizado.");
-                    
+
                     } catch (error) {
                         // --- INICIO DE LA CORRECCIÓN ---
                         // En lugar de mostrar el error técnico en la consola,
@@ -5789,6 +6001,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 break;
             }
+
+            case 'complete-task':
+                if (elementId) { // elementId contendrá el ID de la tarea desde data-id
+                    openConfirmModal('¿Marcar esta tarea como completada?', () => completeTask(elementId));
+                }
+                break; // <-- No olvides el break
+
+            case 'view-project-from-task':
+                const projectId = elementWithAction.dataset.projectId;
+                if (projectId) {
+                    const docSnap = await getDoc(doc(db, "projects", projectId));
+                    if (docSnap.exists()) {
+                        showProjectDetails({ id: docSnap.id, ...docSnap.data() });
+                        // Opcional: podrías querer ir a una pestaña específica
+                        // switchProjectTab('info-general'); 
+                    } else {
+                        alert("El proyecto asociado a esta tarea ya no existe.");
+                    }
+                }
+                break;
 
             // Acciones dentro de la Vista de un Proyecto
             case 'back-to-dashboard': showDashboard(); break;
@@ -6230,7 +6462,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (link) {
                 e.preventDefault();
                 const viewName = link.dataset.view;
-                if (viewName === 'adminPanel') {
+                if (viewName === 'tareas') { // Si se hizo clic en 'Tareas'
+                    showView('tareas');   // Muestra la vista
+                    loadTasksView();      // Carga la lógica específica de tareas
+                } else if (viewName === 'adminPanel') {
                     showView('adminPanel');
                     loadUsers('active');
                 } else if (viewName === 'proveedores') {
@@ -6281,7 +6516,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-        // ====================================================================
+    // ====================================================================
     //      INICIO: CORRECCIÓN PARA MENÚ DESPLEGABLE EN VISTA DE PROYECTO
     // ====================================================================
     const projectTabsDropdownBtn = document.getElementById('project-tabs-dropdown-btn');
@@ -6389,11 +6624,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-        // --- Lógica para la nueva vista de Solicitud de Material ---
+    // --- Lógica para la nueva vista de Solicitud de Material ---
     // --- Lógica para la nueva vista de Solicitud de Material ---
     const materialRequestForm = document.getElementById('material-request-form');
     if (materialRequestForm) {
-        
+
         materialRequestForm.addEventListener('click', e => {
             const addCutBtn = e.target.closest('#add-cut-btn-view');
             const addMaterialBtn = e.target.closest('#add-material-to-request-btn-view');
@@ -6417,28 +6652,28 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (removeCutBtn) removeCutBtn.closest('.cut-item-view').remove();
-            
+
             if (removeItemBtn) removeItemBtn.closest('.request-summary-item').remove();
-            
+
             if (addMaterialBtn) {
                 const quantityInput = document.getElementById('new-request-quantity-view');
                 const quantity = parseInt(quantityInput.value);
-                
+
                 // --- INICIO DE LA CORRECCIÓN ---
                 const selectedMaterial = window.materialChoicesView.getValue(); // Obtiene el objeto completo
-                
+
                 if (!selectedMaterial || !quantity || quantity <= 0) {
                     return;
                 }
                 // --- FIN DE LA CORRECCIÓN ---
-                
+
                 addMaterialToSummaryList({
                     materialId: selectedMaterial.value,
                     materialName: selectedMaterial.customProperties.name,
                     quantity: quantity,
                     type: 'full_unit'
                 });
-                
+
                 quantityInput.value = '';
             }
 
@@ -6446,7 +6681,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const cutItem = addCutToRequestBtn.closest('.cut-item-view');
                 const length = parseFloat(cutItem.querySelector('.cut-length-input-view').value);
                 const quantity = parseInt(cutItem.querySelector('.cut-quantity-input-view').value);
-                
+
                 const selectedMaterial = window.materialChoicesView.getValue();
                 if (!selectedMaterial || !length || !quantity) {
                     return;
@@ -6491,7 +6726,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     quantity: quantity,
                     type: 'remnant'
                 });
-                
+
                 const availableQtySpan = remnantChoiceDiv.querySelector('.remnant-available-qty');
                 const newAvailableQty = maxQuantity - quantity;
                 if (newAvailableQty <= 0) {
@@ -6536,7 +6771,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 item.style.display = name.includes(query) ? 'block' : 'none';
             });
         });
-        
+
         materialRequestForm.addEventListener('submit', handleMaterialRequestSubmit);
     }
 
@@ -6838,7 +7073,7 @@ async function loadMaterialsTab(project) {
                 case 'entregado':
                     statusText = 'Entregado'; statusColor = 'bg-green-100 text-green-800';
                     if (currentUserRole === 'admin' || currentUserRole === 'operario') {
-                         actionsHtml = `<button data-action="return-material" data-id="${request.id}" class="bg-yellow-500 hover:bg-yellow-600 text-white ${baseButtonClasses}">Devolver</button>`;
+                        actionsHtml = `<button data-action="return-material" data-id="${request.id}" class="bg-yellow-500 hover:bg-yellow-600 text-white ${baseButtonClasses}">Devolver</button>`;
                     }
                     break;
                 case 'rechazado':
@@ -6899,18 +7134,18 @@ async function openRequestDetailsModal(requestId) {
             const materialDoc = await getDoc(doc(db, "materialCatalog", item.materialId));
             const materialName = materialDoc.exists() ? materialDoc.data().name : 'Desconocido';
             let description = '';
-            
+
             switch (item.type) {
-                case 'full_unit': 
-                    description = 'Unidad Completa'; 
+                case 'full_unit':
+                    description = 'Unidad Completa';
                     break;
-                case 'cut': 
-                    description = `Corte de ${item.length}m`; 
+                case 'cut':
+                    description = `Corte de ${item.length}m`;
                     break;
                 case 'remnant':
                     description = `Retazo de ${item.length}m`;
                     break;
-                default: 
+                default:
                     description = 'N/A';
             }
             return `
@@ -6921,9 +7156,9 @@ async function openRequestDetailsModal(requestId) {
                 </tr>
             `;
         });
-        
+
         const consumedItemsHtml = (await Promise.all(consumedItemsPromises)).join('');
-        
+
         // ... (El resto del código de la función para generar el HTML permanece igual)
         const requester = usersMap.get(requestData.requesterId);
         const responsible = requestData.responsibleId ? usersMap.get(requestData.responsibleId) : null;
@@ -6933,7 +7168,7 @@ async function openRequestDetailsModal(requestId) {
         const destinationItemsHtml = (requestData.itemsToConsume && requestData.itemsToConsume.length > 0) ? "..." : "...";
 
         modalBody.innerHTML = `... ${consumedItemsHtml} ... ${destinationItemsHtml} ...`; // El HTML del modal
-        
+
         // --- El código completo del innerHTML para mayor claridad ---
         const destinationItemsHtmlFinal = (requestData.itemsToConsume && requestData.itemsToConsume.length > 0)
             ? requestData.itemsToConsume.map(item => {
@@ -7198,7 +7433,7 @@ function setupCutManagement(choicesInstance) {
                 quantity: quantity,
                 type: 'remnant'
             });
-            
+
             // Actualiza la interfaz para reflejar el stock restante
             const availableQtySpan = remnantChoiceDiv.querySelector('.remnant-available-qty');
             const newAvailableQty = maxQuantity - quantity;
@@ -7222,7 +7457,7 @@ function setupMaterialChoices(choicesInstance) {
 
     choicesInstance.passedElement.element.addEventListener('change', async () => {
         const selectedMaterial = choicesInstance.getValue();
-        
+
         [divisibleSection, unitsSection, remnantsContainer].forEach(el => el.classList.add('hidden'));
         document.getElementById('cuts-container').innerHTML = '';
         document.getElementById('new-request-quantity').value = '';
@@ -7231,19 +7466,19 @@ function setupMaterialChoices(choicesInstance) {
         if (selectedMaterial) {
             const materialId = selectedMaterial.value;
             const isDivisible = selectedMaterial.customProperties.isDivisible;
-            
+
             unitsSection.classList.remove('hidden');
 
             if (isDivisible) {
                 divisibleSection.classList.remove('hidden');
-                
+
                 const remnantsSnapshot = await getDocs(query(collection(db, "materialCatalog", materialId, "remnantStock"), where("quantity", ">", 0)));
                 if (!remnantsSnapshot.empty) {
                     remnantsContainer.classList.remove('hidden');
                     remnantsSnapshot.forEach(doc => {
                         const remnant = { id: doc.id, ...doc.data() };
                         const remnantText = `${remnant.length} ${remnant.unit || 'm'}`;
-                        
+
                         remnantsList.innerHTML += `
                             <div class="remnant-item-choice flex items-center justify-between text-sm p-2 bg-gray-100 rounded-md">
                                 <span><span class="remnant-available-qty">${remnant.quantity}</span> und. de ${remnantText}</span>
@@ -7291,7 +7526,7 @@ function setupAddMaterialButton(choicesInstance) {
             listItem.dataset.quantity = quantity;
             listItem.innerHTML = `<span>${quantity} x ${materialName}</span><button type="button" class="remove-request-item-btn text-red-500 font-bold text-lg leading-none">&times;</button>`;
             itemsListDiv.appendChild(listItem);
-            
+
             // Limpia los campos después de añadir
             quantityInput.value = '';
             choicesInstance.removeActiveItems();
@@ -7330,10 +7565,10 @@ function setupRequestItemSearch() {
 async function showMaterialRequestView() {
     showView('material-request-view');
     document.getElementById('material-request-project-name').textContent = currentProject.name;
-    
+
     const itemListContainer = document.getElementById('request-item-list-container-view');
     const userSelectorContainer = document.getElementById('request-user-selector-container-view');
-    
+
     itemListContainer.innerHTML = '<div class="loader mx-auto"></div>';
 
     try {
@@ -7341,10 +7576,10 @@ async function showMaterialRequestView() {
             getDocs(query(collection(db, "materialCatalog"))),
             getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id)))
         ]);
-        
+
         const inventory = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         const items = itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
+
         const materialOptions = inventory.map(mat => ({
             value: mat.id,
             label: `${mat.name} (Stock: ${mat.quantityInStock || 0})`,
@@ -7359,7 +7594,7 @@ async function showMaterialRequestView() {
                     <input type="number" data-item-id="${item.id}" class="request-item-quantity w-24 border p-1 rounded-md text-sm" placeholder="0" min="0" max="${item.quantity}">
                 </div>
             </div>`).join('');
-        
+
         if (currentUserRole === 'admin' || currentUserRole === 'bodega') {
             const userOptions = Array.from(usersMap.entries()).filter(([uid, user]) => user.status === 'active').map(([uid, user]) => `<option value="${uid}" ${uid === currentUser.uid ? 'selected' : ''}>${user.firstName} ${user.lastName}</option>`).join('');
             userSelectorContainer.innerHTML = `<h4 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">4. ¿Quién solicita?</h4><select id="request-as-user-select-view" class="w-full border p-2 rounded-md bg-white text-sm">${userOptions}</select>`;
@@ -7378,7 +7613,7 @@ async function showMaterialRequestView() {
             choices: materialOptions,
             searchEnabled: true, itemSelectText: 'Seleccionar', placeholder: true, placeholderValue: 'Escribe para buscar...',
         });
-        
+
         // --- INICIO DE LA CORRECCIÓN ---
         // Volvemos a añadir el "escuchador" de eventos al nuevo elemento que acabamos de crear.
         document.getElementById('material-choices-select-view').addEventListener('change', async () => {
@@ -7417,7 +7652,7 @@ async function showMaterialRequestView() {
 
 async function handleMaterialRequestSubmit(e) {
     e.preventDefault();
-    
+
     const summaryList = document.getElementById('request-items-list-view');
     const consumedItemsNodes = summaryList.querySelectorAll('.request-summary-item');
     const itemUsageNodes = document.querySelectorAll('#request-item-list-container-view .request-item-quantity');
@@ -7484,7 +7719,7 @@ async function processMaterialRequest(projectId, requestId) {
         await approveFunction({ projectId, requestId });
     } catch (error) {
         // El error ya se muestra en el 'catch' del botón, así que solo lo re-lanzamos
-        throw error; 
+        throw error;
     }
 }
 
@@ -7495,7 +7730,7 @@ function resetMaterialRequestForm() {
     const form = document.getElementById('material-request-form');
     if (!form) return;
 
-    form.reset(); 
+    form.reset();
 
     const summaryList = document.getElementById('request-items-list-view');
     if (summaryList) {
@@ -7524,4 +7759,292 @@ function resetMaterialRequestForm() {
     const remnantsList = document.getElementById('remnants-list-view');
     if (remnantsList) remnantsList.innerHTML = '';
     // --- FIN DE LA CORRECCIÓN ---
+}
+
+// --- LÓGICA DE TAREAS ASIGNADAS ---
+
+/**
+ * Prepara la vista de Tareas Asignadas, configura los filtros y carga las tareas iniciales.
+ */
+function loadTasksView() {
+    const newTaskBtn = document.getElementById('new-task-btn');
+    if (newTaskBtn) {
+        const canCreateTasks = currentUserRole === 'admin';
+        newTaskBtn.classList.toggle('hidden', !canCreateTasks);
+    }
+
+    // --- MODIFICACIÓN AQUÍ ---
+    // Configura los listeners para las pestañas de filtro SOLO SI NO SE HAN AÑADIDO ANTES
+    document.querySelectorAll('.task-tab-button').forEach(button => {
+        if (!button.dataset.listenersAdded) {
+            button.addEventListener('click', (e) => {
+                const clickedButton = e.currentTarget;
+                const statusFilter = clickedButton.dataset.statusFilter;
+                const isActive = clickedButton.classList.contains('active');
+
+                console.log(`[Tareas] Clic en '${statusFilter}'. ¿Estaba activo?: ${isActive}`);
+
+                // Solo actuar si se hizo clic en un botón DIFERENTE al activo
+                if (!isActive) {
+                    console.log(`[Tareas] Cambiando filtro a: '${statusFilter}'`);
+                    // 1. Actualizar visualmente
+                    document.querySelectorAll('.task-tab-button').forEach(btn => btn.classList.remove('active'));
+                    clickedButton.classList.add('active');
+                    // 2. Cargar las tareas
+                    loadAndDisplayTasks(statusFilter);
+                } else {
+                    console.log(`[Tareas] El filtro '${statusFilter}' ya estaba activo. No se recarga.`);
+                }
+            });
+            // Marca el botón para indicar que el listener ya fue añadido
+            button.dataset.listenersAdded = 'true';
+            console.log(`[Tareas] Listener añadido al botón para filtro: '${button.dataset.statusFilter}'`);
+        }
+    });
+    // --- FIN DE MODIFICACIÓN ---
+
+
+    // Carga inicial de tareas pendientes (solo si ninguna pestaña está activa aún o si volvemos a la vista)
+    // Selecciona la pestaña activa actual
+    const currentActiveTab = document.querySelector('.task-tab-button.active');
+    const initialFilter = currentActiveTab ? currentActiveTab.dataset.statusFilter : 'pendiente'; // Usa el filtro activo o pendiente por defecto
+
+    // Asegurarse de que 'Pendientes' esté activo si no hay ninguno
+    if (!currentActiveTab) {
+        document.getElementById('pending-tasks-tab')?.classList.add('active');
+    }
+
+    console.log(`[Tareas] Carga inicial/refresco con filtro: '${initialFilter}'`); // Log para carga inicial
+    loadAndDisplayTasks(initialFilter);
+}
+
+
+/**
+ * Carga las tareas desde Firestore filtradas por estado y las muestra en la interfaz.
+ * @param {string} statusFilter - El estado por el cual filtrar ('pendiente' o 'completada').
+ */
+function loadAndDisplayTasks(statusFilter = 'pendiente') {
+    const tasksContainer = document.getElementById('tasks-container');
+    const loadingDiv = document.getElementById('loading-tasks');
+
+    if (!tasksContainer || !loadingDiv || !currentUser) return;
+
+    // --- CONSOLE.LOG: Inicio de carga ---
+    console.log(`[Tareas] Intentando cargar tareas con estado: '${statusFilter}' para usuario: ${currentUser.uid}`);
+
+    loadingDiv.classList.remove('hidden'); // Muestra el indicador de carga
+    tasksContainer.innerHTML = ''; // Limpia el contenedor de tareas previas
+    tasksContainer.appendChild(loadingDiv); // Vuelve a añadir el loader mientras carga
+
+    // Cancela la suscripción anterior si existe
+    if (unsubscribeTasks) {
+        unsubscribeTasks();
+        unsubscribeTasks = null;
+    }
+
+    // --- MODIFICACIÓN TEMPORAL: Quitar orderBy para 'completada' ---
+    let q; // Declara q sin asignarla aún
+
+    if (statusFilter === 'completada') {
+        // --- Consulta SIN orderBy para completadas ---
+         console.log("[Tareas] Ejecutando consulta para 'completada' SIN orderBy('dueDate')"); // Log específico
+        q = query(
+            collection(db, "tasks"),
+            where("assigneeId", "==", currentUser.uid),
+            where("status", "==", statusFilter)
+             // Sin orderBy("dueDate", "asc")
+        );
+    } else {
+        // --- Consulta CON orderBy para pendientes (o cualquier otro estado) ---
+         console.log(`[Tareas] Ejecutando consulta para '${statusFilter}' CON orderBy('dueDate')`); // Log específico
+        q = query(
+            collection(db, "tasks"),
+            where("assigneeId", "==", currentUser.uid),
+            where("status", "==", statusFilter),
+            orderBy("dueDate", "asc")
+        );
+    }
+    // --- FIN DE MODIFICACIÓN TEMPORAL ---
+
+
+    // Escucha cambios en tiempo real
+    unsubscribeTasks = onSnapshot(q, (querySnapshot) => {
+        // --- CONSOLE.LOG: Snapshot recibido ---
+        console.log(`[Tareas] Snapshot recibido para estado '${statusFilter}'. Vacío: ${querySnapshot.empty}, Tamaño: ${querySnapshot.size}`);
+
+        loadingDiv.classList.add('hidden'); // Oculta el indicador de carga
+        tasksContainer.innerHTML = ''; // Limpia de nuevo para añadir las tareas reales
+
+        if (querySnapshot.empty) {
+            tasksContainer.innerHTML = `<p class="text-gray-500 text-center py-6">No tienes tareas ${statusFilter === 'pendiente' ? 'pendientes' : 'completadas'}.</p>`;
+            return;
+        }
+
+        querySnapshot.forEach((doc) => {
+            // --- CONSOLE.LOG: Tarea encontrada (opcional) ---
+            console.log(`[Tareas] Tarea encontrada (${statusFilter}):`, doc.id, doc.data());
+            const taskData = { id: doc.id, ...doc.data() };
+            const taskCard = createTaskCard(taskData); // Crea la tarjeta HTML
+            tasksContainer.appendChild(taskCard); // Añade la tarjeta al contenedor
+        });
+
+    }, (error) => {
+        // --- CONSOLE.LOG: Error ---
+        console.error(`[Tareas] Error en onSnapshot para estado '${statusFilter}': `, error);
+        loadingDiv.classList.add('hidden');
+        tasksContainer.innerHTML = '<p class="text-red-500 text-center py-6">Error al cargar las tareas.</p>';
+    });
+
+    // Guarda la referencia al listener para poder cancelarla después
+    activeListeners.push(unsubscribeTasks);
+}
+
+
+/**
+ * Crea el elemento HTML (tarjeta) para mostrar una tarea individual.
+ * @param {object} task - El objeto de datos de la tarea desde Firestore.
+ * @returns {HTMLElement} - El elemento div de la tarjeta de tarea.
+ */
+function createTaskCard(task) {
+    const card = document.createElement('div');
+    card.className = "bg-white p-4 rounded-lg shadow border border-gray-200 task-card";
+    card.dataset.id = task.id;
+
+    const dueDate = task.dueDate ? new Date(task.dueDate + 'T00:00:00') : null; // Asume formato YYYY-MM-DD
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Ignora la hora para comparar solo fechas
+
+    let dateColor = 'text-gray-500';
+    let dateText = dueDate ? dueDate.toLocaleDateString('es-CO') : 'Sin fecha límite';
+
+    if (dueDate && task.status === 'pendiente') {
+        if (dueDate < today) {
+            dateColor = 'text-red-600 font-bold'; // Vencida
+            dateText += ' (Vencida)';
+        } else if (dueDate.getTime() === today.getTime()) {
+            dateColor = 'text-yellow-600 font-bold'; // Vence hoy
+            dateText += ' (Hoy)';
+        }
+    }
+
+    // Botón para marcar como completada (solo si está pendiente)
+    const completeButtonHtml = task.status === 'pendiente' ? `
+        <button data-action="complete-task" data-id="${task.id}" class="bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-2 px-3 rounded transition-colors">
+            Marcar como Completada
+        </button>
+    ` : '';
+    // Botón para ver detalles del proyecto (opcional)
+    const viewProjectButtonHtml = task.projectId ? `
+    <button data-action="view-project-from-task" data-project-id="${task.projectId}" class="bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-bold py-2 px-3 rounded transition-colors">
+        Ver Proyecto
+    </button>
+    ` : '';
+
+
+    card.innerHTML = `
+        <div class="flex flex-col sm:flex-row justify-between sm:items-start">
+            <div class="mb-2 sm:mb-0">
+                <p class="text-sm font-semibold text-gray-500">${task.projectName || 'Proyecto no especificado'}</p>
+                <h3 class="text-lg font-bold text-gray-800">${task.description}</h3>
+            </div>
+            <div class="text-left sm:text-right flex-shrink-0">
+                 <p class="text-sm ${dateColor}">Fecha Límite: ${dateText}</p>
+                 <p class="text-xs text-gray-400 mt-1">Creada por: ${usersMap.get(task.createdBy)?.firstName || 'Desconocido'}</p>
+            </div>
+        </div>
+        <div class="mt-4 pt-3 border-t border-gray-200 flex flex-wrap gap-2 justify-end">
+             ${viewProjectButtonHtml}
+             ${completeButtonHtml}
+            </div>
+    `;
+    return card;
+}
+
+/**
+* Marca una tarea como completada en Firestore.
+* @param {string} taskId - El ID de la tarea a completar.
+*/
+async function completeTask(taskId) {
+    const taskRef = doc(db, "tasks", taskId);
+    try {
+        await updateDoc(taskRef, {
+            status: 'completada',
+            completedAt: new Date(), // Opcional: guardar cuándo se completó
+            completedBy: currentUser.uid // Opcional: guardar quién la completó
+        });
+        console.log(`Tarea ${taskId} marcada como completada.`);
+        // La vista se actualizará automáticamente gracias a onSnapshot
+    } catch (error) {
+        console.error("Error al marcar la tarea como completada:", error);
+        alert("No se pudo completar la tarea. Inténtalo de nuevo.");
+    }
+}
+
+/**
+ * Guarda una nueva tarea en Firestore, incluyendo ítems seleccionados con cantidad.
+ * @param {object} taskData - Datos de la tarea obtenidos del formulario del modal.
+ */
+async function createTask(taskData) {
+    // Validaciones básicas (se mantienen projectId, assigneeId, description)
+    if (!taskData.projectId || !taskData.assigneeId || !taskData.description) {
+        alert("Por favor, completa Proyecto, Asignado Principal y Descripción.");
+        return;
+    }
+
+    // --- Recolectar datos de ítems seleccionados y sus cantidades ---
+    const selectedItemsData = [];
+    const itemCheckboxes = modalForm.querySelectorAll('input[name="selectedItemIds"]:checked');
+
+    itemCheckboxes.forEach(checkbox => {
+        const itemId = checkbox.value;
+        const quantityInput = modalForm.querySelector(`input[name="itemQuantity_${itemId}"]`);
+        const quantity = parseInt(quantityInput?.value);
+        const maxQuantity = parseInt(checkbox.dataset.itemQuantity) || 1; // Obtener max del checkbox
+
+        if (quantity && quantity > 0) {
+            if (quantity > maxQuantity) {
+                // Lanzar error si la cantidad excede el máximo del ítem
+                throw new Error(`La cantidad para el ítem "${checkbox.nextElementSibling.textContent}" (${quantity}) excede el máximo permitido (${maxQuantity}).`);
+            }
+            selectedItemsData.push({ itemId: itemId, quantity: quantity });
+        } else {
+            // Lanzar error si un ítem está marcado pero no tiene cantidad válida
+            throw new Error(`Por favor, ingresa una cantidad válida (mayor a 0) para el ítem "${checkbox.nextElementSibling.textContent}".`);
+        }
+    });
+
+    // *** Validación Obligatoria de Ítems ***
+    if (selectedItemsData.length === 0) {
+        alert("Debes seleccionar al menos un Ítem Relacionado e ingresar su cantidad.");
+        return; // Detiene si no se seleccionó ningún ítem con cantidad
+    }
+    // --- Fin recolección y validación de ítems ---
+
+    // Recolectar asignados adicionales (sin cambios)
+    const additionalAssignees = taskData.additionalAssigneeIds ?
+        (Array.isArray(taskData.additionalAssigneeIds) ? taskData.additionalAssigneeIds : [taskData.additionalAssigneeIds])
+        : [];
+
+    try {
+        await addDoc(collection(db, "tasks"), {
+            projectId: taskData.projectId,
+            projectName: taskData.projectName,
+            assigneeId: taskData.assigneeId,
+            assigneeName: taskData.assigneeName,
+            additionalAssigneeIds: additionalAssignees,
+            selectedItems: selectedItemsData, // <-- GUARDAR EL ARRAY DE OBJETOS {itemId, quantity}
+            description: taskData.description,
+            dueDate: taskData.dueDate || null,
+            status: 'pendiente',
+            createdAt: new Date(),
+            createdBy: currentUser.uid
+        });
+        console.log("Nueva tarea guardada en Firestore con ítems y cantidades.");
+        closeMainModal();
+
+    } catch (error) {
+        console.error("Error al guardar la nueva tarea:", error);
+        // Mostrar el mensaje de error específico si lo lanzamos nosotros (ej: cantidad inválida)
+        alert(`No se pudo guardar la tarea: ${error.message}`);
+    }
 }
