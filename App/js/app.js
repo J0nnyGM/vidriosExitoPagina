@@ -5057,37 +5057,126 @@ progressForm.addEventListener('submit', async (e) => {
 // =================== INICIAN NUEVAS FUNCIONES PARA AVANCE MÚLTIPLE ===================
 const multipleProgressModal = document.getElementById('multiple-progress-modal');
 
-async function openMultipleProgressModal(selectedIds) {
+/**
+ * Abre el modal para registrar avance en lote, mostrando solo los sub-ítems especificados,
+ * agrupados por su ítem padre y con grupos plegables.
+ * @param {string[]} subItemIdsToShow - Array con los IDs de los sub-ítems a mostrar.
+ * @param {string} [originatingTaskId] - (Opcional) El ID de la tarea que originó la apertura del modal.
+ */
+async function openMultipleProgressModal(subItemIdsToShow, originatingTaskId = null) {
     const modal = document.getElementById('multiple-progress-modal');
     const title = document.getElementById('multiple-progress-modal-title');
     const tableBody = document.getElementById('multiple-progress-table-body');
-    title.textContent = `Registrar Avance para ${selectedIds.length} Unidades`;
-    tableBody.innerHTML = '';
+    const confirmBtn = document.getElementById('multiple-progress-modal-confirm-btn');
+
+    if (!modal || !title || !tableBody || !confirmBtn) {
+        console.error("Error: No se encontraron elementos del modal de progreso múltiple.");
+        return;
+    }
+
+    confirmBtn.dataset.originatingTaskId = originatingTaskId || '';
+    title.textContent = `Registrar Avance para ${subItemIdsToShow.length} Unidad(es)`;
+    tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">Cargando sub-ítems...</td></tr>';
 
     const manufacturerSelect = document.getElementById('multiple-sub-item-manufacturer');
     const installerSelect = document.getElementById('multiple-sub-item-installer');
     await populateUserDropdowns(manufacturerSelect, installerSelect, {});
-
     document.getElementById('multiple-sub-item-date').value = new Date().toISOString().split('T')[0];
 
-    for (const id of selectedIds) {
-        const subItemDoc = await getDoc(doc(db, "subItems", id));
-        if (subItemDoc.exists()) {
-            const subItem = { id: subItemDoc.id, ...subItemDoc.data() };
-            const row = document.createElement('tr');
-            row.className = 'border-b';
-            row.dataset.id = subItem.id;
-            row.innerHTML = `
-            <td class="px-4 py-2 font-bold">${subItem.number}</td>
-            <td class="px-4 py-2"><input type="text" class="location-input mt-1 block w-full px-2 py-1 border rounded-md" value="${subItem.location || ''}"></td>
-            <td class="px-4 py-2"><input type="number" step="0.01" class="real-width-input mt-1 block w-full px-2 py-1 border rounded-md" value="${subItem.realWidth || ''}"></td>
-            <td class="px-4 py-2"><input type="number" step="0.01" class="real-height-input mt-1 block w-full px-2 py-1 border rounded-md" value="${subItem.realHeight || ''}"></td>
-            <td class="px-4 py-2"><input type="file" class="photo-input" accept="image/*" capture="environment" style="display: block; width: 100%;"></td>
-        `;
-            tableBody.appendChild(row);
-        }
-    }
     modal.style.display = 'flex';
+
+    try {
+        tableBody.innerHTML = '';
+
+        if (subItemIdsToShow.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">No hay sub-ítems pendientes para esta tarea/selección.</td></tr>';
+            return;
+        }
+
+        // 1. Obtener datos completos de los sub-ítems solicitados
+        const subItemPromises = subItemIdsToShow.map(id => getDoc(doc(db, "subItems", id)));
+        const subItemDocs = await Promise.all(subItemPromises);
+
+        // --- INICIO CORRECCIÓN (FILTRO 1) ---
+        // Filtramos CUALQUIER sub-ítem que no exista, ya esté instalado, O NO TENGA itemId
+        const subItemsData = subItemDocs
+            .filter(docSnap => docSnap.exists() && docSnap.data().status !== 'Instalado' && docSnap.data().itemId)
+            .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+        // --- FIN CORRECCIÓN (FILTRO 1) ---
+
+        if (subItemsData.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">Todos los sub-ítems solicitados ya están instalados o no se encontraron.</td></tr>';
+            return;
+        }
+
+        // 2. Obtener los IDs únicos de los ítems padres
+        // --- INICIO CORRECCIÓN (FILTRO 2) ---
+        // Añadimos .filter(Boolean) para eliminar explícitamente cualquier valor 'undefined' o 'null'
+        const parentItemIds = [...new Set(subItemsData.map(si => si.itemId))]
+            .filter(id => typeof id === 'string' && id.trim() !== '');
+        // --- FIN CORRECCIÓN (FILTRO 2) ---
+
+        // Si después de filtrar no quedan IDs padres (porque todos los sub-ítems tenían itemId undefined)
+        if (parentItemIds.length === 0) {
+            console.warn("Sub-ítems encontrados pero ninguno tenía un 'itemId' válido.", subItemsData);
+            tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-red-500">Error: Los sub-ítems no están vinculados a un ítem padre.</td></tr>';
+            return;
+        }
+
+        // 3. Obtener los datos de los ítems padres (nombres)
+        const itemPromises = parentItemIds.map(id => getDoc(doc(db, "items", id))); // Esta línea ya no debería fallar
+        const itemDocs = await Promise.all(itemPromises);
+        const itemsMap = new Map(itemDocs.map(docSnap => [docSnap.id, docSnap.exists() ? docSnap.data().name : `Ítem Desconocido (${docSnap.id.substring(0, 5)}...)`]));
+
+        // 4. Agrupar los sub-ítems por su itemId
+        const groupedSubItems = new Map();
+        subItemsData.forEach(subItem => {
+            // No necesitamos verificar itemId aquí de nuevo porque ya lo filtramos
+            if (!groupedSubItems.has(subItem.itemId)) {
+                groupedSubItems.set(subItem.itemId, []);
+            }
+            groupedSubItems.get(subItem.itemId).push(subItem);
+        });
+
+        // 5. Ordenar los sub-ítems dentro de cada grupo por número
+        groupedSubItems.forEach((subItemsArray) => {
+            subItemsArray.sort((a, b) => (a.number || 0) - (b.number || 0));
+        });
+
+        // 6. Construir el HTML de la tabla con agrupaciones
+        groupedSubItems.forEach((subItemsArray, itemId) => {
+            const itemName = itemsMap.get(itemId);
+
+            const headerRow = document.createElement('tr');
+            headerRow.className = 'group-header bg-gray-100 border-b border-t-2 border-gray-300 cursor-pointer hover:bg-gray-200';
+            headerRow.dataset.groupId = `group-${itemId}`;
+            headerRow.innerHTML = `
+                <td colspan="5" class="px-4 py-2 font-bold text-gray-700 flex justify-between items-center">
+                    <span>${itemName} (${subItemsArray.length} und.)</span>
+                    <svg class="h-4 w-4 transform transition-transform group-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                </td>
+            `;
+            tableBody.appendChild(headerRow);
+
+            subItemsArray.forEach(subItem => {
+                const row = document.createElement('tr');
+                row.className = `subitem-row ${`group-${itemId}`} border-b`;
+                row.dataset.id = subItem.id;
+                row.innerHTML = `
+                    <td class="px-4 py-2 font-bold">${subItem.number}</td>
+                    <td class="px-4 py-2"><input type="text" class="location-input mt-1 block w-full px-2 py-1 border rounded-md text-sm" value="${subItem.location || ''}"></td>
+                    <td class="px-4 py-2"><input type="number" step="0.01" class="real-width-input mt-1 block w-full px-2 py-1 border rounded-md text-sm" value="${subItem.realWidth || ''}"></td>
+                    <td class="px-4 py-2"><input type="number" step="0.01" class="real-height-input mt-1 block w-full px-2 py-1 border rounded-md text-sm" value="${subItem.realHeight || ''}"></td>
+                    <td class="px-4 py-2"><input type="file" class="photo-input" accept="image/*" capture="environment" style="display: block; width: 100%;"></td>
+                `;
+                tableBody.appendChild(row);
+            });
+        });
+
+    } catch (error) {
+        console.error("Error al cargar y agrupar sub-ítems:", error);
+        tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-red-500">Error al cargar datos. Revisa la consola.</td></tr>';
+    }
 }
 
 function closeMultipleProgressModal() {
@@ -5159,79 +5248,207 @@ if (cancelBtn) {
 }
 
 document.getElementById('multiple-progress-modal-confirm-btn').addEventListener('click', async () => {
-    const confirmBtn = document.getElementById('multiple-progress-modal-confirm-btn');
-    const feedbackP = document.getElementById('multiple-progress-feedback');
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Guardando...';
-    feedbackP.textContent = 'Actualizando datos...';
-    feedbackP.className = 'text-sm mt-4 text-center text-blue-600';
+        const confirmBtn = document.getElementById('multiple-progress-modal-confirm-btn');
+        const feedbackP = document.getElementById('multiple-progress-feedback');
 
-    const commonData = {
-        manufacturer: document.getElementById('multiple-sub-item-manufacturer').value,
-        installer: document.getElementById('multiple-sub-item-installer').value,
-        installDate: document.getElementById('multiple-sub-item-date').value,
-    };
+        // Prevenir doble clic si ya está guardando
+        if (confirmBtn.disabled) return; 
+        
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Guardando...';
+        if (feedbackP) {
+            feedbackP.textContent = 'Validando y actualizando datos...';
+            feedbackP.className = 'text-sm mt-4 text-center text-blue-600';
+        }
 
-    if (commonData.installer) { commonData.status = 'Instalado'; }
-    else if (commonData.manufacturer) { commonData.status = 'Pendiente de Instalación'; }
+        let success = false; // Bandera para saber si el guardado fue exitoso
 
-    const tableRows = document.querySelectorAll('#multiple-progress-table-body tr');
-    const batch = writeBatch(db);
-    const photoUploads = [];
+        try {
+            const originatingTaskId = confirmBtn.dataset.originatingTaskId;
 
-    // Pre-cargar todos los sub-ítems para obtener su itemId
-    const allSubItemsDocs = await getDocs(query(collection(db, "subItems"), where("projectId", "==", currentProject.id)));
-    const subItemsMap = new Map(allSubItemsDocs.docs.map(doc => [doc.id, doc.data()]));
+            const commonData = {
+                manufacturer: document.getElementById('multiple-sub-item-manufacturer').value,
+                installer: document.getElementById('multiple-sub-item-installer').value,
+                installDate: document.getElementById('multiple-sub-item-date').value,
+            };
 
-    tableRows.forEach(row => {
-        const subItemId = row.dataset.id;
-        const individualData = {
-            location: row.querySelector('.location-input').value,
-            realWidth: parseFloat(row.querySelector('.real-width-input').value) || 0,
-            realHeight: parseFloat(row.querySelector('.real-height-input').value) || 0,
-        };
-        const photoFile = row.querySelector('.photo-input').files[0];
+            const tableRows = document.querySelectorAll('#multiple-progress-table-body tr.subitem-row');
+            
+            const batch = writeBatch(db);
+            const photoUploads = [];
+            const updatedSubItemIds = [];
+            let rowsProcessed = 0;
+            let validationError = null;
+            
+            // 1. Obtener IDs y datos
+            const subItemIdsInModal = Array.from(tableRows).map(row => row.dataset.id);
+            const subItemsMap = new Map();
+            
+            if (subItemIdsInModal.length > 0) {
+                const MAX_IN_QUERY = 30;
+                for (let i = 0; i < subItemIdsInModal.length; i += MAX_IN_QUERY) {
+                    const chunkIds = subItemIdsInModal.slice(i, i + MAX_IN_QUERY);
+                    const subItemsChunkQuery = query(collection(db, "subItems"), where("__name__", "in", chunkIds));
+                    const subItemsChunkSnapshot = await getDocs(subItemsChunkQuery);
+                    subItemsChunkSnapshot.forEach(doc => subItemsMap.set(doc.id, doc.data()));
+                }
+            }
 
-        const subItemRef = doc(db, "subItems", subItemId);
-        batch.update(subItemRef, { ...commonData, ...individualData });
+            // 2. Iterar y validar
+            tableRows.forEach(row => {
+                const subItemId = row.dataset.id;
+                const subItemData = subItemsMap.get(subItemId) || {};
+                const individualData = {
+                    location: row.querySelector('.location-input').value.trim(),
+                    realWidth: parseFloat(row.querySelector('.real-width-input').value) || 0,
+                    realHeight: parseFloat(row.querySelector('.real-height-input').value) || 0,
+                };
+                const photoFile = row.querySelector('.photo-input').files[0];
 
-        if (photoFile) {
-            const subItemData = subItemsMap.get(subItemId);
-            if (subItemData) {
-                const watermarkText = `Vidrios Exito - ${currentProject.name} - ${commonData.installDate} - ${individualData.location}`;
-                photoUploads.push({ subItemId, photoFile, watermarkText, itemId: subItemData.itemId });
+                if (!individualData.location) {
+                    return; // Omite esta fila si no tiene ubicación
+                }
+
+                rowsProcessed++;
+                updatedSubItemIds.push(subItemId);
+
+                let finalStatus = subItemData.status;
+                if (commonData.installer) {
+                    finalStatus = 'Instalado';
+                } else if (commonData.manufacturer) {
+                    finalStatus = 'Pendiente de Instalación';
+                }
+                
+                if (finalStatus === 'Instalado' && !photoFile && !subItemData.photoURL) {
+                    validationError = `La unidad N° ${subItemData.number || subItemId.substring(0,5)}... debe tener una foto de evidencia para marcarse como 'Instalado'.`;
+                    return;
+                }
+
+                const dataToUpdate = { ...commonData, ...individualData, status: finalStatus };
+                if (!commonData.manufacturer) delete dataToUpdate.manufacturer;
+                if (!commonData.installer) delete dataToUpdate.installer;
+
+                const subItemRef = doc(db, "subItems", subItemId);
+                batch.update(subItemRef, dataToUpdate);
+
+                if (photoFile) {
+                    if (subItemData && subItemData.projectId && subItemData.itemId) {
+                        const watermarkText = `Vidrios Exito - ${currentProject?.name || subItemData.projectId} - ${commonData.installDate} - ${individualData.location}`;
+                        photoUploads.push({ subItemId, photoFile, watermarkText, itemId: subItemData.itemId, projectId: subItemData.projectId });
+                    } else {
+                         console.warn(`No se pudo obtener projectId o itemId para ${subItemId}, no se subirá foto.`);
+                    }
+                }
+            });
+            
+            // 3. Validaciones Pre-Commit
+            if (validationError) {
+                 alert(validationError);
+                 if (feedbackP) {
+                     feedbackP.textContent = 'Revisa los campos obligatorios.';
+                     feedbackP.className = 'text-sm mt-4 text-center text-red-600';
+                 }
+                 return; // El bloque 'finally' se ejecutará y reactivará el botón
+            }
+
+            if (rowsProcessed === 0) {
+                alert("No se registró ningún avance. Debes llenar el campo 'Lugar de Instalación' para al menos una unidad.");
+                if (feedbackP) {
+                    feedbackP.textContent = 'Registro cancelado.';
+                    feedbackP.className = 'text-sm mt-4 text-center text-red-600';
+                }
+                return; // El bloque 'finally' se ejecutará y reactivará el botón
+            }
+
+            // 4. Guardar en Base de Datos
+            await batch.commit();
+            if (feedbackP) feedbackP.textContent = `Datos guardados para ${rowsProcessed} unidad(es). Procesando fotos...`;
+
+            for (const upload of photoUploads) {
+                try {
+                     const watermarkedBlob = await addWatermark(upload.photoFile, upload.watermarkText);
+                     const storageRef = ref(storage, `evidence/${upload.projectId}/${upload.itemId}/${upload.subItemId}`);
+                     const snapshot = await uploadBytes(storageRef, watermarkedBlob);
+                     const downloadURL = await getDownloadURL(snapshot.ref);
+                     await updateDoc(doc(db, "subItems", upload.subItemId), { photoURL: downloadURL });
+                } catch (photoError) {
+                     console.error(`Error procesando/subiendo foto para ${upload.subItemId}:`, photoError);
+                }
+            }
+
+            // 5. Lógica de verificación de tarea
+            let feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)!`;
+            let feedbackClass = 'text-sm mt-4 text-center text-green-600';
+
+            if (originatingTaskId && commonData.installer) {
+                if (feedbackP) feedbackP.textContent = 'Fotos subidas. Verificando estado de la tarea...';
+
+                const checkQuery = query(
+                    collection(db, "subItems"),
+                    where("__name__", "in", subItemIdsInModal) 
+                );
+                const subItemsSnapshot = await getDocs(checkQuery);
+
+                let allTaskSubItemsInstalled = true;
+                let installedCountInTask = 0;
+
+                subItemsSnapshot.forEach(doc => {
+                    if (doc.data().status === 'Instalado') {
+                        installedCountInTask++;
+                    } else {
+                        allTaskSubItemsInstalled = false;
+                    }
+                });
+
+                if (allTaskSubItemsInstalled && subItemsSnapshot.size === subItemIdsInModal.length) {
+                    const taskRef = doc(db, "tasks", originatingTaskId);
+                    await updateDoc(taskRef, {
+                        status: 'completada',
+                        completedAt: new Date(),
+                        completedBy: currentUser.uid
+                    });
+                    feedbackMessage = '¡Avance registrado y tarea completada!';
+                } else {
+                    feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)! Aún quedan ${subItemIdsInModal.length - installedCountInTask} pendientes en esta tarea.`;
+                }
+            }
+            
+            if (feedbackP) {
+                feedbackP.textContent = feedbackMessage;
+                feedbackP.className = feedbackClass;
+            }
+
+            // 6. Éxito
+            success = true; // ¡Marcamos como exitoso!
+            
+            setTimeout(() => {
+                closeMultipleProgressModal();
+                if (feedbackP) feedbackP.textContent = '';
+                if (views.tareas && !views.tareas.classList.contains('hidden')) {
+                     const currentActiveTab = document.querySelector('#tareas-view .task-tab-button.active');
+                     const currentFilter = currentActiveTab ? currentActiveTab.dataset.statusFilter : 'pendiente';
+                     loadAndDisplayTasks(currentFilter);
+                }
+            }, 2500);
+
+        } catch (error) {
+            // --- BLOQUE CATCH ---
+            console.error("Error al guardar el avance múltiple:", error);
+            if (feedbackP) {
+                feedbackP.textContent = 'Error al guardar. Revisa la consola.';
+                feedbackP.className = 'text-sm mt-4 text-center text-red-600';
+            }
+            // No necesitamos reactivar el botón aquí, 'finally' lo hará.
+        } finally {
+            // --- BLOQUE FINALLY ---
+            // Este bloque se ejecuta SIEMPRE, después de 'try' o 'catch'.
+            if (!success) {
+                // Si la bandera de éxito no se marcó, reactivamos el botón.
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Guardar Cambios';
             }
         }
     });
-
-    try {
-        await batch.commit();
-        feedbackP.textContent = 'Datos guardados. Procesando y subiendo fotos...';
-
-        for (const upload of photoUploads) {
-            const watermarkedBlob = await addWatermark(upload.photoFile, upload.watermarkText);
-            const storageRef = ref(storage, `evidence/${currentProject.id}/${upload.itemId}/${upload.subItemId}`);
-            const snapshot = await uploadBytes(storageRef, watermarkedBlob);
-            const downloadURL = await getDownloadURL(snapshot.ref);
-            await updateDoc(doc(db, "subItems", upload.subItemId), { photoURL: downloadURL });
-        }
-
-        feedbackP.textContent = '¡Proceso completado!';
-        feedbackP.className = 'text-sm mt-4 text-center text-green-600';
-        setTimeout(() => {
-            closeMultipleProgressModal();
-            feedbackP.textContent = '';
-        }, 1500);
-
-    } catch (error) {
-        console.error("Error al guardar el avance múltiple:", error);
-        feedbackP.textContent = 'Error al guardar. Revisa la consola.';
-        feedbackP.className = 'text-sm mt-4 text-center text-red-600';
-    } finally {
-        confirmBtn.disabled = false;
-        confirmBtn.textContent = 'Guardar Cambios';
-    }
-});
 // =================== FINALIZAN NUEVAS FUNCIONES ===================
 
 
@@ -5820,6 +6037,35 @@ document.addEventListener('DOMContentLoaded', () => {
         validatePoDateRange();
     }
 
+    // --- INICIO: Listener para Plegar/Desplegar Grupos en Modal Múltiple ---
+    const multiProgressTableBody = document.getElementById('multiple-progress-table-body');
+    if (multiProgressTableBody) {
+        multiProgressTableBody.addEventListener('click', (e) => {
+            // Busca si se hizo clic en una cabecera de grupo
+            const header = e.target.closest('.group-header');
+            if (header) {
+                const groupId = header.dataset.groupId; // Obtiene el ID del grupo (ej: 'group-itemId123')
+                if (!groupId) return; // Salir si no hay ID de grupo
+
+                // Selecciona todas las filas de sub-ítems que pertenecen a este grupo
+                const subRows = multiProgressTableBody.querySelectorAll(`.${groupId}`);
+                // Selecciona el icono de flecha en la cabecera
+                const arrow = header.querySelector('.group-arrow');
+
+                // Alterna la clase 'hidden' en cada fila de sub-ítem
+                subRows.forEach(row => {
+                    row.classList.toggle('hidden');
+                });
+
+                // Alterna la rotación de la flecha (asumiendo que inicialmente no está rotada)
+                if (arrow) {
+                    arrow.classList.toggle('rotate-180'); // Tailwind class para rotar 180 grados
+                }
+            }
+        });
+    }
+    // --- FIN: Listener para Plegar/Desplegar ---
+
     // --- Listener para el botón "Cargar Más" del catálogo ---
     const loadMoreCatalogBtn = document.getElementById('load-more-catalog-btn');
     if (loadMoreCatalogBtn) {
@@ -5890,6 +6136,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const action = elementWithAction.dataset.action;
         const elementId = elementWithAction.dataset.id || elementWithAction.dataset.corteId || elementWithAction.dataset.poId;
+        const projectIdForTask = elementWithAction.dataset.projectId; // Para "Ver Proyecto" desde tarea
+        const taskIdForProgress = elementWithAction.dataset.taskId; // Específico para "Registrar Avance"
+
+        console.log(`Action: ${action}, ElementID: ${elementId}, ProjectID(Task): ${projectIdForTask}, TaskID(Progress): ${taskIdForProgress}`);
 
         // --- LÓGICA POR CONTEXTO ESPECÍFICO ---
         const projectCard = elementWithAction.closest('.project-card');
@@ -6002,23 +6252,47 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             }
 
-            case 'complete-task':
-                if (elementId) { // elementId contendrá el ID de la tarea desde data-id
-                    openConfirmModal('¿Marcar esta tarea como completada?', () => completeTask(elementId));
+            case 'view-task-details':
+                // Usa elementId que viene de data-id="${task.id}" en el botón "Ver Tarea"
+                if (elementId) {
+                    openTaskDetailsModal(elementId);
+                } else {
+                    console.error("view-task-details: data-id faltante en el botón.");
                 }
-                break; // <-- No olvides el break
+                break;
+
+            case 'complete-task':
+                // Aquí usamos elementId porque el botón tiene data-id="${task.id}"
+                if (elementId) {
+                    openConfirmModal('¿Marcar esta tarea como completada?', () => completeTask(elementId));
+                } else {
+                    console.error("No se pudo obtener el ID de la tarea para completarla.");
+                }
+                break;
+
+            // --- AÑADE ESTE NUEVO CASE ---
+            case 'register-task-progress':
+                // Usa taskIdForProgress que viene de data-task-id
+                if (taskIdForProgress) {
+                    // OPCIONAL: Cerrar el modal de detalles si está abierto
+                    closeTaskDetailsModal();
+                    handleRegisterTaskProgress(taskIdForProgress);
+                } else {
+                    console.error("register-task-progress: data-task-id faltante.");
+                }
+                break;
 
             case 'view-project-from-task':
-                const projectId = elementWithAction.dataset.projectId;
-                if (projectId) {
-                    const docSnap = await getDoc(doc(db, "projects", projectId));
+                // Usamos la variable específica projectIdForTask
+                if (projectIdForTask) {
+                    const docSnap = await getDoc(doc(db, "projects", projectIdForTask));
                     if (docSnap.exists()) {
                         showProjectDetails({ id: docSnap.id, ...docSnap.data() });
-                        // Opcional: podrías querer ir a una pestaña específica
-                        // switchProjectTab('info-general'); 
                     } else {
                         alert("El proyecto asociado a esta tarea ya no existe.");
                     }
+                } else {
+                    console.error("No se pudo obtener el ID del proyecto desde la tarea.");
                 }
                 break;
 
@@ -6267,6 +6541,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (target.id === 'request-details-close-btn' || target.id === 'request-details-cancel-btn') {
             closeRequestDetailsModal();
+        }
+    });
+
+    document.getElementById('task-details-close-btn')?.addEventListener('click', closeTaskDetailsModal);
+    document.getElementById('task-details-cancel-btn')?.addEventListener('click', closeTaskDetailsModal);
+    // Opcional: cerrar al hacer clic fuera del modal
+    document.getElementById('task-details-modal')?.addEventListener('click', (e) => {
+        if (e.target.id === 'task-details-modal') {
+            closeTaskDetailsModal();
         }
     });
 
@@ -7773,48 +8056,41 @@ function loadTasksView() {
         newTaskBtn.classList.toggle('hidden', !canCreateTasks);
     }
 
-    // --- MODIFICACIÓN AQUÍ ---
-    // Configura los listeners para las pestañas de filtro SOLO SI NO SE HAN AÑADIDO ANTES
-    document.querySelectorAll('.task-tab-button').forEach(button => {
-        if (!button.dataset.listenersAdded) {
-            button.addEventListener('click', (e) => {
-                const clickedButton = e.currentTarget;
-                const statusFilter = clickedButton.dataset.statusFilter;
-                const isActive = clickedButton.classList.contains('active');
+    const tabsContainer = document.querySelector('#tareas-view .mb-4.border-b nav');
 
-                console.log(`[Tareas] Clic en '${statusFilter}'. ¿Estaba activo?: ${isActive}`);
-
-                // Solo actuar si se hizo clic en un botón DIFERENTE al activo
-                if (!isActive) {
-                    console.log(`[Tareas] Cambiando filtro a: '${statusFilter}'`);
-                    // 1. Actualizar visualmente
-                    document.querySelectorAll('.task-tab-button').forEach(btn => btn.classList.remove('active'));
-                    clickedButton.classList.add('active');
-                    // 2. Cargar las tareas
-                    loadAndDisplayTasks(statusFilter);
-                } else {
-                    console.log(`[Tareas] El filtro '${statusFilter}' ya estaba activo. No se recarga.`);
-                }
-            });
-            // Marca el botón para indicar que el listener ya fue añadido
-            button.dataset.listenersAdded = 'true';
-            console.log(`[Tareas] Listener añadido al botón para filtro: '${button.dataset.statusFilter}'`);
-        }
-    });
-    // --- FIN DE MODIFICACIÓN ---
-
-
-    // Carga inicial de tareas pendientes (solo si ninguna pestaña está activa aún o si volvemos a la vista)
-    // Selecciona la pestaña activa actual
-    const currentActiveTab = document.querySelector('.task-tab-button.active');
-    const initialFilter = currentActiveTab ? currentActiveTab.dataset.statusFilter : 'pendiente'; // Usa el filtro activo o pendiente por defecto
-
-    // Asegurarse de que 'Pendientes' esté activo si no hay ninguno
-    if (!currentActiveTab) {
-        document.getElementById('pending-tasks-tab')?.classList.add('active');
+    if (!tabsContainer) {
+        console.error('ERROR CRÍTICO: No se encontró el contenedor de pestañas (nav).');
+        return;
     }
 
-    console.log(`[Tareas] Carga inicial/refresco con filtro: '${initialFilter}'`); // Log para carga inicial
+    // Asegurarse de que el listener se añada solo una vez
+    if (!tabsContainer.dataset.listenerAttached) {
+        tabsContainer.addEventListener('click', (e) => {
+            const clickedButton = e.target.closest('.task-tab-button');
+            if (!clickedButton) return;
+
+            const statusFilter = clickedButton.dataset.statusFilter;
+            const isActive = clickedButton.classList.contains('active');
+
+            if (!isActive) {
+                // 1. Actualizar visualmente las pestañas
+                tabsContainer.querySelectorAll('.task-tab-button').forEach(btn => btn.classList.remove('active'));
+                clickedButton.classList.add('active');
+                // 2. Llamar a la función para cargar las tareas
+                loadAndDisplayTasks(statusFilter);
+            }
+        });
+        tabsContainer.dataset.listenerAttached = 'true';
+    }
+
+    // Carga inicial
+    const currentActiveTab = tabsContainer.querySelector('.task-tab-button.active');
+    const initialFilter = currentActiveTab ? currentActiveTab.dataset.statusFilter : 'pendiente';
+
+    if (!currentActiveTab) {
+        tabsContainer.querySelector('#pending-tasks-tab')?.classList.add('active');
+    }
+
     loadAndDisplayTasks(initialFilter);
 }
 
@@ -7825,78 +8101,90 @@ function loadTasksView() {
  */
 function loadAndDisplayTasks(statusFilter = 'pendiente') {
     const tasksContainer = document.getElementById('tasks-container');
-    const loadingDiv = document.getElementById('loading-tasks');
+    let loadingDiv = document.getElementById('loading-tasks');
 
-    if (!tasksContainer || !loadingDiv || !currentUser) return;
+    if (tasksContainer && !loadingDiv) {
+        // console.warn("[Tareas] El div 'loading-tasks' no se encontró. Recreándolo."); // Log original opcional
+        loadingDiv = document.createElement('div');
+        loadingDiv.id = 'loading-tasks';
+        loadingDiv.className = 'text-center py-10';
+        loadingDiv.innerHTML = '<p class="text-gray-500">Cargando tareas...</p>';
+        tasksContainer.appendChild(loadingDiv);
+    }
 
-    // --- CONSOLE.LOG: Inicio de carga ---
-    console.log(`[Tareas] Intentando cargar tareas con estado: '${statusFilter}' para usuario: ${currentUser.uid}`);
+    if (!tasksContainer || !loadingDiv || !currentUser) {
+        // console.error(`[Tareas] Error al iniciar loadAndDisplayTasks('${statusFilter}'): Faltan elementos esenciales.`); // Log original opcional
+        return;
+    }
 
-    loadingDiv.classList.remove('hidden'); // Muestra el indicador de carga
-    tasksContainer.innerHTML = ''; // Limpia el contenedor de tareas previas
-    tasksContainer.appendChild(loadingDiv); // Vuelve a añadir el loader mientras carga
+    // Mostrar el loader y limpiar SOLO las tareas anteriores/mensaje
+    loadingDiv.classList.remove('hidden');
+    tasksContainer.querySelectorAll('.task-card, .no-tasks-message').forEach(el => el.remove());
 
-    // Cancela la suscripción anterior si existe
+
     if (unsubscribeTasks) {
-        unsubscribeTasks();
-        unsubscribeTasks = null;
+        try {
+            unsubscribeTasks();
+        } catch (unsubError) {
+            // console.warn(`[Tareas] Advertencia al cancelar listener: ${unsubError.message}`); // Log original opcional
+        } finally {
+            unsubscribeTasks = null;
+        }
     }
 
-    // --- MODIFICACIÓN TEMPORAL: Quitar orderBy para 'completada' ---
-    let q; // Declara q sin asignarla aún
+    const q = query(
+        collection(db, "tasks"),
+        where("assigneeId", "==", currentUser.uid),
+        where("status", "==", statusFilter),
+        orderBy("dueDate", "asc")
+    );
 
-    if (statusFilter === 'completada') {
-        // --- Consulta SIN orderBy para completadas ---
-         console.log("[Tareas] Ejecutando consulta para 'completada' SIN orderBy('dueDate')"); // Log específico
-        q = query(
-            collection(db, "tasks"),
-            where("assigneeId", "==", currentUser.uid),
-            where("status", "==", statusFilter)
-             // Sin orderBy("dueDate", "asc")
-        );
-    } else {
-        // --- Consulta CON orderBy para pendientes (o cualquier otro estado) ---
-         console.log(`[Tareas] Ejecutando consulta para '${statusFilter}' CON orderBy('dueDate')`); // Log específico
-        q = query(
-            collection(db, "tasks"),
-            where("assigneeId", "==", currentUser.uid),
-            where("status", "==", statusFilter),
-            orderBy("dueDate", "asc")
-        );
-    }
-    // --- FIN DE MODIFICACIÓN TEMPORAL ---
-
-
-    // Escucha cambios en tiempo real
     unsubscribeTasks = onSnapshot(q, (querySnapshot) => {
-        // --- CONSOLE.LOG: Snapshot recibido ---
-        console.log(`[Tareas] Snapshot recibido para estado '${statusFilter}'. Vacío: ${querySnapshot.empty}, Tamaño: ${querySnapshot.size}`);
+        const currentLoadingDiv = document.getElementById('loading-tasks');
+        if (currentLoadingDiv) currentLoadingDiv.classList.add('hidden');
 
-        loadingDiv.classList.add('hidden'); // Oculta el indicador de carga
-        tasksContainer.innerHTML = ''; // Limpia de nuevo para añadir las tareas reales
+        const currentTasksContainer = document.getElementById('tasks-container');
+        if (!currentTasksContainer) {
+            // console.error(`[Tareas] Error DENTRO del snapshot: No se encontró 'tasks-container' para '${statusFilter}'.`); // Log original opcional
+            return;
+        }
+        currentTasksContainer.querySelectorAll('.task-card, .no-tasks-message').forEach(el => el.remove());
 
         if (querySnapshot.empty) {
-            tasksContainer.innerHTML = `<p class="text-gray-500 text-center py-6">No tienes tareas ${statusFilter === 'pendiente' ? 'pendientes' : 'completadas'}.</p>`;
+            const noTasksMessage = document.createElement('p');
+            noTasksMessage.className = 'text-gray-500 text-center py-6 no-tasks-message';
+            noTasksMessage.textContent = `No tienes tareas ${statusFilter === 'pendiente' ? 'pendientes' : 'completadas'}.`;
+            currentTasksContainer.appendChild(noTasksMessage);
             return;
         }
 
         querySnapshot.forEach((doc) => {
-            // --- CONSOLE.LOG: Tarea encontrada (opcional) ---
-            console.log(`[Tareas] Tarea encontrada (${statusFilter}):`, doc.id, doc.data());
-            const taskData = { id: doc.id, ...doc.data() };
-            const taskCard = createTaskCard(taskData); // Crea la tarjeta HTML
-            tasksContainer.appendChild(taskCard); // Añade la tarjeta al contenedor
+            try {
+                const taskData = { id: doc.id, ...doc.data() };
+                const taskCard = createTaskCard(taskData);
+                currentTasksContainer.appendChild(taskCard);
+            } catch (cardError) {
+                console.error(`[Tareas] Error creando tarjeta para tarea ${doc.id} (${statusFilter}):`, cardError); // Mantenemos este error por si falla la creación de tarjetas
+            }
         });
 
     }, (error) => {
-        // --- CONSOLE.LOG: Error ---
-        console.error(`[Tareas] Error en onSnapshot para estado '${statusFilter}': `, error);
-        loadingDiv.classList.add('hidden');
-        tasksContainer.innerHTML = '<p class="text-red-500 text-center py-6">Error al cargar las tareas.</p>';
+        console.error(`Error en listener de tareas (${statusFilter}): `, error); // Mantenemos un log de error general
+        const errorLoadingDiv = document.getElementById('loading-tasks');
+        if (errorLoadingDiv) errorLoadingDiv.classList.add('hidden');
+        const errorTasksContainer = document.getElementById('tasks-container');
+        if (errorTasksContainer) {
+            errorTasksContainer.querySelectorAll('.task-card, .no-tasks-message').forEach(el => el.remove());
+            errorTasksContainer.innerHTML += `<p class="text-red-500 text-center py-6 no-tasks-message">Error al cargar las tareas (Código: ${error.code || 'Desconocido'}).</p>`;
+        }
     });
 
-    // Guarda la referencia al listener para poder cancelarla después
-    activeListeners.push(unsubscribeTasks);
+    if (unsubscribeTasks) {
+        activeListeners = activeListeners.filter(listener => listener !== unsubscribeTasks);
+        activeListeners.push(unsubscribeTasks);
+    } else {
+        console.error("ERROR CRÍTICO: unsubscribeTasks es null DESPUÉS de crear el listener."); // Mantenemos este error crítico
+    }
 }
 
 
@@ -7908,44 +8196,80 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
 function createTaskCard(task) {
     const card = document.createElement('div');
     card.className = "bg-white p-4 rounded-lg shadow border border-gray-200 task-card";
-    card.dataset.id = task.id;
+    card.dataset.id = task.id; // ID de la tarea
 
-    const dueDate = task.dueDate ? new Date(task.dueDate + 'T00:00:00') : null; // Asume formato YYYY-MM-DD
+    const dueDate = task.dueDate ? new Date(task.dueDate + 'T00:00:00') : null;
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Ignora la hora para comparar solo fechas
+    today.setHours(0, 0, 0, 0);
 
     let dateColor = 'text-gray-500';
     let dateText = dueDate ? dueDate.toLocaleDateString('es-CO') : 'Sin fecha límite';
 
     if (dueDate && task.status === 'pendiente') {
         if (dueDate < today) {
-            dateColor = 'text-red-600 font-bold'; // Vencida
+            dateColor = 'text-red-600 font-bold';
             dateText += ' (Vencida)';
         } else if (dueDate.getTime() === today.getTime()) {
-            dateColor = 'text-yellow-600 font-bold'; // Vence hoy
+            dateColor = 'text-yellow-600 font-bold';
             dateText += ' (Hoy)';
         }
     }
 
-    // Botón para marcar como completada (solo si está pendiente)
+    let itemsListHtml = '';
+    if (task.selectedItems && task.selectedItems.length > 0) {
+        const itemPromises = task.selectedItems.map(async (itemInfo) => {
+            try {
+                const itemDoc = await getDoc(doc(db, "items", itemInfo.itemId));
+                const itemName = itemDoc.exists() ? itemDoc.data().name : `Ítem ID: ${itemInfo.itemId}`;
+                return `<li class="text-xs text-gray-700 ml-4 list-disc">${itemInfo.quantity} x ${itemName}</li>`;
+            } catch (error) {
+                console.error(`Error fetching item name for ${itemInfo.itemId}:`, error);
+                return `<li class="text-xs text-red-500 ml-4 list-disc">Error al cargar ítem ID: ${itemInfo.itemId}</li>`;
+            }
+        });
+        const listId = `task-items-list-${task.id}`;
+        itemsListHtml = `
+            <div class="mt-2 border-t pt-2">
+                <p class="text-xs font-semibold text-gray-600 mb-1">Ítems a trabajar:</p>
+                <ul id="${listId}" class="space-y-0">
+                    <li class="text-xs text-gray-400 ml-4">Cargando ítems...</li>
+                </ul>
+            </div>
+        `;
+        Promise.all(itemPromises).then(results => {
+            const listElement = document.getElementById(listId);
+            if (listElement) listElement.innerHTML = results.join('');
+        });
+    }
+
     const completeButtonHtml = task.status === 'pendiente' ? `
         <button data-action="complete-task" data-id="${task.id}" class="bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-2 px-3 rounded transition-colors">
-            Marcar como Completada
+            Marcar Completada
         </button>
     ` : '';
-    // Botón para ver detalles del proyecto (opcional)
-    const viewProjectButtonHtml = task.projectId ? `
-    <button data-action="view-project-from-task" data-project-id="${task.projectId}" class="bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-bold py-2 px-3 rounded transition-colors">
-        Ver Proyecto
-    </button>
-    ` : '';
 
+    // --- INICIO DE LA MODIFICACIÓN ---
+    // Cambiamos el botón "Ver Proyecto" por "Ver Tarea"
+    const viewTaskButtonHtml = `
+        <button data-action="view-task-details" data-id="${task.id}" class="bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-bold py-2 px-3 rounded transition-colors">
+            Ver Tarea
+        </button>
+    `;
+    // --- FIN DE LA MODIFICACIÓN ---
+
+
+    const registerProgressButtonHtml = task.status === 'pendiente' && task.projectId && task.selectedItems && task.selectedItems.length > 0 ? `
+        <button data-action="register-task-progress" data-task-id="${task.id}" class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-2 px-3 rounded transition-colors">
+            Registrar Avance
+        </button>
+    ` : '';
 
     card.innerHTML = `
         <div class="flex flex-col sm:flex-row justify-between sm:items-start">
-            <div class="mb-2 sm:mb-0">
+            <div class="mb-2 sm:mb-0 flex-grow mr-4">
                 <p class="text-sm font-semibold text-gray-500">${task.projectName || 'Proyecto no especificado'}</p>
                 <h3 class="text-lg font-bold text-gray-800">${task.description}</h3>
+                ${itemsListHtml}
             </div>
             <div class="text-left sm:text-right flex-shrink-0">
                  <p class="text-sm ${dateColor}">Fecha Límite: ${dateText}</p>
@@ -7953,11 +8277,107 @@ function createTaskCard(task) {
             </div>
         </div>
         <div class="mt-4 pt-3 border-t border-gray-200 flex flex-wrap gap-2 justify-end">
-             ${viewProjectButtonHtml}
+             ${viewTaskButtonHtml} 
+             ${registerProgressButtonHtml}
              ${completeButtonHtml}
-            </div>
+        </div>
     `;
     return card;
+}
+
+
+/**
+ * Busca la cantidad EXACTA de sub-ítems pendientes especificada en la tarea
+ * y abre el modal de progreso múltiple mostrando solo esos sub-ítems.
+ * @param {string} taskId - El ID de la tarea.
+ */
+async function handleRegisterTaskProgress(taskId) {
+    if (!taskId) return;
+
+    console.log(`[Task Progress] Iniciando handleRegisterTaskProgress para Tarea ID: ${taskId}`); // NUEVO LOG
+    loadingOverlay.classList.remove('hidden');
+
+    try {
+        const taskRef = doc(db, "tasks", taskId);
+        const taskSnap = await getDoc(taskRef);
+
+        if (!taskSnap.exists()) {
+            throw new Error(`[Task Progress] La tarea ${taskId} no fue encontrada.`); // NUEVO LOG
+        }
+
+        const taskData = taskSnap.data();
+        console.log(`[Task Progress] Tarea encontrada. Proyecto ID: ${taskData.projectId}`); // NUEVO LOG
+
+        if (!taskData.projectId || !taskData.selectedItems || taskData.selectedItems.length === 0) {
+            throw new Error("[Task Progress] Esta tarea no tiene ítems de proyecto relacionados."); // NUEVO LOG
+        }
+
+        console.log(`[Task Progress] Tarea tiene ${taskData.selectedItems.length} ítem(s) seleccionados.`); // NUEVO LOG
+        const relevantPendingSubItemIds = [];
+
+        for (const selectedItem of taskData.selectedItems) {
+            const itemId = selectedItem.itemId;
+            const quantityNeeded = selectedItem.quantity;
+
+            if (quantityNeeded <= 0) {
+                console.log(`[Task Progress] Omitiendo ítem ${itemId}: cantidad necesaria es 0.`); // NUEVO LOG
+                continue;
+            }
+
+            console.log(`[Task Progress] Buscando ${quantityNeeded} sub-ítem(s) pendientes para Ítem ID: ${itemId}`); // NUEVO LOG
+
+            const subItemsQuery = query(
+                collection(db, "subItems"),
+                where("projectId", "==", taskData.projectId),
+                where("itemId", "==", itemId),
+                where("status", "!=", "Instalado"),
+                orderBy("number", "asc"),
+                limit(quantityNeeded)
+            );
+
+            const subItemsSnapshot = await getDocs(subItemsQuery);
+
+            if (subItemsSnapshot.empty) {
+                console.warn(`[Task Progress] No se encontraron sub-ítems pendientes para ${itemId}.`); // NUEVO LOG
+            } else {
+                console.log(`[Task Progress] Encontrados ${subItemsSnapshot.size} sub-ítem(s) para ${itemId}.`); // NUEVO LOG
+                subItemsSnapshot.forEach(subItemDoc => {
+                    relevantPendingSubItemIds.push(subItemDoc.id);
+                });
+            }
+        } // Fin del bucle for
+
+        console.log(`[Task Progress] Total de sub-ítems pendientes encontrados: ${relevantPendingSubItemIds.length}`); // NUEVO LOG
+
+        if (relevantPendingSubItemIds.length === 0) {
+            console.warn("[Task Progress] No se encontraron sub-ítems pendientes en total."); // NUEVO LOG
+            // ... (lógica de alerta existente) ...
+            const checkGeneralPendingQuery = query(
+                collection(db, "subItems"),
+                where("projectId", "==", taskData.projectId),
+                where("itemId", "in", taskData.selectedItems.map(si => si.itemId)),
+                where("status", "!=", "Instalado"),
+                limit(1)
+            );
+            const generalPendingSnapshot = await getDocs(checkGeneralPendingQuery);
+            if (generalPendingSnapshot.empty) {
+                alert("Todos los sub-ítems relacionados con esta tarea ya han sido marcados como 'Instalado'.");
+            } else {
+                alert("No se encontraron sub-ítems pendientes específicos para las cantidades requeridas por esta tarea en este momento.");
+            }
+
+        } else {
+            console.log(`[Task Progress] Llamando a openMultipleProgressModal con ${relevantPendingSubItemIds.length} IDs.`); // NUEVO LOG
+            await openMultipleProgressModal(relevantPendingSubItemIds, taskId);
+        }
+
+    } catch (error) {
+        // El error ahora tendrá más contexto gracias a los logs
+        console.error("Error en handleRegisterTaskProgress:", error); // NUEVO LOG
+        alert(`Error: ${error.message}`);
+    } finally {
+        loadingOverlay.classList.add('hidden');
+    }
 }
 
 /**
@@ -8046,5 +8466,150 @@ async function createTask(taskData) {
         console.error("Error al guardar la nueva tarea:", error);
         // Mostrar el mensaje de error específico si lo lanzamos nosotros (ej: cantidad inválida)
         alert(`No se pudo guardar la tarea: ${error.message}`);
+    }
+}
+
+/**
+ * Abre el modal con los detalles completos de una tarea específica.
+ * @param {string} taskId - El ID de la tarea a mostrar.
+ */
+async function openTaskDetailsModal(taskId) {
+    const modal = document.getElementById('task-details-modal');
+    const titleEl = document.getElementById('task-details-title');
+    const bodyEl = document.getElementById('task-details-body');
+    const actionsEl = document.getElementById('task-details-actions');
+
+    if (!modal || !bodyEl || !actionsEl) return;
+
+    // Mostrar modal y estado de carga
+    modal.style.display = 'flex';
+    titleEl.textContent = 'Cargando Detalles...';
+    bodyEl.innerHTML = '<div class="text-center py-8"><div class="loader mx-auto"></div></div>';
+    // Limpiar botones de acción previos (excepto el de cerrar)
+    actionsEl.querySelectorAll('button:not(#task-details-cancel-btn)').forEach(btn => btn.remove());
+
+
+    try {
+        const taskRef = doc(db, "tasks", taskId);
+        const taskSnap = await getDoc(taskRef);
+
+        if (!taskSnap.exists()) {
+            throw new Error("Tarea no encontrada.");
+        }
+
+        const task = { id: taskSnap.id, ...taskSnap.data() };
+
+        titleEl.textContent = `Detalle: ${task.description.substring(0, 30)}${task.description.length > 30 ? '...' : ''}`;
+
+        // Obtener nombres para mostrar
+        const creatorName = usersMap.get(task.createdBy)?.firstName || 'Desconocido';
+        const assigneeName = usersMap.get(task.assigneeId)?.firstName + ' ' + usersMap.get(task.assigneeId)?.lastName || 'No asignado';
+        let additionalAssigneesNames = 'Ninguno';
+        if (task.additionalAssigneeIds && task.additionalAssigneeIds.length > 0) {
+            additionalAssigneesNames = task.additionalAssigneeIds
+                .map(id => usersMap.get(id)?.firstName || `ID: ${id.substring(0, 5)}...`)
+                .join(', ');
+        }
+
+        // Formatear fecha límite
+        const dueDate = task.dueDate ? new Date(task.dueDate + 'T00:00:00').toLocaleDateString('es-CO') : 'No establecida';
+
+        // Generar lista detallada de ítems
+        let itemsDetailsHtml = '<p class="text-sm text-gray-500">No hay ítems asociados.</p>';
+        if (task.selectedItems && task.selectedItems.length > 0) {
+            const itemDetailPromises = task.selectedItems.map(async (itemInfo) => {
+                try {
+                    const itemDoc = await getDoc(doc(db, "items", itemInfo.itemId));
+                    const itemName = itemDoc.exists() ? itemDoc.data().name : `Ítem ID: ${itemInfo.itemId}`;
+                    // Buscar subítems pendientes para este ítem
+                    const subItemsQuery = query(
+                        collection(db, "subItems"),
+                        where("projectId", "==", task.projectId),
+                        where("itemId", "==", itemInfo.itemId),
+                        where("status", "!=", "Instalado")
+                    );
+                    const subItemsSnapshot = await getDocs(subItemsQuery);
+                    const pendingCount = subItemsSnapshot.size;
+                    return `
+                        <li class="py-2 border-b last:border-b-0">
+                            <span class="font-semibold">${itemInfo.quantity} x ${itemName}</span>
+                            <span class="text-xs text-gray-500 ml-2">(${pendingCount} und. pendientes)</span>
+                        </li>`;
+                } catch (error) {
+                    return `<li class="py-2 border-b last:border-b-0 text-red-500">Error cargando detalle para ítem ID: ${itemInfo.itemId}</li>`;
+                }
+            });
+            itemsDetailsHtml = `<ul class="space-y-1">${(await Promise.all(itemDetailPromises)).join('')}</ul>`;
+        }
+
+
+        // Construir el cuerpo del modal
+        bodyEl.innerHTML = `
+            <dl class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                <div>
+                    <dt class="text-sm font-medium text-gray-500">Proyecto</dt>
+                    <dd class="mt-1 text-md text-gray-900 font-semibold">${task.projectName || 'N/A'}</dd>
+                </div>
+                 <div>
+                    <dt class="text-sm font-medium text-gray-500">Estado</dt>
+                    <dd class="mt-1 text-md text-gray-900">${task.status === 'pendiente' ? 'Pendiente' : 'Completada'}</dd>
+                </div>
+                 <div>
+                    <dt class="text-sm font-medium text-gray-500">Asignado Principal</dt>
+                    <dd class="mt-1 text-md text-gray-900">${assigneeName}</dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-500">Fecha Límite</dt>
+                    <dd class="mt-1 text-md text-gray-900">${dueDate}</dd>
+                </div>
+                 <div class="col-span-1 md:col-span-2">
+                    <dt class="text-sm font-medium text-gray-500">Descripción Completa</dt>
+                    <dd class="mt-1 text-md text-gray-900 whitespace-pre-wrap">${task.description}</dd>
+                </div>
+                 <div class="col-span-1 md:col-span-2">
+                    <dt class="text-sm font-medium text-gray-500">Ítems a Trabajar</dt>
+                    <dd class="mt-1 text-md text-gray-900">${itemsDetailsHtml}</dd>
+                </div>
+                 <div>
+                    <dt class="text-sm font-medium text-gray-500">Asignados Adicionales</dt>
+                    <dd class="mt-1 text-md text-gray-900">${additionalAssigneesNames}</dd>
+                </div>
+
+                <div>
+                    <dt class="text-sm font-medium text-gray-500">Creada por</dt>
+                    <dd class="mt-1 text-md text-gray-900">${creatorName}</dd>
+                </div>
+            </dl>
+        `;
+
+        // Añadir botón "Registrar Avance" si la tarea está pendiente y tiene ítems
+        if (task.status === 'pendiente' && task.selectedItems && task.selectedItems.length > 0) {
+            const progressBtn = document.createElement('button');
+            progressBtn.type = 'button';
+            progressBtn.dataset.action = 'register-task-progress'; // Reutilizamos la acción
+            progressBtn.dataset.taskId = task.id; // Pasamos el ID de la tarea
+            progressBtn.className = 'bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg';
+            progressBtn.textContent = 'Registrar Avance';
+            // Insertar antes del botón de cerrar
+            actionsEl.insertBefore(progressBtn, actionsEl.firstChild);
+        }
+
+    } catch (error) {
+        console.error("Error al abrir detalles de tarea:", error);
+        titleEl.textContent = 'Error';
+        bodyEl.innerHTML = `<p class="text-red-500 text-center">${error.message}</p>`;
+    }
+}
+
+/**
+ * Cierra el modal de detalles de la tarea.
+ */
+function closeTaskDetailsModal() {
+    const modal = document.getElementById('task-details-modal');
+    if (modal) {
+        modal.style.display = 'none';
+        // Opcional: Limpiar el contenido para la próxima vez
+        document.getElementById('task-details-body').innerHTML = '<div class="text-center py-8"><div class="loader mx-auto"></div></div>';
+        document.getElementById('task-details-actions').querySelectorAll('button:not(#task-details-cancel-btn)').forEach(btn => btn.remove());
     }
 }
