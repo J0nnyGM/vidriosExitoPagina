@@ -8688,8 +8688,7 @@ function createTaskCard(task) {
     const card = document.createElement('div');
     // --- INICIO DE LA MODIFICACIÓN ---
     // ASEGURAMOS que 'h-full' esté aquí
-    card.className = "bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden flex flex-col h-full task-card";
-    // --- FIN DE LA MODIFICACIÓN ---
+    card.className = "bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden h-full task-card"; 
     card.dataset.id = task.id;
 
     // --- Lógica de Fecha (sin cambios) ---
@@ -8741,7 +8740,7 @@ function createTaskCard(task) {
         `;
 
         const loadAndSeparateItems = async () => { /* ... (código existente sin cambios) ... */
-             try {
+            try {
                 const subItemIds = task.specificSubItemIds;
                 const subItemPromises = subItemIds.map(id => getDoc(doc(db, "subItems", id)));
                 const subItemDocs = await Promise.all(subItemPromises);
@@ -8752,7 +8751,7 @@ function createTaskCard(task) {
                         const itemId = subItem.itemId;
                         if (!itemId) continue;
                         if (!itemsStatus.has(itemId)) {
-                            const itemDoc = await getDoc(doc(db, "items", itemId)); 
+                            const itemDoc = await getDoc(doc(db, "items", itemId));
                             const itemName = itemDoc.exists() ? itemDoc.data().name : `Ítem ID: ${itemId}`;
                             itemsStatus.set(itemId, { name: itemName, total: 0, installed: 0 });
                         }
@@ -8794,19 +8793,19 @@ function createTaskCard(task) {
     const progressBarId = `task-progress-bar-${task.id}`;
     const progressTextId = `task-progress-text-${task.id}`;
     if (task.status === 'completada') {
-         progressBarHtml = `
+        progressBarHtml = `
             <div class="mt-4 px-4">
                 <div class="flex justify-between mb-1"><span class="text-xs font-medium text-green-700">Completada</span><span class="text-xs font-medium text-green-700">100%</span></div>
                 <div class="task-progress-bar-bg"><div class="task-progress-bar-fg bg-green-500" style="width: 100%;"></div></div>
             </div>`;
     } else if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
-         progressBarHtml = `
+        progressBarHtml = `
             <div class="mt-4 px-4">
                 <div class="flex justify-between mb-1"><span class="text-xs font-medium text-gray-500">Progreso General</span><span id="${progressTextId}" class="text-xs font-medium text-blue-700">Calculando...</span></div>
                 <div class="task-progress-bar-bg"><div id="${progressBarId}" class="task-progress-bar-fg" style="width: 0%;"></div></div>
             </div>`;
         const calculateProgress = async () => {
-             try {
+            try {
                 const subItemIds = task.specificSubItemIds;
                 const subItemPromises = subItemIds.map(id => getDoc(doc(db, "subItems", id)));
                 const subItemDocs = await Promise.all(subItemPromises);
@@ -8814,10 +8813,10 @@ function createTaskCard(task) {
                 let foundCount = 0;
                 subItemDocs.forEach(docSnap => {
                     if (docSnap.exists()) {
-                         foundCount++;
-                         if (docSnap.data().status === 'Instalado') {
-                              installedCount++;
-                         }
+                        foundCount++;
+                        if (docSnap.data().status === 'Instalado') {
+                            installedCount++;
+                        }
                     }
                 });
                 const totalSubItemsEffective = Math.min(foundCount, subItemIds.length);
@@ -8834,32 +8833,32 @@ function createTaskCard(task) {
         };
         setTimeout(calculateProgress, 100);
     } else {
-         progressBarHtml = `
+        progressBarHtml = `
             <div class="mt-4 px-4"><p class="text-xs text-gray-400 italic text-center">Progreso no disponible.</p></div>`;
     }
 
     // --- Botones (sin cambios) ---
     const baseButtonClasses = "text-xs font-bold py-2 px-4 rounded-lg transition-colors flex items-center shadow-sm";
     const iconBaseClasses = "h-4 w-4 mr-1";
-     const editButtonHtmlFinal = currentUserRole === 'admin' ? `
+    const editButtonHtmlFinal = currentUserRole === 'admin' ? `
         <button data-action="edit-task" data-id="${task.id}" class="${baseButtonClasses} bg-yellow-500 hover:bg-yellow-600 text-white">
             <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
             Editar
         </button>
     ` : '';
-     const completeButtonHtmlFinal = task.status === 'pendiente' ? `
+    const completeButtonHtmlFinal = task.status === 'pendiente' ? `
         <button data-action="complete-task" data-id="${task.id}" class="${baseButtonClasses} bg-green-500 hover:bg-green-600 text-white">
             <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
             Completada
         </button>
     ` : '';
-     const viewTaskButtonHtmlFinal = `
+    const viewTaskButtonHtmlFinal = `
         <button data-action="view-task-details" data-id="${task.id}" class="${baseButtonClasses} bg-blue-100 hover:bg-blue-200 text-blue-700">
              <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z"></path></svg>
             Ver Tarea
         </button>
     `;
-     const registerProgressButtonHtmlFinal = task.status === 'pendiente' && task.projectId && ((task.selectedItems && task.selectedItems.length > 0) || (task.specificSubItemIds && task.specificSubItemIds.length > 0)) ? `
+    const registerProgressButtonHtmlFinal = task.status === 'pendiente' && task.projectId && ((task.selectedItems && task.selectedItems.length > 0) || (task.specificSubItemIds && task.specificSubItemIds.length > 0)) ? `
         <button data-action="register-task-progress" data-task-id="${task.id}" class="${baseButtonClasses} bg-blue-500 hover:bg-blue-600 text-white">
             <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
             Registrar Avance
@@ -8896,7 +8895,7 @@ function createTaskCard(task) {
             ${itemsSectionHtml}
             ${progressBarHtml}
         </div>
-        <div class="bg-gray-50 p-3 border-t border-gray-200 flex flex-wrap gap-2 justify-end mt-auto">
+        <div class="bg-gray-50 p-3 border-t border-gray-200 flex flex-wrap gap-2 justify-end">
             ${editButtonHtmlFinal}
             ${viewTaskButtonHtmlFinal}
             ${requestMaterialButtonHtml}

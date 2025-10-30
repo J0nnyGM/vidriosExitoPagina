@@ -1,15 +1,37 @@
-body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #f3f4f6;
+}
+
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-.modal-backdrop { background-color: rgba(0,0,0,0.5); }
-.transition-all { transition: all 0.3s ease-in-out; }
-.hidden { display: none; }
-.progress-bar-bg { background-color: #e5e7eb; }
-.progress-bar-fg { background-color: #3b82f6; transition: width 0.5s ease-in-out; }
+
+.modal-backdrop {
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.transition-all {
+    transition: all 0.3s ease-in-out;
+}
+
+.hidden {
+    display: none;
+}
+
+.progress-bar-bg {
+    background-color: #e5e7eb;
+}
+
+.progress-bar-fg {
+    background-color: #3b82f6;
+    transition: width 0.5s ease-in-out;
+}
 
 /* Estilos para la pantalla de carga */
 .loader {
-    border: 8px solid #f3f4f6; /* Gris claro */
-    border-top: 8px solid #3b82f6; /* Azul */
+    border: 8px solid #f3f4f6;
+    /* Gris claro */
+    border-top: 8px solid #3b82f6;
+    /* Azul */
     border-radius: 50%;
     width: 60px;
     height: 60px;
@@ -17,17 +39,25 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
 }
+
 .tab-button.active {
     border-color: #3b82f6;
     color: #3b82f6;
     font-weight: 600;
 }
+
 .sortable-header {
     cursor: pointer;
 }
+
 .sort-indicator {
     display: inline-block;
     margin-left: 5px;
@@ -36,7 +66,8 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
 
 /* Estilos para la nueva barra de navegación */
 #main-nav .nav-link.active {
-    background-color: #4a5568; /* gray-700 */
+    background-color: #4a5568;
+    /* gray-700 */
     font-weight: 600;
 }
 
@@ -48,7 +79,8 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
 
 /* Estilos para el menú lateral plegable */
 #sidebar.collapsed {
-    width: 5rem; /* 80px */
+    width: 5rem;
+    /* 80px */
 }
 
 /* Oculta el contenido superior cuando está plegado */
@@ -74,7 +106,8 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
 
 /* Ajuste del contenido principal cuando el menú está plegado */
 #main-content.sidebar-collapsed {
-    margin-left: 5rem; /* Mismo ancho que la sidebar plegada */
+    margin-left: 5rem;
+    /* Mismo ancho que la sidebar plegada */
 }
 
 /* Estilos para las nuevas tarjetas de proyecto */
@@ -91,9 +124,11 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
 .municipality-search-results {
     max-height: 200px;
     overflow-y: auto;
-    border: 1px solid #d1d5db; /* gray-300 */
+    border: 1px solid #d1d5db;
+    /* gray-300 */
     border-top: none;
-    border-radius: 0 0 0.375rem 0.375rem; /* rounded-b-md */
+    border-radius: 0 0 0.375rem 0.375rem;
+    /* rounded-b-md */
     background-color: #ffffff;
     position: absolute;
     width: 100%;
@@ -101,28 +136,35 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
 }
 
 .municipality-item {
-    padding: 0.75rem 1rem; /* py-3 px-4 */
+    padding: 0.75rem 1rem;
+    /* py-3 px-4 */
     cursor: pointer;
 }
 
 .municipality-item:hover {
-    background-color: #f3f4f6; /* gray-100 */
+    background-color: #f3f4f6;
+    /* gray-100 */
 }
 
 /* Estilos para las pestañas de proyectos activos/archivados */
 .tab-button {
     border-color: transparent;
-    color: #6b7280; /* gray-500 */
+    color: #6b7280;
+    /* gray-500 */
 }
 
 .tab-button:hover {
-    border-color: #d1d5db; /* gray-300 */
-    color: #4b5563; /* gray-600 */
+    border-color: #d1d5db;
+    /* gray-300 */
+    color: #4b5563;
+    /* gray-600 */
 }
 
 .tab-button.active {
-    border-color: #3b82f6; /* blue-500 */
-    color: #3b82f6; /* blue-500 */
+    border-color: #3b82f6;
+    /* blue-500 */
+    color: #3b82f6;
+    /* blue-500 */
 }
 
 /* Estilos para la nueva sección de documentos */
@@ -131,21 +173,28 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
     align-items: center;
     justify-content: space-between;
     padding: 0.75rem;
-    border: 1px solid #e5e7eb; /* gray-200 */
-    border-radius: 0.5rem; /* rounded-lg */
-    background-color: #f9fafb; /* gray-50 */
+    border: 1px solid #e5e7eb;
+    /* gray-200 */
+    border-radius: 0.5rem;
+    /* rounded-lg */
+    background-color: #f9fafb;
+    /* gray-50 */
     transition: box-shadow 0.2s ease-in-out;
 }
 
 .document-card:hover {
-    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* shadow-sm */
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    /* shadow-sm */
 }
 
 .document-card .doc-icon {
     flex-shrink: 0;
-    width: 2.5rem; /* w-10 */
-    height: 2.5rem; /* h-10 */
-    background-color: #e5e7eb; /* gray-200 */
+    width: 2.5rem;
+    /* w-10 */
+    height: 2.5rem;
+    /* h-10 */
+    background-color: #e5e7eb;
+    /* gray-200 */
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -161,19 +210,23 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
 
 .document-card .doc-name {
     font-weight: 500;
-    color: #1f2937; /* gray-800 */
+    color: #1f2937;
+    /* gray-800 */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 .document-card .doc-status {
-    font-size: 0.75rem; /* text-xs */
-    color: #6b7280; /* gray-500 */
+    font-size: 0.75rem;
+    /* text-xs */
+    color: #6b7280;
+    /* gray-500 */
 }
 
 .document-card .doc-actions button {
-    font-size: 0.875rem; /* text-sm */
+    font-size: 0.875rem;
+    /* text-sm */
     padding: 0.25rem 0.75rem;
 }
 
@@ -181,64 +234,83 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
 .editable-date-input {
     background-color: transparent;
     border: 1px solid transparent;
-    border-radius: 0.375rem; /* rounded-md */
+    border-radius: 0.375rem;
+    /* rounded-md */
     padding: 0.25rem 0.5rem;
     transition: border-color 0.2s ease-in-out;
 }
 
 .editable-date-input:hover {
-    border-color: #d1d5db; /* gray-300 */
+    border-color: #d1d5db;
+    /* gray-300 */
 }
 
 /* --- Estilos para Tarjetas de Documentos Interactivas --- */
 .document-upload-card {
     position: relative;
-    border: 2px dashed #d1d5db; /* gray-300 */
-    border-radius: 0.75rem; /* rounded-xl */
+    border: 2px dashed #d1d5db;
+    /* gray-300 */
+    border-radius: 0.75rem;
+    /* rounded-xl */
     padding: 1.5rem;
     text-align: center;
-    background-color: #f9fafb; /* gray-50 */
+    background-color: #f9fafb;
+    /* gray-50 */
     transition: all 0.2s ease-in-out;
     cursor: pointer;
 }
 
 .document-upload-card:hover {
-    border-color: #3b82f6; /* blue-500 */
-    background-color: #eff6ff; /* blue-50 */
+    border-color: #3b82f6;
+    /* blue-500 */
+    background-color: #eff6ff;
+    /* blue-50 */
 }
 
 .document-upload-card.uploaded {
     border-style: solid;
-    border-color: #10b981; /* green-500 */
-    background-color: #f0fdf4; /* green-50 */
+    border-color: #10b981;
+    /* green-500 */
+    background-color: #f0fdf4;
+    /* green-50 */
 }
 
 .document-upload-card .doc-icon {
     margin: 0 auto 0.75rem auto;
-    width: 3rem; /* w-12 */
-    height: 3rem; /* h-12 */
+    width: 3rem;
+    /* w-12 */
+    height: 3rem;
+    /* h-12 */
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: #e5e7eb; /* gray-200 */
-    color: #4b5563; /* gray-600 */
+    background-color: #e5e7eb;
+    /* gray-200 */
+    color: #4b5563;
+    /* gray-600 */
 }
 
 .document-upload-card.uploaded .doc-icon {
-    background-color: #a7f3d0; /* green-200 */
-    color: #047857; /* green-700 */
+    background-color: #a7f3d0;
+    /* green-200 */
+    color: #047857;
+    /* green-700 */
 }
 
 .document-upload-card .doc-title {
     font-weight: 600;
-    color: #1f2937; /* gray-800 */
+    color: #1f2937;
+    /* gray-800 */
 }
 
 .document-upload-card .doc-status {
-    font-size: 0.875rem; /* text-sm */
-    color: #6b7280; /* gray-500 */
-    min-height: 1.25rem; /* Evita que la tarjeta cambie de tamaño */
+    font-size: 0.875rem;
+    /* text-sm */
+    color: #6b7280;
+    /* gray-500 */
+    min-height: 1.25rem;
+    /* Evita que la tarjeta cambie de tamaño */
 }
 
 .document-upload-card .view-docs-btn {
@@ -247,7 +319,8 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
     right: 0.75rem;
     background-color: white;
     border: 1px solid #d1d5db;
-    border-radius: 9999px; /* rounded-full */
+    border-radius: 9999px;
+    /* rounded-full */
     padding: 0.25rem 0.75rem;
     font-size: 0.75rem;
     font-weight: 600;
@@ -260,39 +333,45 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
 
 /* Estilos para el botón de cierre del modal de documentos */
 #document-viewer-close-btn {
-    font-size: 2rem; /* Aumenta el tamaño del icono '×' */
+    font-size: 2rem;
+    /* Aumenta el tamaño del icono '×' */
     line-height: 1;
     padding: 0 0.5rem;
     font-weight: bold;
-    color: #6b7280; /* gray-500 */
+    color: #6b7280;
+    /* gray-500 */
     transition: color 0.2s ease-in-out;
 }
 
 #document-viewer-close-btn:hover {
-    color: #1f2937; /* gray-800 */
+    color: #1f2937;
+    /* gray-800 */
 }
 
 /* --- Estilos para Responsividad --- */
 
 /* Regla global para prevenir desbordamientos accidentales */
-body, #app-container {
+body,
+#app-container {
     overflow-x: hidden;
 }
 
 /* Flexbox wrapping para la cabecera principal */
-#main-content > header {
+#main-content>header {
     flex-wrap: wrap;
-    gap: 0.5rem; /* Espacio entre elementos si se van a la siguiente línea */
+    gap: 0.5rem;
+    /* Espacio entre elementos si se van a la siguiente línea */
 }
 
 /* Flexbox wrapping para la cabecera de la vista de proyectos */
-#dashboard-view > .flex {
+#dashboard-view>.flex {
     flex-wrap: wrap;
     gap: 0.5rem;
 }
 
 /* Se aplica a pantallas de 768px o menos */
 @media (max-width: 768px) {
+
     /* Ocultamos las cabeceras de las tablas */
     .responsive-table thead {
         display: none;
@@ -321,7 +400,7 @@ body, #app-container {
     .responsive-table tr:last-child td:last-child {
         border-bottom: none;
     }
-    
+
     /* La etiqueta (label) generada por CSS */
     .responsive-table td:before {
         content: attr(data-label);
@@ -329,11 +408,12 @@ body, #app-container {
         text-align: left;
         color: #374151;
         margin-right: 1rem;
-        flex-shrink: 0; /* Evita que la etiqueta se encoja */
+        flex-shrink: 0;
+        /* Evita que la etiqueta se encoja */
     }
 
     /* Aseguramos que el contenido de la celda se ajuste */
-    .responsive-table td > * {
+    .responsive-table td>* {
         flex-shrink: 1;
         min-width: 0;
     }
@@ -342,15 +422,18 @@ body, #app-container {
     .responsive-table td .flex {
         justify-content: flex-end;
         flex-wrap: wrap;
-        gap: 0.5rem; /* Espacio entre botones si se van a la siguiente línea */
+        gap: 0.5rem;
+        /* Espacio entre botones si se van a la siguiente línea */
     }
 }
 
 /* Estilo para la opción activa en el menú desplegable */
 .dropdown-item.active {
-    background-color: #eef2ff; /* indigo-50 */
+    background-color: #eef2ff;
+    /* indigo-50 */
     font-weight: 600;
-    color: #374151; /* gray-700 */
+    color: #374151;
+    /* gray-700 */
 }
 
 /* ==================================================================== */
@@ -358,7 +441,8 @@ body, #app-container {
 /* ==================================================================== */
 
 /* Transiciones suaves para el menú y el contenido */
-#sidebar, #main-content {
+#sidebar,
+#main-content {
     transition: all 0.3s ease-in-out;
 }
 
@@ -366,42 +450,53 @@ body, #app-container {
 /* Se aplica solo en pantallas de escritorio (md y superiores) */
 @media (min-width: 768px) {
     #sidebar {
-        width: 5rem; /* 80px */
+        width: 5rem;
+        /* 80px */
     }
 
     #sidebar .nav-link span,
     #sidebar .sidebar-text {
-        display: none; /* Oculta el texto por defecto */
+        display: none;
+        /* Oculta el texto por defecto */
     }
-    
+
     #sidebar .nav-link {
-        justify-content: center; /* Centra el ícono */
+        justify-content: center;
+        /* Centra el ícono */
     }
 
     #sidebar .nav-link svg {
-        margin-right: 0; /* Quita el margen del ícono */
+        margin-right: 0;
+        /* Quita el margen del ícono */
     }
 
     #main-content {
-        margin-left: 5rem; /* Mantiene el espacio para el menú colapsado */
+        margin-left: 5rem;
+        /* Mantiene el espacio para el menú colapsado */
     }
 }
 
 /* --- ESTADO EXPANDIDO (AL PASAR EL MOUSE) --- */
 #sidebar.is-expanded-hover {
-    width: 16rem; /* 256px */
-    position: fixed; /* Lo hacemos flotante para que no empuje el contenido */
-    z-index: 40;     /* Se asegura que esté por encima del contenido */
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* Sombra opcional */
+    width: 16rem;
+    /* 256px */
+    position: fixed;
+    /* Lo hacemos flotante para que no empuje el contenido */
+    z-index: 40;
+    /* Se asegura que esté por encima del contenido */
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    /* Sombra opcional */
 }
 
 #sidebar.is-expanded-hover .nav-link span,
 #sidebar.is-expanded-hover .sidebar-text {
-    display: inline; /* Muestra el texto cuando está expandido */
+    display: inline;
+    /* Muestra el texto cuando está expandido */
 }
 
 #sidebar.is-expanded-hover .nav-link {
-    justify-content: flex-start; /* Alinea el ícono y texto a la izquierda */
+    justify-content: flex-start;
+    /* Alinea el ícono y texto a la izquierda */
 }
 
 /*
@@ -412,26 +507,30 @@ body, #app-container {
 
 /* En pantallas de menos de 640px (móviles) */
 @media (max-width: 640px) {
-  
-  /* Hace que los grupos de botones principales ocupen todo el ancho */
-  #project-actions {
-    width: 100%;
-    margin-top: 1rem; /* Añade un espacio arriba */
-  }
 
-  /* Hace que cada botón dentro de esos grupos se expanda */
-  #project-actions button {
-    width: 100%;
-    text-align: center;
-  }
+    /* Hace que los grupos de botones principales ocupen todo el ancho */
+    #project-actions {
+        width: 100%;
+        margin-top: 1rem;
+        /* Añade un espacio arriba */
+    }
 
-  /* Ajusta los botones en las tarjetas de proyecto */
-  .project-card .flex-wrap {
-    justify-content: center; /* Centra los botones */
-  }
-  .project-card .flex-wrap button {
-    flex-grow: 1; /* Permite que los botones crezcan y ocupen espacio */
-  }
+    /* Hace que cada botón dentro de esos grupos se expanda */
+    #project-actions button {
+        width: 100%;
+        text-align: center;
+    }
+
+    /* Ajusta los botones en las tarjetas de proyecto */
+    .project-card .flex-wrap {
+        justify-content: center;
+        /* Centra los botones */
+    }
+
+    .project-card .flex-wrap button {
+        flex-grow: 1;
+        /* Permite que los botones crezcan y ocupen espacio */
+    }
 }
 
 /*
@@ -442,17 +541,17 @@ body, #app-container {
 
 /* Define un espacio entre el título (dt) y su valor (dd) */
 dl dt {
-  margin-bottom: 0.25rem;
+    margin-bottom: 0.25rem;
 }
 
 /* Asegura que los 'span' dentro de los detalles se muestren correctamente */
 dl dd span.block {
-  display: block;
-  margin-bottom: 0.25rem;
+    display: block;
+    margin-bottom: 0.25rem;
 }
 
 dl dd span.block:last-child {
-  margin-bottom: 0;
+    margin-bottom: 0;
 }
 
 /* Estado por defecto: Menú expandido (como en móvil) */
@@ -460,6 +559,7 @@ dl dd span.block:last-child {
 #sidebar .full-title {
     display: inline;
 }
+
 #sidebar .initials-title {
     display: none;
 }
@@ -468,6 +568,7 @@ dl dd span.block:last-child {
 #sidebar.is-collapsed .full-title {
     display: none;
 }
+
 #sidebar.is-collapsed .initials-title {
     display: inline;
 }
@@ -476,6 +577,7 @@ dl dd span.block:last-child {
 #sidebar.is-collapsed.is-expanded-hover .full-title {
     display: inline;
 }
+
 #sidebar.is-collapsed.is-expanded-hover .initials-title {
     display: none;
 }
@@ -519,6 +621,7 @@ dl dd span.block:last-child {
     /* Por defecto, 1 columna para móviles */
     grid-template-columns: repeat(1, minmax(0, 1fr));
     gap: 1.5rem; /* 24px - Espacio entre tarjetas */
+    align-items: stretch; /* <-- AÑADE ESTA LÍNEA */
 }
 
 /* En pantallas medianas (md) y superiores, cambiamos a 2 columnas */
@@ -528,18 +631,21 @@ dl dd span.block:last-child {
     }
 }
 
-/* La tarjeta individual ya no necesita 'break-inside' o 'margin-bottom' aquí,
-   el 'gap' del grid se encarga del espaciado. */
 .task-card {
     /* La altura (h-full) se aplica desde JavaScript */
+    display: grid; /* <-- AÑADE ESTA LÍNEA */
+    grid-template-rows: 1fr auto; /* <-- AÑADE ESTA LÍNEA */
 }
 
 
 /* Estilos para la barra de progreso (sin cambios) */
 .task-progress-bar-bg {
-    background-color: #e5e7eb; /* gris-200 */
-    border-radius: 9999px; /* rounded-full */
-    height: 0.75rem; /* h-3 */
+    background-color: #e5e7eb;
+    /* gris-200 */
+    border-radius: 9999px;
+    /* rounded-full */
+    height: 0.75rem;
+    /* h-3 */
     overflow: hidden;
 }
 
@@ -549,5 +655,3 @@ dl dd span.block:last-child {
     border-radius: 9999px; /* rounded-full */
     transition: width 0.5s ease-in-out;
 }
-
-/* --- FIN: Estilos para Tarjetas de Tareas --- */
