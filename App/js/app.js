@@ -38,6 +38,8 @@ let unsubscribePurchaseOrders = null;
 let unsubscribeInventory = null;
 let unsubscribeStock = null;
 let unsubscribeMaterialRequests = null;
+const materialStatusListeners = new Map();
+let materialRequestReturnContext = { view: 'proyectos' };
 let currentCorte = null;
 let unsubscribePeopleOfInterest = null;
 let unsubscribePayments = null;
@@ -1411,21 +1413,25 @@ function switchProjectTab(tabName) {
     syncTabsState(tabName);
 }
 
-
-
-// --- LÓGICA DE DETALLES DEL PROYECTO ---
 async function showProjectDetails(project, defaultTab = 'info-general') {
+    // --- INICIO DE LA MODIFICACIÓN ---
+    // Establecer el contexto de retorno CADA VEZ que se entra a esta vista
+    materialRequestReturnContext = { view: 'proyecto-detalle', projectId: project.id };
+    console.log("Contexto de retorno establecido en: proyecto-detalle"); // Log para depuración
+    // --- FIN DE LA MODIFICACIÓN ---
+
     currentProject = project;
     showView('projectDetails');
     setupResponsiveTabs();
 
-    const safeSetText = (id, text) => {
+    const safeSetText = (id, text) => { /* ... */
         const element = document.getElementById(id);
         if (element) element.textContent = text;
     };
 
     // --- Rellenar datos estáticos (sin cambios) ---
     safeSetText('project-details-name', project.name);
+    // ... (resto del código sin cambios) ...
     safeSetText('project-details-builder', project.builderName || 'Constructora no especificada');
     safeSetText('project-details-startDate', project.startDate ? new Date(project.startDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A');
     safeSetText('project-kickoffDate', project.kickoffDate ? new Date(project.kickoffDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A');
@@ -1435,13 +1441,8 @@ async function showProjectDetails(project, defaultTab = 'info-general') {
         : 'Suministro e Instalación (Separado)';
     safeSetText('project-details-pricingModel', pricingModelText);
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Ya no llamamos a la función eliminada. Obtenemos los 'stats' directamente del objeto del proyecto.
     const stats = project.progressSummary || { executedValue: 0, totalItems: 0, executedItems: 0, executedM2: 0, totalM2: 0 };
-
-    // El cálculo del valor contratado sí lo seguimos haciendo en el cliente por ahora.
     const contractedValue = await calculateProjectContractedValue(project.id);
-    // --- FIN DE LA CORRECCIÓN ---
 
     safeSetText('info-initial-contract-value', currencyFormatter.format(project.value || 0));
     safeSetText('info-contracted-value', currencyFormatter.format(contractedValue));
@@ -1449,9 +1450,8 @@ async function showProjectDetails(project, defaultTab = 'info-general') {
     safeSetText('project-details-installedItems', `${stats.executedItems} / ${stats.totalItems}`);
     safeSetText('project-details-executedM2', `${stats.executedM2.toFixed(2)}m² / ${stats.totalM2.toFixed(2)}m²`);
 
-    // --- Cargar el resto de los datos y pestañas (sin cambios) ---
     const paymentsQuery = query(collection(db, "projects", project.id, "payments"));
-    onSnapshot(paymentsQuery, (paymentsSnapshot) => {
+    onSnapshot(paymentsQuery, (paymentsSnapshot) => { /* ... */
         const allPayments = paymentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         updateGeneralInfoSummary(project, allPayments);
     });
@@ -1460,8 +1460,9 @@ async function showProjectDetails(project, defaultTab = 'info-general') {
     loadItems(project.id);
     loadCortes(project);
     loadPeopleOfInterest(project.id);
+
     loadPayments(project);
-    loadMaterialsTab(project);
+    loadMaterialsTab(project, null);
 
     switchProjectTab(defaultTab);
 }
@@ -4103,119 +4104,250 @@ async function openMainModal(type, data = {}) {
             setTimeout(loadDataAndBuildForm, 50);
             break;
         }
-        case 'new-task':
-            title = 'Crear Nueva Tarea';
-            btnText = 'Guardar Tarea';
-            btnClass = 'bg-green-500 hover:bg-green-600';
+        case 'edit-task': { // Case con formato mejorado
+            title = 'Editar Tarea';
+            btnText = 'Guardar Cambios';
+            btnClass = 'bg-yellow-500 hover:bg-yellow-600';
+            modalForm.dataset.id = data.id; // Guardamos el ID de la tarea
 
-            // --- Cargar datos necesarios ANTES de construir el HTML ---
-            modalBody.innerHTML = '<div class="text-center py-5"><div class="loader mx-auto"></div> Cargando datos...</div>'; // Mostrar carga
-            mainModal.style.display = 'flex'; // Mostrar modal para ver la carga
+            modalBody.innerHTML = '<div class="text-center py-5"><div class="loader mx-auto"></div> Cargando datos...</div>';
+            mainModal.style.display = 'flex';
 
-            let activeProjects = [];
-            let allActiveUsers = []; // Cambiado para incluir todos los roles activos
+            let allActiveUsers = [];
             try {
-                // Obtener proyectos ACTIVOS
-                const projectsQuery = query(collection(db, "projects"), where("status", "==", "active"), orderBy("name"));
-                const projectsSnapshot = await getDocs(projectsQuery);
-                activeProjects = projectsSnapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
-
-                // Obtener TODOS los usuarios ACTIVOS (usando el usersMap global)
                 usersMap.forEach((user, userId) => {
                     if (user.status === 'active') {
                         allActiveUsers.push({ id: userId, name: `${user.firstName} ${user.lastName}` });
                     }
                 });
-                // Ordenar usuarios alfabéticamente por nombre
                 allActiveUsers.sort((a, b) => a.name.localeCompare(b.name));
+            } catch (error) {
+                console.error("Error cargando usuarios para editar tarea:", error);
+                closeMainModal();
+                alert("Error al cargar usuarios.");
+                return;
+            }
 
+            // --- Construcción del HTML con formato mejorado ---
+            const additionalAssigneeValues = (data.additionalAssigneeIds || []).map(id => ({ value: id }));
+
+            bodyHtml = `
+                <div class="space-y-6"> 
+
+                     <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
+                         <h4 class="text-md font-semibold text-gray-700 mb-2 border-b pb-1">1. Información Principal</h4>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500 mb-1">Proyecto</label>
+                            <p class="mt-1 font-semibold bg-white p-2 border rounded-md text-gray-700">${data.projectName || 'N/A'}</p>
+                            <input type="hidden" name="projectId" value="${data.projectId}">
+                            <input type="hidden" name="projectName" value="${data.projectName}">
+                        </div>
+
+                        <div>
+                            <label for="edit-task-assignee-choices" class="block text-sm font-medium mb-1">Asignar A (Principal)</label>
+                            <select id="edit-task-assignee-choices" name="assigneeId" required placeholder="Buscar o seleccionar usuario..."></select>
+                            <input type="hidden" name="assigneeName">
+                        </div>
+                    </div>
+
+                    <div class="border border-gray-200 rounded-lg p-4 bg-gray-100">
+                        <label class="block text-sm font-medium text-gray-600 mb-2">2. Ítems Relacionados (No editable)</label>
+                        <ul id="edit-task-items-list" class="max-h-40 overflow-y-auto space-y-1 text-sm text-gray-700 pl-5 pr-2">
+                            <li class="italic text-gray-500">Cargando ítems...</li>
+                        </ul>
+                    </div>
+
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
+                         <h4 class="text-md font-semibold text-gray-700 mb-2 border-b pb-1">3. Detalles de la Tarea</h4>
+                        <div>
+                            <label for="edit-task-description" class="block text-sm font-medium mb-1">Descripción de la Tarea</label>
+                            <textarea id="edit-task-description" name="description" rows="3" required class="mt-1 w-full border rounded-md p-2 text-sm">${data.description || ''}</textarea>
+                        </div>
+
+                        <div>
+                            <label for="edit-task-additional-assignees-choices" class="block text-sm font-medium mb-1">Asignar a Personas Adicionales</label>
+                            <select id="edit-task-additional-assignees-choices" name="additionalAssigneeIds" multiple placeholder="Buscar o añadir más usuarios..."></select>
+                        </div>
+
+                        <div>
+                            <label for="edit-task-dueDate" class="block text-sm font-medium mb-1">Fecha Límite</label>
+                            <input type="date" id="edit-task-dueDate" name="dueDate" class="mt-1 w-full border rounded-md p-2 text-sm" value="${data.dueDate || ''}">
+                        </div>
+                    </div>
+
+                </div>`; // Fin de space-y-6
+
+            modalBody.innerHTML = bodyHtml;
+
+            // --- Inicialización de Choices.js y Lógica Dinámica (sin cambios) ---
+            setTimeout(() => {
+                // Asignado Principal
+                const assigneeElement = document.getElementById('edit-task-assignee-choices');
+                const assigneeChoices = new Choices(assigneeElement, { /* ... opciones ... */
+                    choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
+                    searchPlaceholderValue: "Buscar usuario...", itemSelectText: 'Seleccionar', allowHTML: false,
+                });
+                if (data.assigneeId) {
+                    assigneeChoices.setValue([{ value: data.assigneeId, label: data.assigneeName || 'Usuario' }]);
+                    modalForm.querySelector('input[name="assigneeName"]').value = data.assigneeName || '';
+                }
+                assigneeElement.addEventListener('change', (event) => { /* ... (código para guardar nombre) ... */
+                    const selectedAssigneeId = event.detail.value;
+                    const assigneeNameInput = modalForm.querySelector('input[name="assigneeName"]');
+                    const selectedUser = allActiveUsers.find(u => u.id === selectedAssigneeId);
+                    assigneeNameInput.value = selectedUser ? selectedUser.name : '';
+                });
+
+                // Asignados Adicionales
+                const additionalAssigneesElement = document.getElementById('edit-task-additional-assignees-choices');
+                const additionalAssigneesChoices = new Choices(additionalAssigneesElement, { /* ... opciones ... */
+                    choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
+                    removeItemButton: true, searchPlaceholderValue: "Añadir más usuarios...", allowHTML: false,
+                });
+                if (additionalAssigneeValues.length > 0) {
+                    const preSelectedLabels = additionalAssigneeValues.map(v => {
+                        const user = allActiveUsers.find(u => u.id === v.value);
+                        return { value: v.value, label: user ? user.name : 'Usuario Desconocido' };
+                    });
+                    additionalAssigneesChoices.setValue(preSelectedLabels);
+                }
+
+                // Cargar y mostrar los ítems (solo visualización)
+                const itemsListUl = document.getElementById('edit-task-items-list');
+                if (data.selectedItems && data.selectedItems.length > 0) {
+                    const itemDetailPromises = data.selectedItems.map(async itemInfo => { /* ... (código para cargar nombres) ... */
+                        try {
+                            const itemDoc = await getDoc(doc(db, "items", itemInfo.itemId));
+                            const itemName = itemDoc.exists() ? itemDoc.data().name : `ID: ${itemInfo.itemId}`;
+                            return `<li class="list-disc">${itemInfo.quantity} x ${itemName}</li>`; // Añadido list-disc
+                        } catch { return `<li class="list-disc text-red-500">Error cargando ítem</li>`; } // Añadido list-disc
+                    });
+                    Promise.all(itemDetailPromises).then(htmlItems => {
+                        if (itemsListUl) itemsListUl.innerHTML = htmlItems.join('');
+                    });
+                } else {
+                    if (itemsListUl) itemsListUl.innerHTML = '<li class="italic text-gray-500">No hay ítems asociados.</li>';
+                }
+
+                // Fecha mínima
+                const dueDateInput = modalBody.querySelector('#edit-task-dueDate');
+                if (dueDateInput) {
+                    dueDateInput.min = new Date().toISOString().split("T")[0];
+                }
+
+                // Destruir Choices al cerrar
+                mainModal.addEventListener('close', () => {
+                    assigneeChoices.destroy();
+                    additionalAssigneesChoices.destroy();
+                }, { once: true });
+
+            }, 150);
+
+            break; // Fin del case 'edit-task'
+        }
+        case 'new-task': { // Case con formato mejorado
+            title = 'Crear Nueva Tarea';
+            btnText = 'Guardar Tarea';
+            btnClass = 'bg-green-500 hover:bg-green-600';
+
+            modalBody.innerHTML = '<div class="text-center py-5"><div class="loader mx-auto"></div> Cargando datos...</div>';
+            mainModal.style.display = 'flex';
+
+            let activeProjects = [];
+            let allActiveUsers = [];
+            try {
+                const projectsQuery = query(collection(db, "projects"), where("status", "==", "active"), orderBy("name"));
+                const projectsSnapshot = await getDocs(projectsQuery);
+                activeProjects = projectsSnapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
+
+                usersMap.forEach((user, userId) => {
+                    if (user.status === 'active') {
+                        allActiveUsers.push({ id: userId, name: `${user.firstName} ${user.lastName}` });
+                    }
+                });
+                allActiveUsers.sort((a, b) => a.name.localeCompare(b.name));
 
             } catch (error) {
                 console.error("Error cargando datos para nueva tarea:", error);
                 closeMainModal();
                 alert("Error al cargar la información necesaria para crear la tarea.");
-                return; // Salir si hay error
+                return;
             }
-            // --- Fin de la carga de datos ---
 
-            // --- Construcción del HTML con las mejoras ---
+            // --- Construcción del HTML con formato mejorado ---
             bodyHtml = `
-                <div class="space-y-4">
-                    <div>
-                        <label for="task-project-choices" class="block text-sm font-medium">Proyecto (Activos)</label>
-                        <select id="task-project-choices" name="projectId" required placeholder="Buscar o seleccionar proyecto..."></select>
-                    </div>
+                <div class="space-y-6">
 
-                    <div>
-                        <label for="task-assignee-choices" class="block text-sm font-medium">Asignar A (Principal)</label>
-                        <select id="task-assignee-choices" name="assigneeId" required placeholder="Buscar o seleccionar usuario..."></select>
-                    </div>
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
+                         <h4 class="text-md font-semibold text-gray-700 mb-2 border-b pb-1">1. Información Principal</h4>
+                        <div>
+                            <label for="task-project-choices" class="block text-sm font-medium mb-1">Proyecto (Activos)</label>
+                            <select id="task-project-choices" name="projectId" required placeholder="Buscar o seleccionar proyecto..."></select>
+                             <input type="hidden" name="projectName"> 
+                        </div>
 
-                    <div id="task-items-selection" class="hidden border rounded-md p-3">
-                            <label class="block text-sm font-medium mb-2">Ítems Relacionados <span class="text-red-500">*</span></label>                        <div id="task-items-list" class="max-h-40 overflow-y-auto space-y-1 text-sm">
-                            <p class="text-gray-400">Selecciona un proyecto para ver sus ítems.</p>
+                        <div>
+                            <label for="task-assignee-choices" class="block text-sm font-medium mb-1">Asignar A (Principal)</label>
+                            <select id="task-assignee-choices" name="assigneeId" required placeholder="Buscar o seleccionar usuario..."></select>
+                            <input type="hidden" name="assigneeName">
                         </div>
                     </div>
 
-                    <div>
-                        <label for="task-description" class="block text-sm font-medium">Descripción de la Tarea</label>
-                        <textarea id="task-description" name="description" rows="2" required class="mt-1 w-full border rounded-md p-2" placeholder="Describe brevemente la tarea..."></textarea>
+                    <div id="task-items-selection" class="hidden border border-gray-200 rounded-lg p-4">
+                        <label class="block text-sm font-medium mb-2 text-gray-700">2. Ítems Relacionados <span class="text-red-500 font-semibold">*</span></label>
+                        <div id="task-items-list" class="max-h-48 overflow-y-auto space-y-2 text-sm pr-2">
+                            <p class="text-gray-400 italic">Selecciona un proyecto para ver sus ítems.</p>
+                        </div>
                     </div>
 
-                    <div>
-                        <label for="task-additional-assignees-choices" class="block text-sm font-medium">Asignar a Personas Adicionales (Opcional)</label>
-                        <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple placeholder="Buscar o añadir más usuarios..."></select>
+                     <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
+                         <h4 class="text-md font-semibold text-gray-700 mb-2 border-b pb-1">3. Detalles de la Tarea</h4>
+                        <div>
+                            <label for="task-description" class="block text-sm font-medium mb-1">Descripción de la Tarea</label>
+                            <textarea id="task-description" name="description" rows="3" required class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="Describe brevemente la tarea..."></textarea>
+                        </div>
+
+                        <div>
+                            <label for="task-additional-assignees-choices" class="block text-sm font-medium mb-1">Asignar a Personas Adicionales (Opcional)</label>
+                            <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple placeholder="Buscar o añadir más usuarios..."></select>
+                        </div>
+
+                        <div>
+                            <label for="task-dueDate" class="block text-sm font-medium mb-1">Fecha Límite (Opcional)</label>
+                            <input type="date" id="task-dueDate" name="dueDate" class="mt-1 w-full border rounded-md p-2 text-sm">
+                        </div>
                     </div>
 
-                    <div>
-                        <label for="task-dueDate" class="block text-sm font-medium">Fecha Límite (Opcional)</label>
-                        <input type="date" id="task-dueDate" name="dueDate" class="mt-1 w-full border rounded-md p-2">
-                    </div>
+                </div>`; // Fin de space-y-6
 
-                    <input type="hidden" name="projectName">
-                    <input type="hidden" name="assigneeName">
-                </div>`;
-
-            // Actualizamos el cuerpo del modal
             modalBody.innerHTML = bodyHtml;
-            // Reasignamos título y botón
             document.getElementById('modal-title').textContent = title;
             const confirmBtn = document.getElementById('modal-confirm-btn');
             confirmBtn.textContent = btnText;
             confirmBtn.className = `text-white font-bold py-2 px-4 rounded-lg transition-all ${btnClass}`;
 
-
-            // --- Inicialización de Choices.js y Lógica Dinámica ---
+            // --- Inicialización de Choices.js y Lógica Dinámica (sin cambios) ---
             setTimeout(() => {
-                // Inicializar Choices para Proyectos
                 const projectElement = document.getElementById('task-project-choices');
-                const projectChoices = new Choices(projectElement, {
+                const projectChoices = new Choices(projectElement, { /* ... opciones ... */
                     choices: activeProjects.map(p => ({ value: p.id, label: p.name })),
-                    searchPlaceholderValue: "Buscar proyecto...",
-                    itemSelectText: 'Seleccionar',
-                    allowHTML: false, // Por seguridad
+                    searchPlaceholderValue: "Buscar proyecto...", itemSelectText: 'Seleccionar', allowHTML: false,
                 });
 
-                // Inicializar Choices para Asignado Principal
                 const assigneeElement = document.getElementById('task-assignee-choices');
-                const assigneeChoices = new Choices(assigneeElement, {
+                const assigneeChoices = new Choices(assigneeElement, { /* ... opciones ... */
                     choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
-                    searchPlaceholderValue: "Buscar usuario...",
-                    itemSelectText: 'Seleccionar',
-                    allowHTML: false,
+                    searchPlaceholderValue: "Buscar usuario...", itemSelectText: 'Seleccionar', allowHTML: false,
                 });
 
-                // Inicializar Choices para Asignados Adicionales (Multiple)
                 const additionalAssigneesElement = document.getElementById('task-additional-assignees-choices');
-                const additionalAssigneesChoices = new Choices(additionalAssigneesElement, {
+                const additionalAssigneesChoices = new Choices(additionalAssigneesElement, { /* ... opciones ... */
                     choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
-                    removeItemButton: true,
-                    searchPlaceholderValue: "Añadir más usuarios...",
-                    allowHTML: false,
+                    removeItemButton: true, searchPlaceholderValue: "Añadir más usuarios...", allowHTML: false,
                 });
 
                 // --- Lógica para cargar ítems al seleccionar proyecto ---
-                projectElement.addEventListener('change', async (event) => {
+                projectElement.addEventListener('change', async (event) => { /* ... (código existente sin cambios) ... */
                     const selectedProjectId = event.detail.value;
                     const itemsSelectionDiv = document.getElementById('task-items-selection');
                     const itemsListDiv = document.getElementById('task-items-list');
@@ -4241,12 +4373,12 @@ async function openMainModal(type, data = {}) {
                                     const item = { id: doc.id, ...doc.data() };
                                     // Creamos el HTML para cada ítem con el campo de cantidad
                                     itemsListDiv.innerHTML += `
-                                        <div class="task-item-row flex items-center justify-between py-1">
-                                            <label class="inline-flex items-center flex-grow mr-2">
+                                        <div class="task-item-row flex items-center justify-between py-1 hover:bg-gray-100 px-1 rounded">
+                                            <label class="inline-flex items-center flex-grow mr-2 cursor-pointer"> 
                                                 <input type="checkbox" name="selectedItemIds" value="${item.id}" data-item-quantity="${item.quantity}" class="item-checkbox rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
                                                 <span class="ml-2 truncate" title="${item.name}">${item.name}</span>
                                             </label>
-                                            <input type="number" name="itemQuantity_${item.id}" min="1" max="${item.quantity}" placeholder="Cant." class="item-quantity-input w-20 border rounded-md p-1 text-sm bg-gray-100" disabled>
+                                            <input type="number" name="itemQuantity_${item.id}" min="1" max="${item.quantity}" placeholder="Cant." class="item-quantity-input w-20 border rounded-md p-1 text-sm bg-gray-100 focus:bg-white focus:ring-1 focus:ring-blue-300" disabled>
                                         </div>
                                     `;
                                 });
@@ -4258,11 +4390,10 @@ async function openMainModal(type, data = {}) {
                                         if (quantityInput) {
                                             quantityInput.disabled = !e.target.checked;
                                             quantityInput.classList.toggle('bg-gray-100', !e.target.checked); // Visual feedback
+                                            quantityInput.classList.toggle('focus:bg-white', e.target.checked); // Estilo focus
                                             if (!e.target.checked) {
                                                 quantityInput.value = ''; // Limpiar cantidad si se desmarca
                                             } else {
-                                                // Opcional: poner 1 por defecto al marcar
-                                                // quantityInput.value = quantityInput.value || '1';
                                                 quantityInput.focus(); // Poner foco para ingresar cantidad
                                             }
                                         }
@@ -4281,14 +4412,14 @@ async function openMainModal(type, data = {}) {
                     }
                 });
 
+
                 // Guardar nombre del asignado principal
-                assigneeElement.addEventListener('change', (event) => {
+                assigneeElement.addEventListener('change', (event) => { /* ... (código existente sin cambios) ... */
                     const selectedAssigneeId = event.detail.value;
                     const assigneeNameInput = modalForm.querySelector('input[name="assigneeName"]'); // Campo oculto
                     const selectedUser = allActiveUsers.find(u => u.id === selectedAssigneeId);
                     assigneeNameInput.value = selectedUser ? selectedUser.name : '';
                 });
-
 
                 // Establecer fecha mínima para dueDate
                 const dueDateInput = modalBody.querySelector('#task-dueDate');
@@ -4296,17 +4427,17 @@ async function openMainModal(type, data = {}) {
                     dueDateInput.min = new Date().toISOString().split("T")[0];
                 }
 
-                // Destruir instancias de Choices al cerrar el modal (Buena práctica)
-                mainModal.addEventListener('close', () => { // Asumiendo que hay un evento 'close' o similar
+                // Destruir instancias de Choices al cerrar el modal
+                mainModal.addEventListener('close', () => {
                     projectChoices.destroy();
                     assigneeChoices.destroy();
                     additionalAssigneesChoices.destroy();
-                }, { once: true }); // Solo ejecutar una vez al cerrar
+                }, { once: true });
 
+            }, 150);
 
-            }, 150); // Aumentar ligeramente el delay para asegurar que el HTML esté listo
-
-            break;
+            break; // Fin del case 'new-task'
+        }
         case 'editProfile':
             title = 'Mi Perfil'; btnText = 'Guardar Cambios'; btnClass = 'bg-blue-500 hover:bg-blue-600';
             bodyHtml = `<div class="space-y-4">
@@ -4414,7 +4545,39 @@ modalForm.addEventListener('submit', async (e) => {
             await addDoc(collection(db, "materialCatalog"), catalogData);
             break;
         }
+        case 'edit-task': { // Nuevo case para guardar edición de tarea
+            const taskId = id; // El ID de la tarea se guardó en modalForm.dataset.id
+            if (!taskId) {
+                alert("Error: No se pudo identificar la tarea a editar.");
+                break;
+            }
 
+            // Recolectar datos actualizados del formulario
+            const assigneeId = data.assigneeId;
+            const assigneeName = data.assigneeName; // Nombre guardado desde el cambio en Choices
+            const additionalAssignees = data.additionalAssigneeIds ?
+                (Array.isArray(data.additionalAssigneeIds) ? data.additionalAssigneeIds : [data.additionalAssigneeIds])
+                : [];
+
+            const updatedTaskData = {
+                assigneeId: assigneeId,
+                assigneeName: assigneeName,
+                additionalAssigneeIds: additionalAssignees,
+                description: data.description,
+                dueDate: data.dueDate || null,
+                // No actualizamos projectId, projectName, selectedItems, specificSubItemIds
+            };
+
+            try {
+                await updateDoc(doc(db, "tasks", taskId), updatedTaskData);
+                console.log(`Tarea ${taskId} actualizada.`);
+                // La vista se refrescará automáticamente por onSnapshot
+            } catch (error) {
+                console.error(`Error al actualizar la tarea ${taskId}:`, error);
+                alert("No se pudo guardar los cambios en la tarea.");
+            }
+            break; // Fin del case 'edit-task'
+        }
         case 'edit-catalog-item': {
             const measurementType = data.measurementType;
             const isDivisible = measurementType === 'linear' || measurementType === 'area';
@@ -5183,6 +5346,15 @@ function closeMultipleProgressModal() {
     if (multipleProgressModal) {
         multipleProgressModal.style.display = 'none';
     }
+
+    // --- INICIO DE LA MODIFICACIÓN ---
+    // Reseteamos el botón CADA VEZ que el modal se cierra
+    const confirmBtn = document.getElementById('multiple-progress-modal-confirm-btn');
+    if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Guardar Cambios';
+    }
+    // --- FIN DE LA MODIFICACIÓN ---
 }
 
 /**
@@ -5248,207 +5420,263 @@ if (cancelBtn) {
 }
 
 document.getElementById('multiple-progress-modal-confirm-btn').addEventListener('click', async () => {
-        const confirmBtn = document.getElementById('multiple-progress-modal-confirm-btn');
-        const feedbackP = document.getElementById('multiple-progress-feedback');
+    const confirmBtn = document.getElementById('multiple-progress-modal-confirm-btn');
+    const feedbackP = document.getElementById('multiple-progress-feedback');
 
-        // Prevenir doble clic si ya está guardando
-        if (confirmBtn.disabled) return; 
-        
-        confirmBtn.disabled = true;
-        confirmBtn.textContent = 'Guardando...';
-        if (feedbackP) {
-            feedbackP.textContent = 'Validando y actualizando datos...';
-            feedbackP.className = 'text-sm mt-4 text-center text-blue-600';
+    if (confirmBtn.disabled) return;
+
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Guardando...';
+    if (feedbackP) {
+        feedbackP.textContent = 'Validando y actualizando datos...';
+        feedbackP.className = 'text-sm mt-4 text-center text-blue-600';
+    }
+
+    let success = false;
+    let isTaskNowComplete = false;
+    let validationError = null;
+
+    try {
+        const originatingTaskId = confirmBtn.dataset.originatingTaskId;
+
+        const commonData = {
+            manufacturer: document.getElementById('multiple-sub-item-manufacturer').value,
+            installer: document.getElementById('multiple-sub-item-installer').value,
+            installDate: document.getElementById('multiple-sub-item-date').value,
+        };
+
+        const tableRows = document.querySelectorAll('#multiple-progress-table-body tr.subitem-row');
+
+        // --- INICIO DE LA NUEVA VALIDACIÓN ---
+        // 1. Revisamos si el usuario llenó al menos una ubicación
+        let locationFilled = false;
+        for (const row of tableRows) {
+            if (row.querySelector('.location-input').value.trim()) {
+                locationFilled = true;
+                break; // Si encontramos una, no necesitamos seguir buscando
+            }
         }
 
-        let success = false; // Bandera para saber si el guardado fue exitoso
+        // 2. Si llenó una ubicación, validamos Fabricante e Instalador
+        if (locationFilled) {
+            // Check 2.1: Fabricante (solo si se registró algún avance)
+            if (!commonData.manufacturer) {
+                validationError = `Debes seleccionar un 'Fabricante (para todos)' si registras avance.`;
+            }
+            // Check 2.2: Instalador (solo si se registró algún avance)
+            else if (!commonData.installer) { // Usamos else if para mostrar un error a la vez
+                validationError = `Debes seleccionar un 'Instalador (para todos)' si registras avance.`;
+            }
+        }
+        // --- FIN DE LA NUEVA VALIDACIÓN ---
 
-        try {
-            const originatingTaskId = confirmBtn.dataset.originatingTaskId;
+        // 3. Si hubo error en la validación anterior, detenemos
+        if (validationError) {
+            alert(validationError);
+            if (feedbackP) {
+                feedbackP.textContent = 'Revisa los campos obligatorios.';
+                feedbackP.className = 'text-sm mt-4 text-center text-red-600';
+            }
+            throw new Error("Error de validación de usuario (Fabricante/Instalador).");
+        }
 
-            const commonData = {
-                manufacturer: document.getElementById('multiple-sub-item-manufacturer').value,
-                installer: document.getElementById('multiple-sub-item-installer').value,
-                installDate: document.getElementById('multiple-sub-item-date').value,
+
+        const batch = writeBatch(db);
+        const photoUploads = [];
+        const updatedSubItemIds = [];
+        let rowsProcessed = 0;
+
+        // 4. Obtener IDs y datos (sin cambios)
+        const subItemIdsInModal = Array.from(tableRows).map(row => row.dataset.id);
+        const subItemsMap = new Map();
+        if (subItemIdsInModal.length > 0) {
+            const MAX_IN_QUERY = 30;
+            for (let i = 0; i < subItemIdsInModal.length; i += MAX_IN_QUERY) {
+                const chunkIds = subItemIdsInModal.slice(i, i + MAX_IN_QUERY);
+                const subItemsChunkQuery = query(collection(db, "subItems"), where("__name__", "in", chunkIds));
+                const subItemsChunkSnapshot = await getDocs(subItemsChunkQuery);
+                subItemsChunkSnapshot.forEach(doc => subItemsMap.set(doc.id, doc.data()));
+            }
+        }
+
+
+        // 5. Iterar y validar (Validaciones de Foto y Estado sin cambios)
+        for (const row of tableRows) {
+            const subItemId = row.dataset.id;
+            const subItemData = subItemsMap.get(subItemId) || {};
+            const individualData = {
+                location: row.querySelector('.location-input').value.trim(),
+                realWidth: parseFloat(row.querySelector('.real-width-input').value) || 0,
+                realHeight: parseFloat(row.querySelector('.real-height-input').value) || 0,
             };
+            const photoFile = row.querySelector('.photo-input').files[0];
 
-            const tableRows = document.querySelectorAll('#multiple-progress-table-body tr.subitem-row');
-            
-            const batch = writeBatch(db);
-            const photoUploads = [];
-            const updatedSubItemIds = [];
-            let rowsProcessed = 0;
-            let validationError = null;
-            
-            // 1. Obtener IDs y datos
-            const subItemIdsInModal = Array.from(tableRows).map(row => row.dataset.id);
-            const subItemsMap = new Map();
-            
-            if (subItemIdsInModal.length > 0) {
-                const MAX_IN_QUERY = 30;
-                for (let i = 0; i < subItemIdsInModal.length; i += MAX_IN_QUERY) {
-                    const chunkIds = subItemIdsInModal.slice(i, i + MAX_IN_QUERY);
-                    const subItemsChunkQuery = query(collection(db, "subItems"), where("__name__", "in", chunkIds));
-                    const subItemsChunkSnapshot = await getDocs(subItemsChunkQuery);
-                    subItemsChunkSnapshot.forEach(doc => subItemsMap.set(doc.id, doc.data()));
+            if (!individualData.location) {
+                continue;
+            }
+
+            rowsProcessed++;
+            updatedSubItemIds.push(subItemId);
+
+            let finalStatus = subItemData.status;
+            if (commonData.installer) {
+                finalStatus = 'Instalado';
+            } else if (commonData.manufacturer) {
+                finalStatus = 'Pendiente de Instalación';
+            }
+
+            if (finalStatus === 'Instalado') {
+                // Check 2.1: Instalador (ya validado arriba, pero doble check por seguridad)
+                if (!commonData.installer) {
+                    validationError = `Falta seleccionar el 'Instalador (para todos)' para marcar ítems como Instalado.`;
+                    break;
+                }
+                // Check 2.2: Fecha (ya validado arriba, pero doble check por seguridad)
+                if (!commonData.installDate) {
+                    validationError = `Falta seleccionar la 'Fecha de Instalación (para todos)' para marcar ítems como Instalado.`;
+                    break;
+                }
+                // Check 2.3: Foto (nueva o existente)
+                if (!photoFile && !subItemData.photoURL) {
+                    validationError = `Falta la foto de evidencia para la Unidad N° ${subItemData.number || subItemId.substring(0, 5)}... (Lugar: ${individualData.location}).`;
+                    break;
                 }
             }
 
-            // 2. Iterar y validar
-            tableRows.forEach(row => {
-                const subItemId = row.dataset.id;
-                const subItemData = subItemsMap.get(subItemId) || {};
-                const individualData = {
-                    location: row.querySelector('.location-input').value.trim(),
-                    realWidth: parseFloat(row.querySelector('.real-width-input').value) || 0,
-                    realHeight: parseFloat(row.querySelector('.real-height-input').value) || 0,
-                };
-                const photoFile = row.querySelector('.photo-input').files[0];
+            const dataToUpdate = { ...commonData, ...individualData, status: finalStatus };
+            if (!commonData.manufacturer) delete dataToUpdate.manufacturer;
+            if (!commonData.installer) delete dataToUpdate.installer;
 
-                if (!individualData.location) {
-                    return; // Omite esta fila si no tiene ubicación
-                }
+            const subItemRef = doc(db, "subItems", subItemId);
+            batch.update(subItemRef, dataToUpdate);
 
-                rowsProcessed++;
-                updatedSubItemIds.push(subItemId);
-
-                let finalStatus = subItemData.status;
-                if (commonData.installer) {
-                    finalStatus = 'Instalado';
-                } else if (commonData.manufacturer) {
-                    finalStatus = 'Pendiente de Instalación';
-                }
-                
-                if (finalStatus === 'Instalado' && !photoFile && !subItemData.photoURL) {
-                    validationError = `La unidad N° ${subItemData.number || subItemId.substring(0,5)}... debe tener una foto de evidencia para marcarse como 'Instalado'.`;
-                    return;
-                }
-
-                const dataToUpdate = { ...commonData, ...individualData, status: finalStatus };
-                if (!commonData.manufacturer) delete dataToUpdate.manufacturer;
-                if (!commonData.installer) delete dataToUpdate.installer;
-
-                const subItemRef = doc(db, "subItems", subItemId);
-                batch.update(subItemRef, dataToUpdate);
-
-                if (photoFile) {
-                    if (subItemData && subItemData.projectId && subItemData.itemId) {
-                        const watermarkText = `Vidrios Exito - ${currentProject?.name || subItemData.projectId} - ${commonData.installDate} - ${individualData.location}`;
-                        photoUploads.push({ subItemId, photoFile, watermarkText, itemId: subItemData.itemId, projectId: subItemData.projectId });
-                    } else {
-                         console.warn(`No se pudo obtener projectId o itemId para ${subItemId}, no se subirá foto.`);
-                    }
-                }
-            });
-            
-            // 3. Validaciones Pre-Commit
-            if (validationError) {
-                 alert(validationError);
-                 if (feedbackP) {
-                     feedbackP.textContent = 'Revisa los campos obligatorios.';
-                     feedbackP.className = 'text-sm mt-4 text-center text-red-600';
-                 }
-                 return; // El bloque 'finally' se ejecutará y reactivará el botón
-            }
-
-            if (rowsProcessed === 0) {
-                alert("No se registró ningún avance. Debes llenar el campo 'Lugar de Instalación' para al menos una unidad.");
-                if (feedbackP) {
-                    feedbackP.textContent = 'Registro cancelado.';
-                    feedbackP.className = 'text-sm mt-4 text-center text-red-600';
-                }
-                return; // El bloque 'finally' se ejecutará y reactivará el botón
-            }
-
-            // 4. Guardar en Base de Datos
-            await batch.commit();
-            if (feedbackP) feedbackP.textContent = `Datos guardados para ${rowsProcessed} unidad(es). Procesando fotos...`;
-
-            for (const upload of photoUploads) {
-                try {
-                     const watermarkedBlob = await addWatermark(upload.photoFile, upload.watermarkText);
-                     const storageRef = ref(storage, `evidence/${upload.projectId}/${upload.itemId}/${upload.subItemId}`);
-                     const snapshot = await uploadBytes(storageRef, watermarkedBlob);
-                     const downloadURL = await getDownloadURL(snapshot.ref);
-                     await updateDoc(doc(db, "subItems", upload.subItemId), { photoURL: downloadURL });
-                } catch (photoError) {
-                     console.error(`Error procesando/subiendo foto para ${upload.subItemId}:`, photoError);
+            if (photoFile) {
+                if (subItemData && subItemData.projectId && subItemData.itemId) {
+                    const watermarkText = `Vidrios Exito - ${currentProject?.name || subItemData.projectId} - ${commonData.installDate} - ${individualData.location}`;
+                    photoUploads.push({ subItemId, photoFile, watermarkText, itemId: subItemData.itemId, projectId: subItemData.projectId });
+                } else {
+                    console.warn(`No se pudo obtener projectId o itemId para ${subItemId}, no se subirá foto.`);
                 }
             }
+        } // Fin del bucle for...of
 
-            // 5. Lógica de verificación de tarea
-            let feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)!`;
-            let feedbackClass = 'text-sm mt-4 text-center text-green-600';
 
-            if (originatingTaskId && commonData.installer) {
-                if (feedbackP) feedbackP.textContent = 'Fotos subidas. Verificando estado de la tarea...';
+        // 6. Validaciones Pre-Commit (Sin cambios)
+        if (validationError) {
+            alert(validationError);
+            if (feedbackP) {
+                feedbackP.textContent = 'Revisa los campos obligatorios.';
+                feedbackP.className = 'text-sm mt-4 text-center text-red-600';
+            }
+            // Usamos 'throw' para ir directamente al 'finally' y reactivar el botón
+            throw new Error("Error de validación de usuario.");
+        }
 
-                const checkQuery = query(
-                    collection(db, "subItems"),
-                    where("__name__", "in", subItemIdsInModal) 
-                );
+        if (rowsProcessed === 0) {
+            alert("No se registró ningún avance. Debes llenar el campo 'Lugar de Instalación' para al menos una unidad.");
+            if (feedbackP) {
+                feedbackP.textContent = 'Registro cancelado.';
+                feedbackP.className = 'text-sm mt-4 text-center text-red-600';
+            }
+            // Usamos 'throw' para ir directamente al 'finally' y reactivar el botón
+            throw new Error("No se procesaron filas.");
+        }
+
+        // 7. Guardar en Base de Datos (Sin cambios)
+        await batch.commit();
+        if (feedbackP) feedbackP.textContent = `Datos guardados para ${rowsProcessed} unidad(es). Procesando fotos...`;
+
+        for (const upload of photoUploads) {
+            // ... (código para subir foto con marca de agua) ...
+            try {
+                const watermarkedBlob = await addWatermark(upload.photoFile, upload.watermarkText);
+                const storageRef = ref(storage, `evidence/${upload.projectId}/${upload.itemId}/${upload.subItemId}`);
+                const snapshot = await uploadBytes(storageRef, watermarkedBlob);
+                const downloadURL = await getDownloadURL(snapshot.ref);
+                await updateDoc(doc(db, "subItems", upload.subItemId), { photoURL: downloadURL });
+            } catch (photoError) {
+                console.error(`Error procesando/subiendo foto para ${upload.subItemId}:`, photoError);
+            }
+        }
+
+        // 8. Lógica de verificación de tarea (Sin cambios)
+        let feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)!`;
+        let feedbackClass = 'text-sm mt-4 text-center text-green-600';
+
+        if (originatingTaskId && commonData.installer) {
+            // ... (código para verificar si la tarea se completa) ...
+            if (feedbackP) feedbackP.textContent = 'Fotos subidas. Verificando estado de la tarea...';
+
+            const taskDoc = await getDoc(doc(db, "tasks", originatingTaskId));
+            if (!taskDoc.exists()) {
+                throw new Error("No se pudo encontrar la tarea original para verificarla.");
+            }
+
+            const taskData = taskDoc.data();
+
+            if (taskData.specificSubItemIds && taskData.specificSubItemIds.length > 0) {
+                // ... (lógica para tareas nuevas) ...
+                const allTaskSubItemIds = taskData.specificSubItemIds;
+                const checkQuery = query(collection(db, "subItems"), where("__name__", "in", allTaskSubItemIds));
                 const subItemsSnapshot = await getDocs(checkQuery);
-
                 let allTaskSubItemsInstalled = true;
-                let installedCountInTask = 0;
-
+                let pendingCountInTask = 0;
                 subItemsSnapshot.forEach(doc => {
-                    if (doc.data().status === 'Instalado') {
-                        installedCountInTask++;
-                    } else {
+                    if (doc.data().status !== 'Instalado') {
                         allTaskSubItemsInstalled = false;
+                        pendingCountInTask++;
                     }
                 });
-
-                if (allTaskSubItemsInstalled && subItemsSnapshot.size === subItemIdsInModal.length) {
+                if (allTaskSubItemsInstalled && subItemsSnapshot.size === allTaskSubItemIds.length) {
+                    // ... (código para completar la tarea) ...
                     const taskRef = doc(db, "tasks", originatingTaskId);
-                    await updateDoc(taskRef, {
-                        status: 'completada',
-                        completedAt: new Date(),
-                        completedBy: currentUser.uid
-                    });
+                    await updateDoc(taskRef, { status: 'completada', completedAt: new Date(), completedBy: currentUser.uid });
                     feedbackMessage = '¡Avance registrado y tarea completada!';
+                    isTaskNowComplete = true;
                 } else {
-                    feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)! Aún quedan ${subItemIdsInModal.length - installedCountInTask} pendientes en esta tarea.`;
+                    feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)! Aún quedan ${pendingCountInTask} pendientes en esta tarea.`;
                 }
+            } else {
+                feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)! (Tarea antigua, no se autocompleta).`;
             }
-            
-            if (feedbackP) {
-                feedbackP.textContent = feedbackMessage;
-                feedbackP.className = feedbackClass;
-            }
+        }
 
-            // 6. Éxito
-            success = true; // ¡Marcamos como exitoso!
-            
+        if (feedbackP) {
+            feedbackP.textContent = feedbackMessage;
+            feedbackP.className = feedbackClass;
+        }
+
+        // 9. Éxito (Sin cambios)
+        success = true;
+
+        if (success) {
             setTimeout(() => {
                 closeMultipleProgressModal();
                 if (feedbackP) feedbackP.textContent = '';
                 if (views.tareas && !views.tareas.classList.contains('hidden')) {
-                     const currentActiveTab = document.querySelector('#tareas-view .task-tab-button.active');
-                     const currentFilter = currentActiveTab ? currentActiveTab.dataset.statusFilter : 'pendiente';
-                     loadAndDisplayTasks(currentFilter);
+                    const currentActiveTab = document.querySelector('#tareas-view .task-tab-button.active');
+                    const currentFilter = currentActiveTab ? currentActiveTab.dataset.statusFilter : 'pendiente';
+                    loadAndDisplayTasks(currentFilter);
                 }
             }, 2500);
-
-        } catch (error) {
-            // --- BLOQUE CATCH ---
-            console.error("Error al guardar el avance múltiple:", error);
-            if (feedbackP) {
-                feedbackP.textContent = 'Error al guardar. Revisa la consola.';
-                feedbackP.className = 'text-sm mt-4 text-center text-red-600';
-            }
-            // No necesitamos reactivar el botón aquí, 'finally' lo hará.
-        } finally {
-            // --- BLOQUE FINALLY ---
-            // Este bloque se ejecuta SIEMPRE, después de 'try' o 'catch'.
-            if (!success) {
-                // Si la bandera de éxito no se marcó, reactivamos el botón.
-                confirmBtn.disabled = false;
-                confirmBtn.textContent = 'Guardar Cambios';
-            }
         }
-    });
+
+    } catch (error) {
+        // --- BLOQUE CATCH (Sin cambios) ---
+        console.error("Error al guardar el avance múltiple:", error);
+        if (feedbackP && !validationError && error.message !== "No se procesaron filas." && error.message !== "Error de validación de usuario." && error.message !== "Error de validación de usuario (Fabricante/Instalador).") {
+            feedbackP.textContent = 'Error al guardar. Revisa la consola.';
+            feedbackP.className = 'text-sm mt-4 text-center text-red-600';
+        }
+    } finally {
+        // --- BLOQUE FINALLY (Sin cambios) ---
+        if (!success) {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Guardar Cambios';
+        }
+    }
+});
+
 // =================== FINALIZAN NUEVAS FUNCIONES ===================
 
 
@@ -6187,10 +6415,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Vistas Principales
             case 'new-project': openMainModal('newProject'); break;
-
             case 'new-task':
-                openMainModal('new-task'); // Llama a la función para abrir el modal correcto
-                break; // <-- No olvides el break
+                openMainModal('new-task');
+                break;
 
             // Acciones de Documentos
             case 'view-documents': {
@@ -6235,16 +6462,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         alert("¡Material entregado con éxito! El stock ha sido actualizado.");
 
                     } catch (error) {
-                        // --- INICIO DE LA CORRECCIÓN ---
-                        // En lugar de mostrar el error técnico en la consola,
-                        // mostramos el mensaje amigable que viene desde la nube.
                         if (error.message) {
                             alert(`Error: ${error.message}`);
                         } else {
                             alert("Ocurrió un error inesperado al intentar entregar el material.");
                             console.error("Error no controlado al entregar material:", error);
                         }
-                        // --- FIN DE LA CORRECCIÓN ---
                     } finally {
                         loadingOverlay.classList.add('hidden');
                     }
@@ -6253,7 +6476,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             case 'view-task-details':
-                // Usa elementId que viene de data-id="${task.id}" en el botón "Ver Tarea"
                 if (elementId) {
                     openTaskDetailsModal(elementId);
                 } else {
@@ -6262,7 +6484,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
 
             case 'complete-task':
-                // Aquí usamos elementId porque el botón tiene data-id="${task.id}"
                 if (elementId) {
                     openConfirmModal('¿Marcar esta tarea como completada?', () => completeTask(elementId));
                 } else {
@@ -6270,11 +6491,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 break;
 
-            // --- AÑADE ESTE NUEVO CASE ---
             case 'register-task-progress':
-                // Usa taskIdForProgress que viene de data-task-id
                 if (taskIdForProgress) {
-                    // OPCIONAL: Cerrar el modal de detalles si está abierto
                     closeTaskDetailsModal();
                     handleRegisterTaskProgress(taskIdForProgress);
                 } else {
@@ -6283,7 +6501,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
 
             case 'view-project-from-task':
-                // Usamos la variable específica projectIdForTask
                 if (projectIdForTask) {
                     const docSnap = await getDoc(doc(db, "projects", projectIdForTask));
                     if (docSnap.exists()) {
@@ -6296,14 +6513,74 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 break;
 
+            case 'edit-task': {
+                const taskId = elementId;
+                if (taskId) {
+                    loadingOverlay.classList.remove('hidden');
+                    try {
+                        // --- INICIO DE LA MODIFICACIÓN ---
+                        // Si el botón está dentro del modal de detalles, cerramos ese modal primero
+                        if (elementWithAction.closest('#task-details-modal')) {
+                            closeTaskDetailsModal();
+                        }
+                        // --- FIN DE LA MODIFICACIÓN ---
+
+                        const taskDoc = await getDoc(doc(db, "tasks", taskId));
+                        if (taskDoc.exists()) {
+                            openMainModal('edit-task', { id: taskId, ...taskDoc.data() });
+                        } else {
+                            alert("La tarea que intentas editar ya no existe.");
+                        }
+                    } catch (error) {
+                        console.error("Error al obtener datos de la tarea para editar:", error);
+                        alert("No se pudieron cargar los datos de la tarea.");
+                    } finally {
+                        loadingOverlay.classList.add('hidden');
+                    }
+                }
+                break;
+            }
+
+            case 'request-material-from-task': {
+                const projectId = elementWithAction.dataset.projectId;
+                const taskId = elementWithAction.dataset.taskId;
+
+                if (projectId && taskId) {
+                    if (elementWithAction.closest('#task-details-modal')) {
+                        closeTaskDetailsModal();
+                    }
+                    await handleRequestMaterialFromTask(projectId, taskId);
+                } else {
+                    console.error("Faltan datos (projectId o taskId) para solicitar material desde la tarea.");
+                    alert("No se pudo iniciar la solicitud de material.");
+                }
+                break;
+            }
+
             // Acciones dentro de la Vista de un Proyecto
             case 'back-to-dashboard': showDashboard(); break;
+
+            // --- INICIO DE LA MODIFICACIÓN ---
             case 'back-to-project':
                 // Primero, limpia el formulario
                 resetMaterialRequestForm();
-                // Luego, vuelve al proyecto
-                showProjectDetails(currentProject, 'materiales');
+
+                console.log("Botón 'Volver' presionado, regresando a:", materialRequestReturnContext.view);
+
+                // --- INICIO DE LA MODIFICACIÓN ---
+                // Si el origen fue 'tareas' O 'detalle-tarea', volvemos a la lista de tareas.
+                if (materialRequestReturnContext.view === 'tareas' || materialRequestReturnContext.view === 'detalle-tarea') {
+                    showView('tareas');
+                    loadAndDisplayTasks('pendiente'); // Recargamos las tareas pendientes
+                } else {
+                    // Si no, volvemos al proyecto (comportamiento por defecto)
+                    showProjectDetails(currentProject, 'materiales');
+                }
+                // *** Eliminamos el reseteo del contexto de aquí ***
+                // --- FIN DE LA MODIFICACIÓN ---
                 break;
+            // --- FIN DE LA MODIFICACIÓN ---
+
             case 'edit-project-info': openMainModal('editProjectInfo', currentProject); break;
             // Pestaña Ítems
             case 'add-item': openMainModal('addItem'); break;
@@ -6365,7 +6642,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Pestaña Materiales
             case 'request-material':
-                showMaterialRequestView();
+                // --- INICIO DE LA MODIFICACIÓN ---
+                // Leemos el dataset del botón para ver si hay ítems de tarea pre-guardados
+                const taskItemsJson = elementWithAction.dataset.taskItems;
+                let taskItems = null;
+                if (taskItemsJson) {
+                    try {
+                        taskItems = JSON.parse(taskItemsJson);
+                    } catch (e) { console.error("Error al parsear taskItems desde el botón:", e); }
+                }
+                // Pasamos los ítems (o null) a la función
+                showMaterialRequestView(taskItems);
+                // --- FIN DE LA MODIFICACIÓN ---
                 break;
             case 'return-material': {
                 const requestId = elementWithAction.dataset.id;
@@ -6426,7 +6714,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         status: 'aprobado',
                         responsibleId: currentUser.uid // Quien aprueba
                     });
-                    // La vista se actualizará sola gracias a onSnapshot
                 });
                 break;
             }
@@ -6467,7 +6754,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                 const materialRef = doc(db, "materialCatalog", item.materialId);
                                 const batchRef = doc(collection(materialRef, "stockBatches"));
 
-                                // Crea el lote detallado
                                 transaction.set(batchRef, {
                                     purchaseDate: new Date(),
                                     quantityInitial: item.quantity,
@@ -6475,7 +6761,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                     unitCost: item.unitCost || 0,
                                     purchaseOrderId: elementId,
                                 });
-                                // Incrementa el stock total automáticamente
                                 transaction.update(materialRef, { quantityInStock: increment(item.quantity) });
                             }
                             transaction.update(poRef, { status: "recibida", receivedAt: new Date(), receivedBy: currentUser.uid });
@@ -7283,11 +7568,27 @@ async function loadPayments(project) {
     });
 }
 
-async function loadMaterialsTab(project) {
+/**
+ * Carga la pestaña de Materiales.
+ * @param {object} project - El objeto del proyecto actual.
+ * @param {Array|null} taskItems - (Opcional) Array de ítems de una tarea, si se llama desde una.
+ */
+async function loadMaterialsTab(project, taskItems = null) { // <-- PARÁMETRO AÑADIDO
     const canRequest = currentUserRole === 'admin' || currentUserRole === 'operario';
     const requestMaterialBtn = document.getElementById('request-material-btn');
     if (requestMaterialBtn) {
         requestMaterialBtn.classList.toggle('hidden', !canRequest);
+
+        // --- INICIO DE LA MODIFICACIÓN ---
+        // Almacenamos los ítems de la tarea en el botón para usarlos al hacer clic
+        if (taskItems) {
+            // Guardamos los ítems como un string JSON en el dataset del botón
+            requestMaterialBtn.dataset.taskItems = JSON.stringify(taskItems);
+        } else {
+            // Limpiamos si no venimos de una tarea
+            requestMaterialBtn.dataset.taskItems = "";
+        }
+        // --- FIN DE LA MODIFICACIÓN ---
     }
 
     const requestsTableBody = document.getElementById('requests-table-body');
@@ -7297,16 +7598,13 @@ async function loadMaterialsTab(project) {
     const requestsQuery = query(collection(db, "projects", project.id, "materialRequests"), orderBy("createdAt", "desc"));
 
     unsubscribeMaterialRequests = onSnapshot(requestsQuery, async (snapshot) => {
+        // ... (El resto de la lógica de onSnapshot para cargar la tabla de solicitudes no cambia) ...
         if (snapshot.empty) {
             requestsTableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-gray-500">No hay solicitudes de material.</td></tr>`;
             return;
         }
-
-        // Procesamos todas las solicitudes para obtener los datos necesarios antes de mostrarlas
         const requestsPromises = snapshot.docs.map(async (requestDoc) => {
             const request = { id: requestDoc.id, ...requestDoc.data() };
-
-            // --- LÓGICA PARA GENERAR EL RESUMEN DE MATERIALES ---
             const consumedItems = request.consumedItems || [];
             if (consumedItems.length > 0 && consumedItems[0].materialId) {
                 const firstItem = consumedItems[0];
@@ -7320,23 +7618,16 @@ async function loadMaterialsTab(project) {
             } else {
                 request.summary = 'N/A';
             }
-            // --- FIN DE LA LÓGICA DE RESUMEN ---
-
             return request;
         });
-
         const requestsWithData = await Promise.all(requestsPromises);
-        requestsTableBody.innerHTML = ''; // Limpiamos la tabla
-
+        requestsTableBody.innerHTML = '';
         requestsWithData.forEach(request => {
             const solicitante = usersMap.get(request.requesterId)?.firstName || 'Desconocido';
             const responsable = usersMap.get(request.responsibleId)?.firstName || 'N/A';
-
             const baseButtonClasses = "text-sm font-semibold py-2 px-4 rounded-lg transition-colors w-32 text-center";
             const viewDetailsBtn = `<button data-action="view-request-details" data-id="${request.id}" class="bg-blue-500 hover:bg-blue-600 text-white ${baseButtonClasses}">Ver Detalles</button>`;
-
             let statusText, statusColor, actionsHtml = '';
-            // Tu lógica de estados y botones se mantiene igual
             switch (request.status) {
                 case 'pendiente':
                     statusText = 'Pendiente'; statusColor = 'bg-yellow-100 text-yellow-800';
@@ -7365,7 +7656,6 @@ async function loadMaterialsTab(project) {
                 default:
                     statusText = request.status || 'Desconocido'; statusColor = 'bg-gray-100 text-gray-800';
             }
-
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td class="px-6 py-4">${request.createdAt.toDate().toLocaleDateString('es-CO')}</td>
@@ -7845,92 +8135,173 @@ function setupRequestItemSearch() {
     });
 }
 
-async function showMaterialRequestView() {
+/**
+ * Muestra la vista de solicitud de material, filtrando opcionalmente los ítems de destino.
+ * @param {Array|null} taskItems - (Opcional) Array de ítems de la tarea { itemId, quantity }
+ */
+/**
+ * Muestra la vista de solicitud de material de forma optimizada, cargando datos dinámicos asíncronamente.
+ * @param {Array|null} taskItems - (Opcional) Array de ítems de la tarea { itemId, quantity }
+ */
+async function showMaterialRequestView(taskItems = null) {
     showView('material-request-view');
     document.getElementById('material-request-project-name').textContent = currentProject.name;
+
+    // Limpiar el ID de la tarea por defecto
+    const taskIdInput = document.getElementById('material-request-task-id');
+    if (taskIdInput) taskIdInput.value = '';
 
     const itemListContainer = document.getElementById('request-item-list-container-view');
     const userSelectorContainer = document.getElementById('request-user-selector-container-view');
 
-    itemListContainer.innerHTML = '<div class="loader mx-auto"></div>';
+    // --- INICIO DE LA OPTIMIZACIÓN ---
+    // 1. Renderizar la estructura base INMEDIATAMENTE
+    itemListContainer.innerHTML = '<p class="text-gray-400 italic text-center py-4">Cargando ítems del proyecto...</p>';
+    userSelectorContainer.innerHTML = ''; // Limpiar por si acaso
 
-    try {
-        const [inventorySnapshot, itemsSnapshot] = await Promise.all([
-            getDocs(query(collection(db, "materialCatalog"))),
-            getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id)))
-        ]);
+    // Renderizar selector de materiales con estado de carga
+    const selectContainer = document.querySelector('#material-choices-select-view').parentNode;
+    selectContainer.innerHTML = '<select id="material-choices-select-view" disabled><option>Cargando materiales...</option></select>';
+    // Deshabilitamos secciones dependientes mientras carga
+    document.getElementById('units-section-view').classList.add('hidden');
+    document.getElementById('divisible-section-view').classList.add('hidden');
+    document.getElementById('remnants-container-view').classList.add('hidden');
+    document.getElementById('cuts-container-view').innerHTML = '';
+    document.getElementById('remnants-list-view').innerHTML = '';
+    document.getElementById('request-items-list-view').innerHTML = '<p class="text-sm text-gray-400 text-center">Añade materiales para verlos aquí.</p>';
 
-        const inventory = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const items = itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // Función asíncrona para cargar el catálogo y configurar Choices.js
+    const loadCatalogAndSetupChoices = async () => {
+        try {
+            const inventorySnapshot = await getDocs(query(collection(db, "materialCatalog"), orderBy("name"))); // Ordenar aquí puede ayudar
+            const inventory = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const materialOptions = inventory.map(mat => ({
+                value: mat.id,
+                label: `${mat.name} (Stock: ${mat.quantityInStock || 0})`,
+                customProperties: { isDivisible: mat.isDivisible, name: mat.name, defaultLength: mat.defaultSize?.length || 0 }
+            }));
 
-        const materialOptions = inventory.map(mat => ({
-            value: mat.id,
-            label: `${mat.name} (Stock: ${mat.quantityInStock || 0})`,
-            customProperties: { isDivisible: mat.isDivisible, name: mat.name, defaultLength: mat.defaultSize?.length || 0 }
-        }));
+            // Recrear el select y Choices.js con los datos cargados
+            selectContainer.innerHTML = '<select id="material-choices-select-view"></select>'; // Recrear el select vacío
+            if (window.materialChoicesView) {
+                window.materialChoicesView.destroy(); // Destruir instancia anterior si existe
+            }
+            window.materialChoicesView = new Choices('#material-choices-select-view', {
+                choices: materialOptions,
+                searchEnabled: true, itemSelectText: 'Seleccionar', placeholder: true, placeholderValue: 'Escribe para buscar...',
+                allowHTML: false // Importante por seguridad y rendimiento
+            });
 
-        itemListContainer.innerHTML = items.filter(item => item && item.id && item.name).map(item => `
-            <div class="request-item-card p-2 border rounded-md bg-gray-50">
-                <label class="block text-sm font-semibold">${item.name} <span class="text-xs font-normal text-gray-500">(${item.quantity} Unidades)</span></label>
-                <div class="flex items-center mt-1">
-                    <span class="text-sm mr-2">Cantidad:</span>
-                    <input type="number" data-item-id="${item.id}" class="request-item-quantity w-24 border p-1 rounded-md text-sm" placeholder="0" min="0" max="${item.quantity}">
-                </div>
-            </div>`).join('');
+            // Re-añadir el listener de 'change' al nuevo elemento select
+            document.getElementById('material-choices-select-view').addEventListener('change', async () => { /* ... (código existente del listener 'change') ... */
+                const divisibleSection = document.getElementById('divisible-section-view');
+                const unitsSection = document.getElementById('units-section-view');
+                const remnantsContainer = document.getElementById('remnants-container-view');
+                const remnantsList = document.getElementById('remnants-list-view');
+                [divisibleSection, unitsSection, remnantsContainer].forEach(el => el.classList.add('hidden'));
+                document.getElementById('cuts-container-view').innerHTML = ''; // Limpiar cortes
+                document.getElementById('new-request-quantity-view').value = ''; // Limpiar cantidad
+                remnantsList.innerHTML = ''; // Limpiar retazos
+                const selectedMaterial = window.materialChoicesView.getValue();
+                if (selectedMaterial) {
+                    unitsSection.classList.remove('hidden');
+                    if (selectedMaterial.customProperties.isDivisible) {
+                        divisibleSection.classList.remove('hidden');
+                        // La carga de retazos se mantiene aquí, ya que depende de la selección
+                        const remnantsSnapshot = await getDocs(query(collection(db, "materialCatalog", selectedMaterial.value, "remnantStock"), where("quantity", ">", 0)));
+                        if (!remnantsSnapshot.empty) {
+                            remnantsContainer.classList.remove('hidden');
+                            remnantsSnapshot.forEach(doc => {
+                                const remnant = { id: doc.id, ...doc.data() };
+                                const remnantText = `${remnant.length} ${remnant.unit || 'm'}`;
+                                remnantsList.innerHTML += `<div class="remnant-item-choice flex items-center justify-between text-sm p-2 bg-gray-100 rounded-md"><span><span class="remnant-available-qty">${remnant.quantity}</span> und. de ${remnantText}</span><div class="flex items-center gap-2"><input type="number" class="remnant-quantity-input w-20 border p-1 rounded-md text-sm" placeholder="Cant." min="1" max="${remnant.quantity}"><button type="button" data-remnant-id="${remnant.id}" data-remnant-length="${remnant.length}" data-material-id="${selectedMaterial.value}" data-material-name="${selectedMaterial.customProperties.name}" data-remnant-text="${remnantText}" class="add-remnant-to-request-btn-view bg-green-500 text-white text-xs font-bold py-2 px-3 rounded hover:bg-green-600">Añadir</button></div></div>`;
+                            });
+                        }
+                    }
+                }
+            });
 
+        } catch (error) {
+            console.error("Error al cargar el catálogo de materiales:", error);
+            selectContainer.innerHTML = '<select id="material-choices-select-view" disabled><option>Error al cargar</option></select>';
+        }
+    };
+
+    // Función asíncrona para cargar los ítems del proyecto/tarea
+    const loadProjectOrTaskItems = async () => {
+        try {
+            let items = [];
+            if (taskItems && taskItems.length > 0) {
+                // Cargar solo ítems de la tarea
+                const itemIds = taskItems.map(item => item.itemId);
+                if (itemIds.length > 0) {
+                    const itemsQuery = query(collection(db, "items"), where("__name__", "in", itemIds));
+                    const itemsSnapshot = await getDocs(itemsQuery);
+                    const itemsMap = new Map(itemsSnapshot.docs.map(doc => [doc.id, doc.data()]));
+                    items = taskItems.map(taskItem => {
+                        const itemData = itemsMap.get(taskItem.itemId);
+                        return {
+                            id: taskItem.itemId,
+                            name: itemData ? itemData.name : 'Ítem Desconocido',
+                            quantity: taskItem.quantity
+                        };
+                    });
+                }
+            } else {
+                // Cargar todos los ítems del proyecto
+                const itemsSnapshot = await getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id), orderBy("name"))); // Ordenar aquí
+                items = itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            }
+
+            // Renderizar la lista de ítems
+            if (items.length === 0) {
+                itemListContainer.innerHTML = '<p class="text-gray-500 italic text-center py-4">No hay ítems disponibles.</p>';
+            } else {
+                itemListContainer.innerHTML = items.filter(item => item && item.id && item.name).map(item => `
+                    <div class="request-item-card p-2 border rounded-md bg-gray-50">
+                        <label class="block text-sm font-semibold">${item.name} <span class="text-xs font-normal text-gray-500">(${item.quantity} Unidades)</span></label>
+                        <div class="flex items-center mt-1">
+                            <span class="text-sm mr-2">Cantidad:</span>
+                            <input type="number" data-item-id="${item.id}" class="request-item-quantity w-24 border p-1 rounded-md text-sm" placeholder="0" min="0" max="${item.quantity}">
+                        </div>
+                    </div>`).join('');
+            }
+
+        } catch (error) {
+            console.error("Error al cargar ítems del proyecto/tarea:", error);
+            itemListContainer.innerHTML = '<p class="text-red-500 text-center py-4">Error al cargar ítems.</p>';
+        }
+    };
+
+    // Función asíncrona para cargar el selector de usuario (si aplica)
+    const loadUserSelector = () => {
         if (currentUserRole === 'admin' || currentUserRole === 'bodega') {
-            const userOptions = Array.from(usersMap.entries()).filter(([uid, user]) => user.status === 'active').map(([uid, user]) => `<option value="${uid}" ${uid === currentUser.uid ? 'selected' : ''}>${user.firstName} ${user.lastName}</option>`).join('');
+            const userOptions = Array.from(usersMap.entries())
+                .filter(([uid, user]) => user.status === 'active')
+                .map(([uid, user]) => `<option value="${uid}" ${uid === currentUser.uid ? 'selected' : ''}>${user.firstName} ${user.lastName}</option>`)
+                .join('');
             userSelectorContainer.innerHTML = `<h4 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">4. ¿Quién solicita?</h4><select id="request-as-user-select-view" class="w-full border p-2 rounded-md bg-white text-sm">${userOptions}</select>`;
         } else {
             userSelectorContainer.innerHTML = '';
         }
+    };
 
-        if (window.materialChoicesView) {
-            window.materialChoicesView.destroy();
-        }
+    // 2. Ejecutar las cargas de datos en paralelo (o secuencial si prefieres)
+    // Usamos Promise.all para que se ejecuten concurrentemente
+    Promise.all([
+        loadCatalogAndSetupChoices(),
+        loadProjectOrTaskItems(),
+        loadUserSelector() // Esta es rápida, no necesita ser asíncrona realmente
+    ]);
+    // --- FIN DE LA OPTIMIZACIÓN ---
 
-        const selectContainer = document.querySelector('#material-choices-select-view').parentNode;
-        selectContainer.innerHTML = '<select id="material-choices-select-view"></select>';
+    // El resto de los listeners (para añadir cortes, etc.) no necesitan esperar
+    // y pueden permanecer fuera de las funciones asíncronas de carga.
+    // Asegúrate de que los listeners que dependen de Choices.js
+    // se inicialicen DESPUÉS de que loadCatalogAndSetupChoices haya terminado
+    // o manejen el caso en que window.materialChoicesView aún no exista.
+    // (Ya están dentro de loadCatalogAndSetupChoices, lo cual es correcto).
 
-        window.materialChoicesView = new Choices('#material-choices-select-view', {
-            choices: materialOptions,
-            searchEnabled: true, itemSelectText: 'Seleccionar', placeholder: true, placeholderValue: 'Escribe para buscar...',
-        });
-
-        // --- INICIO DE LA CORRECCIÓN ---
-        // Volvemos a añadir el "escuchador" de eventos al nuevo elemento que acabamos de crear.
-        document.getElementById('material-choices-select-view').addEventListener('change', async () => {
-            const divisibleSection = document.getElementById('divisible-section-view');
-            const unitsSection = document.getElementById('units-section-view');
-            const remnantsContainer = document.getElementById('remnants-container-view');
-            const remnantsList = document.getElementById('remnants-list-view');
-
-            [divisibleSection, unitsSection, remnantsContainer].forEach(el => el.classList.add('hidden'));
-            remnantsList.innerHTML = '';
-
-            const selectedMaterial = window.materialChoicesView.getValue();
-            if (selectedMaterial) {
-                unitsSection.classList.remove('hidden');
-                if (selectedMaterial.customProperties.isDivisible) {
-                    divisibleSection.classList.remove('hidden');
-                    const remnantsSnapshot = await getDocs(query(collection(db, "materialCatalog", selectedMaterial.value, "remnantStock"), where("quantity", ">", 0)));
-                    if (!remnantsSnapshot.empty) {
-                        remnantsContainer.classList.remove('hidden');
-                        remnantsSnapshot.forEach(doc => {
-                            const remnant = { id: doc.id, ...doc.data() };
-                            const remnantText = `${remnant.length} ${remnant.unit || 'm'}`;
-                            remnantsList.innerHTML += `<div class="remnant-item-choice flex items-center justify-between text-sm p-2 bg-gray-100 rounded-md"><span><span class="remnant-available-qty">${remnant.quantity}</span> und. de ${remnantText}</span><div class="flex items-center gap-2"><input type="number" class="remnant-quantity-input w-20 border p-1 rounded-md text-sm" placeholder="Cant." min="1" max="${remnant.quantity}"><button type="button" data-remnant-id="${remnant.id}" data-remnant-length="${remnant.length}" data-material-id="${selectedMaterial.value}" data-material-name="${selectedMaterial.customProperties.name}" data-remnant-text="${remnantText}" class="add-remnant-to-request-btn-view bg-green-500 text-white text-xs font-bold py-2 px-3 rounded hover:bg-green-600">Añadir</button></div></div>`;
-                        });
-                    }
-                }
-            }
-        });
-        // --- FIN DE LA CORRECCIÓN ---
-
-    } catch (error) {
-        console.error("Error al cargar datos para la vista de solicitud:", error);
-        itemListContainer.innerHTML = '<p class="text-red-500">Error al cargar los datos.</p>';
-    }
 }
 
 async function handleMaterialRequestSubmit(e) {
@@ -7940,23 +8311,22 @@ async function handleMaterialRequestSubmit(e) {
     const consumedItemsNodes = summaryList.querySelectorAll('.request-summary-item');
     const itemUsageNodes = document.querySelectorAll('#request-item-list-container-view .request-item-quantity');
     const userSelector = document.getElementById('request-as-user-select-view');
+    const taskId = document.getElementById('material-request-task-id').value;
 
     if (consumedItemsNodes.length === 0) {
         alert("Debes añadir al menos un material a la solicitud.");
         return;
     }
-
     loadingOverlay.classList.remove('hidden');
 
     try {
-        // --- INICIO DE LA CORRECCIÓN ---
         const consumedItems = Array.from(consumedItemsNodes).map(node => {
             const data = {
                 materialId: node.dataset.materialId,
                 type: node.dataset.type,
                 quantity: parseInt(node.dataset.quantity),
+                itemName: node.querySelector('span') ? node.querySelector('span').textContent.split('x ').pop().split(' de ')[0] : 'Material'
             };
-            // Asigna la propiedad 'length' si es un corte o un retazo
             if (node.dataset.type === 'cut') {
                 data.length = parseFloat(node.dataset.length);
             } else if (node.dataset.type === 'remnant') {
@@ -7964,7 +8334,6 @@ async function handleMaterialRequestSubmit(e) {
             }
             return data;
         });
-        // --- FIN DE LA CORRECCIÓN ---
 
         const itemsToConsume = Array.from(itemUsageNodes)
             .filter(input => parseInt(input.value) > 0)
@@ -7974,27 +8343,51 @@ async function handleMaterialRequestSubmit(e) {
             }));
 
         const requesterId = (userSelector && userSelector.value) ? userSelector.value : currentUser.uid;
-
         const requestCollection = collection(db, "projects", currentProject.id, "materialRequests");
-        await addDoc(requestCollection, {
+
+        const requestData = {
             projectId: currentProject.id,
             requesterId: requesterId,
             createdAt: new Date(),
             status: 'pendiente',
             consumedItems: consumedItems,
             itemsToConsume: itemsToConsume
-        });
+        };
+        if (taskId && taskId.trim() !== '') {
+            requestData.taskId = taskId;
+        }
+        await addDoc(requestCollection, requestData);
 
         alert("¡Solicitud enviada con éxito!");
-        showProjectDetails(currentProject, 'materiales');
+        resetMaterialRequestForm();
+
+        // --- INICIO DE LA MODIFICACIÓN (Lógica de Retorno) ---
+        console.log("Volviendo al contexto:", materialRequestReturnContext.view);
+
+        // Si el origen fue 'tareas' O 'detalle-tarea', volvemos a la lista de tareas.
+        if (materialRequestReturnContext.view === 'tareas' || materialRequestReturnContext.view === 'detalle-tarea') {
+            showView('tareas');
+            loadAndDisplayTasks('pendiente'); // Recargamos las tareas pendientes
+        } else {
+            // Si no, volvemos al proyecto (comportamiento por defecto)
+            showProjectDetails(currentProject, 'materiales');
+        }
+        // --- FIN DE LA MODIFICACIÓN ---
 
     } catch (error) {
         console.error("Error al enviar la solicitud de material:", error);
         alert("Ocurrió un error al enviar la solicitud.");
     } finally {
-        loadingOverlay.classList.add('hidden');
+        // Ocultamos el overlay solo si NO volvemos al detalle de la tarea
+        // (porque openTaskDetailsModal lo maneja)
+        if (materialRequestReturnContext.view !== 'detalle-tarea') {
+            loadingOverlay.classList.add('hidden');
+        }
+        // Limpiamos el contexto por si acaso para la próxima vez
+        materialRequestReturnContext = { view: 'proyectos' };
     }
 }
+
 
 async function processMaterialRequest(projectId, requestId) {
     try {
@@ -8096,61 +8489,74 @@ function loadTasksView() {
 
 
 /**
- * Carga las tareas desde Firestore filtradas por estado y las muestra en la interfaz.
+ * Carga las tareas desde Firestore filtradas por estado (para asignado principal O adicional)
+ * y las muestra en la interfaz usando listeners en tiempo real.
  * @param {string} statusFilter - El estado por el cual filtrar ('pendiente' o 'completada').
  */
 function loadAndDisplayTasks(statusFilter = 'pendiente') {
+    // Establecer contexto (sin cambios)
+    materialRequestReturnContext = { view: 'tareas' };
+    console.log("Contexto de retorno establecido en: tareas"); // Log para depuración
+
     const tasksContainer = document.getElementById('tasks-container');
     let loadingDiv = document.getElementById('loading-tasks');
 
+    // --- Manejo del Loader ---
     if (tasksContainer && !loadingDiv) {
-        // console.warn("[Tareas] El div 'loading-tasks' no se encontró. Recreándolo."); // Log original opcional
+        // console.warn("[Tareas] El div 'loading-tasks' no se encontró. Recreándolo.");
         loadingDiv = document.createElement('div');
         loadingDiv.id = 'loading-tasks';
         loadingDiv.className = 'text-center py-10';
         loadingDiv.innerHTML = '<p class="text-gray-500">Cargando tareas...</p>';
         tasksContainer.appendChild(loadingDiv);
     }
-
     if (!tasksContainer || !loadingDiv || !currentUser) {
-        // console.error(`[Tareas] Error al iniciar loadAndDisplayTasks('${statusFilter}'): Faltan elementos esenciales.`); // Log original opcional
+        // console.error(`[Tareas] Error al iniciar loadAndDisplayTasks('${statusFilter}'): Faltan elementos esenciales.`);
         return;
     }
+    // No ocultamos el loader aquí, lo hacemos en renderCombinedTasks la primera vez
 
-    // Mostrar el loader y limpiar SOLO las tareas anteriores/mensaje
-    loadingDiv.classList.remove('hidden');
-    tasksContainer.querySelectorAll('.task-card, .no-tasks-message').forEach(el => el.remove());
+    // Limpiamos los listeners de materiales de las tarjetas anteriores
+    materialStatusListeners.forEach(unsubscribe => unsubscribe());
+    materialStatusListeners.clear();
 
-
+    // --- Cancelar Listener de Tareas Anterior ---
     if (unsubscribeTasks) {
-        try {
-            unsubscribeTasks();
-        } catch (unsubError) {
-            // console.warn(`[Tareas] Advertencia al cancelar listener: ${unsubError.message}`); // Log original opcional
-        } finally {
-            unsubscribeTasks = null;
-        }
+        try { unsubscribeTasks(); } catch (e) { console.warn(`[Tareas] Advertencia al cancelar listener: ${e.message}`); } finally { unsubscribeTasks = null; }
     }
 
-    const q = query(
-        collection(db, "tasks"),
-        where("assigneeId", "==", currentUser.uid),
-        where("status", "==", statusFilter),
-        orderBy("dueDate", "asc")
-    );
+    // --- Lógica de Doble Consulta con onSnapshot ---
+    let principalTasks = new Map();
+    let additionalTasks = new Map();
+    let combinedTasksRendered = false; // Bandera para ocultar el loader una sola vez
 
-    unsubscribeTasks = onSnapshot(q, (querySnapshot) => {
-        const currentLoadingDiv = document.getElementById('loading-tasks');
-        if (currentLoadingDiv) currentLoadingDiv.classList.add('hidden');
+    // Función para combinar, ordenar y renderizar
+    const renderCombinedTasks = (principalMap, additionalMap) => {
+        // Ocultar loader la primera vez que se renderiza
+        if (!combinedTasksRendered) {
+            const currentLoadingDiv = document.getElementById('loading-tasks');
+            if (currentLoadingDiv) currentLoadingDiv.classList.add('hidden');
+            combinedTasksRendered = true;
+        }
+
+        const combinedMap = new Map([...principalMap, ...additionalMap]); // Combina y deduplica
 
         const currentTasksContainer = document.getElementById('tasks-container');
         if (!currentTasksContainer) {
-            // console.error(`[Tareas] Error DENTRO del snapshot: No se encontró 'tasks-container' para '${statusFilter}'.`); // Log original opcional
-            return;
+            console.error("[Tareas] Contenedor de tareas no encontrado durante el renderizado.");
+            return; // Salir si el contenedor no existe
         }
-        currentTasksContainer.querySelectorAll('.task-card, .no-tasks-message').forEach(el => el.remove());
 
-        if (querySnapshot.empty) {
+        // --- Renderizado Inteligente (Actualizar/Añadir/Quitar) ---
+        // 1. Marcar todas las tarjetas existentes como "por revisar"
+        const existingCardElements = currentTasksContainer.querySelectorAll('.task-card');
+        existingCardElements.forEach(card => card.dataset.markedForRemoval = 'true');
+        // Eliminar mensaje de "no hay tareas" si existe
+        currentTasksContainer.querySelector('.no-tasks-message')?.remove();
+
+        if (combinedMap.size === 0) {
+            // Si no hay tareas, mostrar mensaje y limpiar tarjetas viejas
+            existingCardElements.forEach(card => card.remove()); // Eliminar las marcadas
             const noTasksMessage = document.createElement('p');
             noTasksMessage.className = 'text-gray-500 text-center py-6 no-tasks-message';
             noTasksMessage.textContent = `No tienes tareas ${statusFilter === 'pendiente' ? 'pendientes' : 'completadas'}.`;
@@ -8158,133 +8564,348 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
             return;
         }
 
-        querySnapshot.forEach((doc) => {
-            try {
-                const taskData = { id: doc.id, ...doc.data() };
-                const taskCard = createTaskCard(taskData);
-                currentTasksContainer.appendChild(taskCard);
-            } catch (cardError) {
-                console.error(`[Tareas] Error creando tarjeta para tarea ${doc.id} (${statusFilter}):`, cardError); // Mantenemos este error por si falla la creación de tarjetas
+        // 2. Convertir Map a Array y ordenar
+        const sortedTasks = Array.from(combinedMap.values()).sort((a, b) => {
+            const dateA = a.dueDate ? new Date(a.dueDate) : new Date(8640000000000000);
+            const dateB = b.dueDate ? new Date(b.dueDate) : new Date(8640000000000000);
+            return dateA - dateB;
+        });
+
+        // 3. Iterar sobre las tareas ordenadas
+        let previousCard = null; // Para insertar en el orden correcto
+        sortedTasks.forEach((taskData) => {
+            const existingCard = currentTasksContainer.querySelector(`.task-card[data-id="${taskData.id}"]`);
+            if (existingCard) {
+                // Si la tarjeta ya existe, la desmarcamos y actualizamos referencia
+                delete existingCard.dataset.markedForRemoval;
+                previousCard = existingCard;
+                // NOTA: Si los datos internos de la tarjeta pudieran cambiar (ej. descripción),
+                // aquí se podría comparar `taskData` con los datos guardados en `existingCard`
+                // y actualizar solo si es necesario, o simplemente re-renderizarla.
+                // Por ahora, asumimos que solo cambia el estado (pendiente/completada),
+                // lo cual ya maneja el filtro de la consulta.
+            } else {
+                // Si la tarjeta es nueva, la creamos y la insertamos
+                try {
+                    // createTaskCard ahora carga sus propios datos asíncronamente
+                    const taskCard = createTaskCard(taskData);
+
+                    // Insertar después de la tarjeta anterior o al principio
+                    if (previousCard) {
+                        previousCard.insertAdjacentElement('afterend', taskCard);
+                    } else {
+                        currentTasksContainer.insertBefore(taskCard, currentTasksContainer.firstChild);
+                    }
+                    previousCard = taskCard; // Actualizamos la referencia
+
+                } catch (cardError) {
+                    console.error(`[Tareas] Error creando tarjeta para tarea ${taskData.id} (${statusFilter}):`, cardError);
+                }
             }
         });
 
+        // 4. Eliminar las tarjetas que quedaron marcadas para remover
+        currentTasksContainer.querySelectorAll('.task-card[data-marked-for-removal="true"]').forEach(card => {
+            console.log(`Removing card for task ${card.dataset.id}`); // Log opcional
+            // Limpiar listener de material antes de remover
+            const materialStatusDiv = card.querySelector(`[id^="material-status-${card.dataset.id}"]`);
+            if (materialStatusDiv && materialStatusListeners.has(materialStatusDiv.id)) {
+                materialStatusListeners.get(materialStatusDiv.id)();
+                materialStatusListeners.delete(materialStatusDiv.id);
+            }
+            card.remove();
+        });
+    };
+
+    // Consulta 1: Tareas PRINCIPALES (onSnapshot)
+    const principalQuery = query(
+        collection(db, "tasks"),
+        where("assigneeId", "==", currentUser.uid),
+        where("status", "==", statusFilter)
+    );
+    const unsubscribePrincipal = onSnapshot(principalQuery, (querySnapshot) => {
+        let changed = false;
+        querySnapshot.docChanges().forEach((change) => {
+            changed = true; // Marcamos que hubo cambios
+            if (change.type === "removed") {
+                principalTasks.delete(change.doc.id);
+            } else {
+                principalTasks.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+            }
+        });
+        // Solo renderiza si hubo cambios o es la primera carga (combinedTasksRendered es false)
+        if (changed || !combinedTasksRendered) renderCombinedTasks(principalTasks, additionalTasks);
     }, (error) => {
-        console.error(`Error en listener de tareas (${statusFilter}): `, error); // Mantenemos un log de error general
-        const errorLoadingDiv = document.getElementById('loading-tasks');
-        if (errorLoadingDiv) errorLoadingDiv.classList.add('hidden');
-        const errorTasksContainer = document.getElementById('tasks-container');
-        if (errorTasksContainer) {
-            errorTasksContainer.querySelectorAll('.task-card, .no-tasks-message').forEach(el => el.remove());
-            errorTasksContainer.innerHTML += `<p class="text-red-500 text-center py-6 no-tasks-message">Error al cargar las tareas (Código: ${error.code || 'Desconocido'}).</p>`;
-        }
+        console.error(`Error en listener de tareas principales (${statusFilter}): `, error);
+        renderCombinedTasks(principalTasks, additionalTasks); // Intenta renderizar en caso de error
     });
 
+    // Consulta 2: Tareas ADICIONALES (onSnapshot)
+    const additionalQuery = query(
+        collection(db, "tasks"),
+        where("additionalAssigneeIds", "array-contains", currentUser.uid),
+        where("status", "==", statusFilter)
+    );
+    const unsubscribeAdditional = onSnapshot(additionalQuery, (querySnapshot) => {
+        let changed = false;
+        querySnapshot.docChanges().forEach((change) => {
+            changed = true; // Marcamos que hubo cambios
+            if (change.type === "removed") {
+                additionalTasks.delete(change.doc.id);
+            } else {
+                additionalTasks.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+            }
+        });
+        // Solo renderiza si hubo cambios o es la primera carga
+        if (changed || !combinedTasksRendered) renderCombinedTasks(principalTasks, additionalTasks);
+    }, (error) => {
+        console.error(`Error en listener de tareas adicionales (${statusFilter}): `, error);
+        renderCombinedTasks(principalTasks, additionalTasks); // Intenta renderizar en caso de error
+    });
+
+
+    // Guardamos ambos listeners para poder cancelarlos después
+    unsubscribeTasks = () => {
+        unsubscribePrincipal();
+        unsubscribeAdditional();
+    };
+
+    // Añadir el nuevo listener combinado al array de listeners activos
     if (unsubscribeTasks) {
         activeListeners = activeListeners.filter(listener => listener !== unsubscribeTasks);
         activeListeners.push(unsubscribeTasks);
     } else {
-        console.error("ERROR CRÍTICO: unsubscribeTasks es null DESPUÉS de crear el listener."); // Mantenemos este error crítico
+        console.error("ERROR CRÍTICO: unsubscribeTasks es null DESPUÉS de crear los listeners.");
     }
 }
 
-
 /**
- * Crea el elemento HTML (tarjeta) para mostrar una tarea individual.
+ * Crea el elemento HTML (tarjeta) para mostrar una tarea individual, asegurando altura uniforme y pie alineado.
  * @param {object} task - El objeto de datos de la tarea desde Firestore.
  * @returns {HTMLElement} - El elemento div de la tarjeta de tarea.
  */
 function createTaskCard(task) {
     const card = document.createElement('div');
-    card.className = "bg-white p-4 rounded-lg shadow border border-gray-200 task-card";
-    card.dataset.id = task.id; // ID de la tarea
+    // --- INICIO DE LA MODIFICACIÓN ---
+    // ASEGURAMOS que 'h-full' esté aquí
+    card.className = "bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden flex flex-col h-full task-card";
+    // --- FIN DE LA MODIFICACIÓN ---
+    card.dataset.id = task.id;
 
+    // --- Lógica de Fecha (sin cambios) ---
     const dueDate = task.dueDate ? new Date(task.dueDate + 'T00:00:00') : null;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     let dateColor = 'text-gray-500';
     let dateText = dueDate ? dueDate.toLocaleDateString('es-CO') : 'Sin fecha límite';
-
+    let dateIcon = `<svg class="h-4 w-4 mr-1 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>`;
     if (dueDate && task.status === 'pendiente') {
         if (dueDate < today) {
             dateColor = 'text-red-600 font-bold';
             dateText += ' (Vencida)';
+            dateIcon = `<svg class="h-4 w-4 mr-1 inline-block text-red-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.414-1.414L11 10.586V6z" clip-rule="evenodd"></path></svg>`;
         } else if (dueDate.getTime() === today.getTime()) {
             dateColor = 'text-yellow-600 font-bold';
             dateText += ' (Hoy)';
+            dateIcon = `<svg class="h-4 w-4 mr-1 inline-block text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.414-1.414L11 10.586V6z" clip-rule="evenodd"></path></svg>`;
         }
     }
 
-    let itemsListHtml = '';
-    if (task.selectedItems && task.selectedItems.length > 0) {
-        const itemPromises = task.selectedItems.map(async (itemInfo) => {
-            try {
-                const itemDoc = await getDoc(doc(db, "items", itemInfo.itemId));
-                const itemName = itemDoc.exists() ? itemDoc.data().name : `Ítem ID: ${itemInfo.itemId}`;
-                return `<li class="text-xs text-gray-700 ml-4 list-disc">${itemInfo.quantity} x ${itemName}</li>`;
-            } catch (error) {
-                console.error(`Error fetching item name for ${itemInfo.itemId}:`, error);
-                return `<li class="text-xs text-red-500 ml-4 list-disc">Error al cargar ítem ID: ${itemInfo.itemId}</li>`;
-            }
-        });
-        const listId = `task-items-list-${task.id}`;
-        itemsListHtml = `
-            <div class="mt-2 border-t pt-2">
-                <p class="text-xs font-semibold text-gray-600 mb-1">Ítems a trabajar:</p>
-                <ul id="${listId}" class="space-y-0">
-                    <li class="text-xs text-gray-400 ml-4">Cargando ítems...</li>
-                </ul>
+    // --- Lógica para listas de ítems (con carga asíncrona) ---
+    let itemsSectionHtml = '';
+    const pendingListId = `task-items-pending-${task.id}`;
+    const completedListId = `task-items-completed-${task.id}`;
+
+    if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
+        itemsSectionHtml = `
+            <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="bg-yellow-50 p-3 rounded-md border border-yellow-200">
+                    <p class="text-xs font-semibold text-yellow-800 mb-1 flex items-center">
+                        <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Ítems por Trabajar:
+                    </p>
+                    <ul id="${pendingListId}" class="space-y-1 pl-5">
+                        <li class="text-xs text-gray-400 italic">Cargando...</li>
+                    </ul>
+                </div>
+                <div class="bg-green-50 p-3 rounded-md border border-green-200">
+                    <p class="text-xs font-semibold text-green-800 mb-1 flex items-center">
+                        <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Ítems Trabajados:
+                    </p>
+                    <ul id="${completedListId}" class="space-y-1 pl-5">
+                         <li class="text-xs text-gray-400 italic">Cargando...</li>
+                    </ul>
+                </div>
             </div>
         `;
-        Promise.all(itemPromises).then(results => {
-            const listElement = document.getElementById(listId);
-            if (listElement) listElement.innerHTML = results.join('');
-        });
+
+        const loadAndSeparateItems = async () => { /* ... (código existente sin cambios) ... */
+             try {
+                const subItemIds = task.specificSubItemIds;
+                const subItemPromises = subItemIds.map(id => getDoc(doc(db, "subItems", id)));
+                const subItemDocs = await Promise.all(subItemPromises);
+                const itemsStatus = new Map();
+                for (const docSnap of subItemDocs) {
+                    if (docSnap.exists()) {
+                        const subItem = docSnap.data();
+                        const itemId = subItem.itemId;
+                        if (!itemId) continue;
+                        if (!itemsStatus.has(itemId)) {
+                            const itemDoc = await getDoc(doc(db, "items", itemId)); 
+                            const itemName = itemDoc.exists() ? itemDoc.data().name : `Ítem ID: ${itemId}`;
+                            itemsStatus.set(itemId, { name: itemName, total: 0, installed: 0 });
+                        }
+                        const statusInfo = itemsStatus.get(itemId);
+                        statusInfo.total++;
+                        if (subItem.status === 'Instalado') {
+                            statusInfo.installed++;
+                        }
+                    }
+                }
+                let pendingHtml = '';
+                let completedHtml = '';
+                itemsStatus.forEach((statusInfo) => {
+                    const pendingCount = statusInfo.total - statusInfo.installed;
+                    if (pendingCount > 0) {
+                        pendingHtml += `<li class="text-xs text-gray-800 list-disc">${pendingCount} x ${statusInfo.name}</li>`;
+                    }
+                    if (statusInfo.installed > 0) {
+                        completedHtml += `<li class="text-xs text-gray-800 list-disc">${statusInfo.installed} x ${statusInfo.name}</li>`;
+                    }
+                });
+                const pendingListElement = document.getElementById(pendingListId);
+                const completedListElement = document.getElementById(completedListId);
+                if (pendingListElement) pendingListElement.innerHTML = pendingHtml || '<li class="text-xs text-gray-400 italic">Ninguno pendiente</li>';
+                if (completedListElement) completedListElement.innerHTML = completedHtml || '<li class="text-xs text-gray-400 italic">Ninguno trabajado</li>';
+            } catch (error) {
+                console.error(`Error loading item details for task ${task.id}:`, error);
+                const pendingListElement = document.getElementById(pendingListId);
+                const completedListElement = document.getElementById(completedListId);
+                if (pendingListElement) pendingListElement.innerHTML = `<li class="text-xs text-red-500 list-disc">Error al cargar</li>`;
+                if (completedListElement) completedListElement.innerHTML = `<li class="text-xs text-red-500 list-disc">Error al cargar</li>`;
+            }
+        };
+        setTimeout(loadAndSeparateItems, 50);
     }
 
-    const completeButtonHtml = task.status === 'pendiente' ? `
-        <button data-action="complete-task" data-id="${task.id}" class="bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-2 px-3 rounded transition-colors">
-            Marcar Completada
+    // --- Barra de Progreso (con carga asíncrona) ---
+    let progressBarHtml = '';
+    const progressBarId = `task-progress-bar-${task.id}`;
+    const progressTextId = `task-progress-text-${task.id}`;
+    if (task.status === 'completada') {
+         progressBarHtml = `
+            <div class="mt-4 px-4">
+                <div class="flex justify-between mb-1"><span class="text-xs font-medium text-green-700">Completada</span><span class="text-xs font-medium text-green-700">100%</span></div>
+                <div class="task-progress-bar-bg"><div class="task-progress-bar-fg bg-green-500" style="width: 100%;"></div></div>
+            </div>`;
+    } else if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
+         progressBarHtml = `
+            <div class="mt-4 px-4">
+                <div class="flex justify-between mb-1"><span class="text-xs font-medium text-gray-500">Progreso General</span><span id="${progressTextId}" class="text-xs font-medium text-blue-700">Calculando...</span></div>
+                <div class="task-progress-bar-bg"><div id="${progressBarId}" class="task-progress-bar-fg" style="width: 0%;"></div></div>
+            </div>`;
+        const calculateProgress = async () => {
+             try {
+                const subItemIds = task.specificSubItemIds;
+                const subItemPromises = subItemIds.map(id => getDoc(doc(db, "subItems", id)));
+                const subItemDocs = await Promise.all(subItemPromises);
+                let installedCount = 0;
+                let foundCount = 0;
+                subItemDocs.forEach(docSnap => {
+                    if (docSnap.exists()) {
+                         foundCount++;
+                         if (docSnap.data().status === 'Instalado') {
+                              installedCount++;
+                         }
+                    }
+                });
+                const totalSubItemsEffective = Math.min(foundCount, subItemIds.length);
+                const percentage = totalSubItemsEffective > 0 ? (installedCount / totalSubItemsEffective) * 100 : 0;
+                const progressBarElement = document.getElementById(progressBarId);
+                const progressTextElement = document.getElementById(progressTextId);
+                if (progressBarElement) progressBarElement.style.width = `${percentage.toFixed(0)}%`;
+                if (progressTextElement) progressTextElement.textContent = `${percentage.toFixed(0)}% (${installedCount}/${totalSubItemsEffective})`;
+            } catch (error) {
+                console.error(`Error calculating progress for task ${task.id}:`, error);
+                const progressTextElement = document.getElementById(progressTextId);
+                if (progressTextElement) progressTextElement.textContent = 'Error';
+            }
+        };
+        setTimeout(calculateProgress, 100);
+    } else {
+         progressBarHtml = `
+            <div class="mt-4 px-4"><p class="text-xs text-gray-400 italic text-center">Progreso no disponible.</p></div>`;
+    }
+
+    // --- Botones (sin cambios) ---
+    const baseButtonClasses = "text-xs font-bold py-2 px-4 rounded-lg transition-colors flex items-center shadow-sm";
+    const iconBaseClasses = "h-4 w-4 mr-1";
+     const editButtonHtmlFinal = currentUserRole === 'admin' ? `
+        <button data-action="edit-task" data-id="${task.id}" class="${baseButtonClasses} bg-yellow-500 hover:bg-yellow-600 text-white">
+            <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+            Editar
         </button>
     ` : '';
-
-    // --- INICIO DE LA MODIFICACIÓN ---
-    // Cambiamos el botón "Ver Proyecto" por "Ver Tarea"
-    const viewTaskButtonHtml = `
-        <button data-action="view-task-details" data-id="${task.id}" class="bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-bold py-2 px-3 rounded transition-colors">
+     const completeButtonHtmlFinal = task.status === 'pendiente' ? `
+        <button data-action="complete-task" data-id="${task.id}" class="${baseButtonClasses} bg-green-500 hover:bg-green-600 text-white">
+            <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+            Completada
+        </button>
+    ` : '';
+     const viewTaskButtonHtmlFinal = `
+        <button data-action="view-task-details" data-id="${task.id}" class="${baseButtonClasses} bg-blue-100 hover:bg-blue-200 text-blue-700">
+             <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z"></path></svg>
             Ver Tarea
         </button>
     `;
-    // --- FIN DE LA MODIFICACIÓN ---
-
-
-    const registerProgressButtonHtml = task.status === 'pendiente' && task.projectId && task.selectedItems && task.selectedItems.length > 0 ? `
-        <button data-action="register-task-progress" data-task-id="${task.id}" class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-2 px-3 rounded transition-colors">
+     const registerProgressButtonHtmlFinal = task.status === 'pendiente' && task.projectId && ((task.selectedItems && task.selectedItems.length > 0) || (task.specificSubItemIds && task.specificSubItemIds.length > 0)) ? `
+        <button data-action="register-task-progress" data-task-id="${task.id}" class="${baseButtonClasses} bg-blue-500 hover:bg-blue-600 text-white">
+            <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
             Registrar Avance
         </button>
     ` : '';
+    const requestMaterialButtonHtml = task.status === 'pendiente' && task.projectId && task.specificSubItemIds && task.specificSubItemIds.length > 0 ? `
+        <button data-action="request-material-from-task"
+                data-project-id="${task.projectId}"
+                data-task-id="${task.id}"
+                class="${baseButtonClasses} bg-purple-500 hover:bg-purple-600 text-white">
+            <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
+            Solicitar Material
+        </button>
+    ` : '';
 
+    // --- Estructura HTML final ---
     card.innerHTML = `
-        <div class="flex flex-col sm:flex-row justify-between sm:items-start">
-            <div class="mb-2 sm:mb-0 flex-grow mr-4">
-                <p class="text-sm font-semibold text-gray-500">${task.projectName || 'Proyecto no especificado'}</p>
-                <h3 class="text-lg font-bold text-gray-800">${task.description}</h3>
-                ${itemsListHtml}
+        <div class="p-4 flex-grow">
+            <div class="flex justify-between items-start mb-2">
+                <div>
+                    <p class="text-xs font-semibold text-blue-600 uppercase tracking-wide">${task.projectName || 'Proyecto no especificado'}</p>
+                    <h3 class="text-lg font-bold text-gray-900 leading-tight mt-1">${task.description}</h3>
+                </div>
+                <div class="text-right flex-shrink-0 pl-4">
+                    <p class="text-sm ${dateColor} flex items-center justify-end">
+                        ${dateIcon}
+                        ${dateText}
+                    </p>
+                    <p class="text-xs text-gray-400 mt-1">
+                        Por: ${usersMap.get(task.createdBy)?.firstName || 'N/A'}
+                    </p>
+                </div>
             </div>
-            <div class="text-left sm:text-right flex-shrink-0">
-                 <p class="text-sm ${dateColor}">Fecha Límite: ${dateText}</p>
-                 <p class="text-xs text-gray-400 mt-1">Creada por: ${usersMap.get(task.createdBy)?.firstName || 'Desconocido'}</p>
-            </div>
+            ${itemsSectionHtml}
+            ${progressBarHtml}
         </div>
-        <div class="mt-4 pt-3 border-t border-gray-200 flex flex-wrap gap-2 justify-end">
-             ${viewTaskButtonHtml} 
-             ${registerProgressButtonHtml}
-             ${completeButtonHtml}
+        <div class="bg-gray-50 p-3 border-t border-gray-200 flex flex-wrap gap-2 justify-end mt-auto">
+            ${editButtonHtmlFinal}
+            ${viewTaskButtonHtmlFinal}
+            ${requestMaterialButtonHtml}
+            ${registerProgressButtonHtmlFinal}
+            ${completeButtonHtmlFinal}
         </div>
     `;
     return card;
 }
-
 
 /**
  * Busca la cantidad EXACTA de sub-ítems pendientes especificada en la tarea
@@ -8294,86 +8915,106 @@ function createTaskCard(task) {
 async function handleRegisterTaskProgress(taskId) {
     if (!taskId) return;
 
-    console.log(`[Task Progress] Iniciando handleRegisterTaskProgress para Tarea ID: ${taskId}`); // NUEVO LOG
+    console.log(`[Task Progress] Iniciando handleRegisterTaskProgress para Tarea ID: ${taskId}`);
     loadingOverlay.classList.remove('hidden');
 
     try {
         const taskRef = doc(db, "tasks", taskId);
-        const taskSnap = await getDoc(taskRef);
+        let taskSnap = await getDoc(taskRef); // 'let' en lugar de 'const'
 
         if (!taskSnap.exists()) {
-            throw new Error(`[Task Progress] La tarea ${taskId} no fue encontrada.`); // NUEVO LOG
+            throw new Error(`[Task Progress] La tarea ${taskId} no fue encontrada.`);
         }
 
-        const taskData = taskSnap.data();
-        console.log(`[Task Progress] Tarea encontrada. Proyecto ID: ${taskData.projectId}`); // NUEVO LOG
+        let taskData = taskSnap.data(); // 'let' en lugar de 'const'
+        console.log(`[Task Progress] Tarea encontrada. Proyecto ID: ${taskData.projectId}`);
 
-        if (!taskData.projectId || !taskData.selectedItems || taskData.selectedItems.length === 0) {
-            throw new Error("[Task Progress] Esta tarea no tiene ítems de proyecto relacionados."); // NUEVO LOG
-        }
+        // *** INICIO DE LA MODIFICACIÓN ***
 
-        console.log(`[Task Progress] Tarea tiene ${taskData.selectedItems.length} ítem(s) seleccionados.`); // NUEVO LOG
-        const relevantPendingSubItemIds = [];
+        // Verificamos si la tarea usa el nuevo sistema de IDs específicos
+        if (taskData.specificSubItemIds && taskData.specificSubItemIds.length > 0) {
 
-        for (const selectedItem of taskData.selectedItems) {
-            const itemId = selectedItem.itemId;
-            const quantityNeeded = selectedItem.quantity;
-
-            if (quantityNeeded <= 0) {
-                console.log(`[Task Progress] Omitiendo ítem ${itemId}: cantidad necesaria es 0.`); // NUEVO LOG
-                continue;
-            }
-
-            console.log(`[Task Progress] Buscando ${quantityNeeded} sub-ítem(s) pendientes para Ítem ID: ${itemId}`); // NUEVO LOG
-
-            const subItemsQuery = query(
-                collection(db, "subItems"),
-                where("projectId", "==", taskData.projectId),
-                where("itemId", "==", itemId),
-                where("status", "!=", "Instalado"),
-                orderBy("number", "asc"),
-                limit(quantityNeeded)
-            );
-
-            const subItemsSnapshot = await getDocs(subItemsQuery);
-
-            if (subItemsSnapshot.empty) {
-                console.warn(`[Task Progress] No se encontraron sub-ítems pendientes para ${itemId}.`); // NUEVO LOG
-            } else {
-                console.log(`[Task Progress] Encontrados ${subItemsSnapshot.size} sub-ítem(s) para ${itemId}.`); // NUEVO LOG
-                subItemsSnapshot.forEach(subItemDoc => {
-                    relevantPendingSubItemIds.push(subItemDoc.id);
-                });
-            }
-        } // Fin del bucle for
-
-        console.log(`[Task Progress] Total de sub-ítems pendientes encontrados: ${relevantPendingSubItemIds.length}`); // NUEVO LOG
-
-        if (relevantPendingSubItemIds.length === 0) {
-            console.warn("[Task Progress] No se encontraron sub-ítems pendientes en total."); // NUEVO LOG
-            // ... (lógica de alerta existente) ...
-            const checkGeneralPendingQuery = query(
-                collection(db, "subItems"),
-                where("projectId", "==", taskData.projectId),
-                where("itemId", "in", taskData.selectedItems.map(si => si.itemId)),
-                where("status", "!=", "Instalado"),
-                limit(1)
-            );
-            const generalPendingSnapshot = await getDocs(checkGeneralPendingQuery);
-            if (generalPendingSnapshot.empty) {
-                alert("Todos los sub-ítems relacionados con esta tarea ya han sido marcados como 'Instalado'.");
-            } else {
-                alert("No se encontraron sub-ítems pendientes específicos para las cantidades requeridas por esta tarea en este momento.");
-            }
+            // LÓGICA NUEVA (La tarea ya está actualizada)
+            console.log(`[Task Progress] Tarea usa 'specificSubItemIds'. Abriendo modal con ${taskData.specificSubItemIds.length} IDs.`);
+            await openMultipleProgressModal(taskData.specificSubItemIds, taskId);
 
         } else {
-            console.log(`[Task Progress] Llamando a openMultipleProgressModal con ${relevantPendingSubItemIds.length} IDs.`); // NUEVO LOG
-            await openMultipleProgressModal(relevantPendingSubItemIds, taskId);
+
+            // LÓGICA ANTIGUA (La tarea debe ser actualizada)
+            console.warn(`[Task Progress] Tarea ${taskId} no tiene 'specificSubItemIds'. Actualizando tarea ahora...`);
+
+            if (!taskData.projectId || !taskData.selectedItems || taskData.selectedItems.length === 0) {
+                throw new Error("[Task Progress] Esta tarea (antigua) no tiene ítems de proyecto relacionados.");
+            }
+
+            const relevantPendingSubItemIds = [];
+            for (const selectedItem of taskData.selectedItems) {
+                const itemId = selectedItem.itemId;
+                const quantityNeeded = selectedItem.quantity;
+
+                if (quantityNeeded <= 0) continue;
+
+                console.log(`[Task Progress] (Migración) Buscando ${quantityNeeded} sub-ítem(s) pendientes para Ítem ID: ${itemId}`);
+
+                const subItemsQuery = query(
+                    collection(db, "subItems"),
+                    where("projectId", "==", taskData.projectId),
+                    where("itemId", "==", itemId),
+                    where("status", "!=", "Instalado"),
+                    orderBy("number", "asc"),
+                    limit(quantityNeeded)
+                );
+
+                const subItemsSnapshot = await getDocs(subItemsQuery);
+
+                if (subItemsSnapshot.empty) {
+                    console.warn(`[Task Progress] (Migración) No se encontraron sub-ítems pendientes para ${itemId}.`);
+                } else {
+                    console.log(`[Task Progress] (Migración) Encontrados ${subItemsSnapshot.size} sub-ítem(s) para ${itemId}.`);
+                    subItemsSnapshot.forEach(subItemDoc => {
+                        relevantPendingSubItemIds.push(subItemDoc.id);
+                    });
+                }
+            } // Fin del bucle for
+
+            console.log(`[Task Progress] (Migración) Total de sub-ítems encontrados: ${relevantPendingSubItemIds.length}`);
+
+            if (relevantPendingSubItemIds.length === 0) {
+                console.warn("[Task Progress] (Migración) No se encontraron sub-ítems pendientes en total.");
+                // (Lógica de alerta existente)
+                const checkGeneralPendingQuery = query(
+                    collection(db, "subItems"),
+                    where("projectId", "==", taskData.projectId),
+                    where("itemId", "in", taskData.selectedItems.map(si => si.itemId)),
+                    where("status", "!=", "Instalado"),
+                    limit(1)
+                );
+                const generalPendingSnapshot = await getDocs(checkGeneralPendingQuery);
+                if (generalPendingSnapshot.empty) {
+                    alert("Todos los sub-ítems relacionados con esta tarea ya han sido marcados como 'Instalado'.");
+                } else {
+                    alert("No se encontraron sub-ítems pendientes específicos para las cantidades requeridas por esta tarea en este momento.");
+                }
+
+            } else {
+
+                // *** ¡EL PASO CLAVE! ***
+                // Guardamos los IDs encontrados en la tarea para futuras ejecuciones
+                console.log(`[Task Progress] (Migración) Guardando ${relevantPendingSubItemIds.length} IDs en la tarea ${taskId}...`);
+                await updateDoc(taskRef, {
+                    specificSubItemIds: relevantPendingSubItemIds
+                });
+
+                // Ahora que la tarea está actualizada, la abrimos
+                console.log(`[Task Progress] (Migración) Tarea actualizada. Llamando a openMultipleProgressModal.`);
+                await openMultipleProgressModal(relevantPendingSubItemIds, taskId);
+            }
         }
+        // *** FIN DE LA MODIFICACIÓN ***
 
     } catch (error) {
         // El error ahora tendrá más contexto gracias a los logs
-        console.error("Error en handleRegisterTaskProgress:", error); // NUEVO LOG
+        console.error("Error en handleRegisterTaskProgress:", error);
         alert(`Error: ${error.message}`);
     } finally {
         loadingOverlay.classList.add('hidden');
@@ -8381,27 +9022,89 @@ async function handleRegisterTaskProgress(taskId) {
 }
 
 /**
-* Marca una tarea como completada en Firestore.
+* Marca una tarea como completada en Firestore, SI TODOS sus sub-ítems están instalados.
 * @param {string} taskId - El ID de la tarea a completar.
 */
 async function completeTask(taskId) {
     const taskRef = doc(db, "tasks", taskId);
+    loadingOverlay.classList.remove('hidden'); // Muestra el loader
+
     try {
+        const taskSnap = await getDoc(taskRef);
+        if (!taskSnap.exists()) {
+            throw new Error("La tarea no fue encontrada.");
+        }
+
+        const taskData = taskSnap.data();
+        const subItemIds = taskData.specificSubItemIds;
+
+        // --- INICIO DE LA VALIDACIÓN ---
+        // 1. Verificar si hay sub-ítems asociados
+        if (subItemIds && subItemIds.length > 0) {
+
+            // 2. Obtener el estado de TODOS los sub-ítems de la tarea
+            const subItemsQuery = query(
+                collection(db, "subItems"),
+                where("__name__", "in", subItemIds) // Consulta por IDs específicos
+            );
+            const subItemsSnapshot = await getDocs(subItemsQuery);
+
+            let allInstalled = true;
+            let foundCount = 0; // Para verificar que encontramos todos los IDs esperados
+
+            // --- INICIO DE LA CORRECCIÓN ---
+            // Declaramos installedCount aquí, antes del bucle
+            let installedCount = 0;
+            // --- FIN DE LA CORRECCIÓN ---
+
+            // 3. Revisar cada sub-ítem
+            subItemsSnapshot.forEach(doc => {
+                foundCount++;
+                if (doc.data().status === 'Instalado') {
+                    // --- INICIO DE LA CORRECCIÓN ---
+                    // Incrementamos la variable ya declarada
+                    installedCount++;
+                    // --- FIN DE LA CORRECCIÓN ---
+                } else {
+                    allInstalled = false;
+                }
+            });
+
+            // 4. Verificar si encontramos todos los sub-ítems y si todos están instalados
+            if (foundCount !== subItemIds.length || !allInstalled) {
+                // Si faltan sub-ítems o alguno no está instalado, muestra error
+                // Ahora podemos usar installedCount en el mensaje sin error
+                alert(`No se puede completar la tarea. ${subItemIds.length - foundCount} sub-ítem(s) no se encontraron o ${subItemIds.length - installedCount} aún no están marcados como 'Instalado'.`);
+                loadingOverlay.classList.add('hidden'); // Oculta el loader
+                return; // Detiene la ejecución
+            }
+        } else {
+            // Si la tarea no tiene subItemIds (puede ser antigua o sin ítems)
+            console.warn(`Tarea ${taskId} no tiene sub-ítems específicos asociados. Completando sin verificar avance.`);
+        }
+        // --- FIN DE LA VALIDACIÓN ---
+
+        // Si pasa la validación (o no tenía subítems), actualiza la tarea
         await updateDoc(taskRef, {
             status: 'completada',
-            completedAt: new Date(), // Opcional: guardar cuándo se completó
-            completedBy: currentUser.uid // Opcional: guardar quién la completó
+            completedAt: new Date(),
+            completedBy: currentUser.uid
         });
+
         console.log(`Tarea ${taskId} marcada como completada.`);
         // La vista se actualizará automáticamente gracias a onSnapshot
+
     } catch (error) {
         console.error("Error al marcar la tarea como completada:", error);
-        alert("No se pudo completar la tarea. Inténtalo de nuevo.");
+        alert(`No se pudo completar la tarea: ${error.message}`);
+    } finally {
+        loadingOverlay.classList.add('hidden'); // Asegura que el loader se oculte
     }
 }
 
 /**
- * Guarda una nueva tarea en Firestore, incluyendo ítems seleccionados con cantidad.
+ * Guarda una nueva tarea en Firestore, incluyendo ítems seleccionados con cantidad
+ * y envía notificaciones a los asignados.
  * @param {object} taskData - Datos de la tarea obtenidos del formulario del modal.
  */
 async function createTask(taskData) {
@@ -8411,34 +9114,60 @@ async function createTask(taskData) {
         return;
     }
 
-    // --- Recolectar datos de ítems seleccionados y sus cantidades ---
-    const selectedItemsData = [];
+    // --- Recolectar datos de ítems y encontrar subItemIds (Lógica existente sin cambios) ---
     const itemCheckboxes = modalForm.querySelectorAll('input[name="selectedItemIds"]:checked');
-
-    itemCheckboxes.forEach(checkbox => {
+    if (itemCheckboxes.length === 0) {
+        alert("Debes seleccionar al menos un Ítem Relacionado e ingresar su cantidad.");
+        return;
+    }
+    const selectedItemsQueryData = [];
+    // (Bucle for...of para validar cantidades y llenar selectedItemsQueryData)
+    for (const checkbox of itemCheckboxes) {
         const itemId = checkbox.value;
         const quantityInput = modalForm.querySelector(`input[name="itemQuantity_${itemId}"]`);
         const quantity = parseInt(quantityInput?.value);
-        const maxQuantity = parseInt(checkbox.dataset.itemQuantity) || 1; // Obtener max del checkbox
+        const maxQuantity = parseInt(checkbox.dataset.itemQuantity) || 1;
 
-        if (quantity && quantity > 0) {
-            if (quantity > maxQuantity) {
-                // Lanzar error si la cantidad excede el máximo del ítem
-                throw new Error(`La cantidad para el ítem "${checkbox.nextElementSibling.textContent}" (${quantity}) excede el máximo permitido (${maxQuantity}).`);
-            }
-            selectedItemsData.push({ itemId: itemId, quantity: quantity });
-        } else {
-            // Lanzar error si un ítem está marcado pero no tiene cantidad válida
+        if (!quantity || quantity <= 0) {
             throw new Error(`Por favor, ingresa una cantidad válida (mayor a 0) para el ítem "${checkbox.nextElementSibling.textContent}".`);
         }
-    });
+        if (quantity > maxQuantity) {
+            throw new Error(`La cantidad para el ítem "${checkbox.nextElementSibling.textContent}" (${quantity}) excede el máximo permitido (${maxQuantity}).`);
+        }
 
-    // *** Validación Obligatoria de Ítems ***
-    if (selectedItemsData.length === 0) {
-        alert("Debes seleccionar al menos un Ítem Relacionado e ingresar su cantidad.");
-        return; // Detiene si no se seleccionó ningún ítem con cantidad
+        selectedItemsQueryData.push({
+            itemId: itemId,
+            quantityNeeded: quantity,
+            itemName: checkbox.nextElementSibling.textContent
+        });
     }
-    // --- Fin recolección y validación de ítems ---
+
+    const specificSubItemIds = [];
+    const selectedItemsForTask = [];
+    // (Bucle for...of para buscar los subItemIds y llenar specificSubItemIds y selectedItemsForTask)
+    for (const itemQuery of selectedItemsQueryData) {
+        const subItemsQuery = query(
+            collection(db, "subItems"),
+            where("projectId", "==", taskData.projectId),
+            where("itemId", "==", itemQuery.itemId),
+            where("status", "!=", "Instalado"),
+            orderBy("number", "asc"),
+            limit(itemQuery.quantityNeeded)
+        );
+        const subItemsSnapshot = await getDocs(subItemsQuery);
+        if (subItemsSnapshot.size < itemQuery.quantityNeeded) {
+            throw new Error(`No se pudieron asignar ${itemQuery.quantityNeeded} unidades para "${itemQuery.itemName}". Solo se encontraron ${subItemsSnapshot.size} unidades pendientes.`);
+        }
+        subItemsSnapshot.forEach(doc => {
+            specificSubItemIds.push(doc.id);
+        });
+        selectedItemsForTask.push({
+            itemId: itemQuery.itemId,
+            quantity: itemQuery.quantityNeeded
+        });
+    }
+    // --- Fin recolección y búsqueda ---
+
 
     // Recolectar asignados adicionales (sin cambios)
     const additionalAssignees = taskData.additionalAssigneeIds ?
@@ -8446,31 +9175,66 @@ async function createTask(taskData) {
         : [];
 
     try {
-        await addDoc(collection(db, "tasks"), {
+        // --- Guardar la Tarea (Lógica existente) ---
+        const newTaskRef = await addDoc(collection(db, "tasks"), { // Guardamos la referencia a la nueva tarea
             projectId: taskData.projectId,
             projectName: taskData.projectName,
             assigneeId: taskData.assigneeId,
             assigneeName: taskData.assigneeName,
             additionalAssigneeIds: additionalAssignees,
-            selectedItems: selectedItemsData, // <-- GUARDAR EL ARRAY DE OBJETOS {itemId, quantity}
+            selectedItems: selectedItemsForTask,
+            specificSubItemIds: specificSubItemIds,
             description: taskData.description,
             dueDate: taskData.dueDate || null,
             status: 'pendiente',
             createdAt: new Date(),
             createdBy: currentUser.uid
         });
-        console.log("Nueva tarea guardada en Firestore con ítems y cantidades.");
+        console.log("Nueva tarea guardada en Firestore con ID:", newTaskRef.id);
+
+        // --- INICIO DE LA NUEVA LÓGICA DE NOTIFICACIONES ---
+        const notificationMessage = `Nueva tarea asignada: ${taskData.description.substring(0, 50)}${taskData.description.length > 50 ? '...' : ''}`;
+        const notificationData = {
+            message: notificationMessage,
+            taskId: newTaskRef.id, // ID de la tarea recién creada
+            projectId: taskData.projectId,
+            read: false,
+            createdAt: new Date(),
+            type: 'new_task_assignment' // Tipo de notificación
+        };
+
+        // 1. Notificación para el asignado principal
+        if (taskData.assigneeId && taskData.assigneeId !== currentUser.uid) { // No notificarse a sí mismo
+            await addDoc(collection(db, "notifications"), {
+                ...notificationData,
+                userId: taskData.assigneeId
+            });
+            console.log(`Notificación enviada a asignado principal: ${taskData.assigneeId}`);
+        }
+
+        // 2. Notificaciones para asignados adicionales
+        for (const additionalId of additionalAssignees) {
+            if (additionalId && additionalId !== currentUser.uid) { // No notificarse a sí mismo
+                await addDoc(collection(db, "notifications"), {
+                    ...notificationData,
+                    userId: additionalId
+                });
+                console.log(`Notificación enviada a asignado adicional: ${additionalId}`);
+            }
+        }
+        // --- FIN DE LA NUEVA LÓGICA DE NOTIFICACIONES ---
+
         closeMainModal();
 
     } catch (error) {
-        console.error("Error al guardar la nueva tarea:", error);
-        // Mostrar el mensaje de error específico si lo lanzamos nosotros (ej: cantidad inválida)
+        console.error("Error al guardar la nueva tarea o enviar notificaciones:", error);
         alert(`No se pudo guardar la tarea: ${error.message}`);
     }
 }
 
 /**
- * Abre el modal con los detalles completos de una tarea específica.
+ * Abre el modal con los detalles completos de una tarea específica, con un diseño mejorado.
+ * Establece el contexto de retorno para la solicitud de material.
  * @param {string} taskId - El ID de la tarea a mostrar.
  */
 async function openTaskDetailsModal(taskId) {
@@ -8481,13 +9245,15 @@ async function openTaskDetailsModal(taskId) {
 
     if (!modal || !bodyEl || !actionsEl) return;
 
+    // Establecer el contexto de retorno CADA VEZ que se entra a esta vista
+    materialRequestReturnContext = { view: 'detalle-tarea', taskId: taskId };
+    console.log("Contexto de retorno establecido en: detalle-tarea"); // Log para depuración
+
     // Mostrar modal y estado de carga
     modal.style.display = 'flex';
     titleEl.textContent = 'Cargando Detalles...';
     bodyEl.innerHTML = '<div class="text-center py-8"><div class="loader mx-auto"></div></div>';
-    // Limpiar botones de acción previos (excepto el de cerrar)
     actionsEl.querySelectorAll('button:not(#task-details-cancel-btn)').forEach(btn => btn.remove());
-
 
     try {
         const taskRef = doc(db, "tasks", taskId);
@@ -8499,9 +9265,10 @@ async function openTaskDetailsModal(taskId) {
 
         const task = { id: taskSnap.id, ...taskSnap.data() };
 
-        titleEl.textContent = `Detalle: ${task.description.substring(0, 30)}${task.description.length > 30 ? '...' : ''}`;
+        // --- Título del Modal ---
+        titleEl.textContent = `Detalle Tarea: ${task.description.substring(0, 40)}${task.description.length > 40 ? '...' : ''}`;
 
-        // Obtener nombres para mostrar
+        // --- Obtener Nombres ---
         const creatorName = usersMap.get(task.createdBy)?.firstName || 'Desconocido';
         const assigneeName = usersMap.get(task.assigneeId)?.firstName + ' ' + usersMap.get(task.assigneeId)?.lastName || 'No asignado';
         let additionalAssigneesNames = 'Ninguno';
@@ -8511,93 +9278,206 @@ async function openTaskDetailsModal(taskId) {
                 .join(', ');
         }
 
-        // Formatear fecha límite
-        const dueDate = task.dueDate ? new Date(task.dueDate + 'T00:00:00').toLocaleDateString('es-CO') : 'No establecida';
+        // --- Formatear Fechas y Estado ---
+        const dueDate = task.dueDate ? new Date(task.dueDate + 'T00:00:00') : null;
+        const createdAtDate = task.createdAt ? task.createdAt.toDate().toLocaleDateString('es-CO') : 'N/A';
+        let dueDateText = dueDate ? dueDate.toLocaleDateString('es-CO') : 'No establecida';
+        let statusText = task.status === 'pendiente' ? 'Pendiente' : 'Completada';
+        let statusColorClass = task.status === 'pendiente' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800';
 
-        // Generar lista detallada de ítems
-        let itemsDetailsHtml = '<p class="text-sm text-gray-500">No hay ítems asociados.</p>';
-        if (task.selectedItems && task.selectedItems.length > 0) {
-            const itemDetailPromises = task.selectedItems.map(async (itemInfo) => {
+        // --- Generar lista detallada de ítems ---
+        let itemsDetailsHtml = '<p class="text-sm text-gray-500 italic">No hay ítems asociados a esta tarea.</p>';
+        if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
+            itemsDetailsHtml = `<div class="border rounded-lg overflow-hidden mt-2">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="px-3 py-2 text-left font-semibold text-gray-600">Ítem</th>
+                            <th class="px-3 py-2 text-center font-semibold text-gray-600">Cantidad Total</th>
+                            <th class="px-3 py-2 text-center font-semibold text-gray-600">Pendientes</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200" id="task-detail-items-tbody-${task.id}">
+                        <tr><td colspan="3" class="text-center py-3 text-gray-400 italic">Cargando ítems...</td></tr>
+                    </tbody>
+                </table>
+             </div>`;
+
+            const loadItemDetails = async () => { /* ... (código existente) ... */
                 try {
-                    const itemDoc = await getDoc(doc(db, "items", itemInfo.itemId));
-                    const itemName = itemDoc.exists() ? itemDoc.data().name : `Ítem ID: ${itemInfo.itemId}`;
-                    // Buscar subítems pendientes para este ítem
-                    const subItemsQuery = query(
-                        collection(db, "subItems"),
-                        where("projectId", "==", task.projectId),
-                        where("itemId", "==", itemInfo.itemId),
-                        where("status", "!=", "Instalado")
-                    );
-                    const subItemsSnapshot = await getDocs(subItemsQuery);
-                    const pendingCount = subItemsSnapshot.size;
-                    return `
-                        <li class="py-2 border-b last:border-b-0">
-                            <span class="font-semibold">${itemInfo.quantity} x ${itemName}</span>
-                            <span class="text-xs text-gray-500 ml-2">(${pendingCount} und. pendientes)</span>
-                        </li>`;
+                    const subItemIds = task.specificSubItemIds;
+                    const subItemPromises = subItemIds.map(id => getDoc(doc(db, "subItems", id)));
+                    const subItemDocs = await Promise.all(subItemPromises);
+                    const itemsStatus = new Map();
+                    for (const docSnap of subItemDocs) {
+                        if (docSnap.exists()) {
+                            const subItem = docSnap.data();
+                            const itemId = subItem.itemId;
+                            if (!itemId) continue;
+                            if (!itemsStatus.has(itemId)) {
+                                const itemDoc = await getDoc(doc(db, "items", itemId));
+                                const itemName = itemDoc.exists() ? itemDoc.data().name : `Ítem ID: ${itemId}`;
+                                itemsStatus.set(itemId, { name: itemName, total: 0, installed: 0 });
+                            }
+                            const statusInfo = itemsStatus.get(itemId);
+                            statusInfo.total++;
+                            if (subItem.status === 'Instalado') {
+                                statusInfo.installed++;
+                            }
+                        }
+                    }
+                    let tableBodyHtml = '';
+                    if (itemsStatus.size === 0) {
+                        tableBodyHtml = '<tr><td colspan="3" class="text-center py-3 text-red-500">Error: No se encontraron los ítems asociados.</td></tr>';
+                    } else {
+                        itemsStatus.forEach((statusInfo, itemId) => {
+                            const pendingCount = statusInfo.total - statusInfo.installed;
+                            tableBodyHtml += `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-3 py-2 font-medium text-gray-800">${statusInfo.name}</td>
+                                    <td class="px-3 py-2 text-center">${statusInfo.total}</td>
+                                    <td class="px-3 py-2 text-center font-bold ${pendingCount > 0 ? 'text-red-600' : 'text-green-600'}">${pendingCount}</td>
+                                </tr>`;
+                        });
+                    }
+                    const tbodyElement = document.getElementById(`task-detail-items-tbody-${task.id}`);
+                    if (tbodyElement) tbodyElement.innerHTML = tableBodyHtml;
                 } catch (error) {
-                    return `<li class="py-2 border-b last:border-b-0 text-red-500">Error cargando detalle para ítem ID: ${itemInfo.itemId}</li>`;
+                    console.error(`Error loading item details for task ${task.id}:`, error);
+                    const tbodyElement = document.getElementById(`task-detail-items-tbody-${task.id}`);
+                    if (tbodyElement) tbodyElement.innerHTML = '<tr><td colspan="3" class="text-center py-3 text-red-500">Error al cargar detalles de ítems.</td></tr>';
                 }
-            });
-            itemsDetailsHtml = `<ul class="space-y-1">${(await Promise.all(itemDetailPromises)).join('')}</ul>`;
+            };
+            setTimeout(loadItemDetails, 50);
         }
 
+        // --- INICIO DE LA MODIFICACIÓN ---
+        // 1. Añadimos el placeholder para el estado del material DENTRO del modal
+        const materialStatusId = `task-detail-material-status-${task.id}`;
+        let materialStatusHtml = '';
+        // Solo si la tarea tiene subítems (y por ende, podría necesitar material)
+        if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
+            materialStatusHtml = `
+                <div class="bg-white border border-gray-200 rounded-lg p-4">
+                     <h4 class="text-md font-semibold text-gray-700 mb-2 border-b pb-2 flex items-center">
+                        <svg class="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"></path></svg>
+                        Estado de Materiales
+                    </h4>
+                    <div id="${materialStatusId}">
+                        <p class="text-sm text-gray-400 italic">Cargando estado de materiales...</p>
+                    </div>
+                </div>
+             `;
+        }
+        // --- FIN DE LA MODIFICACIÓN ---
 
-        // Construir el cuerpo del modal
+
+        // --- Construir el cuerpo del modal con secciones ---
         bodyEl.innerHTML = `
-            <dl class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                <div>
-                    <dt class="text-sm font-medium text-gray-500">Proyecto</dt>
-                    <dd class="mt-1 text-md text-gray-900 font-semibold">${task.projectName || 'N/A'}</dd>
+            <div class="space-y-6">
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                     <h4 class="text-md font-semibold text-gray-700 mb-3 border-b pb-2 flex items-center">
+                        <svg class="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Información General
+                    </h4>
+                    <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                        <div>
+                            <dt class="font-medium text-gray-500">Proyecto</dt>
+                            <dd class="text-gray-900 font-semibold">${task.projectName || 'N/A'}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-medium text-gray-500">Estado</dt>
+                            <dd><span class="px-2 py-1 text-xs font-semibold rounded-full ${statusColorClass}">${statusText}</span></dd>
+                        </div>
+                         <div>
+                            <dt class="font-medium text-gray-500">Fecha Límite</dt>
+                            <dd class="text-gray-900">${dueDateText}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-medium text-gray-500">Fecha Creación</dt>
+                            <dd class="text-gray-900">${createdAtDate}</dd>
+                        </div>
+                        <div class="col-span-2">
+                            <dt class="font-medium text-gray-500">Descripción</dt>
+                            <dd class="text-gray-900 whitespace-pre-wrap">${task.description}</dd>
+                        </div>
+                    </dl>
                 </div>
-                 <div>
-                    <dt class="text-sm font-medium text-gray-500">Estado</dt>
-                    <dd class="mt-1 text-md text-gray-900">${task.status === 'pendiente' ? 'Pendiente' : 'Completada'}</dd>
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                      <h4 class="text-md font-semibold text-gray-700 mb-3 border-b pb-2 flex items-center">
+                         <svg class="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21v-1a6 6 0 00-1-3.796V12a4 4 0 11-8 0v2.204a6 6 0 00-1 3.796v1z"></path></svg>
+                        Asignación
+                    </h4>
+                     <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                        <div>
+                            <dt class="font-medium text-gray-500">Asignado Principal</dt>
+                            <dd class="text-gray-900 font-semibold">${assigneeName}</dd>
+                        </div>
+                        <div>
+                            <dt class="font-medium text-gray-500">Creada por</dt>
+                            <dd class="text-gray-900">${creatorName}</dd>
+                        </div>
+                        <div class="col-span-2">
+                            <dt class="font-medium text-gray-500">Otros Asignados</dt>
+                            <dd class="text-gray-900">${additionalAssigneesNames}</dd>
+                        </div>
+                    </dl>
                 </div>
-                 <div>
-                    <dt class="text-sm font-medium text-gray-500">Asignado Principal</dt>
-                    <dd class="mt-1 text-md text-gray-900">${assigneeName}</dd>
+                <div class="bg-white border border-gray-200 rounded-lg p-4">
+                    <h4 class="text-md font-semibold text-gray-700 mb-2 border-b pb-2 flex items-center">
+                        <svg class="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                        Ítems Relacionados y Avance
+                    </h4>
+                    ${itemsDetailsHtml}
                 </div>
-                <div>
-                    <dt class="text-sm font-medium text-gray-500">Fecha Límite</dt>
-                    <dd class="mt-1 text-md text-gray-900">${dueDate}</dd>
-                </div>
-                 <div class="col-span-1 md:col-span-2">
-                    <dt class="text-sm font-medium text-gray-500">Descripción Completa</dt>
-                    <dd class="mt-1 text-md text-gray-900 whitespace-pre-wrap">${task.description}</dd>
-                </div>
-                 <div class="col-span-1 md:col-span-2">
-                    <dt class="text-sm font-medium text-gray-500">Ítems a Trabajar</dt>
-                    <dd class="mt-1 text-md text-gray-900">${itemsDetailsHtml}</dd>
-                </div>
-                 <div>
-                    <dt class="text-sm font-medium text-gray-500">Asignados Adicionales</dt>
-                    <dd class="mt-1 text-md text-gray-900">${additionalAssigneesNames}</dd>
-                </div>
-
-                <div>
-                    <dt class="text-sm font-medium text-gray-500">Creada por</dt>
-                    <dd class="mt-1 text-md text-gray-900">${creatorName}</dd>
-                </div>
-            </dl>
+                ${materialStatusHtml}
+            </div>
         `;
 
-        // Añadir botón "Registrar Avance" si la tarea está pendiente y tiene ítems
-        if (task.status === 'pendiente' && task.selectedItems && task.selectedItems.length > 0) {
+        // --- INICIO DE LA MODIFICACIÓN ---
+        // 2. Llamamos a la función para que llene el placeholder
+        // Solo si la tarea tiene subítems (y por ende, el placeholder existe)
+        if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
+            loadTaskMaterialStatus(task.id, task.projectId, materialStatusId);
+        }
+        // --- FIN DE LA MODIFICACIÓN ---
+
+        // --- Añadir botones de acción (sin cambios) ---
+        actionsEl.querySelectorAll('button:not(#task-details-cancel-btn)').forEach(btn => btn.remove());
+
+        if (currentUserRole === 'admin') { /* ... (botón editar) ... */
+            const editBtn = document.createElement('button');
+            editBtn.type = 'button';
+            editBtn.dataset.action = 'edit-task';
+            editBtn.dataset.id = task.id;
+            editBtn.className = 'bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg flex items-center';
+            editBtn.innerHTML = `<svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg> Editar Tarea`;
+            actionsEl.insertBefore(editBtn, actionsEl.firstChild);
+        }
+        if (task.status === 'pendiente' && task.specificSubItemIds && task.specificSubItemIds.length > 0) { /* ... (botón solicitar material) ... */
+            const requestBtn = document.createElement('button');
+            requestBtn.type = 'button';
+            requestBtn.dataset.action = 'request-material-from-task';
+            requestBtn.dataset.projectId = task.projectId;
+            requestBtn.dataset.taskId = task.id;
+            requestBtn.className = 'bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg flex items-center';
+            requestBtn.innerHTML = `<svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg> Solicitar Material`;
+            actionsEl.insertBefore(requestBtn, actionsEl.firstChild);
+        }
+        if (task.status === 'pendiente' && task.specificSubItemIds && task.specificSubItemIds.length > 0) { /* ... (botón registrar avance) ... */
             const progressBtn = document.createElement('button');
             progressBtn.type = 'button';
-            progressBtn.dataset.action = 'register-task-progress'; // Reutilizamos la acción
-            progressBtn.dataset.taskId = task.id; // Pasamos el ID de la tarea
-            progressBtn.className = 'bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg';
-            progressBtn.textContent = 'Registrar Avance';
-            // Insertar antes del botón de cerrar
+            progressBtn.dataset.action = 'register-task-progress';
+            progressBtn.dataset.taskId = task.id;
+            progressBtn.className = 'bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg flex items-center';
+            progressBtn.innerHTML = `<svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg> Registrar Avance`;
             actionsEl.insertBefore(progressBtn, actionsEl.firstChild);
         }
 
     } catch (error) {
         console.error("Error al abrir detalles de tarea:", error);
         titleEl.textContent = 'Error';
-        bodyEl.innerHTML = `<p class="text-red-500 text-center">${error.message}</p>`;
+        bodyEl.innerHTML = `<p class="text-red-500 text-center py-6">${error.message}</p>`;
     }
 }
 
@@ -8608,8 +9488,210 @@ function closeTaskDetailsModal() {
     const modal = document.getElementById('task-details-modal');
     if (modal) {
         modal.style.display = 'none';
+
+        const bodyEl = document.getElementById('task-details-body');
+
+        // --- INICIO DE LA MODIFICACIÓN (Limpieza de listener) ---
+        // Limpiar listeners de material activos para este modal
+        // Buscamos cualquier div de estado de material dentro del cuerpo del modal
+        const materialStatusDiv = bodyEl.querySelector('div[id^="task-detail-material-status-"]');
+        if (materialStatusDiv) {
+            const placeholderId = materialStatusDiv.id;
+            if (materialStatusListeners.has(placeholderId)) {
+                materialStatusListeners.get(placeholderId)(); // Llama a la función unsubscribe
+                materialStatusListeners.delete(placeholderId);
+                console.log(`Listener de material ${placeholderId} limpiado al cerrar modal.`);
+            }
+        }
+        // --- FIN DE LA MODIFICACIÓN ---
+
         // Opcional: Limpiar el contenido para la próxima vez
-        document.getElementById('task-details-body').innerHTML = '<div class="text-center py-8"><div class="loader mx-auto"></div></div>';
+        bodyEl.innerHTML = '<div class="text-center py-8"><div class="loader mx-auto"></div></div>';
         document.getElementById('task-details-actions').querySelectorAll('button:not(#task-details-cancel-btn)').forEach(btn => btn.remove());
     }
+}
+
+/**
+ * Inicia el proceso de solicitud de material pre-seleccionando ítems de una tarea.
+ * @param {string} projectId - El ID del proyecto.
+ * @param {string} taskId - El ID de la tarea origen.
+ */
+async function handleRequestMaterialFromTask(projectId, taskId) {
+    loadingOverlay.classList.remove('hidden');
+    try {
+        const [projectDoc, taskDoc] = await Promise.all([
+            getDoc(doc(db, "projects", projectId)),
+            getDoc(doc(db, "tasks", taskId))
+        ]);
+
+        if (!projectDoc.exists()) throw new Error("El proyecto asociado no existe.");
+        if (!taskDoc.exists()) throw new Error("La tarea asociada no existe.");
+
+        currentProject = { id: projectDoc.id, ...projectDoc.data() };
+        const taskData = taskDoc.data();
+        const subItemIds = taskData.specificSubItemIds || [];
+
+        let pendingItemsForTask = [];
+        if (subItemIds.length > 0) {
+            // ... (Lógica existente para calcular pendingItemsMap) ...
+            const subItemPromises = subItemIds.map(id => getDoc(doc(db, "subItems", id)));
+            const subItemDocs = await Promise.all(subItemPromises);
+            const pendingItemsMap = new Map();
+            subItemDocs.forEach(docSnap => {
+                if (docSnap.exists() && docSnap.data().status !== 'Instalado') {
+                    const subItem = docSnap.data();
+                    if (subItem.itemId) {
+                        const currentCount = pendingItemsMap.get(subItem.itemId) || 0;
+                        pendingItemsMap.set(subItem.itemId, currentCount + 1);
+                    }
+                }
+            });
+            pendingItemsMap.forEach((quantity, itemId) => {
+                pendingItemsForTask.push({ itemId, quantity });
+            });
+        } else {
+            console.warn("La tarea no tiene subítems específicos para pre-seleccionar.");
+            pendingItemsForTask = taskData.selectedItems || null;
+        }
+
+        // 2. Mostrar la vista de solicitud, PASANDO los ítems pendientes
+        await showMaterialRequestView(pendingItemsForTask);
+
+        // --- INICIO DE LA MODIFICACIÓN ---
+        // 3. Guardar el ID de la tarea en el formulario
+        const taskIdInput = document.getElementById('material-request-task-id');
+        if (taskIdInput) {
+            taskIdInput.value = taskId; // Guardamos el ID de la tarea
+        }
+        // --- FIN DE LA MODIFICACIÓN ---
+
+        // 4. Pre-seleccionar los ítems y cantidades en el formulario
+        const itemListContainer = document.getElementById('request-item-list-container-view');
+        pendingItemsForTask.forEach(itemInfo => {
+            const inputElement = itemListContainer.querySelector(`.request-item-quantity[data-item-id="${itemInfo.itemId}"]`);
+            if (inputElement) {
+                inputElement.value = itemInfo.quantity;
+            }
+        });
+
+    } catch (error) {
+        console.error("Error al iniciar solicitud desde tarea:", error);
+        alert(`Error al preparar la solicitud: ${error.message}`);
+        showView('tareas');
+        loadTasksView();
+    } finally {
+        loadingOverlay.classList.add('hidden');
+    }
+}
+
+/**
+ * Carga y muestra el estado de los materiales (solicitado, despachado) para una tarea específica.
+ * @param {string} taskId - El ID de la tarea.
+ * @param {string} projectId - El ID del proyecto.
+ * @param {string} placeholderId - El ID del div donde se renderizará el HTML.
+ */
+function loadTaskMaterialStatus(taskId, projectId, placeholderId) {
+    // Cancelar cualquier listener anterior para esta misma tarjeta
+    if (materialStatusListeners.has(placeholderId)) {
+        materialStatusListeners.get(placeholderId)(); // Llama a la función unsubscribe
+        materialStatusListeners.delete(placeholderId);
+    }
+
+    const q = query(
+        collection(db, "projects", projectId, "materialRequests"),
+        where("taskId", "==", taskId)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        const container = document.getElementById(placeholderId);
+        if (!container) {
+            unsubscribe(); // Si el contenedor ya no existe, cancela el listener
+            materialStatusListeners.delete(placeholderId);
+            return;
+        }
+
+        if (snapshot.empty) {
+            container.innerHTML = `
+                <p class="text-xs font-semibold text-gray-700 mb-1 flex items-center">
+                    <svg class="h-4 w-4 mr-1 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"></path></svg>
+                    Estado de Materiales:
+                </p>
+                <p class="text-xs text-gray-500 pl-5">No se ha solicitado material.</p>
+            `;
+            return;
+        }
+
+        // Usamos un Map para agrupar por material (itemId)
+        const materialSummary = new Map();
+
+        snapshot.forEach(doc => {
+            const request = doc.data();
+            const status = request.status; // 'pendiente', 'aprobado', 'entregado'
+            const items = request.consumedItems || [];
+
+            items.forEach(item => {
+                const materialId = item.materialId;
+                // Usamos el nombre guardado en la solicitud, o un fallback
+                const materialName = item.itemName || "Material";
+
+                if (!materialSummary.has(materialId)) {
+                    materialSummary.set(materialId, {
+                        name: materialName,
+                        solicitado: 0,
+                        despachado: 0
+                    });
+                }
+
+                const summary = materialSummary.get(materialId);
+                const quantity = item.quantity || 0;
+
+                if (status === 'entregado') {
+                    summary.despachado += quantity;
+                    summary.solicitado += quantity; // Si está entregado, también fue solicitado
+                } else if (status === 'aprobado' || status === 'pendiente') {
+                    summary.solicitado += quantity;
+                }
+            });
+        });
+
+        // Generar el HTML final
+        let html = `
+            <p class="text-xs font-semibold text-gray-700 mb-1 flex items-center">
+                <svg class="h-4 w-4 mr-1 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"></path></svg>
+                Estado de Materiales:
+            </p>`;
+
+        if (materialSummary.size === 0) {
+            html += '<p class="text-xs text-gray-500 pl-5">No se ha solicitado material.</p>';
+        }
+
+        html += '<ul class="space-y-1 text-xs pl-5">';
+        materialSummary.forEach((summary, id) => {
+            const pendiente = summary.solicitado - summary.despachado;
+
+            html += `<li class="border-b border-gray-100 pb-1 last:border-b-0">
+                <span class="font-medium text-gray-800">${summary.name}</span>
+                <div class="pl-2">
+                   <span class="text-blue-600">Solicitado: ${summary.solicitado}</span> | 
+                   <span class="text-green-600">Despachado: ${summary.despachado}</span>
+                   ${pendiente > 0 ? `| <span class="font-bold text-red-600">Pendiente: ${pendiente}</span>` : ''}
+                </div>
+            </li>`;
+        });
+        html += '</ul>';
+
+        container.innerHTML = html;
+
+    }, (error) => {
+        console.error(`Error al cargar estado de material para tarea ${taskId}:`, error);
+        const container = document.getElementById(placeholderId);
+        if (container) {
+            container.innerHTML = `<p class="text-xs text-red-500">Error al cargar estado de material.</p>`;
+        }
+    });
+
+    // Guardar la función de unsubscribe
+    materialStatusListeners.set(placeholderId, unsubscribe);
+    // También la añadimos al listener global por si acaso
+    activeListeners.push(unsubscribe);
 }
