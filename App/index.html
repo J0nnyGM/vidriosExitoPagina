@@ -312,7 +312,7 @@
                     <p id="user-info" class="text-sm text-gray-500"></p>
                 </div>
 
-                <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-4 w-full md:w-auto justify-end">
                     <div class="relative">
                         <button id="notifications-btn"
                             class="relative text-gray-600 hover:text-gray-800 focus:outline-none">
@@ -324,13 +324,15 @@
                             <span id="notification-badge"
                                 class="absolute top-0 right-0 h-2 w-2 bg-red-500 rounded-full hidden"></span>
                         </button>
+                        </button>
                         <div id="notifications-dropdown"
-                            class="hidden absolute right-0 mt-2 w-80 bg-white rounded-md shadow-lg overflow-hidden z-20">
-                            <div class="py-2">
-                                <p class="px-4 py-2 text-sm font-semibold text-gray-800">Notificaciones</p>
-                                <div id="notifications-list">
-                                </div>
+                            class="hidden absolute mt-2 w-full right-0 sm:w-80 bg-white rounded-md shadow-lg z-20 flex flex-col max-h-[80vh] sm:max-h-[600px]">
+                            <div class="flex-shrink-0">
+                                <p class="px-4 py-3 text-base font-semibold text-gray-900 border-b">Notificaciones</p>
                             </div>
+
+                            <ul id="notifications-list" class="divide-y divide-gray-100 overflow-y-auto">
+                            </ul>
                         </div>
                     </div>
 
@@ -390,7 +392,7 @@
                     </nav>
                 </div>
 
-                <div id="tasks-container" class="space-y-4">
+                <div id="tasks-container">
                     <div id="loading-tasks" class="text-center py-10">
                         <p class="text-gray-500">Cargando tareas...</p>
                     </div>
@@ -627,7 +629,8 @@
                                     <div class="md:col-span-2 border-t pt-4">
                                         <p class="text-sm font-medium text-gray-500">Modelo de Contrato</p>
                                         <p id="project-details-pricingModel"
-                                            class="text-lg font-semibold text-gray-800">Cargando...</p>
+                                            class="text-lg font-semibold text-gray-800">
+                                            Cargando...</p>
                                     </div>
                                 </div>
                             </div>
@@ -902,7 +905,8 @@
                                     <div>
                                         <p class="text-sm font-medium text-gray-500">Anticipo del Contrato</p>
                                         <p id="pagos-anticipo-total-value"
-                                            class="text-2xl font-bold text-gray-800 mt-1">Cargando...</p>
+                                            class="text-2xl font-bold text-gray-800 mt-1">
+                                            Cargando...</p>
                                     </div>
                                     <div>
                                         <p class="text-sm font-medium text-gray-500">Anticipo Amortizado</p>
@@ -1699,11 +1703,12 @@
         </div>
     </div>
 
-    <div id="task-details-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop p-4">
+    <div id="task-details-modal" data-action="close-task-details"
+        class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop p-4">
         <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto max-h-[90vh] flex flex-col">
             <div class="flex justify-between items-center p-4 border-b">
                 <h3 id="task-details-title" class="text-xl font-bold text-gray-800">Detalles de la Tarea</h3>
-                <button id="task-details-close-btn"
+                <button id="task-details-close-btn" data-action="close-task-details"
                     class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
             </div>
             <div id="task-details-body" class="p-6 overflow-y-auto space-y-4">
@@ -1712,7 +1717,7 @@
                 </div>
             </div>
             <div id="task-details-actions" class="mt-auto p-4 border-t flex justify-end gap-3">
-                <button type="button" id="task-details-cancel-btn"
+                <button type="button" id="task-details-cancel-btn" data-action="close-task-details"
                     class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cerrar</button>
             </div>
         </div>

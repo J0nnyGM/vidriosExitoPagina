@@ -655,3 +655,13 @@ dl dd span.block:last-child {
     border-radius: 9999px; /* rounded-full */
     transition: width 0.5s ease-in-out;
 }
+
+/* --- Estilos para Notificaciones (Swipe-to-delete) --- */
+.notification-item {
+    /* Obligatorio para que la animación de deslizamiento no afecte a otros elementos */
+    position: relative;
+    /* Oculta el contenido que se desborda al deslizar */
+    overflow: hidden; 
+    /* Evita que el usuario seleccione el texto mientras desliza */
+    user-select: none;
+}

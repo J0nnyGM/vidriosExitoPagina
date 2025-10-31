@@ -1,9 +1,8 @@
 // Importaciones de Firebase
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment, limit } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js"; // <-- AÑADE serverTimestamp
 import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app-check.js";
-
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-messaging.js";
@@ -39,6 +38,7 @@ let unsubscribeInventory = null;
 let unsubscribeStock = null;
 let unsubscribeMaterialRequests = null;
 const materialStatusListeners = new Map();
+const taskCommentListeners = new Map(); // <-- AÑADIR ESTA LÍNEA
 let materialRequestReturnContext = { view: 'proyectos' };
 let currentCorte = null;
 let unsubscribePeopleOfInterest = null;
@@ -74,6 +74,33 @@ function normalizeString(str) {
     return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
+/**
+ * Convierte un timestamp o fecha a un formato de tiempo relativo.
+ * @param {number} timestamp - El timestamp en milisegundos.
+ * @returns {string} - El tiempo relativo (ej: "hace 5 min").
+ */
+function formatTimeAgo(timestamp) {
+    const now = Date.now();
+    // Asegurarse de que el timestamp sea un número
+    const seconds = Math.floor((now - Number(timestamp)) / 1000);
+
+    if (isNaN(seconds) || seconds < 0) {
+        return "justo ahora";
+    }
+
+    let interval = seconds / 31536000; // Años
+    if (interval > 1) return `hace ${Math.floor(interval)}a`;
+    interval = seconds / 2592000; // Meses
+    if (interval > 1) return `hace ${Math.floor(interval)}m`;
+    interval = seconds / 86400; // Días
+    if (interval > 1) return `hace ${Math.floor(interval)}d`;
+    interval = seconds / 3600; // Horas
+    if (interval > 1) return `hace ${Math.floor(interval)}h`;
+    interval = seconds / 60; // Minutos
+    if (interval > 1) return `hace ${Math.floor(interval)} min`;
+    
+    return "justo ahora";
+}
 
 async function fetchMunicipalities() {
     // Si ya los tenemos, no volvemos a llamar a la API
@@ -171,6 +198,11 @@ onAuthStateChanged(auth, async (user) => {
             document.getElementById('user-info').textContent = `Usuario: ${currentUser.email} (Rol: ${currentUserRole})`;
             showDashboard();
             requestNotificationPermission();
+
+            // --- INICIO DE LA LÍNEA AÑADIDA ---
+            loadNotifications(); // <-- ¡Esta es la línea que faltaba!
+            // --- FIN DE LA LÍNEA AÑADIDA ---
+
         } else {
             await signOut(auth);
         }
@@ -6049,7 +6081,7 @@ async function handleDeletePhoto(subItemId, itemId, installerId, projectId) {
             itemId: itemId,
             projectId: projectId,
             read: false,
-            createdAt: new Date()
+            createdAt: serverTimestamp() // <-- CORREGIDO
         });
 
     } catch (error) {
@@ -6061,84 +6093,314 @@ async function handleDeletePhoto(subItemId, itemId, installerId, projectId) {
 function loadNotifications() {
     const notificationsList = document.getElementById('notifications-list');
     const notificationBadge = document.getElementById('notification-badge');
-    if (!notificationsList || !notificationBadge) return;
+    if (!notificationsList || !notificationBadge) {
+        console.error("DEBUG: Elementos #notifications-list o #notification-badge no encontrados.");
+        return;
+    }
+    console.log("DEBUG: loadNotifications() iniciada.");
 
     let personalNotifs = [];
     let channelNotifs = [];
+    let hasRenderedOnce = false;
+
+    // Función robusta para leer fechas
+    const getSortableTime = (dateObj) => {
+        if (!dateObj) return 0;
+        if (typeof dateObj.toMillis === 'function') return dateObj.toMillis();
+        if (typeof dateObj.getTime === 'function') return dateObj.getTime();
+        const parsedDate = Date.parse(dateObj);
+        if (!isNaN(parsedDate)) return parsedDate;
+        console.warn("DEBUG: No se pudo parsear la fecha:", dateObj);
+        return 0;
+    };
 
     // Función para renderizar todas las notificaciones juntas
-    const renderNotifications = () => {
-        const allNotifs = [...personalNotifs, ...channelNotifs];
-        // Ordenamos por fecha para que las más nuevas aparezcan primero
-        allNotifs.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+const renderNotifications = () => {
+        console.log("DEBUG: renderNotifications() llamada.");
+        let allNotifs = [...personalNotifs, ...channelNotifs];
+        
+        const seen = new Set();
+        allNotifs = allNotifs.filter(notification => {
+            if (seen.has(notification.id)) return false;
+            if (!notification.createdAt) return false;
+            seen.add(notification.id);
+            return true;
+        });
 
-        notificationBadge.classList.toggle('hidden', allNotifs.length === 0);
-        notificationsList.innerHTML = '';
-
-        if (allNotifs.length === 0) {
-            notificationsList.innerHTML = '<p class="p-4 text-sm text-gray-500">No hay notificaciones nuevas.</p>';
+        try {
+            allNotifs.sort((a, b) => {
+                const timeB = getSortableTime(b.createdAt);
+                const timeA = getSortableTime(a.createdAt);
+                return timeB - timeA;
+            });
+        } catch (error) {
+            console.error("DEBUG: ¡CRASH! El error está en .sort()", error);
+            notificationsList.innerHTML = '<li class="p-4 text-sm text-red-500">Error al ordenar notificaciones.</li>';
             return;
         }
 
+        notificationsList.innerHTML = '';
+        notificationBadge.classList.toggle('hidden', allNotifs.length === 0);
+
+        if (allNotifs.length === 0) {
+            // --- INICIO DE MODIFICACIÓN: Mejorar estado vacío ---
+            notificationsList.innerHTML = `
+                <li class="p-6 text-center text-sm text-gray-500">
+                    <svg class="h-12 w-12 mx-auto text-gray-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                    <p class="mt-2 font-semibold">Todo al día</p>
+                    <p class="mt-1">No hay notificaciones nuevas.</p>
+                </li>
+            `;
+            // --- FIN DE MODIFICACIÓN ---
+            return;
+        }
+
+        console.log("DEBUG: Renderizando notificaciones...");
         allNotifs.forEach(notification => {
-            const notificationItem = document.createElement('div');
-            notificationItem.className = 'p-3 border-b hover:bg-gray-100 cursor-pointer notification-item';
-            // Guardamos todos los datos necesarios para la navegación
+            
+            // --- INICIO DE MODIFICACIÓN: Nuevo diseño de items ---
+            const notificationItem = document.createElement('li');
+            notificationItem.className = 'notification-item group flex'; // Añadida clase 'group'
             notificationItem.dataset.notifId = notification.id;
-            notificationItem.dataset.projectId = notification.projectId || '';
-            notificationItem.dataset.itemId = notification.itemId || '';
-            notificationItem.dataset.link = notification.link || '';
+
+            let title = 'Acción Requerida';
+            let iconSvg = '';
+
+            // Asignar Título e Icono basado en el tipo
+            if (notification.channel) {
+                title = 'Alerta de Sistema';
+                iconSvg = `<div class="p-3"><div class="h-8 w-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div></div>`;
+            } else if (notification.type === 'task_comment') {
+                title = 'Nuevo Comentario';
+                iconSvg = `<div class="p-3"><div class="h-8 w-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                </div></div>`;
+            } else if (notification.type === 'new_task_assignment') {
+                title = 'Nueva Tarea Asignada';
+                iconSvg = `<div class="p-3"><div class="h-8 w-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                </div></div>`;
+            } else {
+                 // Notificación genérica o de "evidencia"
+                iconSvg = `<div class="p-3"><div class="h-8 w-8 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                </div></div>`;
+            }
+
+            // Generar la marca de tiempo
+            const timeAgo = formatTimeAgo(getSortableTime(notification.createdAt));
 
             notificationItem.innerHTML = `
-                <p class="text-sm font-bold">${notification.channel ? 'Alerta de Sistema' : 'Acción Requerida'}</p>
-                <p class="text-sm">${notification.message}</p>
+                ${iconSvg}
+                <div data-action="navigate-notification" 
+                     class="flex-grow py-3 cursor-pointer hover:bg-gray-50 min-w-0"
+                     data-project-id="${notification.projectId || ''}"
+                     data-task-id="${notification.taskId || ''}"
+                     data-item-id="${notification.itemId || ''}"
+                     data-link="${notification.link || ''}">
+                    
+                    <p class="text-sm font-semibold text-gray-900 pointer-events-none">${title}</p>
+                    <p class="text-sm text-gray-600 pointer-events-none whitespace-normal break-words">${notification.message}</p>
+                    <p class="text-xs text-blue-500 font-medium pointer-events-none mt-1">${timeAgo}</p>
+                </div>
+                
+                <button data-action="delete-notification" 
+                        title="Descartar"
+                        class="flex-shrink-0 p-3 h-full text-gray-400 hover:text-red-600 hover:bg-red-50 hidden sm:block sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                    <svg class="h-5 w-5 pointer-events-none" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
             `;
+            // --- FIN DE MODIFICACIÓN ---
+            
             notificationsList.appendChild(notificationItem);
         });
     };
 
-    // Listener 1: Notificaciones personales
-    const personalQuery = query(collection(db, "notifications"), where("userId", "==", currentUser.uid), where("read", "==", false));
+    // Listener 1: Notificaciones personales (sin cambios)
+    const personalQuery = query(collection(db, "notifications"),
+        where("userId", "==", currentUser.uid),
+        where("read", "==", false),
+        orderBy("createdAt", "desc")
+    );
     onSnapshot(personalQuery, (snapshot) => {
+        console.log(`DEBUG: 'personalQuery' obtuvo ${snapshot.size} docs.`);
         personalNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        renderNotifications();
+        if (hasRenderedOnce) renderNotifications();
+    }, (error) => {
+        console.error("DEBUG: 'personalQuery' falló. ¿Falta el índice?", error.message);
+        if (hasRenderedOnce) renderNotifications();
     });
 
-    // Listener 2: Notificaciones de canal para admin y bodega
+    // Listener 2: Notificaciones de canal (sin cambios)
     if (currentUserRole === 'admin' || currentUserRole === 'bodega') {
-        const channelQuery = query(collection(db, "notifications"), where("channel", "==", "admins_bodega"), where("read", "==", false));
+        const channelQuery = query(collection(db, "notifications"),
+            where("channel", "==", "admins_bodega"),
+            where("read", "==", false),
+            orderBy("createdAt", "desc")
+        );
         onSnapshot(channelQuery, (snapshot) => {
+            console.log(`DEBUG: 'channelQuery' obtuvo ${snapshot.size} docs.`);
             channelNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             renderNotifications();
+            hasRenderedOnce = true;
+        }, (error) => {
+            console.error("DEBUG: 'channelQuery' falló. ¿Falta el índice?", error.message);
+            renderNotifications();
+            hasRenderedOnce = true;
         });
+    } else {
+        console.log("DEBUG: No es admin/bodega, renderizando solo personales.");
+        renderNotifications();
+        hasRenderedOnce = true;
     }
 
-    // Un único Event Listener en la lista para manejar todos los clics
+    // --- INICIO DE MODIFICACIÓN: Listener de Clics actualizado ---
+    // Este listener ahora maneja 'navigate-notification' y 'delete-notification'
     notificationsList.addEventListener('click', async (e) => {
-        const item = e.target.closest('.notification-item');
+        // Encontrar el botón o enlace clickeado
+        const actionElement = e.target.closest('[data-action]');
+        if (!actionElement) return;
+
+        // Encontrar el <li> padre para obtener el ID
+        const item = actionElement.closest('.notification-item');
         if (!item) return;
 
-        const { notifId, projectId, itemId, link } = item.dataset;
+        const action = actionElement.dataset.action;
+        const notifId = item.dataset.notifId;
 
-        // Marcar la notificación como leída
-        await updateDoc(doc(db, "notifications", notifId), { read: true });
+        console.log("DEBUG: Clic en notif:", { notifId, action });
 
-        // Navegar a la sección correspondiente
-        if (link === '/catalog') {
-            showView('catalog');
-            loadCatalogView();
-        } else if (projectId && itemId) {
-            const projectDoc = await getDoc(doc(db, "projects", projectId));
-            const itemDoc = await getDoc(doc(db, "items", itemId));
-            if (projectDoc.exists() && itemDoc.exists()) {
-                showProjectDetails({ id: projectId, ...projectDoc.data() });
-                showSubItems({ id: itemId, ...itemDoc.data() });
-            }
+        // Acción: Eliminar (Descartar)
+        if (action === 'delete-notification') {
+            await updateDoc(doc(db, "notifications", notifId), { read: true });
+            // onSnapshot se encargará de removerlo del DOM
         }
 
-        // Ocultar el menú desplegable
-        document.getElementById('notifications-dropdown').classList.add('hidden');
+        // Acción: Navegar
+        if (action === 'navigate-notification') {
+            const { projectId, taskId, itemId, link } = actionElement.dataset;
+
+            await updateDoc(doc(db, "notifications", notifId), { read: true });
+            document.getElementById('notifications-dropdown').classList.add('hidden');
+
+            if (link === '/catalog') {
+                showView('catalog');
+                loadCatalogView();
+            } else if (projectId && taskId) {
+                if (currentUserRole === 'admin' || currentUserRole === 'bodega') {
+                    const projectDoc = await getDoc(doc(db, "projects", projectId));
+                    if (projectDoc.exists()) {
+                        showProjectDetails({ id: projectId, ...projectDoc.data() });
+                        openTaskDetailsModal(taskId);
+                    }
+                } else {
+                    showView('tareas');
+                    document.querySelectorAll('#tareas-view .task-tab-button').forEach(btn => btn.classList.remove('active'));
+                    document.getElementById('pending-tasks-tab').classList.add('active');
+                    loadAndDisplayTasks('pendiente');
+                    openTaskDetailsModal(taskId);
+                }
+            } else if (projectId && itemId) {
+                const projectDoc = await getDoc(doc(db, "projects", projectId));
+                const itemDoc = await getDoc(doc(db, "items", itemId));
+                if (projectDoc.exists() && itemDoc.exists()) {
+                    showProjectDetails({ id: projectId, ...projectDoc.data() });
+                    showSubItems({ id: itemId, ...itemDoc.data() });
+                }
+            }
+        }
     });
+    // --- FIN DE MODIFICACIÓN: Listener de Clics ---
+
+
+    // --- INICIO DE CÓDIGO AÑADIDO: Lógica de Deslizamiento (Swipe) ---
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchCurrentX = 0;
+    let swipedItem = null;
+    let isSwiping = false;
+
+    // Solo añadimos los listeners una vez
+    if (!notificationsList.dataset.swipeListenersAdded) {
+        notificationsList.dataset.swipeListenersAdded = 'true';
+
+        notificationsList.addEventListener('touchstart', (e) => {
+            const item = e.target.closest('.notification-item');
+            if (!item) return;
+
+            touchStartX = e.targetTouches[0].clientX;
+            touchStartY = e.targetTouches[0].clientY;
+            touchCurrentX = touchStartX;
+            swipedItem = item;
+            isSwiping = false;
+            swipedItem.style.transition = 'none'; // Quitar animación mientras se arrastra
+        }, { passive: true });
+
+        notificationsList.addEventListener('touchmove', (e) => {
+            if (!swipedItem) return;
+
+            const deltaX = e.targetTouches[0].clientX - touchStartX;
+            const deltaY = Math.abs(e.targetTouches[0].clientY - touchStartY);
+
+            if (!isSwiping) {
+                // Decidir si es swipe horizontal o scroll vertical
+                if (Math.abs(deltaX) > 10 && deltaY < 10) {
+                    isSwiping = true; // Es un swipe horizontal
+                } else if (deltaY >= 10) {
+                    swipedItem = null; // Es un scroll vertical, abortar swipe
+                    return;
+                }
+            }
+
+            if (isSwiping) {
+                // Si estamos en modo swipe, prevenimos el scroll de la página
+                e.preventDefault();
+                touchCurrentX = e.targetTouches[0].clientX;
+                const moveX = Math.min(0, deltaX); // Solo permitir deslizar de derecha a izquierda
+                if (moveX < -1) {
+                    swipedItem.style.transform = `translateX(${moveX}px)`;
+                }
+            }
+        });
+
+        notificationsList.addEventListener('touchend', async (e) => {
+            if (!swipedItem || !isSwiping) {
+                if (swipedItem) swipedItem.style.transform = 'translateX(0)';
+                swipedItem = null;
+                return;
+            }
+
+            const deltaX = touchCurrentX - touchStartX;
+            const swipeThreshold = -80; // Mínimo de 80px para eliminar
+
+            swipedItem.style.transition = 'transform 0.3s ease'; // Reactivar animación
+
+            if (deltaX < swipeThreshold) {
+                // Eliminar
+                console.log("DEBUG: Swipe-to-delete triggered.");
+                swipedItem.style.transform = 'translateX(-100%)'; // Animar hacia afuera
+
+                const notifId = swipedItem.dataset.notifId;
+                if (notifId) {
+                    await updateDoc(doc(db, "notifications", notifId), { read: true });
+                }
+                // onSnapshot se encargará de removerlo del DOM limpiamente
+            } else {
+                // No se alcanzó el umbral, volver al inicio
+                swipedItem.style.transform = 'translateX(0)';
+            }
+
+            swipedItem = null;
+            isSwiping = false;
+        });
+    }
+    // --- FIN DE CÓDIGO AÑADIDO ---
 }
 
 async function requestNotificationPermission() {
@@ -6822,19 +7084,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 closeRequestDetailsModal();
                 closePurchaseOrderModal();
                 break;
+
+            // --- INICIO DE CÓDIGO AÑADIDO ---
+            case 'close-task-details':
+                // Si el clic fue en el backdrop, verifica que el target sea el modal mismo
+                if (elementWithAction.id === 'task-details-modal' && target.id !== 'task-details-modal') {
+                    // No hagas nada si hicieron clic *dentro* del modal
+                } else {
+                    closeTaskDetailsModal();
+                }
+                break;
+            // --- FIN DE CÓDIGO AÑADIDO ---
         }
 
         if (target.id === 'request-details-close-btn' || target.id === 'request-details-cancel-btn') {
             closeRequestDetailsModal();
-        }
-    });
-
-    document.getElementById('task-details-close-btn')?.addEventListener('click', closeTaskDetailsModal);
-    document.getElementById('task-details-cancel-btn')?.addEventListener('click', closeTaskDetailsModal);
-    // Opcional: cerrar al hacer clic fuera del modal
-    document.getElementById('task-details-modal')?.addEventListener('click', (e) => {
-        if (e.target.id === 'task-details-modal') {
-            closeTaskDetailsModal();
         }
     });
 
@@ -8688,7 +8952,7 @@ function createTaskCard(task) {
     const card = document.createElement('div');
     // --- INICIO DE LA MODIFICACIÓN ---
     // ASEGURAMOS que 'h-full' esté aquí
-    card.className = "bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden h-full task-card"; 
+    card.className = "bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden h-full task-card";
     card.dataset.id = task.id;
 
     // --- Lógica de Fecha (sin cambios) ---
@@ -9102,6 +9366,65 @@ async function completeTask(taskId) {
 }
 
 /**
+ * Añade un nuevo comentario a la bitácora de una tarea y notifica a los involucrados.
+ * @param {string} taskId - El ID de la tarea.
+ */
+async function addCommentToTask(taskId) {
+    const input = document.getElementById('task-comment-input');
+    const submitBtn = document.getElementById('task-comment-submit-btn');
+    if (!input || !submitBtn) return;
+
+    const commentText = input.value.trim();
+    if (commentText.length === 0) return;
+
+    const userData = usersMap.get(currentUser.uid) || { firstName: 'Usuario', lastName: 'Desconocido' };
+    const authorFirstName = userData.firstName || 'Usuario';
+
+    submitBtn.disabled = true;
+    input.disabled = true;
+
+    try {
+        // 1. Obtener los datos de la tarea (los necesitamos para el projectId)
+        const taskRef = doc(db, "tasks", taskId);
+        const taskSnap = await getDoc(taskRef);
+
+        if (!taskSnap.exists()) {
+            throw new Error("La tarea ya no existe. No se puede comentar.");
+        }
+        const taskData = taskSnap.data();
+
+        // 2. Guardar el comentario en la subcolección
+        const commentData = {
+            userId: currentUser.uid,
+            userName: `${authorFirstName} ${userData.lastName.charAt(0)}.`,
+            text: commentText,
+            createdAt: new Date()
+        };
+        await addDoc(collection(db, "tasks", taskId, "comments"), commentData);
+
+        // 3. Llamar a la Cloud Function para que envíe las notificaciones
+        // (El backend se encargará de encontrar a los admins y asignados)
+        const notifyFunction = httpsCallable(functions, 'notifyOnNewTaskComment');
+        await notifyFunction({
+            taskId: taskId,
+            projectId: taskData.projectId,
+            commentText: commentText,
+            authorName: authorFirstName
+        });
+
+        input.value = ''; // Limpiar input al éxito
+
+    } catch (error) {
+        console.error("Error al añadir comentario o notificar:", error);
+        alert(`No se pudo guardar el comentario: ${error.message}`);
+    } finally {
+        submitBtn.disabled = false;
+        input.disabled = false;
+        input.focus();
+    }
+}
+
+/**
  * Guarda una nueva tarea en Firestore, incluyendo ítems seleccionados con cantidad
  * y envía notificaciones a los asignados.
  * @param {object} taskData - Datos de la tarea obtenidos del formulario del modal.
@@ -9302,7 +9625,7 @@ async function openTaskDetailsModal(taskId) {
                 </table>
              </div>`;
 
-            const loadItemDetails = async () => { /* ... (código existente) ... */
+            const loadItemDetails = async () => {
                 try {
                     const subItemIds = task.specificSubItemIds;
                     const subItemPromises = subItemIds.map(id => getDoc(doc(db, "subItems", id)));
@@ -9350,7 +9673,7 @@ async function openTaskDetailsModal(taskId) {
             setTimeout(loadItemDetails, 50);
         }
 
-        // --- INICIO DE LA MODIFICACIÓN ---
+        // --- INICIO DE LA MODIFICACIÓN (HTML y Lógica) ---
         // 1. Añadimos el placeholder para el estado del material DENTRO del modal
         const materialStatusId = `task-detail-material-status-${task.id}`;
         let materialStatusHtml = '';
@@ -9368,8 +9691,6 @@ async function openTaskDetailsModal(taskId) {
                 </div>
              `;
         }
-        // --- FIN DE LA MODIFICACIÓN ---
-
 
         // --- Construir el cuerpo del modal con secciones ---
         bodyEl.innerHTML = `
@@ -9429,22 +9750,92 @@ async function openTaskDetailsModal(taskId) {
                     </h4>
                     ${itemsDetailsHtml}
                 </div>
+                
                 ${materialStatusHtml}
-            </div>
+
+                <div id="task-comments-section" class="pt-4 border-t border-gray-200">
+                    <h4 class="text-md font-semibold text-gray-700 mb-3 flex items-center">
+                        <svg class="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                        </svg>
+                        Bitácora / Comentarios
+                    </h4>
+                    <div id="task-comments-list" class="space-y-3 max-h-48 overflow-y-auto bg-gray-50 p-3 rounded-lg border">
+                        <p class="text-sm text-gray-400 italic text-center">Cargando comentarios...</p>
+                    </div>
+                    <div class="mt-3 flex gap-2">
+                        <input type="text" id="task-comment-input" class="flex-grow border rounded-md p-2 text-sm" placeholder="Escribe un comentario...">
+                        <button type="button" id="task-comment-submit-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg text-sm">
+                            Enviar
+                        </button>
+                    </div>
+                </div>
+                </div>
         `;
 
-        // --- INICIO DE LA MODIFICACIÓN ---
-        // 2. Llamamos a la función para que llene el placeholder
-        // Solo si la tarea tiene subítems (y por ende, el placeholder existe)
+        // 2. Cargar estado de materiales (código existente)
         if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
             loadTaskMaterialStatus(task.id, task.projectId, materialStatusId);
         }
+
+        // 3. Encontrar elementos de la bitácora (AHORA SÍ EXISTEN)
+        const commentsSection = bodyEl.querySelector('#task-comments-section');
+        const commentsList = bodyEl.querySelector('#task-comments-list');
+        const commentSubmitBtn = bodyEl.querySelector('#task-comment-submit-btn');
+
+        if (commentsSection && commentsList && commentSubmitBtn) {
+            // 3a. Guardar taskId para la limpieza del listener
+            commentsSection.dataset.taskId = task.id;
+
+            // 3b. Añadir listener al botón de enviar
+            commentSubmitBtn.addEventListener('click', () => {
+                addCommentToTask(task.id);
+            });
+
+            // 3c. Limpiar listener anterior si existe (por si acaso)
+            if (taskCommentListeners.has(task.id)) {
+                taskCommentListeners.get(task.id)();
+            }
+
+            // 3d. Crear nuevo listener para la subcolección 'comments'
+            const commentsQuery = query(collection(db, "tasks", task.id, "comments"), orderBy("createdAt", "asc"));
+            const unsubscribeComments = onSnapshot(commentsQuery, (snapshot) => {
+                commentsList.innerHTML = ''; // Limpiar lista
+                if (snapshot.empty) {
+                    commentsList.innerHTML = '<p class="text-sm text-gray-400 italic text-center">Aún no hay comentarios.</p>';
+                    return;
+                }
+                snapshot.forEach(doc => {
+                    const comment = doc.data();
+                    const commentDate = comment.createdAt.toDate();
+                    const formattedDate = `${commentDate.toLocaleDateString('es-CO')} ${commentDate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`;
+
+                    const commentEl = document.createElement('div');
+                    commentEl.className = "text-sm";
+                    commentEl.innerHTML = `
+                        <p class="text-gray-800">${comment.text}</p>
+                        <p class="text-xs text-gray-500 font-medium">
+                            — ${comment.userName} <span class="font-normal">el ${formattedDate}</span>
+                        </p>
+                    `;
+                    commentsList.appendChild(commentEl);
+                });
+                // Scroll automático al último comentario
+                commentsList.scrollTop = commentsList.scrollHeight;
+            }, (error) => {
+                console.error("Error al cargar comentarios:", error);
+                commentsList.innerHTML = '<p class="text-sm text-red-500 text-center">Error al cargar comentarios.</p>';
+            });
+
+            // 3e. Guardar la función de unsubscribe
+            taskCommentListeners.set(task.id, unsubscribeComments);
+        }
         // --- FIN DE LA MODIFICACIÓN ---
 
-        // --- Añadir botones de acción (sin cambios) ---
+        // --- Añadir botones de acción (código existente) ---
         actionsEl.querySelectorAll('button:not(#task-details-cancel-btn)').forEach(btn => btn.remove());
 
-        if (currentUserRole === 'admin') { /* ... (botón editar) ... */
+        if (currentUserRole === 'admin') {
             const editBtn = document.createElement('button');
             editBtn.type = 'button';
             editBtn.dataset.action = 'edit-task';
@@ -9453,7 +9844,7 @@ async function openTaskDetailsModal(taskId) {
             editBtn.innerHTML = `<svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg> Editar Tarea`;
             actionsEl.insertBefore(editBtn, actionsEl.firstChild);
         }
-        if (task.status === 'pendiente' && task.specificSubItemIds && task.specificSubItemIds.length > 0) { /* ... (botón solicitar material) ... */
+        if (task.status === 'pendiente' && task.specificSubItemIds && task.specificSubItemIds.length > 0) {
             const requestBtn = document.createElement('button');
             requestBtn.type = 'button';
             requestBtn.dataset.action = 'request-material-from-task';
@@ -9463,7 +9854,7 @@ async function openTaskDetailsModal(taskId) {
             requestBtn.innerHTML = `<svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg> Solicitar Material`;
             actionsEl.insertBefore(requestBtn, actionsEl.firstChild);
         }
-        if (task.status === 'pendiente' && task.specificSubItemIds && task.specificSubItemIds.length > 0) { /* ... (botón registrar avance) ... */
+        if (task.status === 'pendiente' && task.specificSubItemIds && task.specificSubItemIds.length > 0) {
             const progressBtn = document.createElement('button');
             progressBtn.type = 'button';
             progressBtn.dataset.action = 'register-task-progress';
@@ -9490,9 +9881,7 @@ function closeTaskDetailsModal() {
 
         const bodyEl = document.getElementById('task-details-body');
 
-        // --- INICIO DE LA MODIFICACIÓN (Limpieza de listener) ---
         // Limpiar listeners de material activos para este modal
-        // Buscamos cualquier div de estado de material dentro del cuerpo del modal
         const materialStatusDiv = bodyEl.querySelector('div[id^="task-detail-material-status-"]');
         if (materialStatusDiv) {
             const placeholderId = materialStatusDiv.id;
@@ -9502,9 +9891,20 @@ function closeTaskDetailsModal() {
                 console.log(`Listener de material ${placeholderId} limpiado al cerrar modal.`);
             }
         }
+
+        // --- INICIO DE LA MODIFICACIÓN (Limpieza de listener de Comentarios) ---
+        const commentsSection = bodyEl.querySelector('#task-comments-section');
+        if (commentsSection) {
+            const taskId = commentsSection.dataset.taskId; // Obtengo el ID que guardé
+            if (taskId && taskCommentListeners.has(taskId)) {
+                taskCommentListeners.get(taskId)(); // Unsubscribe
+                taskCommentListeners.delete(taskId);
+                console.log(`Listener de comentarios para ${taskId} limpiado.`);
+            }
+        }
         // --- FIN DE LA MODIFICACIÓN ---
 
-        // Opcional: Limpiar el contenido para la próxima vez
+        // Limpiar el contenido para la próxima vez
         bodyEl.innerHTML = '<div class="text-center py-8"><div class="loader mx-auto"></div></div>';
         document.getElementById('task-details-actions').querySelectorAll('button:not(#task-details-cancel-btn)').forEach(btn => btn.remove());
     }

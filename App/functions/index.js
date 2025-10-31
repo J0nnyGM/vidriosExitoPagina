@@ -484,3 +484,84 @@ exports.deliverMaterial = onCall(async (request) => {
         throw new HttpsError('internal', error.message || 'No se pudo procesar la entrega.');
     }
 });
+
+/**
+ * Cloud Function (callable) para notificar a los usuarios relevantes sobre un nuevo comentario en una tarea.
+ */
+exports.notifyOnNewTaskComment = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'La función debe ser llamada por un usuario autenticado.');
+    }
+
+    const { taskId, projectId, commentText, authorName } = request.data;
+    const authorId = request.auth.uid;
+
+    if (!taskId || !projectId || !commentText || !authorName) {
+        throw new HttpsError('invalid-argument', 'Faltan datos esenciales (taskId, projectId, commentText, authorName).');
+    }
+
+    console.log(`Notificando comentario de ${authorName} (ID: ${authorId}) en tarea ${taskId}...`);
+
+    try {
+        const recipientIds = new Set();
+
+        // 1. Obtener la tarea para encontrar a los asignados
+        const taskDoc = await db.doc(`tasks/${taskId}`).get();
+        let taskDescription = "una tarea";
+
+        if (taskDoc.exists) {
+            const taskData = taskDoc.data();
+            taskDescription = taskData.description ? `la tarea "${taskData.description.substring(0, 30)}..."` : "una tarea";
+            
+            // Añadir asignado principal
+            if (taskData.assigneeId) {
+                recipientIds.add(taskData.assigneeId);
+                
+            }
+            // Añadir asignados adicionales
+            if (taskData.additionalAssigneeIds && Array.isArray(taskData.additionalAssigneeIds)) {
+                taskData.additionalAssigneeIds.forEach(id => recipientIds.add(id));
+            }
+        }
+
+        // 2. Obtener a todos los administradores
+        const adminSnapshot = await db.collection('users').where('role', '==', 'admin').get();
+        adminSnapshot.forEach(doc => {
+            recipientIds.add(doc.id);
+        });
+
+        // 3. Quitar al autor del comentario de la lista de destinatarios
+        recipientIds.delete(authorId);
+
+        if (recipientIds.size === 0) {
+            console.log("No hay destinatarios a quien notificar (autor es el único involucrado).");
+            return { success: true, recipients: [] };
+        }
+
+        // 4. Crear un batch para enviar todas las notificaciones
+        const batch = db.batch();
+        const message = `${authorName} comentó en ${taskDescription}: "${commentText.substring(0, 50)}..."`;
+
+        recipientIds.forEach(userId => {
+            const notificationRef = db.collection('notifications').doc();
+            batch.set(notificationRef, {
+                userId: userId,
+                message: message,
+                taskId: taskId,
+                projectId: projectId,
+                read: false,
+                createdAt: FieldValue.serverTimestamp(), // Usar hora del servidor
+                type: 'task_comment' // Nuevo tipo de notificación
+            });
+        });
+
+        await batch.commit();
+        
+        console.log(`Notificaciones enviadas a ${recipientIds.size} usuarios.`);
+        return { success: true, recipients: Array.from(recipientIds) };
+
+    } catch (error) {
+        console.error(`Error al notificar sobre el comentario de la tarea ${taskId}:`, error);
+        throw new HttpsError('internal', 'No se pudo completar el envío de notificaciones.');
+    }
+});
