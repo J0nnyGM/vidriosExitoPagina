@@ -1,7 +1,7 @@
 // Importaciones de Firebase
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js"; // <-- AÑADE serverTimestamp
+import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment, limit, serverTimestamp, arrayRemove, documentId } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js"; // <-- AÑADIDO documentId
 import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app-check.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
@@ -98,7 +98,7 @@ function formatTimeAgo(timestamp) {
     if (interval > 1) return `hace ${Math.floor(interval)}h`;
     interval = seconds / 60; // Minutos
     if (interval > 1) return `hace ${Math.floor(interval)} min`;
-    
+
     return "justo ahora";
 }
 
@@ -939,7 +939,7 @@ function createProjectCard(project, progress, stats) {
     card.dataset.id = project.id;
     card.dataset.name = project.name;
 
-    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
     // --- LÓGICA CONDICIONAL PARA LOS BOTONES ---
     let actionButtons = '';
@@ -984,7 +984,7 @@ function createProjectCard(project, progress, stats) {
             </div>
             <div class="text-left text-sm">
                 <p><span class="font-semibold">Ítems Instalados:</span> ${stats.executedItems} / ${stats.totalItems}</p>
-                <p><span class="font-semibold">M² Ejecutados:</span> ${stats.executedM2.toFixed(2)} / ${stats.totalM2.toFixed(2)}</p>
+                <p><span class="font-semibold">M² Ejecutados:</span> ${Math.round(stats.executedM2)} / ${Math.round(stats.totalM2)}</p>
             </div>
             <div class="text-left text-sm">
                 <p><span class="font-semibold">Inicio Contrato:</span> ${project.startDate ? new Date(project.startDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A'}</p>
@@ -1445,58 +1445,91 @@ function switchProjectTab(tabName) {
     syncTabsState(tabName);
 }
 
-async function showProjectDetails(project, defaultTab = 'info-general') {
-    // --- INICIO DE LA MODIFICACIÓN ---
-    // Establecer el contexto de retorno CADA VEZ que se entra a esta vista
-    materialRequestReturnContext = { view: 'proyecto-detalle', projectId: project.id };
-    console.log("Contexto de retorno establecido en: proyecto-detalle"); // Log para depuración
-    // --- FIN DE LA MODIFICACIÓN ---
+/**
+ * Muestra la vista de detalles del proyecto.
+ * Acepta un objeto de proyecto (desde el dashboard) O un projectId (desde notificaciones).
+ * @param {object | null} project - El objeto del proyecto (si está cargado).
+ * @param {string} [defaultTabOrProjectId] - La pestaña a abrir, O el ID del proyecto si 'project' es nulo.
+ * @param {string} [openTaskId] - (Opcional) El ID de una tarea para abrir automáticamente.
+ */
+async function showProjectDetails(project, defaultTabOrProjectId = 'info-general', openTaskId = null) {
+    const projectTitle = document.getElementById('project-detail-title');
+    const projectPOBtn = document.getElementById('project-po-btn');
+    showView('project-details');
+    loadingOverlay.classList.remove('hidden');
 
-    currentProject = project;
-    showView('projectDetails');
-    setupResponsiveTabs();
+    let defaultTab = 'info-general'; // Valor por defecto
 
-    const safeSetText = (id, text) => { /* ... */
-        const element = document.getElementById(id);
-        if (element) element.textContent = text;
-    };
+    try {
+        // --- INICIO DE CORRECCIÓN (Lógica de Carga) ---
+        // Caso 1: Se llama desde Dashboard (project = objeto, defaultTabOrProjectId = 'info-general')
+        if (project && typeof project === 'object') {
+            console.log("Cargando proyecto desde objeto (Dashboard)");
+            defaultTab = defaultTabOrProjectId; // El segundo arg es la pestaña
+        } 
+        // Caso 2: Se llama desde Notificación (project = null, defaultTabOrProjectId = projectId, openTaskId = taskId)
+        else if (project === null && typeof defaultTabOrProjectId === 'string') {
+            const projectId = defaultTabOrProjectId;
+            console.log(`Cargando proyecto desde ID (Notificación): ${projectId}`);
+            
+            const projectDoc = await getDoc(doc(db, "projects", projectId));
+            if (projectDoc.exists()) {
+                project = { id: projectDoc.id, ...projectDoc.data() };
+            } else {
+                throw new Error("El proyecto no existe.");
+            }
+            // 'openTaskId' ya está seteado por el tercer argumento
+            
+        } else {
+            throw new Error("No se proporcionó proyecto ni ID de proyecto.");
+        }
+        // --- FIN DE CORRECCIÓN ---
 
-    // --- Rellenar datos estáticos (sin cambios) ---
-    safeSetText('project-details-name', project.name);
-    // ... (resto del código sin cambios) ...
-    safeSetText('project-details-builder', project.builderName || 'Constructora no especificada');
-    safeSetText('project-details-startDate', project.startDate ? new Date(project.startDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A');
-    safeSetText('project-kickoffDate', project.kickoffDate ? new Date(project.kickoffDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A');
-    safeSetText('project-endDate', project.endDate ? new Date(project.endDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A');
-    const pricingModelText = project.pricingModel === 'incluido'
-        ? 'Suministro e Instalación (Incluido)'
-        : 'Suministro e Instalación (Separado)';
-    safeSetText('project-details-pricingModel', pricingModelText);
+        // 'project' ahora es un objeto válido
+        currentProject = { id: project.id, ...project }; // Esta era la línea 1452
+        projectTitle.textContent = currentProject.name;
+        projectPOBtn.classList.toggle('hidden', !currentProject.poDocId);
+        projectPOBtn.dataset.poDocId = currentProject.poDocId || '';
 
-    const stats = project.progressSummary || { executedValue: 0, totalItems: 0, executedItems: 0, executedM2: 0, totalM2: 0 };
-    const contractedValue = await calculateProjectContractedValue(project.id);
+        materialRequestReturnContext = { view: 'proyecto-detalle', projectId: currentProject.id };
 
-    safeSetText('info-initial-contract-value', currencyFormatter.format(project.value || 0));
-    safeSetText('info-contracted-value', currencyFormatter.format(contractedValue));
-    safeSetText('info-executed-value', currencyFormatter.format(stats.executedValue));
-    safeSetText('project-details-installedItems', `${stats.executedItems} / ${stats.totalItems}`);
-    safeSetText('project-details-executedM2', `${stats.executedM2.toFixed(2)}m² / ${stats.totalM2.toFixed(2)}m²`);
+        // Cargar el valor contratado
+        const contractedValue = await calculateProjectContractedValue(currentProject.id);
+        document.getElementById('project-detail-value').textContent = currencyFormatter.format(contractedValue);
+        document.getElementById('project-detail-progress-value').textContent = 'Calculando...';
 
-    const paymentsQuery = query(collection(db, "projects", project.id, "payments"));
-    onSnapshot(paymentsQuery, (paymentsSnapshot) => { /* ... */
-        const allPayments = paymentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        updateGeneralInfoSummary(project, allPayments);
-    });
+        setupResponsiveTabs();
+        
+        // Cargar pestañas
+        loadProjectInfoTab();
+        loadItems(currentProject.id);
+        loadMaterialsTab(currentProject.id);
+        loadFinanceTab(currentProject.id);
+        loadPeopleOfInterestTab(currentProject.id);
+        loadDocumentsTab(currentProject.id);
+        loadOtrosSiTab(currentProject.id);
+        loadVariosTab(currentProject.id);
 
-    renderInteractiveDocumentCards(project.id);
-    loadItems(project.id);
-    loadCortes(project);
-    loadPeopleOfInterest(project.id);
+        // --- INICIO DE CORRECCIÓN (Manejo de openTaskId) ---
+        if (openTaskId) {
+            // Si se pasó un openTaskId (desde la notificación), abrimos esa tarea
+            switchProjectTab('items'); // Forzamos la pestaña de 'items'
+            console.log(`Abriendo tarea ${openTaskId} desde la notificación...`);
+            setTimeout(() => {
+                openTaskDetailsModal(openTaskId);
+            }, 500); // Damos tiempo a que se renderice la pestaña
+        } else {
+            // Comportamiento normal: abrir la pestaña solicitada
+            switchProjectTab(defaultTab);
+        }
+        // --- FIN DE CORRECCIÓN ---
 
-    loadPayments(project);
-    loadMaterialsTab(project, null);
-
-    switchProjectTab(defaultTab);
+    } catch (error) {
+        console.error("Error al mostrar detalles del proyecto:", error);
+        showView('proyectos');
+    } finally {
+        loadingOverlay.classList.add('hidden');
+    }
 }
 
 // ====================================================================
@@ -1526,7 +1559,7 @@ function loadCortes(project) {
             return;
         }
 
-        const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+        const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
         snapshot.forEach(doc => {
             const corte = { id: doc.id, ...doc.data() };
@@ -1698,8 +1731,8 @@ async function generateCorte() {
                 let valorBrutoCorte = 0;
                 const subItemIds = Array.from(selectedSubItemsCheckboxes).map(cb => cb.dataset.subitemId);
 
-                const allItemsQuery = query(collection(db, "items"), where("projectId", "==", currentProject.id));
-                const allSubItemsQuery = query(collection(db, "subItems"), where("projectId", "==", currentProject.id));
+                const allItemsQuery = query(collection(db, "projects", currentProject.id, "items"));
+                const allSubItemsQuery = query(collectionGroup(db, "subItems"), where("projectId", "==", currentProject.id));
                 const [itemsSnapshot, subItemsSnapshot] = await Promise.all([getDocs(allItemsQuery), getDocs(allSubItemsQuery)]);
                 const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, d.data()]));
                 const subItemsMap = new Map(subItemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
@@ -1893,9 +1926,10 @@ async function showCorteDetails(corteData) {
     listContainer.innerHTML = `<div class="loader-container"><div class="loader"></div></div>`;
 
     try {
+        // --- INICIO DE CAMBIO: Consultas a subcolecciones ---
         const [itemsSnapshot, subItemsSnapshot] = await Promise.all([
-            getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id))),
-            getDocs(query(collection(db, "subItems"), where("projectId", "==", currentProject.id)))
+            getDocs(query(collection(db, "projects", currentProject.id, "items"))),
+            getDocs(query(collectionGroup(db, "subItems"), where("projectId", "==", currentProject.id)))
         ]);
         const itemsMap = new Map(itemsSnapshot.docs.map(doc => [doc.id, doc.data()]));
         const subItemsMap = new Map(subItemsSnapshot.docs.map(doc => [doc.id, doc.data()]));
@@ -1962,11 +1996,11 @@ async function showCorteDetails(corteData) {
                             </div>
                             <div>
                                 <dt class="font-medium text-gray-500">Medidas Contrato</dt>
-                                <dd class="text-gray-800">${parentItem.width}m x ${parentItem.height}m</dd>
+                                <dd class="text-gray-800">${parentItem.width * 100}cm x ${parentItem.height * 100}cm</dd>
                             </div>
                              <div>
                                 <dt class="font-medium text-gray-500">Medidas Reales</dt>
-                                <dd class="text-gray-800">${subItem.realWidth || 'N/A'}m x ${subItem.realHeight || 'N/A'}m</dd>
+                                <dd class="text-gray-800">${(subItem.realWidth * 100) || 'N/A'}cm x ${(subItem.realHeight * 100) || 'N/A'}cm</dd>
                             </div>
                             <div>
                                 <dt class="font-medium text-gray-500">Fabricante</dt>
@@ -2020,7 +2054,12 @@ function closeCorteSelectionView() {
 async function exportCorteToPDF(proyecto, corte, exportType) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'landscape' });
-    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+    const currencyFormatter = new Intl.NumberFormat('es-CO', {
+        style: 'currency',
+        currency: 'COP',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0 // <-- AÑADIDO: Fuerza el redondeo a entero
+    });
 
     const calculateTaxDetails = (details, baseValue) => {
         const result = { admin: 0, imprev: 0, utilidad: 0, ivaSobreUtilidad: 0, iva: 0, aiuTotal: 0 };
@@ -2205,7 +2244,7 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
  */
 async function calculateProjectContractedValue(projectId) {
     let totalValue = 0;
-    const itemsQuery = query(collection(db, "items"), where("projectId", "==", projectId));
+    const itemsQuery = query(collection(db, "projects", projectId, "items"));
     const querySnapshot = await getDocs(itemsQuery);
 
     querySnapshot.forEach(doc => {
@@ -2213,7 +2252,7 @@ async function calculateProjectContractedValue(projectId) {
         totalValue += calculateItemTotal(item);
     });
 
-    return totalValue;
+    return Math.round(totalValue); // Aseguramos redondeo
 }
 // ====================================================================
 //      FIN: FUNCIÓN
@@ -2237,7 +2276,7 @@ function calculateItemUnitPrice(item) {
         }
         // Aquí podrías añadir lógica para 'solo suministro' o 'solo instalación' si existieran
     }
-    return unitPrice;
+    return Math.round(unitPrice); // <-- CAMBIO: Redondea el resultado final
 }
 
 // REEMPLAZA tu función calculateItemTotal con esta:
@@ -2270,7 +2309,7 @@ function calculateItemTotal(item) {
         total += calculatePartTotal(item.installationDetails, item.quantity);
     }
 
-    return total;
+    return Math.round(total); // <-- CAMBIO: Redondea el resultado final
 }
 // ====================================================================
 //      FIN: FUNCIONES CORREGIDAS
@@ -2300,10 +2339,10 @@ async function fetchMoreItems(projectId) {
     loadMoreBtn.classList.remove('hidden');
 
     try {
+        // --- INICIO DE CAMBIO: Path de subcolección ---
         let q = query(
-            collection(db, "items"),
-            where("projectId", "==", projectId),
-            orderBy(itemSortState.key, itemSortState.direction), // Usa el estado de ordenamiento actual
+            collection(db, "projects", projectId, "items"), // <-- CAMBIO
+            orderBy(itemSortState.key, itemSortState.direction),
             limit(ITEMS_PER_PAGE)
         );
 
@@ -2325,7 +2364,7 @@ async function fetchMoreItems(projectId) {
 
         if (itemIds.length > 0) {
             // Optimizamos la consulta de sub-ítems para que también sea más eficiente
-            const subItemsQuery = query(collection(db, "subItems"), where("itemId", "in", itemIds), where("status", "==", "Instalado"));
+            const subItemsQuery = query(collectionGroup(db, "subItems"), where("itemId", "in", itemIds), where("status", "==", "Instalado"));
             const subItemsSnapshot = await getDocs(subItemsQuery);
             subItemsSnapshot.forEach(doc => {
                 const subItem = doc.data();
@@ -2386,8 +2425,7 @@ function createItemRow(item, executedCount) {
     // Usamos las nuevas funciones para obtener los valores correctos
     const unitPrice = calculateItemUnitPrice(item);
     const totalValue = calculateItemTotal(item);
-    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
-
+    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
     let statusColor;
     if (item.status === 'Pendiente') { statusColor = 'bg-red-100 text-red-800'; }
     else if (item.status === 'En Proceso') { statusColor = 'bg-yellow-100 text-yellow-800'; }
@@ -2422,19 +2460,15 @@ function createItemRow(item, executedCount) {
 async function createItem(data) {
     try {
         const createProjectItemFunction = httpsCallable(functions, 'createProjectItem');
-
-        // --- INICIO DE LA CORRECCIÓN ---
-        // Se añade la lógica que faltaba para procesar y estructurar los datos de precio
         const projectPricingModel = currentProject.pricingModel || 'separado';
-
         const newItemData = {
             name: data.name,
             description: data.description,
             quantity: parseInt(data.quantity),
-            width: parseFloat(data.width),
-            height: parseFloat(data.height),
+            width: parseFloat(data.width) / 100, // cm a m
+            height: parseFloat(data.height) / 100, // cm a m
             itemType: projectPricingModel === 'incluido' ? 'suministro_instalacion_incluido' : 'suministro_instalacion',
-            projectId: currentProject.id,
+            projectId: currentProject.id, // Sigue enviando projectId
         };
 
         if (projectPricingModel === 'incluido') {
@@ -2477,14 +2511,13 @@ async function createItem(data) {
 
 async function updateItem(itemId, data) {
     const projectPricingModel = currentProject.pricingModel || 'separado';
-
-    // Prepara el objeto de datos con la misma lógica que ya teníamos
     const updatedData = {
         name: data.name,
         description: data.description,
-        width: parseFloat(data.width),
-        height: parseFloat(data.height),
+        width: parseFloat(data.width) / 100, // cm a m
+        height: parseFloat(data.height) / 100, // cm a m
         itemType: projectPricingModel === 'incluido' ? 'suministro_instalacion_incluido' : 'suministro_instalacion',
+        projectId: currentProject.id, // <-- AÑADIDO: Importante para la función de backend
     };
 
     if (projectPricingModel === 'incluido') {
@@ -2516,10 +2549,8 @@ async function updateItem(itemId, data) {
     }
 
     try {
-        // Llama a la nueva Cloud Function
         const updateProjectItemFunction = httpsCallable(functions, 'updateProjectItem');
         await updateProjectItemFunction({ itemId: itemId, updatedData: updatedData });
-
     } catch (error) {
         console.error("Error al llamar a la función updateProjectItem:", error);
         alert(`Error al actualizar el ítem: ${error.message}`);
@@ -2532,10 +2563,14 @@ async function updateItem(itemId, data) {
 
 async function deleteItem(itemId) {
     const batch = writeBatch(db);
-    const subItemsQuery = query(collection(db, "subItems"), where("itemId", "==", itemId));
+    // --- INICIO DE CAMBIO: Path de subcolecciones ---
+    const itemRef = doc(db, "projects", currentProject.id, "items", itemId);
+    const subItemsQuery = query(collection(itemRef, "subItems")); // Consulta la subcolección anidada
+    // --- FIN DE CAMBIO ---
+
     const subItemsSnapshot = await getDocs(subItemsQuery);
     subItemsSnapshot.forEach(doc => batch.delete(doc.ref));
-    batch.delete(doc(db, "items", itemId));
+    batch.delete(itemRef); // Borra el item
     await batch.commit();
 }
 
@@ -3134,7 +3169,11 @@ function loadSubItems(itemId) {
     loadingDiv.classList.remove('hidden');
     const subItemsTableBody = document.getElementById('sub-items-table-body');
 
-    const q = query(collection(db, "subItems"), where("itemId", "==", itemId));
+    if (!currentProject || !currentProject.id) {
+        console.error("Error: currentProject no está definido al cargar subItems");
+        return;
+    }
+    const q = query(collection(db, "projects", currentProject.id, "items", itemId, "subItems"));
 
     if (unsubscribeSubItems) unsubscribeSubItems();
 
@@ -3195,7 +3234,8 @@ function createSubItemRow(subItem) {
     if (subItem.photoURL) {
         photoHtml = `<button class="view-photo-btn text-blue-600 hover:underline font-semibold" data-photourl="${subItem.photoURL}">Ver</button>`;
         if (currentUserRole === 'admin') {
-            photoHtml += `<button class="delete-photo-btn text-red-600 hover:underline font-semibold ml-2" data-subitemid="${subItem.id}" data-itemid="${subItem.itemId}" data-projectid="${subItem.projectId}" data-installerid="${subItem.installer}">Eliminar</button>`;
+            // CAMBIO: Usamos currentProject.id en lugar de subItem.projectId
+            photoHtml += `<button class="delete-photo-btn text-red-600 hover:underline font-semibold ml-2" data-subitemid="${subItem.id}" data-itemid="${subItem.itemId}" data-projectid="${currentProject.id}" data-installerid="${subItem.installer}">Eliminar</button>`;
         }
     }
 
@@ -3234,9 +3274,12 @@ function createSubItemRow(subItem) {
 }
 
 async function updateSubItem(subItemId, data) {
-    await updateDoc(doc(db, "subItems", subItemId), data);
+    // --- INICIO DE CAMBIO: Path de subcolección ---
+    // Necesitamos encontrar el path completo
+    const subItemRef = doc(db, "projects", currentProject.id, "items", currentItem.id, "subItems", subItemId);
+    await updateDoc(subItemRef, data);
+    // --- FIN DE CAMBIO ---
 }
-
 // --- MANEJO DE MODALES ---
 const mainModal = document.getElementById('main-modal');
 const modalTitle = document.getElementById('modal-title');
@@ -3355,7 +3398,7 @@ async function openMainModal(type, data = {}) {
                 // --- NUEVA LÓGICA PARA FORMATEO DE MONEDA ---
                 const valueInput = document.getElementById('project-value');
                 const advanceInput = document.getElementById('project-advance');
-                const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+                const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
                 const formatCurrencyInput = (e) => {
                     let value = e.target.value.replace(/[$. ]/g, '');
@@ -3597,16 +3640,16 @@ async function openMainModal(type, data = {}) {
                             </select>
                         </div>
 
-                        <div id="dimensions-container" class="hidden space-y-4">
-                            <p class="text-xs text-gray-500">Define el tamaño estándar de una unidad de compra (ej: una tira mide 6m).</p>
+                    <div id="dimensions-container" class="hidden space-y-4">
+                            <p class="text-xs text-gray-500">Define el tamaño estándar de una unidad de compra (ej: una tira mide 600cm).</p>
                             <div class="grid grid-cols-2 gap-4">
                                 <div id="length-field">
-                                    <label class="block text-sm font-medium">Largo Estándar (m)</label>
-                                    <input type="number" step="0.01" name="defaultLength" class="mt-1 w-full border p-2 rounded-md" value="${isEditing && data.defaultSize ? data.defaultSize.length || '' : ''}">
+                                    <label class="block text-sm font-medium">Largo (cm)</label>
+                                    <input type="number" name="defaultLength" class="mt-1 w-full border p-2 rounded-md" value="${isEditing && data.defaultSize ? (data.defaultSize.length * 100) || '' : ''}">
                                 </div>
                                 <div id="width-field" class="hidden">
-                                    <label class="block text-sm font-medium">Ancho Estándar (m)</label>
-                                    <input type="number" step="0.01" name="defaultWidth" class="mt-1 w-full border p-2 rounded-md" value="${isEditing && data.defaultSize ? data.defaultSize.width || '' : ''}">
+                                    <label class="block text-sm font-medium">Ancho (cm)</label>
+                                    <input type="number" name="defaultWidth" class="mt-1 w-full border p-2 rounded-md" value="${isEditing && data.defaultSize ? (data.defaultSize.width * 100) || '' : ''}">
                                 </div>
                             </div>
                         </div>
@@ -3810,61 +3853,63 @@ async function openMainModal(type, data = {}) {
             btnText = isEditing ? 'Guardar Cambios' : 'Añadir Ítem';
             btnClass = isEditing ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600';
 
+            // --- INICIO DE PLANTILLA MODERNA (Secciones) ---
+
             // Plantilla para la sección de costo SEPARADO
             const costSectionSeparated = (section, title, data = {}) => `
-        <div class="border rounded-lg p-3 mt-2">
-            <p class="font-semibold">${title}</p>
-            <div class="grid grid-cols-2 gap-4 mt-2">
-                <div>
-                    <label class="block text-xs font-medium">Precio Unitario</label>
-                    <input type="text" name="${section}_unitPrice" class="currency-input mt-1 w-full border rounded-md p-2" value="${data.unitPrice || ''}">
-                </div>
-                <div>
-                    <label class="block text-xs font-medium">Impuesto</label>
-                    <div class="mt-2 flex space-x-2">
-                        <label class="flex items-center text-xs"><input type="radio" name="${section}_taxType" value="iva" class="mr-1 tax-type-radio" ${data.taxType === 'iva' ? 'checked' : ''}> IVA</label>
-                        <label class="flex items-center text-xs"><input type="radio" name="${section}_taxType" value="aiu" class="mr-1 tax-type-radio" ${data.taxType === 'aiu' ? 'checked' : ''}> AIU</label>
+                <div class="border rounded-lg p-3 mt-2 bg-white">
+                    <p class="font-semibold">${title}</p>
+                    <div class="grid grid-cols-2 gap-4 mt-2">
+                        <div>
+                            <label class="block text-xs font-medium">Precio Unitario</label>
+                            <input type="text" name="${section}_unitPrice" class="currency-input mt-1 w-full border rounded-md p-2" value="${data.unitPrice || ''}">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium">Impuesto</label>
+                            <div class="mt-2 flex space-x-2">
+                                <label class="flex items-center text-xs"><input type="radio" name="${section}_taxType" value="iva" class="mr-1 tax-type-radio" ${data.taxType === 'iva' ? 'checked' : ''}> IVA</label>
+                                <label class="flex items-center text-xs"><input type="radio" name="${section}_taxType" value="aiu" class="mr-1 tax-type-radio" ${data.taxType === 'aiu' ? 'checked' : ''}> AIU</label>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
-            <div class="aiu-fields hidden space-y-2 mt-3">
-                <div class="grid grid-cols-3 gap-2">
-                    <div><label class="block text-xs">A(%)</label><input type="number" name="${section}_aiuA" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuA || ''}"></div>
-                    <div><label class="block text-xs">I(%)</label><input type="number" name="${section}_aiuI" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuI || ''}"></div>
-                    <div><label class="block text-xs">U(%)</label><input type="number" name="${section}_aiuU" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuU || ''}"></div>
-                </div>
-            </div>
-        </div>`;
+                    <div class="aiu-fields hidden space-y-2 mt-3">
+                        <div class="grid grid-cols-3 gap-2">
+                            <div><label class="block text-xs">A(%)</label><input type="number" name="${section}_aiuA" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuA || ''}"></div>
+                            <div><label class="block text-xs">I(%)</label><input type="number" name="${section}_aiuI" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuI || ''}"></div>
+                            <div><label class="block text-xs">U(%)</label><input type="number" name="${section}_aiuU" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuU || ''}"></div>
+                        </div>
+                    </div>
+                </div>`;
 
             // Plantilla para la sección de costo INCLUIDO
             const costSectionIncluded = (data = {}) => `
-        <div class="border rounded-lg p-3 mt-2">
-            <p class="font-semibold">Precio Total Incluido</p>
-            <div class="grid grid-cols-2 gap-4 mt-2">
-                <div>
-                    <label class="block text-xs font-medium">Precio Unitario Total</label>
-                    <input type="text" name="included_unitPrice" class="currency-input mt-1 w-full border rounded-md p-2" value="${data.unitPrice || ''}">
-                </div>
-                <div>
-                    <label class="block text-xs font-medium">Impuesto</label>
-                    <div class="mt-2 flex space-x-2">
-                        <label class="flex items-center text-xs"><input type="radio" name="included_taxType" value="iva" class="mr-1 tax-type-radio" ${data.taxType === 'iva' ? 'checked' : ''}> IVA</label>
-                        <label class="flex items-center text-xs"><input type="radio" name="included_taxType" value="aiu" class="mr-1 tax-type-radio" ${data.taxType === 'aiu' ? 'checked' : ''}> AIU</label>
+                <div class="border rounded-lg p-3 mt-2 bg-white">
+                    <p class="font-semibold">Precio Total Incluido</p>
+                    <div class="grid grid-cols-2 gap-4 mt-2">
+                        <div>
+                            <label class="block text-xs font-medium">Precio Unitario Total</label>
+                            <input type="text" name="included_unitPrice" class="currency-input mt-1 w-full border rounded-md p-2" value="${data.unitPrice || ''}">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium">Impuesto</label>
+                            <div class="mt-2 flex space-x-2">
+                                <label class="flex items-center text-xs"><input type="radio" name="included_taxType" value="iva" class="mr-1 tax-type-radio" ${data.taxType === 'iva' ? 'checked' : ''}> IVA</label>
+                                <label class="flex items-center text-xs"><input type="radio" name="included_taxType" value="aiu" class="mr-1 tax-type-radio" ${data.taxType === 'aiu' ? 'checked' : ''}> AIU</label>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
-            <div class="aiu-fields hidden space-y-2 mt-3">
-                <div class="grid grid-cols-3 gap-2">
-                    <div><label class="block text-xs">A(%)</label><input type="number" name="included_aiuA" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuA || ''}"></div>
-                    <div><label class="block text-xs">I(%)</label><input type="number" name="included_aiuI" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuI || ''}"></div>
-                    <div><label class="block text-xs">U(%)</label><input type="number" name="included_aiuU" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuU || ''}"></div>
-                </div>
-            </div>
-        </div>`;
+                    <div class="aiu-fields hidden space-y-2 mt-3">
+                        <div class="grid grid-cols-3 gap-2">
+                            <div><label class="block text-xs">A(%)</label><input type="number" name="included_aiuA" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuA || ''}"></div>
+                            <div><label class="block text-xs">I(%)</label><input type="number" name="included_aiuI" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuI || ''}"></div>
+                            <div><label class="block text-xs">U(%)</label><input type="number" name="included_aiuU" min="0" class="mt-1 w-full border rounded-md p-2" value="${data.aiuU || ''}"></div>
+                        </div>
+                    </div>
+                </div>`;
 
-            // --- LÓGICA PRINCIPAL: Decide qué formulario mostrar ---
+            // --- LÓGICA PRINCIPAL: Decide qué formulario de precios mostrar ---
             let pricingModelHtml = '';
-            const projectPricingModel = currentProject.pricingModel || 'separado'; // 'separado' por defecto
+            const projectPricingModel = currentProject.pricingModel || 'separado';
 
             if (projectPricingModel === 'incluido') {
                 pricingModelHtml = costSectionIncluded(isEditing ? data.includedDetails : {});
@@ -3875,25 +3920,52 @@ async function openMainModal(type, data = {}) {
         `;
             }
 
+            // --- Estructura HTML moderna con secciones ---
             bodyHtml = `
-        <div class="space-y-4">
-            <div><label class="block text-sm font-medium">Nombre</label><input type="text" name="name" required class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.name : ''}"></div>
-            
-            <div>
-                <label class="block text-sm font-medium">Descripción</label>
-                <textarea name="description" rows="3" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Ventana corrediza sistema 744 con vidrio laminado 3+3mm, incoloro...">${isEditing ? (data.description || '') : ''}</textarea>
-            </div>
-            <div class="grid grid-cols-3 gap-4">
-                <div><label class="block text-sm font-medium">Cantidad</label><input type="number" name="quantity" required min="1" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.quantity : ''}" ${isEditing ? 'readonly' : ''}></div>
-                <div><label class="block text-sm font-medium">Ancho (m)</label><input type="number" name="width" required step="0.01" min="0" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.width : ''}"></div>
-                <div><label class="block text-sm font-medium">Alto (m)</label><input type="number" name="height" required step="0.01" min="0" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.height : ''}"></div>
-            </div>
-            ${pricingModelHtml}
-        </div>`;
+                <div class="space-y-5">
+                    <div class="bg-gray-50 p-4 rounded-lg border">
+                        <h4 class="text-md font-semibold text-gray-700 mb-3 border-b pb-2">1. Información del Ítem</h4>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Nombre</label>
+                                <input type="text" name="name" required class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.name : ''}">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Descripción</label>
+                                <textarea name="description" rows="3" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Ventana corrediza sistema 744 con vidrio laminado 3+3mm...">${isEditing ? (data.description || '') : ''}</textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 p-4 rounded-lg border">
+                        <h4 class="text-md font-semibold text-gray-700 mb-3 border-b pb-2">2. Medidas y Cantidad</h4>
+                        <div class="grid grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Cantidad</Tlabel>
+                                <input type="number" name="quantity" required min="1" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.quantity : ''}" ${isEditing ? 'readonly' : ''}>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Ancho (cm)</label>
+                                <input type="number" name="width" required min="0" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? (data.width * 100) : ''}">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Alto (cm)</label>
+                                <input type="number" name="height" required min="0" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? (data.height * 100) : ''}">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 rounded-lg border">
+                        <h4 class="text-md font-semibold text-gray-700 mb-2">3. Valoración (Costos)</h4>
+                        ${pricingModelHtml}
+                    </div>
+                </div>`;
+
+            // --- FIN DE PLANTILLA MODERNA ---
 
             setTimeout(() => {
                 const modalContent = document.getElementById('modal-body');
-                const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+                const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
                 modalContent.querySelectorAll('.currency-input').forEach(input => {
                     const formatCurrency = (e) => {
@@ -4247,12 +4319,16 @@ async function openMainModal(type, data = {}) {
                 // Cargar y mostrar los ítems (solo visualización)
                 const itemsListUl = document.getElementById('edit-task-items-list');
                 if (data.selectedItems && data.selectedItems.length > 0) {
-                    const itemDetailPromises = data.selectedItems.map(async itemInfo => { /* ... (código para cargar nombres) ... */
+                    const itemDetailPromises = data.selectedItems.map(async itemInfo => {
                         try {
-                            const itemDoc = await getDoc(doc(db, "items", itemInfo.itemId));
+                            // --- INICIO DE CORRECCIÓN ---
+                            // Usamos data.projectId (que viene de la tarea) para construir el path correcto
+                            const itemDoc = await getDoc(doc(db, "projects", data.projectId, "items", itemInfo.itemId));
+                            // --- FIN DE CORRECCIÓN ---
+
                             const itemName = itemDoc.exists() ? itemDoc.data().name : `ID: ${itemInfo.itemId}`;
-                            return `<li class="list-disc">${itemInfo.quantity} x ${itemName}</li>`; // Añadido list-disc
-                        } catch { return `<li class="list-disc text-red-500">Error cargando ítem</li>`; } // Añadido list-disc
+                            return `<li class="list-disc">${itemInfo.quantity} x ${itemName}</li>`;
+                        } catch { return `<li class="list-disc text-red-500">Error cargando ítem</li>`; }
                     });
                     Promise.all(itemDetailPromises).then(htmlItems => {
                         if (itemsListUl) itemsListUl.innerHTML = htmlItems.join('');
@@ -4569,8 +4645,8 @@ modalForm.addEventListener('submit', async (e) => {
                 isDivisible: isDivisible, // Guardamos si es divisible
                 measurementType: measurementType, // Guardamos el tipo de medida
                 defaultSize: isDivisible ? { // Guardamos las dimensiones
-                    length: parseFloat(data.defaultLength) || 0,
-                    width: parseFloat(data.defaultWidth) || 0
+                    length: (parseFloat(data.defaultLength) / 100) || 0, // <-- CAMBIO
+                    width: (parseFloat(data.defaultWidth) / 100) || 0 // <-- CAMBIO
                 } : null,
                 quantityInStock: 0
             };
@@ -4622,8 +4698,8 @@ modalForm.addEventListener('submit', async (e) => {
                 isDivisible: isDivisible, // Guardamos si es divisible
                 measurementType: measurementType, // Guardamos el tipo de medida
                 defaultSize: isDivisible ? { // Guardamos las dimensiones
-                    length: parseFloat(data.defaultLength) || 0,
-                    width: parseFloat(data.defaultWidth) || 0
+                    length: (parseFloat(data.defaultLength) / 100) || 0, // <-- CAMBIO
+                    width: (parseFloat(data.defaultWidth) / 100) || 0 // <-- CAMBIO
                 } : null,
             };
             await updateDoc(doc(db, "materialCatalog", id), updatedData);
@@ -5088,7 +5164,10 @@ modalForm.addEventListener('submit', async (e) => {
                 return; // Detiene la ejecución
             }
 
+            data.width = parseFloat(data.width) / 100; // <-- CAMBIO
+            data.height = parseFloat(data.height) / 100; // <-- CAMBIO
             await updateItem(id, data);
+
             // ====================================================================
             //      INICIO: LÓGICA AÑADIDA PARA ACTUALIZAR LA VISTA
             // ====================================================================
@@ -5176,8 +5255,8 @@ async function openProgressModal(subItem) {
 
     modal.querySelector('#progress-modal-title').textContent = `Registrar Avance: Unidad N° ${subItem.number}`;
     modal.querySelector('#sub-item-location').value = subItem.location || '';
-    modal.querySelector('#sub-item-real-width').value = subItem.realWidth || '';
-    modal.querySelector('#sub-item-real-height').value = subItem.realHeight || '';
+    modal.querySelector('#sub-item-real-width').value = (subItem.realWidth * 100) || ''; // <-- CAMBIO
+    modal.querySelector('#sub-item-real-height').value = (subItem.realHeight * 100) || ''; // <-- CAMBIO
     modal.querySelector('#sub-item-date').value = subItem.installDate || new Date().toISOString().split('T')[0];
 
     const manufacturerSelect = modal.querySelector('#sub-item-manufacturer');
@@ -5212,8 +5291,8 @@ progressForm.addEventListener('submit', async (e) => {
 
     const data = {
         location: location,
-        realWidth: parseFloat(document.getElementById('sub-item-real-width').value) || 0,
-        realHeight: parseFloat(document.getElementById('sub-item-real-height').value) || 0,
+        realWidth: (parseFloat(document.getElementById('sub-item-real-width').value) / 100) || 0, // <-- CAMBIO
+        realHeight: (parseFloat(document.getElementById('sub-item-real-height').value) / 100) || 0, // <-- CAMBIO
 
         manufacturer: document.getElementById('sub-item-manufacturer').value,
         installer: document.getElementById('sub-item-installer').value,
@@ -5253,12 +5332,11 @@ progressForm.addEventListener('submit', async (e) => {
 const multipleProgressModal = document.getElementById('multiple-progress-modal');
 
 /**
- * Abre el modal para registrar avance en lote, mostrando solo los sub-ítems especificados,
- * agrupados por su ítem padre y con grupos plegables.
- * @param {string[]} subItemIdsToShow - Array con los IDs de los sub-ítems a mostrar.
- * @param {string} [originatingTaskId] - (Opcional) El ID de la tarea que originó la apertura del modal.
+ * Abre el modal para registrar avance en lote, mostrando solo los sub-ítems especificados.
+ * Esta función ahora es responsable de cargar TODOS los datos de la tarea.
+ * @param {string} originatingTaskId - El ID de la tarea que se está procesando.
  */
-async function openMultipleProgressModal(subItemIdsToShow, originatingTaskId = null) {
+async function openMultipleProgressModal(originatingTaskId) {
     const modal = document.getElementById('multiple-progress-modal');
     const title = document.getElementById('multiple-progress-modal-title');
     const tableBody = document.getElementById('multiple-progress-table-body');
@@ -5269,76 +5347,125 @@ async function openMultipleProgressModal(subItemIdsToShow, originatingTaskId = n
         return;
     }
 
-    confirmBtn.dataset.originatingTaskId = originatingTaskId || '';
-    title.textContent = `Registrar Avance para ${subItemIdsToShow.length} Unidad(es)`;
-    tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">Cargando sub-ítems...</td></tr>';
-
-    const manufacturerSelect = document.getElementById('multiple-sub-item-manufacturer');
-    const installerSelect = document.getElementById('multiple-sub-item-installer');
-    await populateUserDropdowns(manufacturerSelect, installerSelect, {});
-    document.getElementById('multiple-sub-item-date').value = new Date().toISOString().split('T')[0];
-
+    // --- INICIO DE OPTIMIZACIÓN ---
+    // 1. Mostrar el modal INMEDIATAMENTE
     modal.style.display = 'flex';
+    confirmBtn.dataset.originatingTaskId = originatingTaskId || '';
+    title.textContent = `Registrar Avance...`; // Título temporal
+    tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">Cargando datos de la tarea...</td></tr>';
+
+    // Limpiamos el 'currentItem' global
+    currentItem = null;
+    // --- FIN DE OPTIMIZACIÓN ---
 
     try {
-        tableBody.innerHTML = '';
+        // 2. Cargar los dropdowns (esto es rápido, usa caché 'usersMap')
+        const manufacturerSelect = document.getElementById('multiple-sub-item-manufacturer');
+        const installerSelect = document.getElementById('multiple-sub-item-installer');
+        await populateUserDropdowns(manufacturerSelect, installerSelect, {});
+        document.getElementById('multiple-sub-item-date').value = new Date().toISOString().split('T')[0];
 
-        if (subItemIdsToShow.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">No hay sub-ítems pendientes para esta tarea/selección.</td></tr>';
-            return;
+        // 3. Cargar TODO lo demás (la parte lenta)
+        const taskRef = doc(db, "tasks", originatingTaskId);
+        let taskSnap = await getDoc(taskRef);
+
+        if (!taskSnap.exists()) throw new Error(`La tarea ${originatingTaskId} no fue encontrada.`);
+
+        let taskData = taskSnap.data();
+        const projectId = taskData.projectId;
+
+        // 4. Cargar el contexto del Proyecto
+        const projectDoc = await getDoc(doc(db, "projects", projectId));
+        if (!projectDoc.exists()) throw new Error(`El proyecto ${projectId} asociado a la tarea no existe.`);
+        currentProject = { id: projectDoc.id, ...projectDoc.data() }; // <-- Contexto global establecido
+
+        // 5. Validar que la tarea tenga ítems
+        const taskItems = taskData.selectedItems || [];
+        if (taskItems.length === 0) throw new Error("Esta tarea no tiene ítems asociados.");
+
+        // 6. Lógica de Migración / Carga de IDs
+        let subItemIdsToShow = [];
+        if (taskData.specificSubItemIds && taskData.specificSubItemIds.length > 0) {
+            console.log(`[Task Progress] Tarea usa 'specificSubItemIds'.`);
+            subItemIdsToShow = taskData.specificSubItemIds;
+        } else {
+            console.warn(`[Task Progress] Tarea ${originatingTaskId} no tiene 'specificSubItemIds'. Migrando ahora...`);
+            tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">Actualizando tarea (migración)...</td></tr>';
+
+            const relevantPendingSubItemIds = [];
+            for (const selectedItem of taskItems) {
+                const itemId = selectedItem.itemId;
+                const quantityNeeded = selectedItem.quantity;
+                if (quantityNeeded <= 0) continue;
+
+                const subItemsQuery = query(
+                    collection(db, "projects", projectId, "items", itemId, "subItems"),
+                    where("status", "!=", "Instalado"),
+                    orderBy("number", "asc"),
+                    limit(quantityNeeded)
+                );
+                const subItemsSnapshot = await getDocs(subItemsQuery);
+                subItemsSnapshot.forEach(subItemDoc => {
+                    relevantPendingSubItemIds.push(subItemDoc.id);
+                });
+            }
+
+            if (relevantPendingSubItemIds.length === 0) {
+                throw new Error("No se encontraron sub-ítems pendientes para esta tarea.");
+            }
+
+            await updateDoc(taskRef, { specificSubItemIds: relevantPendingSubItemIds });
+            subItemIdsToShow = relevantPendingSubItemIds;
         }
 
-        // 1. Obtener datos completos de los sub-ítems solicitados
-        const subItemPromises = subItemIdsToShow.map(id => getDoc(doc(db, "subItems", id)));
-        const subItemDocs = await Promise.all(subItemPromises);
+        // 7. Cargar los sub-ítems para el modal
+        title.textContent = `Registrar Avance para ${subItemIdsToShow.length} Unidad(es)`;
+        tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">Cargando sub-ítems...</td></tr>';
 
-        // --- INICIO CORRECCIÓN (FILTRO 1) ---
-        // Filtramos CUALQUIER sub-ítem que no exista, ya esté instalado, O NO TENGA itemId
-        const subItemsData = subItemDocs
-            .filter(docSnap => docSnap.exists() && docSnap.data().status !== 'Instalado' && docSnap.data().itemId)
-            .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
-        // --- FIN CORRECCIÓN (FILTRO 1) ---
+        const subItemsData = [];
+        const itemsMap = new Map();
+
+        for (const item of taskItems) {
+            if (!itemsMap.has(item.itemId)) {
+                const itemDoc = await getDoc(doc(db, "projects", currentProject.id, "items", item.itemId));
+                itemsMap.set(item.itemId, itemDoc.exists() ? itemDoc.data().name : `Ítem Desconocido`);
+            }
+
+            // Particionamos la consulta en lotes de 30 (límite de Firestore)
+            for (let i = 0; i < subItemIdsToShow.length; i += 30) {
+                const chunkIds = subItemIdsToShow.slice(i, i + 30);
+                const qSubItems = query(
+                    collection(db, "projects", currentProject.id, "items", item.itemId, "subItems"),
+                    where(documentId(), "in", chunkIds)
+                );
+                const subItemsSnapshot = await getDocs(qSubItems);
+                subItemsSnapshot.forEach(docSnap => {
+                    if (docSnap.data().status !== 'Instalado') {
+                        subItemsData.push({ id: docSnap.id, ...docSnap.data() });
+                    }
+                });
+            }
+        }
 
         if (subItemsData.length === 0) {
             tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">Todos los sub-ítems solicitados ya están instalados o no se encontraron.</td></tr>';
             return;
         }
 
-        // 2. Obtener los IDs únicos de los ítems padres
-        // --- INICIO CORRECCIÓN (FILTRO 2) ---
-        // Añadimos .filter(Boolean) para eliminar explícitamente cualquier valor 'undefined' o 'null'
-        const parentItemIds = [...new Set(subItemsData.map(si => si.itemId))]
-            .filter(id => typeof id === 'string' && id.trim() !== '');
-        // --- FIN CORRECCIÓN (FILTRO 2) ---
-
-        // Si después de filtrar no quedan IDs padres (porque todos los sub-ítems tenían itemId undefined)
-        if (parentItemIds.length === 0) {
-            console.warn("Sub-ítems encontrados pero ninguno tenía un 'itemId' válido.", subItemsData);
-            tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-red-500">Error: Los sub-ítems no están vinculados a un ítem padre.</td></tr>';
-            return;
-        }
-
-        // 3. Obtener los datos de los ítems padres (nombres)
-        const itemPromises = parentItemIds.map(id => getDoc(doc(db, "items", id))); // Esta línea ya no debería fallar
-        const itemDocs = await Promise.all(itemPromises);
-        const itemsMap = new Map(itemDocs.map(docSnap => [docSnap.id, docSnap.exists() ? docSnap.data().name : `Ítem Desconocido (${docSnap.id.substring(0, 5)}...)`]));
-
-        // 4. Agrupar los sub-ítems por su itemId
+        // 8. Agrupar y renderizar (lógica sin cambios)
         const groupedSubItems = new Map();
         subItemsData.forEach(subItem => {
-            // No necesitamos verificar itemId aquí de nuevo porque ya lo filtramos
             if (!groupedSubItems.has(subItem.itemId)) {
                 groupedSubItems.set(subItem.itemId, []);
             }
             groupedSubItems.get(subItem.itemId).push(subItem);
         });
 
-        // 5. Ordenar los sub-ítems dentro de cada grupo por número
         groupedSubItems.forEach((subItemsArray) => {
             subItemsArray.sort((a, b) => (a.number || 0) - (b.number || 0));
         });
 
-        // 6. Construir el HTML de la tabla con agrupaciones
+        tableBody.innerHTML = ''; // Limpiamos el "Cargando..."
         groupedSubItems.forEach((subItemsArray, itemId) => {
             const itemName = itemsMap.get(itemId);
 
@@ -5357,11 +5484,12 @@ async function openMultipleProgressModal(subItemIdsToShow, originatingTaskId = n
                 const row = document.createElement('tr');
                 row.className = `subitem-row ${`group-${itemId}`} border-b`;
                 row.dataset.id = subItem.id;
+                row.dataset.itemId = subItem.itemId;
                 row.innerHTML = `
                     <td class="px-4 py-2 font-bold">${subItem.number}</td>
                     <td class="px-4 py-2"><input type="text" class="location-input mt-1 block w-full px-2 py-1 border rounded-md text-sm" value="${subItem.location || ''}"></td>
-                    <td class="px-4 py-2"><input type="number" step="0.01" class="real-width-input mt-1 block w-full px-2 py-1 border rounded-md text-sm" value="${subItem.realWidth || ''}"></td>
-                    <td class="px-4 py-2"><input type="number" step="0.01" class="real-height-input mt-1 block w-full px-2 py-1 border rounded-md text-sm" value="${subItem.realHeight || ''}"></td>
+                    <td class="px-4 py-2"><input type="number" class="real-width-input mt-1 block w-full px-2 py-1 border rounded-md text-sm" value="${(subItem.realWidth * 100) || ''}"></td>
+                    <td class="px-4 py-2"><input type="number" class="real-height-input mt-1 block w-full px-2 py-1 border rounded-md text-sm" value="${(subItem.realHeight * 100) || ''}"></td>
                     <td class="px-4 py-2"><input type="file" class="photo-input" accept="image/*" capture="environment" style="display: block; width: 100%;"></td>
                 `;
                 tableBody.appendChild(row);
@@ -5370,10 +5498,12 @@ async function openMultipleProgressModal(subItemIdsToShow, originatingTaskId = n
 
     } catch (error) {
         console.error("Error al cargar y agrupar sub-ítems:", error);
-        tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-red-500">Error al cargar datos. Revisa la consola.</td></tr>';
+        tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-red-500">Error al cargar datos: ${error.message}</td></tr>`;
+
+        // Ocultamos el botón de guardar si hay un error
+        if (confirmBtn) confirmBtn.disabled = true;
     }
 }
-
 function closeMultipleProgressModal() {
     if (multipleProgressModal) {
         multipleProgressModal.style.display = 'none';
@@ -5468,6 +5598,18 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
     let isTaskNowComplete = false;
     let validationError = null;
 
+    if (!currentProject || !currentProject.id) {
+        console.error("Error al guardar: Contexto de 'currentProject' no está definido.");
+        alert("Error: No se pudo identificar el proyecto actual. Recarga la página.");
+        feedbackP.textContent = 'Error de contexto.';
+        feedbackP.className = 'text-sm mt-4 text-center text-red-600';
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Guardar Cambios';
+        return;
+    }
+
+    currentItem = null;
+
     try {
         const originatingTaskId = confirmBtn.dataset.originatingTaskId;
 
@@ -5479,30 +5621,24 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
 
         const tableRows = document.querySelectorAll('#multiple-progress-table-body tr.subitem-row');
 
-        // --- INICIO DE LA NUEVA VALIDACIÓN ---
-        // 1. Revisamos si el usuario llenó al menos una ubicación
+        // --- VALIDACIÓN DE USUARIO (Fabricante/Instalador) ---
         let locationFilled = false;
         for (const row of tableRows) {
             if (row.querySelector('.location-input').value.trim()) {
                 locationFilled = true;
-                break; // Si encontramos una, no necesitamos seguir buscando
+                break;
             }
         }
 
-        // 2. Si llenó una ubicación, validamos Fabricante e Instalador
         if (locationFilled) {
-            // Check 2.1: Fabricante (solo si se registró algún avance)
             if (!commonData.manufacturer) {
                 validationError = `Debes seleccionar un 'Fabricante (para todos)' si registras avance.`;
             }
-            // Check 2.2: Instalador (solo si se registró algún avance)
-            else if (!commonData.installer) { // Usamos else if para mostrar un error a la vez
+            else if (!commonData.installer) {
                 validationError = `Debes seleccionar un 'Instalador (para todos)' si registras avance.`;
             }
         }
-        // --- FIN DE LA NUEVA VALIDACIÓN ---
 
-        // 3. Si hubo error en la validación anterior, detenemos
         if (validationError) {
             alert(validationError);
             if (feedbackP) {
@@ -5511,35 +5647,52 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
             }
             throw new Error("Error de validación de usuario (Fabricante/Instalador).");
         }
-
+        // --- FIN VALIDACIÓN DE USUARIO ---
 
         const batch = writeBatch(db);
         const photoUploads = [];
         const updatedSubItemIds = [];
         let rowsProcessed = 0;
 
-        // 4. Obtener IDs y datos (sin cambios)
-        const subItemIdsInModal = Array.from(tableRows).map(row => row.dataset.id);
+        // 4. Obtener IDs y datos (¡CORREGIDO!)
+        const subItemPaths = Array.from(tableRows).map(row => {
+            return {
+                itemId: row.dataset.itemId,
+                subItemId: row.dataset.id
+            };
+        });
+
         const subItemsMap = new Map();
-        if (subItemIdsInModal.length > 0) {
-            const MAX_IN_QUERY = 30;
-            for (let i = 0; i < subItemIdsInModal.length; i += MAX_IN_QUERY) {
-                const chunkIds = subItemIdsInModal.slice(i, i + MAX_IN_QUERY);
-                const subItemsChunkQuery = query(collection(db, "subItems"), where("__name__", "in", chunkIds));
-                const subItemsChunkSnapshot = await getDocs(subItemsChunkQuery);
-                subItemsChunkSnapshot.forEach(doc => subItemsMap.set(doc.id, doc.data()));
-            }
+
+        if (subItemPaths.length > 0) {
+            const subItemPromises = subItemPaths.map(path =>
+                getDoc(doc(db, "projects", currentProject.id, "items", path.itemId, "subItems", path.subItemId))
+            );
+            const subItemDocs = await Promise.all(subItemPromises);
+            subItemDocs.forEach(docSnap => {
+                if (docSnap.exists()) {
+                    subItemsMap.set(docSnap.id, docSnap.data());
+                }
+            });
         }
 
 
-        // 5. Iterar y validar (Validaciones de Foto y Estado sin cambios)
+        // 5. Iterar y validar
         for (const row of tableRows) {
             const subItemId = row.dataset.id;
+            const itemId = row.dataset.itemId;
+
+            if (!itemId) {
+                console.warn(`Omitiendo fila: falta data-item-id.`, row);
+                continue;
+            }
+
             const subItemData = subItemsMap.get(subItemId) || {};
+
             const individualData = {
                 location: row.querySelector('.location-input').value.trim(),
-                realWidth: parseFloat(row.querySelector('.real-width-input').value) || 0,
-                realHeight: parseFloat(row.querySelector('.real-height-input').value) || 0,
+                realWidth: (parseFloat(row.querySelector('.real-width-input').value) / 100) || 0, // cm a m
+                realHeight: (parseFloat(row.querySelector('.real-height-input').value) / 100) || 0, // cm a m
             };
             const photoFile = row.querySelector('.photo-input').files[0];
 
@@ -5558,17 +5711,6 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
             }
 
             if (finalStatus === 'Instalado') {
-                // Check 2.1: Instalador (ya validado arriba, pero doble check por seguridad)
-                if (!commonData.installer) {
-                    validationError = `Falta seleccionar el 'Instalador (para todos)' para marcar ítems como Instalado.`;
-                    break;
-                }
-                // Check 2.2: Fecha (ya validado arriba, pero doble check por seguridad)
-                if (!commonData.installDate) {
-                    validationError = `Falta seleccionar la 'Fecha de Instalación (para todos)' para marcar ítems como Instalado.`;
-                    break;
-                }
-                // Check 2.3: Foto (nueva o existente)
                 if (!photoFile && !subItemData.photoURL) {
                     validationError = `Falta la foto de evidencia para la Unidad N° ${subItemData.number || subItemId.substring(0, 5)}... (Lugar: ${individualData.location}).`;
                     break;
@@ -5579,28 +5721,36 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
             if (!commonData.manufacturer) delete dataToUpdate.manufacturer;
             if (!commonData.installer) delete dataToUpdate.installer;
 
-            const subItemRef = doc(db, "subItems", subItemId);
+            const subItemRef = doc(db, "projects", currentProject.id, "items", itemId, "subItems", subItemId);
             batch.update(subItemRef, dataToUpdate);
 
             if (photoFile) {
-                if (subItemData && subItemData.projectId && subItemData.itemId) {
-                    const watermarkText = `Vidrios Exito - ${currentProject?.name || subItemData.projectId} - ${commonData.installDate} - ${individualData.location}`;
-                    photoUploads.push({ subItemId, photoFile, watermarkText, itemId: subItemData.itemId, projectId: subItemData.projectId });
+                // --- INICIO DE CORRECCIÓN ---
+                // Usamos 'currentProject.id' (el correcto) en lugar de 'subItemData.projectId' (el incorrecto)
+                if (subItemData && currentProject.id && subItemData.itemId) {
+                    const watermarkText = `Vidrios Exito - ${currentProject?.name || currentProject.id} - ${commonData.installDate} - ${individualData.location}`;
+                    photoUploads.push({
+                        subItemId: subItemId,
+                        photoFile: photoFile,
+                        watermarkText: watermarkText,
+                        itemId: subItemData.itemId,
+                        projectId: currentProject.id // <-- ¡CORREGIDO!
+                    });
                 } else {
                     console.warn(`No se pudo obtener projectId o itemId para ${subItemId}, no se subirá foto.`);
                 }
+                // --- FIN DE CORRECCIÓN ---
             }
         } // Fin del bucle for...of
 
 
-        // 6. Validaciones Pre-Commit (Sin cambios)
+        // 6. Validaciones Pre-Commit
         if (validationError) {
             alert(validationError);
             if (feedbackP) {
                 feedbackP.textContent = 'Revisa los campos obligatorios.';
                 feedbackP.className = 'text-sm mt-4 text-center text-red-600';
             }
-            // Usamos 'throw' para ir directamente al 'finally' y reactivar el botón
             throw new Error("Error de validación de usuario.");
         }
 
@@ -5610,66 +5760,79 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
                 feedbackP.textContent = 'Registro cancelado.';
                 feedbackP.className = 'text-sm mt-4 text-center text-red-600';
             }
-            // Usamos 'throw' para ir directamente al 'finally' y reactivar el botón
             throw new Error("No se procesaron filas.");
         }
 
-        // 7. Guardar en Base de Datos (Sin cambios)
+        // 7. Guardar en Base de Datos
         await batch.commit();
         if (feedbackP) feedbackP.textContent = `Datos guardados para ${rowsProcessed} unidad(es). Procesando fotos...`;
 
+        // 8. Lógica de fotos
         for (const upload of photoUploads) {
-            // ... (código para subir foto con marca de agua) ...
             try {
                 const watermarkedBlob = await addWatermark(upload.photoFile, upload.watermarkText);
+                // La ruta de subida ahora usará el 'projectId' correcto
                 const storageRef = ref(storage, `evidence/${upload.projectId}/${upload.itemId}/${upload.subItemId}`);
                 const snapshot = await uploadBytes(storageRef, watermarkedBlob);
                 const downloadURL = await getDownloadURL(snapshot.ref);
-                await updateDoc(doc(db, "subItems", upload.subItemId), { photoURL: downloadURL });
+
+                const subItemRef_photo = doc(db, "projects", upload.projectId, "items", upload.itemId, "subItems", upload.subItemId);
+                await updateDoc(subItemRef_photo, { photoURL: downloadURL });
             } catch (photoError) {
                 console.error(`Error procesando/subiendo foto para ${upload.subItemId}:`, photoError);
             }
         }
 
-        // 8. Lógica de verificación de tarea (Sin cambios)
+        // 9. Lógica de verificación de tarea
         let feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)!`;
         let feedbackClass = 'text-sm mt-4 text-center text-green-600';
 
         if (originatingTaskId && commonData.installer) {
-            // ... (código para verificar si la tarea se completa) ...
             if (feedbackP) feedbackP.textContent = 'Fotos subidas. Verificando estado de la tarea...';
 
             const taskDoc = await getDoc(doc(db, "tasks", originatingTaskId));
             if (!taskDoc.exists()) {
                 throw new Error("No se pudo encontrar la tarea original para verificarla.");
             }
-
             const taskData = taskDoc.data();
 
-            if (taskData.specificSubItemIds && taskData.specificSubItemIds.length > 0) {
-                // ... (lógica para tareas nuevas) ...
+            if (taskData.specificSubItemIds && taskData.specificSubItemIds.length > 0 && taskData.selectedItems) {
                 const allTaskSubItemIds = taskData.specificSubItemIds;
-                const checkQuery = query(collection(db, "subItems"), where("__name__", "in", allTaskSubItemIds));
-                const subItemsSnapshot = await getDocs(checkQuery);
-                let allTaskSubItemsInstalled = true;
-                let pendingCountInTask = 0;
-                subItemsSnapshot.forEach(doc => {
-                    if (doc.data().status !== 'Instalado') {
-                        allTaskSubItemsInstalled = false;
-                        pendingCountInTask++;
+
+                let totalPending = 0;
+
+                for (const item of taskData.selectedItems) {
+                    const itemId = item.itemId;
+                    const subItemDocs = [];
+                    for (let i = 0; i < allTaskSubItemIds.length; i += 30) {
+                        const chunkIds = allTaskSubItemIds.slice(i, i + 30);
+
+                        const q = query(
+                            collection(db, "projects", taskData.projectId, "items", itemId, "subItems"),
+                            where(documentId(), "in", chunkIds)
+                        );
+
+                        const snapshot = await getDocs(q);
+                        snapshot.forEach(doc => subItemDocs.push(doc));
                     }
-                });
-                if (allTaskSubItemsInstalled && subItemsSnapshot.size === allTaskSubItemIds.length) {
-                    // ... (código para completar la tarea) ...
+
+                    for (const docSnap of subItemDocs) {
+                        if (docSnap.exists()) {
+                            if (allTaskSubItemIds.includes(docSnap.id) && docSnap.data().status !== 'Instalado') {
+                                totalPending++;
+                            }
+                        }
+                    }
+                }
+
+                if (totalPending === 0) {
                     const taskRef = doc(db, "tasks", originatingTaskId);
                     await updateDoc(taskRef, { status: 'completada', completedAt: new Date(), completedBy: currentUser.uid });
                     feedbackMessage = '¡Avance registrado y tarea completada!';
                     isTaskNowComplete = true;
                 } else {
-                    feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)! Aún quedan ${pendingCountInTask} pendientes en esta tarea.`;
+                    feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)! Aún quedan ${totalPending} pendientes en esta tarea.`;
                 }
-            } else {
-                feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)! (Tarea antigua, no se autocompleta).`;
             }
         }
 
@@ -5678,7 +5841,7 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
             feedbackP.className = feedbackClass;
         }
 
-        // 9. Éxito (Sin cambios)
+        // 9. Éxito
         success = true;
 
         if (success) {
@@ -5694,14 +5857,12 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
         }
 
     } catch (error) {
-        // --- BLOQUE CATCH (Sin cambios) ---
         console.error("Error al guardar el avance múltiple:", error);
         if (feedbackP && !validationError && error.message !== "No se procesaron filas." && error.message !== "Error de validación de usuario." && error.message !== "Error de validación de usuario (Fabricante/Instalador).") {
             feedbackP.textContent = 'Error al guardar. Revisa la consola.';
             feedbackP.className = 'text-sm mt-4 text-center text-red-600';
         }
     } finally {
-        // --- BLOQUE FINALLY (Sin cambios) ---
         if (!success) {
             confirmBtn.disabled = false;
             confirmBtn.textContent = 'Guardar Cambios';
@@ -5798,8 +5959,8 @@ document.getElementById('download-template-btn').addEventListener('click', () =>
         ["Columna", "Descripción y Ejemplo"],
         ["Nombre del Ítem", "Nombre descriptivo del objeto. Ej: 'Ventana Sala'"],
         ["Cantidad", "Número total de unidades de este ítem. Ej: 5"],
-        ["Ancho (m)", "Ancho en metros. Usar punto (.) para decimales. Ej: 1.5"],
-        ["Alto (m)", "Alto en metros. Usar punto (.) para decimales. Ej: 2.2"],
+        ["Ancho (cm)", "Ancho en centímetros (número entero). Ej: 150"],
+        ["Alto (cm)", "Alto en centímetros (número entero). Ej: 220"],
     ];
     // Se añadirán más instrucciones dependiendo del modelo del proyecto
 
@@ -5818,8 +5979,8 @@ document.getElementById('download-template-btn').addEventListener('click', () =>
         exampleData = [{
             'Nombre del Ítem': "Ventana Fija Baño",
             'Cantidad': 2,
-            'Ancho (m)': 0.8,
-            'Alto (m)': 0.6,
+            'Ancho (cm)': 80,
+            'Alto (cm)': 60,
             'Precio Unitario (Incluido)': 200000,
             'Impuesto': "IVA",
             'AIU Admin %': null,
@@ -5841,8 +6002,8 @@ document.getElementById('download-template-btn').addEventListener('click', () =>
         exampleData = [{
             'Nombre del Ítem': "Ventana Corrediza Sala",
             'Cantidad': 5,
-            'Ancho (m)': 1.5,
-            'Alto (m)': 1.2,
+            'Ancho (cm)': 150,
+            'Alto (cm)': 120,
             'Precio Suministro (Unitario)': 150000,
             'Impuesto Suministro': "AIU",
             'AIU Admin % (Suministro)': 5,
@@ -5887,8 +6048,8 @@ document.getElementById('import-modal-confirm-btn').addEventListener('click', ()
 
             for (const row of json) {
                 // Verificación básica de que la fila tiene datos
-                if (!row['Nombre del Ítem'] || !row['Cantidad'] || !row['Ancho (m)'] || !row['Alto (m)']) {
-                    console.warn("Fila omitida por falta de datos básicos:", row);
+                if (!row['Nombre del Ítem'] || !row['Cantidad'] || !row['Ancho (cm)'] || !row['Alto (cm)']) {
+                    console.warn("Fila omitida por falta de datos básicos (Nombre, Cantidad, Ancho (cm), Alto (cm)):", row);
                     continue;
                 }
 
@@ -5896,8 +6057,9 @@ document.getElementById('import-modal-confirm-btn').addEventListener('click', ()
                 const itemData = {
                     name: row['Nombre del Ítem'],
                     quantity: row['Cantidad'],
-                    width: row['Ancho (m)'],
-                    height: row['Alto (m)'],
+                    // Convertimos de (cm) a (m) antes de guardar
+                    width: (parseFloat(row['Ancho (cm)']) / 100) || 0,
+                    height: (parseFloat(row['Alto (cm)']) / 100) || 0,
                 };
 
                 if (projectPricingModel === 'incluido') {
@@ -5948,7 +6110,7 @@ async function exportProjectToPDF() {
     loadingOverlay.classList.remove('hidden');
     const { jsPDF } = window.jspdf;
     const docPDF = new jsPDF();
-    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
     let yPosition = 0;
 
     try {
@@ -6064,343 +6226,340 @@ async function exportProjectToPDF() {
 // ====================================================================
 
 // --- NOTIFICACIONES ---
+/**
+ * Elimina la foto de evidencia de un sub-ítem y actualiza su estado.
+ * Ahora maneja los errores 404 de Storage (archivos no encontrados).
+ */
 async function handleDeletePhoto(subItemId, itemId, installerId, projectId) {
+
+    // Paso 1: Intentar borrar la foto de Storage
     try {
         const storageRef = ref(storage, `evidence/${projectId}/${itemId}/${subItemId}`);
         await deleteObject(storageRef);
-        await updateDoc(doc(db, "subItems", subItemId), { photoURL: '', status: 'Faltante de Evidencia' });
-
-        const itemDoc = await getDoc(doc(db, "items", itemId));
-        const itemName = itemDoc.exists() ? itemDoc.data().name : "un ítem";
-
-        // Crear notificación
-        await addDoc(collection(db, "notifications"), {
-            userId: installerId,
-            message: `La foto de evidencia para el ítem #${itemName} (Unidad ${subItemId.substring(0, 5)}...) fue rechazada. Por favor, sube una nueva.`,
-            subItemId: subItemId,
-            itemId: itemId,
-            projectId: projectId,
-            read: false,
-            createdAt: serverTimestamp() // <-- CORREGIDO
-        });
 
     } catch (error) {
-        console.error("Error al eliminar la foto:", error);
-        alert("No se pudo eliminar la foto.");
+        if (error.code === 'storage/object-not-found') {
+            console.warn(`Archivo no encontrado en Storage (probablemente migrado o ya borrado): ${error.message}`);
+        } else {
+            console.error("Error al eliminar la foto de Storage:", error);
+            alert("No se pudo eliminar la foto de Storage. Revisa los permisos.");
+            return; // Detenemos la ejecución
+        }
+    }
+
+    // Paso 2: Actualizar la base de datos y enviar notificación
+    try {
+        // --- INICIO DE CORRECCIÓN ---
+        // 1. Definir la referencia
+        const subItemRef = doc(db, "projects", projectId, "items", itemId, "subItems", subItemId);
+
+        // 2. Obtener el sub-item ANTES de actualizarlo para leer su 'location'
+        let subItemLocation = `Unidad ${subItemId.substring(0, 5)}...`; // Fallback
+        try {
+            const subItemSnap = await getDoc(subItemRef);
+            if (subItemSnap.exists() && subItemSnap.data().location) {
+                subItemLocation = subItemSnap.data().location;
+            }
+        } catch (e) { console.warn("No se pudo leer la ubicación del sub-item."); }
+
+        // 3. Actualizar el documento
+        await updateDoc(subItemRef, { photoURL: '', status: 'Faltante de Evidencia' });
+
+        const itemDoc = await getDoc(doc(db, "projects", projectId, "items", itemId));
+        const itemName = itemDoc.exists() ? itemDoc.data().name : "un ítem";
+
+        // 4. Crear notificación con el mensaje corregido
+        const projectName = currentProject.name || "un proyecto";
+        await addDoc(collection(db, "notifications"), {
+            userId: installerId,
+            message: `Foto rechazada para ítem #${itemName} (Lugar: ${subItemLocation}). Por favor, sube una nueva.`,
+            projectName: projectName,
+            subItemId: subItemId, // <-- Importante: Guarda el ID del sub-ítem
+            itemId: itemId,       // <-- Importante: Guarda el ID del ítem padre
+            projectId: projectId, // <-- Importante: Guarda el ID del proyecto
+            read: false,
+            createdAt: serverTimestamp(),
+            type: 'photo_rejected' // <-- Importante: Identifica esta notificación
+        });
+        // --- FIN DE CORRECCIÓN ---
+
+    } catch (error) {
+        console.error("Error al actualizar la foto en Firestore:", error);
+        alert("No se pudo actualizar el estado de la foto en la base de datos.");
     }
 }
 
+
+/**
+ * Convierte un objeto Date a un formato de "hace tanto tiempo".
+ * @param {Date} date - La fecha a formatear.
+ * @returns {string} - El texto formateado (ej: "Hace 5 minutos").
+ */
+function timeAgoFormat(date) {
+    // Verificación de seguridad por si la fecha es nula
+    if (!date || typeof date.toDate !== 'function') {
+         // Si 'date' es un objeto Timestamp de Firestore, conviértelo
+        if (date && typeof date.toDate === 'function') {
+            date = date.toDate();
+        } else if (!(date instanceof Date)) {
+            // Si sigue sin ser una fecha, no podemos formatear
+             console.warn("timeAgoFormat recibió una fecha inválida:", date);
+             return "hace un momento";
+        }
+    }
+
+    const now = new Date();
+    const seconds = Math.round((now - date) / 1000);
+
+    const minute = 60;
+    const hour = minute * 60;
+    const day = hour * 24;
+    const week = day * 7;
+    const month = day * 30; // Aproximación
+    const year = day * 365;
+
+    if (seconds < 30) {
+        return "Ahora mismo";
+    } else if (seconds < minute) {
+        return `Hace ${seconds} segundos`;
+    } else if (seconds < hour) {
+        const minutes = Math.floor(seconds / minute);
+        return `Hace ${minutes} minuto${minutes > 1 ? 's' : ''}`;
+    } else if (seconds < day) {
+        const hours = Math.floor(seconds / hour);
+        return `Hace ${hours} hora${hours > 1 ? 's' : ''}`;
+    } else if (seconds < week) {
+        const days = Math.floor(seconds / day);
+        return `Hace ${days} día${days > 1 ? 's' : ''}`;
+    } else if (seconds < month) {
+        const weeks = Math.floor(seconds / week);
+        return `Hace ${weeks} semana${weeks > 1 ? 's' : ''}`;
+    } else if (seconds < year) {
+        const months = Math.floor(seconds / month);
+        return `Hace ${months} mes${months > 1 ? 'es' : ''}`;
+    } else {
+        const years = Math.floor(seconds / year);
+        return `Hace ${years} año${years > 1 ? 's' : ''}`;
+    }
+}
+// --- FIN DE FUNCIÓN 'timeAgoFormat' ---
+
+
+/**
+ * Carga notificaciones (personales y de canal) en tiempo real
+ * y maneja los clics de navegación.
+ */
 function loadNotifications() {
+    console.log("DEBUG: loadNotifications() iniciada.");
     const notificationsList = document.getElementById('notifications-list');
     const notificationBadge = document.getElementById('notification-badge');
-    if (!notificationsList || !notificationBadge) {
-        console.error("DEBUG: Elementos #notifications-list o #notification-badge no encontrados.");
+
+    if (!currentUser || !notificationsList || !notificationBadge) {
+        console.warn("DEBUG: loadNotifications() detenida. Falta currentUser, notificationsList o notificationBadge.");
         return;
     }
-    console.log("DEBUG: loadNotifications() iniciada.");
 
-    let personalNotifs = [];
-    let channelNotifs = [];
-    let hasRenderedOnce = false;
-
-    // Función robusta para leer fechas
-    const getSortableTime = (dateObj) => {
-        if (!dateObj) return 0;
-        if (typeof dateObj.toMillis === 'function') return dateObj.toMillis();
-        if (typeof dateObj.getTime === 'function') return dateObj.getTime();
-        const parsedDate = Date.parse(dateObj);
-        if (!isNaN(parsedDate)) return parsedDate;
-        console.warn("DEBUG: No se pudo parsear la fecha:", dateObj);
-        return 0;
-    };
-
-    // Función para renderizar todas las notificaciones juntas
-const renderNotifications = () => {
+    // --- 1. FUNCIÓN DE RENDERIZADO (Con data-subitem-id) ---
+    // Esta función interna dibuja el HTML
+    const renderNotifications = (personal, channel) => {
         console.log("DEBUG: renderNotifications() llamada.");
-        let allNotifs = [...personalNotifs, ...channelNotifs];
-        
-        const seen = new Set();
-        allNotifs = allNotifs.filter(notification => {
-            if (seen.has(notification.id)) return false;
-            if (!notification.createdAt) return false;
-            seen.add(notification.id);
-            return true;
+        // Asegurarse de que el elemento exista antes de modificarlo
+        const listEl = document.getElementById('notifications-list');
+        const badgeEl = document.getElementById('notification-badge');
+        if (!listEl || !badgeEl) return;
+
+        listEl.innerHTML = '';
+        const allNotifications = [...personal, ...channel];
+
+        // Ordenar por fecha (más nuevas primero)
+        allNotifications.sort((a, b) => {
+             // Manejar Timestamps de Firestore
+            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date();
+            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date();
+            return dateB - dateA;
         });
 
-        try {
-            allNotifs.sort((a, b) => {
-                const timeB = getSortableTime(b.createdAt);
-                const timeA = getSortableTime(a.createdAt);
-                return timeB - timeA;
-            });
-        } catch (error) {
-            console.error("DEBUG: ¡CRASH! El error está en .sort()", error);
-            notificationsList.innerHTML = '<li class="p-4 text-sm text-red-500">Error al ordenar notificaciones.</li>';
-            return;
-        }
-
-        notificationsList.innerHTML = '';
-        notificationBadge.classList.toggle('hidden', allNotifs.length === 0);
-
-        if (allNotifs.length === 0) {
-            // --- INICIO DE MODIFICACIÓN: Mejorar estado vacío ---
-            notificationsList.innerHTML = `
-                <li class="p-6 text-center text-sm text-gray-500">
-                    <svg class="h-12 w-12 mx-auto text-gray-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                    </svg>
-                    <p class="mt-2 font-semibold">Todo al día</p>
-                    <p class="mt-1">No hay notificaciones nuevas.</p>
-                </li>
-            `;
-            // --- FIN DE MODIFICACIÓN ---
+        if (allNotifications.length === 0) {
+            listEl.innerHTML = '<li class="p-4 text-sm text-gray-500 text-center">No tienes notificaciones nuevas.</li>';
+            badgeEl.classList.add('hidden');
             return;
         }
 
         console.log("DEBUG: Renderizando notificaciones...");
-        allNotifs.forEach(notification => {
-            
-            // --- INICIO DE MODIFICACIÓN: Nuevo diseño de items ---
-            const notificationItem = document.createElement('li');
-            notificationItem.className = 'notification-item group flex'; // Añadida clase 'group'
-            notificationItem.dataset.notifId = notification.id;
+        badgeEl.classList.remove('hidden');
 
-            let title = 'Acción Requerida';
+        allNotifications.forEach(notification => {
+            const li = document.createElement('li');
+            li.className = 'border-b border-gray-200 last:border-b-0';
+
+            // Usamos la función timeAgoFormat que acabamos de definir
+            const timeAgo = timeAgoFormat(notification.createdAt); 
             let iconSvg = '';
-
-            // Asignar Título e Icono basado en el tipo
-            if (notification.channel) {
-                title = 'Alerta de Sistema';
-                iconSvg = `<div class="p-3"><div class="h-8 w-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
-                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                </div></div>`;
-            } else if (notification.type === 'task_comment') {
-                title = 'Nuevo Comentario';
-                iconSvg = `<div class="p-3"><div class="h-8 w-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
-                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-                </div></div>`;
-            } else if (notification.type === 'new_task_assignment') {
-                title = 'Nueva Tarea Asignada';
-                iconSvg = `<div class="p-3"><div class="h-8 w-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-                </div></div>`;
-            } else {
-                 // Notificación genérica o de "evidencia"
-                iconSvg = `<div class="p-3"><div class="h-8 w-8 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center">
-                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
-                </div></div>`;
-            }
-
-            // Generar la marca de tiempo
-            const timeAgo = formatTimeAgo(getSortableTime(notification.createdAt));
-
-            notificationItem.innerHTML = `
-                ${iconSvg}
-                <div data-action="navigate-notification" 
-                     class="flex-grow py-3 cursor-pointer hover:bg-gray-50 min-w-0"
-                     data-project-id="${notification.projectId || ''}"
-                     data-task-id="${notification.taskId || ''}"
-                     data-item-id="${notification.itemId || ''}"
-                     data-link="${notification.link || ''}">
-                    
-                    <p class="text-sm font-semibold text-gray-900 pointer-events-none">${title}</p>
-                    <p class="text-sm text-gray-600 pointer-events-none whitespace-normal break-words">${notification.message}</p>
-                    <p class="text-xs text-blue-500 font-medium pointer-events-none mt-1">${timeAgo}</p>
-                </div>
-                
-                <button data-action="delete-notification" 
-                        title="Descartar"
-                        class="flex-shrink-0 p-3 h-full text-gray-400 hover:text-red-600 hover:bg-red-50 hidden sm:block sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                    <svg class="h-5 w-5 pointer-events-none" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-            `;
-            // --- FIN DE MODIFICACIÓN ---
+            let title = 'Notificación';
             
-            notificationsList.appendChild(notificationItem);
+            // Iconos y títulos (lógica existente)
+            switch (notification.type) {
+                case 'task_comment':
+                    iconSvg = `<svg class="h-6 w-6 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17.608V14.5A8 8 0 0110 3c4.418 0 8 3.134 8 7zm-7-1a1 1 0 11-2 0 1 1 0 012 0zm4 0a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd"></path></svg>`;
+                    title = notification.title || 'Nuevo Comentario';
+                    break;
+                case 'new_task_assignment':
+                    iconSvg = `<svg class="h-6 w-6 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-1.707 1.707A1 1 0 003 14v2a1 1 0 001 1h12a1 1 0 001-1v-2a1 1 0 00-.293-.707L16 11.586V8a6 6 0 00-6-6zM8.05 16a2 2 0 113.9 0H8.05zM10 6a2 2 0 110 4 2 2 0 010-4z"></path></svg>`;
+                    title = 'Nueva Tarea Asignada';
+                    break;
+                case 'photo_rejected': // <-- Nuestro nuevo tipo
+                    iconSvg = `<svg class="h-6 w-6 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 101.414-1.414L11.414 10l1.293-1.293z" clip-rule="evenodd"></path></svg>`;
+                    title = 'Foto Rechazada';
+                    break;
+                default:
+                    iconSvg = `<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>`;
+            }
+            
+            // Renderizar el HTML de la notificación
+            li.innerHTML = `
+                <div class="flex items-start px-3 py-1 hover:bg-gray-50">
+                    <div class="pt-3 pr-2 flex-shrink-0">
+                        ${iconSvg}
+                    </div>
+                    <div data-action="navigate-notification" 
+                         class="flex-grow py-3 cursor-pointer min-w-0"
+                         data-id="${notification.id}"
+                         data-project-id="${notification.projectId || ''}"
+                         data-task-id="${notification.taskId || ''}"
+                         data-item-id="${notification.itemId || ''}"
+                         data-subitem-id="${notification.subItemId || ''}"
+                         data-link="${notification.link || ''}"
+                    >
+                        <p class="text-xs font-semibold text-blue-600 uppercase pointer-events-none">${notification.projectName || 'General'}</p>
+                        <p class="text-sm font-semibold text-gray-900 pointer-events-none">${notification.title || title}</p>
+                        <p class="mt-1 pl-3 border-l-4 border-gray-200 text-sm text-gray-600 pointer-events-none whitespace-normal break-words">${notification.message}</p>
+                        <p class="text-xs text-blue-500 font-medium pointer-events-none mt-1">${timeAgo}</p>
+                    </div>
+                    <button data-action="delete-notification" data-id="${notification.id}" class="flex-shrink-0 p-3 text-gray-400 hover:text-red-500" title="Descartar">
+                        <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
+                    </button>
+                </div>
+            `;
+            listEl.appendChild(li);
         });
     };
+    
+    // --- 2. LISTENERS DE FIRESTORE (Sin cambios) ---
+    let personalNotifs = [];
+    let channelNotifs = [];
 
-    // Listener 1: Notificaciones personales (sin cambios)
-    const personalQuery = query(collection(db, "notifications"),
-        where("userId", "==", currentUser.uid),
-        where("read", "==", false),
-        orderBy("createdAt", "desc")
-    );
-    onSnapshot(personalQuery, (snapshot) => {
-        console.log(`DEBUG: 'personalQuery' obtuvo ${snapshot.size} docs.`);
+    const personalQuery = query(collection(db, "notifications"), where("userId", "==", currentUser.uid), where("read", "==", false));
+    const unsubscribePersonal = onSnapshot(personalQuery, (snapshot) => {
+        console.log(`DEBUG: 'personalQuery' obtuvo ${snapshot.docs.length} docs.`);
         personalNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        if (hasRenderedOnce) renderNotifications();
-    }, (error) => {
-        console.error("DEBUG: 'personalQuery' falló. ¿Falta el índice?", error.message);
-        if (hasRenderedOnce) renderNotifications();
-    });
+        renderNotifications(personalNotifs, channelNotifs);
+    }, (error) => console.error("Error en listener personal:", error));
 
-    // Listener 2: Notificaciones de canal (sin cambios)
+    let unsubscribeChannel = () => {};
     if (currentUserRole === 'admin' || currentUserRole === 'bodega') {
-        const channelQuery = query(collection(db, "notifications"),
-            where("channel", "==", "admins_bodega"),
-            where("read", "==", false),
-            orderBy("createdAt", "desc")
-        );
-        onSnapshot(channelQuery, (snapshot) => {
-            console.log(`DEBUG: 'channelQuery' obtuvo ${snapshot.size} docs.`);
+        const channelQuery = query(collection(db, "notifications"), where("channel", "==", "admins_bodega"), where("read", "==", false));
+        unsubscribeChannel = onSnapshot(channelQuery, (snapshot) => {
+            console.log(`DEBUG: 'channelQuery' obtuvo ${snapshot.docs.length} docs.`);
             channelNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            renderNotifications();
-            hasRenderedOnce = true;
-        }, (error) => {
-            console.error("DEBUG: 'channelQuery' falló. ¿Falta el índice?", error.message);
-            renderNotifications();
-            hasRenderedOnce = true;
-        });
-    } else {
-        console.log("DEBUG: No es admin/bodega, renderizando solo personales.");
-        renderNotifications();
-        hasRenderedOnce = true;
+            renderNotifications(personalNotifs, channelNotifs);
+        }, (error) => console.error("Error en listener de canal:", error));
     }
 
-    // --- INICIO DE MODIFICACIÓN: Listener de Clics actualizado ---
-    // Este listener ahora maneja 'navigate-notification' y 'delete-notification'
-    notificationsList.addEventListener('click', async (e) => {
-        // Encontrar el botón o enlace clickeado
+    activeListeners.push(unsubscribePersonal, unsubscribeChannel);
+
+    // --- 3. LISTENER DE CLICS (Con depuración) ---
+    // Limpiamos listeners anteriores para evitar duplicados
+    const newNotificationsList = notificationsList.cloneNode(true);
+    if (notificationsList.parentNode) {
+        notificationsList.parentNode.replaceChild(newNotificationsList, notificationsList);
+    }
+
+    newNotificationsList.addEventListener('click', async (e) => {
         const actionElement = e.target.closest('[data-action]');
         if (!actionElement) return;
 
-        // Encontrar el <li> padre para obtener el ID
-        const item = actionElement.closest('.notification-item');
-        if (!item) return;
-
         const action = actionElement.dataset.action;
-        const notifId = item.dataset.notifId;
+        const notifId = actionElement.dataset.id;
+        if (!notifId) return;
 
-        console.log("DEBUG: Clic en notif:", { notifId, action });
-
-        // Acción: Eliminar (Descartar)
+        // Acción: Descartar
         if (action === 'delete-notification') {
             await updateDoc(doc(db, "notifications", notifId), { read: true });
-            // onSnapshot se encargará de removerlo del DOM
         }
 
         // Acción: Navegar
         if (action === 'navigate-notification') {
-            const { projectId, taskId, itemId, link } = actionElement.dataset;
+            const { projectId, taskId, itemId, subitemId, link } = actionElement.dataset;
+            
+            // --- INICIO DE DEPURACIÓN ---
+            console.log("DEBUG: Clic en 'navigate-notification'");
+            console.log("DEBUG: projectId:", projectId);
+            console.log("DEBUG: taskId:", taskId);
+            console.log("DEBUG: itemId:", itemId);
+            console.log("DEBUG: subitemId:", subitemId);
+            // --- FIN DE DEPURACIÓN ---
 
-            await updateDoc(doc(db, "notifications", notifId), { read: true });
             document.getElementById('notifications-dropdown').classList.add('hidden');
 
-            if (link === '/catalog') {
-                showView('catalog');
-                loadCatalogView();
-            } else if (projectId && taskId) {
-                if (currentUserRole === 'admin' || currentUserRole === 'bodega') {
-                    const projectDoc = await getDoc(doc(db, "projects", projectId));
-                    if (projectDoc.exists()) {
-                        showProjectDetails({ id: projectId, ...projectDoc.data() });
-                        openTaskDetailsModal(taskId);
+            // Caso especial: Notificación de "Foto Rechazada"
+            if (projectId && itemId && subitemId && !taskId) {
+                console.log("DEBUG: ¡Condición 'Foto Rechazada' CUMPLIDA! Abriendo modal...");
+                (async () => {
+                    try {
+                        loadingOverlay.classList.remove('hidden');
+                        // 1. Cargar el proyecto (para el contexto)
+                        const projectDoc = await getDoc(doc(db, "projects", projectId));
+                        if (projectDoc.exists()) {
+                            currentProject = { id: projectDoc.id, ...projectDoc.data() };
+                        } else {
+                            throw new Error("Proyecto no encontrado");
+                        }
+
+                        // 2. Cargar el ítem (para el contexto)
+                        const itemDoc = await getDoc(doc(db, "projects", projectId, "items", itemId));
+                        if (itemDoc.exists()) {
+                            currentItem = { id: itemDoc.id, ...itemDoc.data() };
+                        } else {
+                            throw new Error("Ítem no encontrado");
+                        }
+
+                        // 3. Cargar el sub-ítem
+                        const subItemRef = doc(db, "projects", projectId, "items", itemId, "subItems", subitemId);
+                        const subItemSnap = await getDoc(subItemRef);
+                        
+                        if (subItemSnap.exists()) {
+                            // 4. ¡ABRIR LA VENTANA FLOTANTE!
+                            openProgressModal(subItemSnap.data()); 
+                        } else {
+                            throw new Error("Sub-ítem no encontrado");
+                        }
+                    } catch (error) {
+                        console.error("Error al navegar a sub-ítem desde notificación:", error);
+                        alert(`No se pudo abrir el detalle del ítem: ${error.message}`);
+                    } finally {
+                        loadingOverlay.classList.add('hidden');
                     }
-                } else {
-                    showView('tareas');
-                    document.querySelectorAll('#tareas-view .task-tab-button').forEach(btn => btn.classList.remove('active'));
-                    document.getElementById('pending-tasks-tab').classList.add('active');
-                    loadAndDisplayTasks('pendiente');
-                    openTaskDetailsModal(taskId);
-                }
-            } else if (projectId && itemId) {
-                const projectDoc = await getDoc(doc(db, "projects", projectId));
-                const itemDoc = await getDoc(doc(db, "items", itemId));
-                if (projectDoc.exists() && itemDoc.exists()) {
-                    showProjectDetails({ id: projectId, ...projectDoc.data() });
-                    showSubItems({ id: itemId, ...itemDoc.data() });
-                }
+                })();
+            }
+            // Caso: Link de Catálogo
+            else if (link === '/catalog') {
+                console.log("DEBUG: Condición 'Catálogo' cumplida.");
+                showView('catalog');
+            } 
+            // Caso: Tarea (comentario o asignación)
+            else if (projectId && taskId) {
+                console.log("DEBUG: Condición 'Tarea' cumplida.");
+                showProjectDetails(null, projectId, taskId);
+            } 
+            // Caso: Solo Proyecto
+            else if (projectId) {
+                console.log("DEBUG: Condición 'Proyecto' cumplida.");
+                showProjectDetails(null, projectId);
+            } else {
+                console.warn("DEBUG: Clic en notificación, pero ninguna condición de navegación se cumplió.");
             }
         }
     });
-    // --- FIN DE MODIFICACIÓN: Listener de Clics ---
-
-
-    // --- INICIO DE CÓDIGO AÑADIDO: Lógica de Deslizamiento (Swipe) ---
-    let touchStartX = 0;
-    let touchStartY = 0;
-    let touchCurrentX = 0;
-    let swipedItem = null;
-    let isSwiping = false;
-
-    // Solo añadimos los listeners una vez
-    if (!notificationsList.dataset.swipeListenersAdded) {
-        notificationsList.dataset.swipeListenersAdded = 'true';
-
-        notificationsList.addEventListener('touchstart', (e) => {
-            const item = e.target.closest('.notification-item');
-            if (!item) return;
-
-            touchStartX = e.targetTouches[0].clientX;
-            touchStartY = e.targetTouches[0].clientY;
-            touchCurrentX = touchStartX;
-            swipedItem = item;
-            isSwiping = false;
-            swipedItem.style.transition = 'none'; // Quitar animación mientras se arrastra
-        }, { passive: true });
-
-        notificationsList.addEventListener('touchmove', (e) => {
-            if (!swipedItem) return;
-
-            const deltaX = e.targetTouches[0].clientX - touchStartX;
-            const deltaY = Math.abs(e.targetTouches[0].clientY - touchStartY);
-
-            if (!isSwiping) {
-                // Decidir si es swipe horizontal o scroll vertical
-                if (Math.abs(deltaX) > 10 && deltaY < 10) {
-                    isSwiping = true; // Es un swipe horizontal
-                } else if (deltaY >= 10) {
-                    swipedItem = null; // Es un scroll vertical, abortar swipe
-                    return;
-                }
-            }
-
-            if (isSwiping) {
-                // Si estamos en modo swipe, prevenimos el scroll de la página
-                e.preventDefault();
-                touchCurrentX = e.targetTouches[0].clientX;
-                const moveX = Math.min(0, deltaX); // Solo permitir deslizar de derecha a izquierda
-                if (moveX < -1) {
-                    swipedItem.style.transform = `translateX(${moveX}px)`;
-                }
-            }
-        });
-
-        notificationsList.addEventListener('touchend', async (e) => {
-            if (!swipedItem || !isSwiping) {
-                if (swipedItem) swipedItem.style.transform = 'translateX(0)';
-                swipedItem = null;
-                return;
-            }
-
-            const deltaX = touchCurrentX - touchStartX;
-            const swipeThreshold = -80; // Mínimo de 80px para eliminar
-
-            swipedItem.style.transition = 'transform 0.3s ease'; // Reactivar animación
-
-            if (deltaX < swipeThreshold) {
-                // Eliminar
-                console.log("DEBUG: Swipe-to-delete triggered.");
-                swipedItem.style.transform = 'translateX(-100%)'; // Animar hacia afuera
-
-                const notifId = swipedItem.dataset.notifId;
-                if (notifId) {
-                    await updateDoc(doc(db, "notifications", notifId), { read: true });
-                }
-                // onSnapshot se encargará de removerlo del DOM limpiamente
-            } else {
-                // No se alcanzó el umbral, volver al inicio
-                swipedItem.style.transform = 'translateX(0)';
-            }
-
-            swipedItem = null;
-            isSwiping = false;
-        });
-    }
-    // --- FIN DE CÓDIGO AÑADIDO ---
 }
 
 async function requestNotificationPermission() {
@@ -6654,19 +6813,46 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Este bloque maneja los clics en la tabla de Ítems (Ver, Editar, Eliminar)
         const itemRow = elementWithAction.closest('tr[data-id]');
         if (itemRow) {
             const itemId = itemRow.dataset.id;
-            const itemDoc = await getDoc(doc(db, "items", itemId));
-            if (itemDoc.exists()) {
-                const itemData = { id: itemDoc.id, ...itemDoc.data() };
-                switch (action) {
-                    case 'view-item-details': showSubItems(itemData); break;
-                    case 'edit-item': openMainModal('editItem', itemData); break;
-                    case 'delete-item': openConfirmModal(`¿Eliminar "${itemData.name}"?`, () => deleteItem(itemId)); break;
-                }
+
+            // Verificamos que el ID sea válido antes de continuar
+            if (!itemId) {
+                console.error("Error: Se hizo clic en un ítem pero su ID no se pudo encontrar.");
+                return;
             }
-            return;
+
+            try {
+                // Usamos el path de la subcolección que migramos
+                const itemDoc = await getDoc(doc(db, "projects", currentProject.id, "items", itemId));
+
+                if (itemDoc.exists()) {
+                    const itemData = { id: itemDoc.id, ...itemDoc.data() };
+
+                    // Manejamos la acción específica
+                    switch (action) {
+                        case 'view-item-details':
+                            showSubItems(itemData); // Llama a la vista de sub-ítems
+                            break;
+                        case 'edit-item':
+                            openMainModal('editItem', itemData); // Llama al modal de edición
+                            break;
+                        case 'delete-item':
+                            openConfirmModal(`¿Eliminar "${itemData.name}"?`, () => deleteItem(itemId));
+                            break;
+                    }
+                } else {
+                    console.error(`Error: No se encontró el ítem con ID ${itemId} en el proyecto ${currentProject.id}`);
+                    alert("Error: No se pudo encontrar el ítem seleccionado.");
+                }
+            } catch (error) {
+                console.error("Error al procesar la acción del ítem:", error);
+                alert("Ocurrió un error al obtener los datos del ítem.");
+            }
+
+            return; // Detenemos la ejecución aquí
         }
 
         // --- ACCIONES GENERALES Y DE MODALES (MANEJADAS POR UN SWITCH) ---
@@ -6716,24 +6902,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             case 'deliver-material': {
                 const requestId = elementWithAction.dataset.id;
-                openConfirmModal('¿Confirmas la entrega de este material? Esto validará y descontará el stock.', async () => {
-                    loadingOverlay.classList.remove('hidden');
-                    try {
-                        const deliverFunction = httpsCallable(functions, 'deliverMaterial');
-                        await deliverFunction({ projectId: currentProject.id, requestId: requestId });
-                        alert("¡Material entregado con éxito! El stock ha sido actualizado.");
-
-                    } catch (error) {
-                        if (error.message) {
-                            alert(`Error: ${error.message}`);
-                        } else {
-                            alert("Ocurrió un error inesperado al intentar entregar el material.");
-                            console.error("Error no controlado al entregar material:", error);
-                        }
-                    } finally {
-                        loadingOverlay.classList.add('hidden');
-                    }
-                });
+                // Ahora, en lugar de un 'confirm', abrimos el nuevo modal de entrega
+                openDeliveryModal(requestId);
                 break;
             }
 
@@ -7474,7 +7644,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const cutField = document.createElement('div');
                 cutField.className = 'cut-item-view grid grid-cols-3 gap-2 items-center';
                 cutField.innerHTML = `
-                    <input type="number" step="0.01" class="cut-length-input-view border p-2 rounded-md text-sm" placeholder="Medida (m)">
+                    <input type="number" class="cut-length-input-view border p-2 rounded-md text-sm" placeholder="Medida (cm)">
                     <input type="number" class="cut-quantity-input-view border p-2 rounded-md text-sm" placeholder="Cantidad">
                     <div class="flex items-center gap-2">
                         <button type="button" class="add-cut-to-request-btn-view bg-green-500 text-white text-xs font-bold py-2 px-3 rounded hover:bg-green-600">Añadir</button>
@@ -7511,27 +7681,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (addCutToRequestBtn) {
                 const cutItem = addCutToRequestBtn.closest('.cut-item-view');
-                const length = parseFloat(cutItem.querySelector('.cut-length-input-view').value);
+
+                // El valor se lee en CM (ej: 700)
+                const lengthInCm = parseFloat(cutItem.querySelector('.cut-length-input-view').value) || 0;
+                // Se convierte a Metros (ej: 7.0)
+                const lengthInMeters = lengthInCm / 100;
                 const quantity = parseInt(cutItem.querySelector('.cut-quantity-input-view').value);
 
                 const selectedMaterial = window.materialChoicesView.getValue();
-                if (!selectedMaterial || !length || !quantity) {
+                if (!selectedMaterial || !lengthInMeters || quantity <= 0) {
+                    alert("Por favor, ingresa una medida y cantidad válidas.");
                     return;
                 }
 
-                // --- INICIO DE LA VALIDACIÓN ---
-                const defaultLength = selectedMaterial.customProperties.defaultLength || 0;
-                if (defaultLength > 0 && length > defaultLength) {
-                    alert(`Error: La medida del corte (${length}m) no puede ser mayor que la longitud estándar del material (${defaultLength}m).`);
-                    return; // Detiene la ejecución
+                // --- INICIO DE LA VALIDACIÓN AÑADIDA ---
+                const defaultLengthInMeters = selectedMaterial.customProperties.defaultLength || 0; // En metros (ej: 6.0)
+
+                // Verificamos si el material tiene una longitud estándar definida
+                if (defaultLengthInMeters > 0) {
+                    // Comparamos el corte (en metros) con la tira (en metros)
+                    if (lengthInMeters > defaultLengthInMeters) {
+                        const defaultLengthInCm = defaultLengthInMeters * 100; // ej: 600
+                        alert(`Error: El corte (${lengthInCm} cm) no puede ser más largo que la tira estándar (${defaultLengthInCm} cm) para este material.`);
+                        return; // Detenemos la ejecución
+                    }
                 }
-                // --- FIN DE LA VALIDACIÓN ---
+                // --- FIN DE LA VALIDACIÓN AÑADIDA ---
 
                 addMaterialToSummaryList({
                     materialId: selectedMaterial.value,
                     materialName: selectedMaterial.customProperties.name,
                     quantity: quantity,
-                    length: length,
+                    length: lengthInMeters, // Guardamos en metros
                     type: 'cut'
                 });
                 cutItem.remove();
@@ -7588,7 +7769,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         remnantsContainer.classList.remove('hidden');
                         remnantsSnapshot.forEach(doc => {
                             const remnant = { id: doc.id, ...doc.data() };
-                            const remnantText = `${remnant.length} ${remnant.unit || 'm'}`;
+                            const remnantLengthInCm = (remnant.length || 0) * 100;
+
+                            // --- INICIO DE CORRECCIÓN ---
+                            // Restauramos el formato "Retazo de..." usando cm
+                            const remnantText = `Retazo de ${remnantLengthInCm} cm`;
+                            // --- FIN DE CORRECCIÓN ---
+
+                            // Aseguramos que data-remnant-length siga guardando metros
                             remnantsList.innerHTML += `<div class="remnant-item-choice flex items-center justify-between text-sm p-2 bg-gray-100 rounded-md"><span><span class="remnant-available-qty">${remnant.quantity}</span> und. de ${remnantText}</span><div class="flex items-center gap-2"><input type="number" class="remnant-quantity-input w-20 border p-1 rounded-md text-sm" placeholder="Cant." min="1" max="${remnant.quantity}"><button type="button" data-remnant-id="${remnant.id}" data-remnant-length="${remnant.length}" data-material-id="${selectedMaterial.value}" data-material-name="${selectedMaterial.customProperties.name}" data-remnant-text="${remnantText}" class="add-remnant-to-request-btn-view bg-green-500 text-white text-xs font-bold py-2 px-3 rounded hover:bg-green-600">Añadir</button></div></div>`;
                         });
                     }
@@ -7638,24 +7826,243 @@ document.addEventListener('DOMContentLoaded', () => {
 
             switch (item.type) {
                 case 'full_unit': text = `${newQuantity} x ${item.materialName}`; break;
-                case 'cut': text = `${newQuantity} corte(s) de ${item.length}m - ${item.materialName}`; break;
-                case 'remnant': text = `${newQuantity} retazo(s) de ${item.remnantText} - ${item.materialName}`; break;
+                case 'cut': text = `${newQuantity} corte(s) de ${item.length * 100} cm - ${item.materialName}`; break; // (Solo añadí un espacio)
+                case 'remnant': text = `${newQuantity} retazo(s) ${item.materialName} ${item.remnantText}`; break;
             }
             existingItemDiv.querySelector('span').textContent = text;
         } else {
             switch (item.type) {
                 case 'full_unit': text = `${item.quantity} x ${item.materialName}`; break;
-                case 'cut': text = `${item.quantity} corte(s) de ${item.length}m - ${item.materialName}`; break;
-                case 'remnant': text = `${item.quantity} retazo(s) de ${item.remnantText} - ${item.materialName}`; break;
+                case 'cut': text = `${item.quantity} corte(s) de ${item.length * 100} cm - ${item.materialName}`; break; // (Solo añadí un espacio)
+                case 'remnant': text = `${item.quantity} retazo(s) ${item.materialName} ${item.remnantText}`; break;
             }
             const itemDiv = document.createElement('div');
             itemDiv.className = 'request-summary-item flex justify-between items-center bg-gray-100 p-2 rounded-md text-sm';
-            Object.keys(item).forEach(key => itemDiv.dataset[key] = item[key]);
+
+            // --- INICIO DE CORRECCIÓN ---
+            // Guardamos los datos explícitamente en el dataset
+            itemDiv.dataset.materialId = item.materialId;
+            itemDiv.dataset.materialName = item.materialName; // <-- ¡ESTA ES LA LÍNEA CLAVE!
+            itemDiv.dataset.type = item.type;
+            itemDiv.dataset.quantity = item.quantity;
+            if (item.length) itemDiv.dataset.length = item.length;
+            if (item.remnantId) itemDiv.dataset.remnantId = item.remnantId;
+            if (item.remnantLength) itemDiv.dataset.remnantLength = item.remnantLength;
+            if (item.remnantText) itemDiv.dataset.remnantText = item.remnantText;
+            // --- FIN DE CORRECCIÓN ---
+
             itemDiv.innerHTML = `<span>${text}</span><button type="button" class="remove-request-item-btn-view text-red-500 font-bold text-lg leading-none">&times;</button>`;
             listDiv.appendChild(itemDiv);
         }
     }
 
+    // --- INICIO DE LÓGICA PARA MODAL DE ENTREGA PARCIAL ---
+
+    const deliveryModal = document.getElementById('delivery-modal');
+    const deliveryModalForm = document.getElementById('delivery-modal-form');
+    const deliveryModalTitle = document.getElementById('delivery-modal-title');
+    const deliveryModalBody = document.getElementById('delivery-modal-body');
+
+    /**
+     * Cierra el modal de entrega parcial.
+     */
+    function closeDeliveryModal() {
+        if (deliveryModal) deliveryModal.style.display = 'none';
+        deliveryModalBody.innerHTML = '<p class="text-center text-gray-500">Cargando ítems...</p>';
+        deliveryModalForm.reset();
+    }
+
+    // Listeners para cerrar el nuevo modal
+    document.getElementById('delivery-modal-close-btn').addEventListener('click', closeDeliveryModal);
+    document.getElementById('delivery-modal-cancel-btn').addEventListener('click', closeDeliveryModal);
+
+    /**
+     * Abre el modal de entrega parcial y calcula las cantidades pendientes.
+     * @param {string} requestId - El ID de la solicitud a entregar.
+     */
+    async function openDeliveryModal(requestId) {
+        deliveryModal.style.display = 'flex';
+        deliveryModalForm.dataset.requestId = requestId;
+        // Asignamos un título temporal mientras cargamos los datos
+        deliveryModalTitle.textContent = `Registrar Entrega...`;
+
+        try {
+            const requestRef = doc(db, "projects", currentProject.id, "materialRequests", requestId);
+            const requestSnap = await getDoc(requestRef);
+            if (!requestSnap.exists()) throw new Error("No se encontró la solicitud.");
+
+            const requestData = requestSnap.data();
+
+            // --- INICIO DE LA MODIFICACIÓN ---
+            // Verificamos si la solicitud tiene una Tarea (taskId) asociada
+            if (requestData.taskId) {
+                try {
+                    // Si la tiene, buscamos la tarea para obtener su nombre
+                    const taskSnap = await getDoc(doc(db, "tasks", requestData.taskId));
+                    if (taskSnap.exists()) {
+                        const taskDescription = taskSnap.data().description || "Tarea";
+                        // Acortamos la descripción si es muy larga
+                        const truncatedDesc = taskDescription.length > 40 ? taskDescription.substring(0, 40) + "..." : taskDescription;
+                        deliveryModalTitle.textContent = `Solicitud Tarea: ${truncatedDesc}`;
+                    } else {
+                        // Si la tarea asociada no se encuentra, usamos el título de fallback
+                        deliveryModalTitle.textContent = `Registrar Entrega (Solicitud #${requestId.substring(0, 6)}...)`;
+                    }
+                } catch (taskError) {
+                    // Si hay un error al buscar la tarea, usamos el fallback
+                    console.error("Error al buscar la tarea asociada:", taskError);
+                    deliveryModalTitle.textContent = `Registrar Entrega (Solicitud #${requestId.substring(0, 6)}...)`;
+                }
+            } else {
+                // Si la solicitud no tiene 'taskId', usamos el título de fallback
+                deliveryModalTitle.textContent = `Registrar Entrega (Solicitud #${requestId.substring(0, 6)}...)`;
+            }
+
+            const itemsSolicitados = requestData.consumedItems || [];
+            const itemsEntregadosHistorial = requestData.deliveryHistory || []; // Nuevo campo
+
+            // 1. Calcular el total ya entregado para cada ítem
+            const entregadoMap = new Map();
+            itemsEntregadosHistorial.forEach(entrega => {
+                entrega.items.forEach(item => {
+                    const key = `${item.materialId}-${item.type}-${item.length || 0}`;
+                    const currentQty = entregadoMap.get(key) || 0;
+                    entregadoMap.set(key, currentQty + item.quantity);
+                });
+            });
+
+            // 2. Calcular ítems pendientes y construir HTML
+            let modalHtml = '<div class="space-y-3">';
+            let itemsPendientes = false;
+
+            for (const item of itemsSolicitados) {
+                const key = `${item.materialId}-${item.type}-${item.length || 0}`;
+                const totalEntregado = entregadoMap.get(key) || 0;
+                const totalSolicitado = item.quantity;
+                const pendiente = totalSolicitado - totalEntregado;
+
+                if (pendiente > 0) {
+                    itemsPendientes = true;
+                    // Obtenemos el nombre del material (ya lo guardamos en 'consumedItems')
+                    const materialName = item.itemName || `Material ID: ${item.materialId}`;
+                    let description = '';
+                    if (item.type === 'cut') description = `Corte de ${item.length}m`;
+                    else if (item.type === 'remnant') description = `Retazo de ${item.length}m`;
+                    else description = 'Unidad Completa';
+
+                    modalHtml += `
+                        <div class="bg-white p-3 border rounded-md delivery-item-row" 
+                             data-material-id="${item.materialId}" 
+                             data-type="${item.type}" 
+                             data-length="${item.length || 0}">
+                            <p class="font-semibold text-gray-800">${materialName}</p>
+                            <p class="text-sm text-gray-600">${description}</p>
+                            <div class="flex items-center justify-between mt-2">
+                                <span class="text-sm font-medium">Pendiente: <strong class="text-red-600 text-base">${pendiente}</strong></span>
+                                <div class="w-1/2">
+                                    <label class="block text-xs font-medium text-gray-700">Entregar ahora:</label>
+                                    <input type="number" class="delivery-quantity-input w-full border rounded-md p-2" 
+                                           max="${pendiente}" min="0" placeholder="0">
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            if (!itemsPendientes) {
+                modalHtml = '<p class="text-center text-green-600 font-semibold">¡Todos los ítems de esta solicitud ya han sido entregados!</p>';
+                document.getElementById('delivery-modal-confirm-btn').disabled = true;
+            } else {
+                document.getElementById('delivery-modal-confirm-btn').disabled = false;
+            }
+
+            modalHtml += '</div>';
+            deliveryModalBody.innerHTML = modalHtml;
+
+        } catch (error) {
+            console.error("Error al abrir el modal de entrega:", error);
+            deliveryModalBody.innerHTML = `<p class="text-red-500">${error.message}</p>`;
+        }
+    }
+
+    /**
+     * Maneja el envío del formulario de entrega parcial.
+     */
+    async function handleDeliverySubmit(e) {
+        e.preventDefault();
+        const requestId = deliveryModalForm.dataset.requestId;
+        const confirmBtn = document.getElementById('delivery-modal-confirm-btn');
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Procesando...';
+        loadingOverlay.classList.remove('hidden');
+
+        try {
+            const itemsToDeliver = [];
+            document.querySelectorAll('#delivery-modal-body .delivery-item-row').forEach(row => {
+                const quantity = parseInt(row.querySelector('.delivery-quantity-input').value) || 0;
+                if (quantity > 0) {
+                    itemsToDeliver.push({
+                        materialId: row.dataset.materialId,
+                        type: row.dataset.type,
+                        length: parseFloat(row.dataset.length) || 0,
+                        quantity: quantity
+                    });
+                }
+            });
+
+            if (itemsToDeliver.length === 0) {
+                throw new Error("No se especificó ninguna cantidad para entregar.");
+            }
+
+            // Llamamos a la Cloud Function (que vamos a modificar)
+            const deliverFunction = httpsCallable(functions, 'deliverMaterial');
+            await deliverFunction({
+                projectId: currentProject.id,
+                requestId: requestId,
+                itemsToDeliver: itemsToDeliver // El nuevo payload
+            });
+
+            alert("¡Entrega registrada con éxito! El stock ha sido actualizado.");
+            closeDeliveryModal();
+
+        } catch (error) {
+            console.error("Error al registrar la entrega:", error);
+            alert(`Error: ${error.message}`);
+        } finally {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Confirmar Entrega';
+            loadingOverlay.classList.add('hidden');
+        }
+    }
+
+    // Asignar el listener al formulario del nuevo modal
+    deliveryModalForm.addEventListener('submit', handleDeliverySubmit);
+
+    // --- FIN DE LÓGICA PARA MODAL DE ENTREGA PARCIAL ---
+
+
+    // --- INICIO DE CORRECCIÓN: Manejador del historial (Botón "Atrás") ---
+    // Escucha los eventos de "popstate" (clic en el botón "Atrás" del navegador/mouse)
+    window.addEventListener('popstate', (event) => {
+        // 'event.state' contiene el objeto { viewName: "..." } que guardamos con pushState
+        if (event.state && event.state.viewName) {
+
+            // Si encontramos un estado guardado, mostramos esa vista
+            // Pasamos 'true' para indicar que es un cambio desde el historial
+            // y así evitar que 'showView' vuelva a añadir esta vista al historial.
+            showView(event.state.viewName, true);
+
+        } else if (currentUser) {
+            // Si no hay estado (ej. el usuario volvió a la página inicial)
+            // y el usuario está logueado, lo mandamos a la vista de proyectos por defecto.
+            showView('proyectos', true);
+        } else {
+            // Si no hay estado y no hay usuario, mostramos el login
+            showAuthView('login');
+        }
+    });
+    // --- FIN DE CORRECCIÓN ---
 });
 
 // ====================================================================
@@ -7889,7 +8296,7 @@ async function loadMaterialsTab(project, taskItems = null) { // <-- PARÁMETRO A
         requestsWithData.forEach(request => {
             const solicitante = usersMap.get(request.requesterId)?.firstName || 'Desconocido';
             const responsable = usersMap.get(request.responsibleId)?.firstName || 'N/A';
-            const baseButtonClasses = "text-sm font-semibold py-2 px-4 rounded-lg transition-colors w-32 text-center";
+            const baseButtonClasses = "text-sm font-semibold py-2 px-4 rounded-lg transition-colors w-40 text-center";
             const viewDetailsBtn = `<button data-action="view-request-details" data-id="${request.id}" class="bg-blue-500 hover:bg-blue-600 text-white ${baseButtonClasses}">Ver Detalles</button>`;
             let statusText, statusColor, actionsHtml = '';
             switch (request.status) {
@@ -7905,9 +8312,22 @@ async function loadMaterialsTab(project, taskItems = null) { // <-- PARÁMETRO A
                 case 'aprobado':
                     statusText = 'Aprobado'; statusColor = 'bg-blue-100 text-blue-800';
                     if (currentUserRole === 'bodega' || currentUserRole === 'admin') {
-                        actionsHtml = `<button data-action="deliver-material" data-id="${request.id}" class="bg-teal-500 hover:bg-teal-600 text-white ${baseButtonClasses}">Entregado</button>`;
+                        // Cambiamos el texto del botón a "Registrar Entrega"
+                        actionsHtml = `<button data-action="deliver-material" data-id="${request.id}" class="bg-teal-500 hover:bg-teal-600 text-white ${baseButtonClasses}">Registrar Entrega</button>`;
                     }
                     break;
+                // --- INICIO DE NUEVO ESTADO ---
+                case 'entregado_parcial':
+                    statusText = 'Entrega Parcial'; statusColor = 'bg-yellow-100 text-yellow-800';
+                    if (currentUserRole === 'bodega' || currentUserRole === 'admin') {
+                        // Mantenemos el botón para seguir entregando
+                        actionsHtml = `<button data-action="deliver-material" data-id="${request.id}" class="bg-teal-500 hover:bg-teal-600 text-white ${baseButtonClasses}">Registrar Entrega</button>`;
+                    }
+                    if (currentUserRole === 'admin' || currentUserRole === 'operario') {
+                        actionsHtml += `<button data-action="return-material" data-id="${request.id}" class="bg-yellow-500 hover:bg-yellow-600 text-white ${baseButtonClasses} mt-1">Devolver</button>`;
+                    }
+                    break;
+                // --- FIN DE NUEVO ESTADO ---
                 case 'entregado':
                     statusText = 'Entregado'; statusColor = 'bg-green-100 text-green-800';
                     if (currentUserRole === 'admin' || currentUserRole === 'operario') {
@@ -7977,10 +8397,10 @@ async function openRequestDetailsModal(requestId) {
                     description = 'Unidad Completa';
                     break;
                 case 'cut':
-                    description = `Corte de ${item.length}m`;
+                    description = `Corte de ${item.length * 100} cm`;
                     break;
                 case 'remnant':
-                    description = `Retazo de ${item.length}m`;
+                    description = `Retazo de ${item.length * 100} cm`; // <-- CAMBIO
                     break;
                 default:
                     description = 'N/A';
@@ -8400,10 +8820,6 @@ function setupRequestItemSearch() {
 }
 
 /**
- * Muestra la vista de solicitud de material, filtrando opcionalmente los ítems de destino.
- * @param {Array|null} taskItems - (Opcional) Array de ítems de la tarea { itemId, quantity }
- */
-/**
  * Muestra la vista de solicitud de material de forma optimizada, cargando datos dinámicos asíncronamente.
  * @param {Array|null} taskItems - (Opcional) Array de ítems de la tarea { itemId, quantity }
  */
@@ -8437,16 +8853,22 @@ async function showMaterialRequestView(taskItems = null) {
     // Función asíncrona para cargar el catálogo y configurar Choices.js
     const loadCatalogAndSetupChoices = async () => {
         try {
-            const inventorySnapshot = await getDocs(query(collection(db, "materialCatalog"), orderBy("name"))); // Ordenar aquí puede ayudar
+            const inventorySnapshot = await getDocs(query(collection(db, "materialCatalog"), orderBy("name")));
             const inventory = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            const materialOptions = inventory.map(mat => ({
-                value: mat.id,
-                label: `${mat.name} (Stock: ${mat.quantityInStock || 0})`,
-                customProperties: { isDivisible: mat.isDivisible, name: mat.name, defaultLength: mat.defaultSize?.length || 0 }
-            }));
 
-            // Recrear el select y Choices.js con los datos cargados
-            selectContainer.innerHTML = '<select id="material-choices-select-view"></select>'; // Recrear el select vacío
+            // --- ¡ESTA ES LA CORRECCIÓN NECESARIA PARA ESE ERROR! ---
+            // Filtra materiales corruptos (null o sin 'name') del catálogo
+            const materialOptions = inventory
+                .filter(mat => mat && mat.name)
+                .map(mat => ({
+                    value: mat.id,
+                    label: `${mat.name} (Stock: ${mat.quantityInStock || 0})`, // Esta era la línea 8683
+                    customProperties: { isDivisible: mat.isDivisible, name: mat.name, defaultLength: (mat.defaultSize?.length || 0) }
+                }));
+            // --- FIN DE LA CORRECCIÓN ---
+
+            // (El resto de la función continúa)
+            selectContainer.innerHTML = '<select id="material-choices-select-view"></select>';
             if (window.materialChoicesView) {
                 window.materialChoicesView.destroy(); // Destruir instancia anterior si existe
             }
@@ -8477,7 +8899,14 @@ async function showMaterialRequestView(taskItems = null) {
                             remnantsContainer.classList.remove('hidden');
                             remnantsSnapshot.forEach(doc => {
                                 const remnant = { id: doc.id, ...doc.data() };
-                                const remnantText = `${remnant.length} ${remnant.unit || 'm'}`;
+                                const remnantLengthInCm = (remnant.length || 0) * 100;
+
+                                // --- INICIO DE CORRECCIÓN ---
+                                // Restauramos el formato "Retazo de..." usando cm
+                                const remnantText = `Retazo de ${remnantLengthInCm} cm`;
+                                // --- FIN DE CORRECCIÓN ---
+
+                                // Aseguramos que data-remnant-length siga guardando metros
                                 remnantsList.innerHTML += `<div class="remnant-item-choice flex items-center justify-between text-sm p-2 bg-gray-100 rounded-md"><span><span class="remnant-available-qty">${remnant.quantity}</span> und. de ${remnantText}</span><div class="flex items-center gap-2"><input type="number" class="remnant-quantity-input w-20 border p-1 rounded-md text-sm" placeholder="Cant." min="1" max="${remnant.quantity}"><button type="button" data-remnant-id="${remnant.id}" data-remnant-length="${remnant.length}" data-material-id="${selectedMaterial.value}" data-material-name="${selectedMaterial.customProperties.name}" data-remnant-text="${remnantText}" class="add-remnant-to-request-btn-view bg-green-500 text-white text-xs font-bold py-2 px-3 rounded hover:bg-green-600">Añadir</button></div></div>`;
                             });
                         }
@@ -8497,10 +8926,15 @@ async function showMaterialRequestView(taskItems = null) {
             let items = [];
             if (taskItems && taskItems.length > 0) {
                 // Cargar solo ítems de la tarea
-                const itemIds = taskItems.map(item => item.itemId);
+
+                // --- INICIO DE CORRECCIÓN ---
+                // El array 'taskItems' viene de la Tarea, que usa 'itemId'.
+                const itemIds = taskItems.map(item => item.itemId); // <-- CORREGIDO
+                // --- FIN DE CORRECCIÓN ---
+
                 if (itemIds.length > 0) {
-                    const itemsQuery = query(collection(db, "items"), where("__name__", "in", itemIds));
-                    const itemsSnapshot = await getDocs(itemsQuery);
+                    // Usamos documentId() que es la forma correcta de consultar por ID
+                    const itemsQuery = query(collection(db, "projects", currentProject.id, "items"), where(documentId(), "in", itemIds)); const itemsSnapshot = await getDocs(itemsQuery);
                     const itemsMap = new Map(itemsSnapshot.docs.map(doc => [doc.id, doc.data()]));
                     items = taskItems.map(taskItem => {
                         const itemData = itemsMap.get(taskItem.itemId);
@@ -8513,7 +8947,7 @@ async function showMaterialRequestView(taskItems = null) {
                 }
             } else {
                 // Cargar todos los ítems del proyecto
-                const itemsSnapshot = await getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id), orderBy("name"))); // Ordenar aquí
+                const itemsSnapshot = await getDocs(query(collection(db, "projects", currentProject.id, "items"), orderBy("name")));
                 items = itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             }
 
@@ -8585,16 +9019,24 @@ async function handleMaterialRequestSubmit(e) {
 
     try {
         const consumedItems = Array.from(consumedItemsNodes).map(node => {
+
+            // --- INICIO DE CORRECCIÓN ---
+            // Leemos el 'materialName' limpio que guardamos en el dataset
+            const materialName = node.dataset.materialName || "Material Desconocido";
+
             const data = {
                 materialId: node.dataset.materialId,
                 type: node.dataset.type,
                 quantity: parseInt(node.dataset.quantity),
-                itemName: node.querySelector('span') ? node.querySelector('span').textContent.split('x ').pop().split(' de ')[0] : 'Material'
+                itemName: materialName // <-- Usamos el nombre limpio
             };
+
             if (node.dataset.type === 'cut') {
                 data.length = parseFloat(node.dataset.length);
             } else if (node.dataset.type === 'remnant') {
-                data.length = parseFloat(node.dataset.remnantLength);
+                // Aseguramos que 'length' se guarde (usa 'remnantLength' como fallback)
+                data.length = parseFloat(node.dataset.length || node.dataset.remnantLength || 0);
+                // --- FIN DE CORRECCIÓN ---
             }
             return data;
         });
@@ -8708,10 +9150,33 @@ function resetMaterialRequestForm() {
  */
 function loadTasksView() {
     const newTaskBtn = document.getElementById('new-task-btn');
-    if (newTaskBtn) {
-        const canCreateTasks = currentUserRole === 'admin';
-        newTaskBtn.classList.toggle('hidden', !canCreateTasks);
+    const adminToggleContainer = document.getElementById('admin-task-toggle-container'); // <-- AÑADIDO
+
+    if (newTaskBtn && adminToggleContainer) { // <-- AÑADIDO
+        const isAdmin = currentUserRole === 'admin';
+        newTaskBtn.classList.toggle('hidden', !isAdmin);
+        adminToggleContainer.classList.toggle('hidden', !isAdmin); // <-- AÑADIDO
     }
+
+    // --- INICIO DE CAMBIO: Listener para el Toggle de Admin ---
+    const adminToggleCheckbox = document.getElementById('admin-task-toggle-checkbox');
+    if (adminToggleCheckbox && !adminToggleCheckbox.dataset.listenerAttached) {
+        adminToggleCheckbox.dataset.listenerAttached = 'true';
+        adminToggleCheckbox.addEventListener('change', () => {
+            // Cuando el admin cambia el toggle, recargamos la vista actual
+            const currentActiveTab = document.querySelector('#tareas-view .task-tab-button.active');
+            const currentFilter = currentActiveTab ? currentActiveTab.dataset.statusFilter : 'pendiente';
+
+            // Cambiamos el título principal
+            const titleElement = document.querySelector('#tareas-view h1');
+            if (titleElement) {
+                titleElement.textContent = adminToggleCheckbox.checked ? 'Todas las Tareas' : 'Mis Tareas Asignadas';
+            }
+
+            loadAndDisplayTasks(currentFilter);
+        });
+    }
+    // --- FIN DE CAMBIO ---
 
     const tabsContainer = document.querySelector('#tareas-view .mb-4.border-b nav');
 
@@ -8789,21 +9254,18 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
         try { unsubscribeTasks(); } catch (e) { console.warn(`[Tareas] Advertencia al cancelar listener: ${e.message}`); } finally { unsubscribeTasks = null; }
     }
 
-    // --- Lógica de Doble Consulta con onSnapshot ---
-    let principalTasks = new Map();
-    let additionalTasks = new Map();
-    let combinedTasksRendered = false; // Bandera para ocultar el loader una sola vez
+    // --- Lógica de Consulta (Modificada para Admin View) ---
+    let tasksMap = new Map(); // Un solo mapa para todas las tareas
+    let combinedTasksRendered = false;
 
-    // Función para combinar, ordenar y renderizar
-    const renderCombinedTasks = (principalMap, additionalMap) => {
+    // Función para renderizar (reutilizada pero solo con un mapa)
+    const renderCombinedTasks = (tasksMap) => {
         // Ocultar loader la primera vez que se renderiza
         if (!combinedTasksRendered) {
             const currentLoadingDiv = document.getElementById('loading-tasks');
             if (currentLoadingDiv) currentLoadingDiv.classList.add('hidden');
             combinedTasksRendered = true;
         }
-
-        const combinedMap = new Map([...principalMap, ...additionalMap]); // Combina y deduplica
 
         const currentTasksContainer = document.getElementById('tasks-container');
         if (!currentTasksContainer) {
@@ -8818,54 +9280,55 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
         // Eliminar mensaje de "no hay tareas" si existe
         currentTasksContainer.querySelector('.no-tasks-message')?.remove();
 
-        if (combinedMap.size === 0) {
+        if (tasksMap.size === 0) {
             // Si no hay tareas, mostrar mensaje y limpiar tarjetas viejas
             existingCardElements.forEach(card => card.remove()); // Eliminar las marcadas
             const noTasksMessage = document.createElement('p');
             noTasksMessage.className = 'text-gray-500 text-center py-6 no-tasks-message';
-            noTasksMessage.textContent = `No tienes tareas ${statusFilter === 'pendiente' ? 'pendientes' : 'completadas'}.`;
+            noTasksMessage.textContent = `No se encontraron tareas ${statusFilter === 'pendiente' ? 'pendientes' : 'completadas'}.`;
             currentTasksContainer.appendChild(noTasksMessage);
             return;
         }
 
         // 2. Convertir Map a Array y ordenar
-        const sortedTasks = Array.from(combinedMap.values()).sort((a, b) => {
+        const sortedTasks = Array.from(tasksMap.values()).sort((a, b) => {
             const dateA = a.dueDate ? new Date(a.dueDate) : new Date(8640000000000000);
             const dateB = b.dueDate ? new Date(b.dueDate) : new Date(8640000000000000);
             return dateA - dateB;
         });
 
         // 3. Iterar sobre las tareas ordenadas
+        // 3. Iterar sobre las tareas ordenadas
         let previousCard = null; // Para insertar en el orden correcto
         sortedTasks.forEach((taskData) => {
             const existingCard = currentTasksContainer.querySelector(`.task-card[data-id="${taskData.id}"]`);
+
+            // --- INICIO DE LA CORRECCIÓN (Lógica de reemplazo) ---
+            // Siempre creamos/re-creamos la tarjeta con los datos más frescos
+            const taskCard = createTaskCard(taskData);
+
             if (existingCard) {
-                // Si la tarjeta ya existe, la desmarcamos y actualizamos referencia
-                delete existingCard.dataset.markedForRemoval;
-                previousCard = existingCard;
-                // NOTA: Si los datos internos de la tarjeta pudieran cambiar (ej. descripción),
-                // aquí se podría comparar `taskData` con los datos guardados en `existingCard`
-                // y actualizar solo si es necesario, o simplemente re-renderizarla.
-                // Por ahora, asumimos que solo cambia el estado (pendiente/completada),
-                // lo cual ya maneja el filtro de la consulta.
+                // Si la tarjeta ya existe, la reemplazamos en lugar de saltarla
+                existingCard.replaceWith(taskCard);
+                previousCard = taskCard; // La nueva tarjeta es la referencia
             } else {
-                // Si la tarjeta es nueva, la creamos y la insertamos
-                try {
-                    // createTaskCard ahora carga sus propios datos asíncronamente
-                    const taskCard = createTaskCard(taskData);
-
-                    // Insertar después de la tarjeta anterior o al principio
-                    if (previousCard) {
-                        previousCard.insertAdjacentElement('afterend', taskCard);
-                    } else {
-                        currentTasksContainer.insertBefore(taskCard, currentTasksContainer.firstChild);
-                    }
-                    previousCard = taskCard; // Actualizamos la referencia
-
-                } catch (cardError) {
-                    console.error(`[Tareas] Error creando tarjeta para tarea ${taskData.id} (${statusFilter}):`, cardError);
-                }
+                // Si la tarjeta es nueva, la insertamos
+                if (previousCard) {
+                    previousCard.insertAdjacentElement('afterend', taskCard);
+                } else {
+                    currentTasksContainer.insertBefore(taskCard, currentTasksContainer.firstChild);
+                } previousCard = taskCard; // Actualizamos la referencia 
             }
+
+            // --- INICIO DE CORRECCIÓN ---
+            // Volvemos a añadir la llamada, pero indicando el modo 'summary'
+            if (taskData.specificSubItemIds && taskData.specificSubItemIds.length > 0) {
+                const placeholderId = `material-status-${taskData.id}`;
+                loadTaskMaterialStatus(taskData.id, taskData.projectId, placeholderId, 'summary');
+            }
+            // --- FIN DE CORRECCIÓN ---
+
+
         });
 
         // 4. Eliminar las tarjetas que quedaron marcadas para remover
@@ -8881,58 +9344,88 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
         });
     };
 
-    // Consulta 1: Tareas PRINCIPALES (onSnapshot)
-    const principalQuery = query(
-        collection(db, "tasks"),
-        where("assigneeId", "==", currentUser.uid),
-        where("status", "==", statusFilter)
-    );
-    const unsubscribePrincipal = onSnapshot(principalQuery, (querySnapshot) => {
-        let changed = false;
-        querySnapshot.docChanges().forEach((change) => {
-            changed = true; // Marcamos que hubo cambios
-            if (change.type === "removed") {
-                principalTasks.delete(change.doc.id);
-            } else {
-                principalTasks.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+    // --- INICIO DE CAMBIO: Lógica de Consulta ---
+    const adminToggleCheckbox = document.getElementById('admin-task-toggle-checkbox');
+    const isAdminView = adminToggleCheckbox?.checked && currentUserRole === 'admin';
+
+    if (isAdminView) {
+        // MODO ADMIN: Ver todas las tareas
+        console.log(`[Tareas] Cargando en MODO ADMIN. Filtro: ${statusFilter}`);
+        const allTasksQuery = query(
+            collection(db, "tasks"),
+            where("status", "==", statusFilter)
+            // (Opcional: podríamos añadir un 'orderBy' aquí si es necesario)
+        );
+
+        unsubscribeTasks = onSnapshot(allTasksQuery, (querySnapshot) => {
+            let changed = false;
+            tasksMap.clear(); // Limpiamos el mapa en cada actualización completa
+            querySnapshot.forEach((doc) => {
+                tasksMap.set(doc.id, { id: doc.id, ...doc.data() });
+                changed = true;
+            });
+
+            if (changed || !combinedTasksRendered) {
+                renderCombinedTasks(tasksMap);
             }
+        }, (error) => {
+            console.error(`Error en listener de Tareas (Admin View, ${statusFilter}): `, error);
+            renderCombinedTasks(tasksMap);
         });
-        // Solo renderiza si hubo cambios o es la primera carga (combinedTasksRendered es false)
-        if (changed || !combinedTasksRendered) renderCombinedTasks(principalTasks, additionalTasks);
-    }, (error) => {
-        console.error(`Error en listener de tareas principales (${statusFilter}): `, error);
-        renderCombinedTasks(principalTasks, additionalTasks); // Intenta renderizar en caso de error
-    });
 
-    // Consulta 2: Tareas ADICIONALES (onSnapshot)
-    const additionalQuery = query(
-        collection(db, "tasks"),
-        where("additionalAssigneeIds", "array-contains", currentUser.uid),
-        where("status", "==", statusFilter)
-    );
-    const unsubscribeAdditional = onSnapshot(additionalQuery, (querySnapshot) => {
-        let changed = false;
-        querySnapshot.docChanges().forEach((change) => {
-            changed = true; // Marcamos que hubo cambios
-            if (change.type === "removed") {
-                additionalTasks.delete(change.doc.id);
-            } else {
-                additionalTasks.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
-            }
+    } else {
+        // MODO USUARIO: Ver solo "Mis Tareas" (lógica de doble consulta original)
+        console.log(`[Tareas] Cargando en MODO USUARIO. Filtro: ${statusFilter}`);
+        let principalTasks = new Map();
+        let additionalTasks = new Map();
+
+        // Función interna para este modo
+        const renderUserTasks = (principalMap, additionalMap) => {
+            const combinedMap = new Map([...principalMap, ...additionalMap]);
+            renderCombinedTasks(combinedMap); // Llamamos al renderizador principal
+        };
+
+        const unsubscribePrincipal = onSnapshot(query(
+            collection(db, "tasks"),
+            where("assigneeId", "==", currentUser.uid),
+            where("status", "==", statusFilter)
+        ), (querySnapshot) => {
+            let changed = false;
+            querySnapshot.docChanges().forEach((change) => {
+                changed = true;
+                if (change.type === "removed") principalTasks.delete(change.doc.id);
+                else principalTasks.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+            });
+            if (changed || !combinedTasksRendered) renderUserTasks(principalTasks, additionalTasks);
+        }, (error) => {
+            console.error(`Error en listener de tareas principales (${statusFilter}): `, error);
+            renderUserTasks(principalTasks, additionalTasks);
         });
-        // Solo renderiza si hubo cambios o es la primera carga
-        if (changed || !combinedTasksRendered) renderCombinedTasks(principalTasks, additionalTasks);
-    }, (error) => {
-        console.error(`Error en listener de tareas adicionales (${statusFilter}): `, error);
-        renderCombinedTasks(principalTasks, additionalTasks); // Intenta renderizar en caso de error
-    });
 
+        const unsubscribeAdditional = onSnapshot(query(
+            collection(db, "tasks"),
+            where("additionalAssigneeIds", "array-contains", currentUser.uid),
+            where("status", "==", statusFilter)
+        ), (querySnapshot) => {
+            let changed = false;
+            querySnapshot.docChanges().forEach((change) => {
+                changed = true;
+                if (change.type === "removed") additionalTasks.delete(change.doc.id);
+                else additionalTasks.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+            });
+            if (changed || !combinedTasksRendered) renderUserTasks(principalTasks, additionalTasks);
+        }, (error) => {
+            console.error(`Error en listener de tareas adicionales (${statusFilter}): `, error);
+            renderUserTasks(principalTasks, additionalTasks);
+        });
 
-    // Guardamos ambos listeners para poder cancelarlos después
-    unsubscribeTasks = () => {
-        unsubscribePrincipal();
-        unsubscribeAdditional();
-    };
+        // Guardamos ambos listeners para cancelarlos
+        unsubscribeTasks = () => {
+            unsubscribePrincipal();
+            unsubscribeAdditional();
+        };
+    }
+    // --- FIN DE CAMBIO ---
 
     // Añadir el nuevo listener combinado al array de listeners activos
     if (unsubscribeTasks) {
@@ -8959,19 +9452,41 @@ function createTaskCard(task) {
     const dueDate = task.dueDate ? new Date(task.dueDate + 'T00:00:00') : null;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
     let dateColor = 'text-gray-500';
-    let dateText = dueDate ? dueDate.toLocaleDateString('es-CO') : 'Sin fecha límite';
+    let dateText = 'Sin fecha límite';
     let dateIcon = `<svg class="h-4 w-4 mr-1 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>`;
+
     if (dueDate && task.status === 'pendiente') {
-        if (dueDate < today) {
+        const diffTime = dueDate.getTime() - today.getTime();
+        // Usamos Math.ceil para asegurar que "mañana" (incluso si son < 24h) cuente como 1 día
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays < 0) {
             dateColor = 'text-red-600 font-bold';
-            dateText += ' (Vencida)';
+            dateText = 'Vencida';
             dateIcon = `<svg class="h-4 w-4 mr-1 inline-block text-red-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.414-1.414L11 10.586V6z" clip-rule="evenodd"></path></svg>`;
-        } else if (dueDate.getTime() === today.getTime()) {
+        } else if (diffDays === 0) {
             dateColor = 'text-yellow-600 font-bold';
-            dateText += ' (Hoy)';
+            dateText = 'Hoy';
             dateIcon = `<svg class="h-4 w-4 mr-1 inline-block text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.414-1.414L11 10.586V6z" clip-rule="evenodd"></path></svg>`;
+        } else if (diffDays === 1) {
+            dateColor = 'text-gray-700 font-semibold';
+            dateText = 'Falta 1 día';
+            // (Usamos el ícono de calendario por defecto)
+        } else if (diffDays <= 3) {
+            dateColor = 'text-gray-700 font-semibold';
+            dateText = `Faltan ${diffDays} días`;
+            // (Usamos el ícono de calendario por defecto)
+        } else {
+            // Más de 3 días, muestra la fecha
+            dateColor = 'text-gray-500';
+            dateText = dueDate.toLocaleDateString('es-CO');
+            // (Usamos el ícono de calendario por defecto)
         }
+    } else if (dueDate) {
+        // Para tareas completadas, solo muestra la fecha
+        dateText = dueDate.toLocaleDateString('es-CO');
     }
 
     // --- Lógica para listas de ítems (con carga asíncrona) ---
@@ -8997,38 +9512,73 @@ function createTaskCard(task) {
                         Ítems Trabajados:
                     </p>
                     <ul id="${completedListId}" class="space-y-1 pl-5">
-                         <li class="text-xs text-gray-400 italic">Cargando...</li>
+                        <li class="text-xs text-gray-400 italic">Cargando...</li>
                     </ul>
                 </div>
             </div>
         `;
 
-        const loadAndSeparateItems = async () => { /* ... (código existente sin cambios) ... */
+        const loadAndSeparateItems = async () => {
             try {
-                const subItemIds = task.specificSubItemIds;
-                const subItemPromises = subItemIds.map(id => getDoc(doc(db, "subItems", id)));
-                const subItemDocs = await Promise.all(subItemPromises);
+                const subItemIds = task.specificSubItemIds || [];
+                const selectedItems = task.selectedItems || [];
+                if (subItemIds.length === 0 || selectedItems.length === 0) {
+                    throw new Error("La tarea no tiene sub-ítems o ítems seleccionados.");
+                }
+
                 const itemsStatus = new Map();
-                for (const docSnap of subItemDocs) {
-                    if (docSnap.exists()) {
-                        const subItem = docSnap.data();
-                        const itemId = subItem.itemId;
-                        if (!itemId) continue;
-                        if (!itemsStatus.has(itemId)) {
-                            const itemDoc = await getDoc(doc(db, "items", itemId));
-                            const itemName = itemDoc.exists() ? itemDoc.data().name : `Ítem ID: ${itemId}`;
-                            itemsStatus.set(itemId, { name: itemName, total: 0, installed: 0 });
-                        }
-                        const statusInfo = itemsStatus.get(itemId);
-                        statusInfo.total++;
-                        if (subItem.status === 'Instalado') {
-                            statusInfo.installed++;
+                const itemIds = [...new Set(selectedItems.map(i => i.itemId))];
+                const subItemIdsSet = new Set(subItemIds); // Para un filtrado rápido
+
+                // 1. Cargar datos de los items (para nombres) - (N lecturas)
+                const itemDocs = await Promise.all(itemIds.map(id => getDoc(doc(db, "projects", task.projectId, "items", id))));
+                const itemNames = new Map(itemDocs.map(d => [d.id, d.exists() ? d.data().name : `Ítem ID: ${d.id}`]));
+
+                itemIds.forEach(id => {
+                    itemsStatus.set(id, { name: itemNames.get(id), total: 0, installed: 0 });
+                });
+
+                // 2. Cargar estado de CADA subItem (M lecturas, en lotes de 30)
+                // Iteramos sobre los ítems padres para construir los paths correctos
+                for (const itemInfo of selectedItems) {
+                    const itemId = itemInfo.itemId;
+
+                    // Preparamos los IDs de esta tarea en lotes (chunks) de 30
+                    const subItemDocs = [];
+                    for (let i = 0; i < subItemIds.length; i += 30) {
+                        const chunkIds = subItemIds.slice(i, i + 30);
+                        const q = query(
+                            collection(db, "projects", task.projectId, "items", itemId, "subItems"),
+                            where(documentId(), "in", chunkIds)
+                        );
+                        const snapshot = await getDocs(q);
+                        snapshot.forEach(doc => subItemDocs.push(doc));
+                    }
+
+                    for (const docSnap of subItemDocs) {
+                        if (docSnap.exists()) {
+                            // Verificamos que este sub-ítem realmente esté en la lista de la tarea
+                            if (!subItemIdsSet.has(docSnap.id)) continue;
+
+                            const subItem = docSnap.data();
+                            const statusInfo = itemsStatus.get(subItem.itemId);
+                            if (statusInfo) {
+                                statusInfo.total++;
+                                if (subItem.status === 'Instalado') {
+                                    statusInfo.installed++;
+                                }
+                            }
                         }
                     }
                 }
+
+                // 3. Renderizar el HTML
                 let pendingHtml = '';
                 let completedHtml = '';
                 itemsStatus.forEach((statusInfo) => {
+                    // Si el total es 0, significa que los subitems no se encontraron (eran de otro item)
+                    if (statusInfo.total === 0) return;
+
                     const pendingCount = statusInfo.total - statusInfo.installed;
                     if (pendingCount > 0) {
                         pendingHtml += `<li class="text-xs text-gray-800 list-disc">${pendingCount} x ${statusInfo.name}</li>`;
@@ -9037,10 +9587,12 @@ function createTaskCard(task) {
                         completedHtml += `<li class="text-xs text-gray-800 list-disc">${statusInfo.installed} x ${statusInfo.name}</li>`;
                     }
                 });
+
                 const pendingListElement = document.getElementById(pendingListId);
                 const completedListElement = document.getElementById(completedListId);
                 if (pendingListElement) pendingListElement.innerHTML = pendingHtml || '<li class="text-xs text-gray-400 italic">Ninguno pendiente</li>';
                 if (completedListElement) completedListElement.innerHTML = completedHtml || '<li class="text-xs text-gray-400 italic">Ninguno trabajado</li>';
+
             } catch (error) {
                 console.error(`Error loading item details for task ${task.id}:`, error);
                 const pendingListElement = document.getElementById(pendingListId);
@@ -9138,14 +9690,38 @@ function createTaskCard(task) {
         </button>
     ` : '';
 
-    // --- Estructura HTML final ---
+    // --- INICIO DE CAMBIO: Definir el ícono de "No Leído" ---
+    const adminToggleCheckbox = document.getElementById('admin-task-toggle-checkbox');
+    const isAdminView = adminToggleCheckbox?.checked && currentUserRole === 'admin';
+
+    // Definimos el HTML del ícono de "No Leído" aquí
+    const unreadCommentHtml = (task.unreadCommentFor && task.unreadCommentFor.includes(currentUser.uid)) ? `
+        <span class="flex items-center font-medium text-blue-600 mr-2" title="Nuevos comentarios">
+            <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17.608V14.5A8 8 0 0110 3c4.418 0 8 3.134 8 7zm-7-1a1 1 0 11-2 0 1 1 0 012 0zm4 0a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd"></path></svg>
+            <span class="ml-1">¡Nuevo!</span>
+        </span>
+    ` : '';
+    // --- FIN DE CAMBIO ---
+
     card.innerHTML = `
         <div class="p-4 flex-grow">
-            <div class="flex justify-between items-start mb-2">
+            <div class="flex justify-between items-center mb-2">
+                
                 <div>
                     <p class="text-xs font-semibold text-blue-600 uppercase tracking-wide">${task.projectName || 'Proyecto no especificado'}</p>
+                    
+                    ${isAdminView ? `
+                        <p class="text-xs text-purple-600 font-semibold mt-1">
+                            Asignado a: ${task.assigneeName || 'N/A'}
+                        </p>
+                    ` : ''}
+                    
                     <h3 class="text-lg font-bold text-gray-900 leading-tight mt-1">${task.description}</h3>
                 </div>
+
+                <div class="flex-shrink-0 px-4"> ${unreadCommentHtml}
+                </div>
+                
                 <div class="text-right flex-shrink-0 pl-4">
                     <p class="text-sm ${dateColor} flex items-center justify-end">
                         ${dateIcon}
@@ -9157,132 +9733,43 @@ function createTaskCard(task) {
                 </div>
             </div>
             ${itemsSectionHtml}
+            
+            <div id="material-status-${task.id}" class="mt-4 px-4 text-xs">
+                ${(task.specificSubItemIds && task.specificSubItemIds.length > 0) ? '<p class="text-gray-400 italic">Cargando estado de material...</p>' : ''}
+            </div>
             ${progressBarHtml}
         </div>
-        <div class="bg-gray-50 p-3 border-t border-gray-200 flex flex-wrap gap-2 justify-end">
-            ${editButtonHtmlFinal}
-            ${viewTaskButtonHtmlFinal}
-            ${requestMaterialButtonHtml}
-            ${registerProgressButtonHtmlFinal}
-            ${completeButtonHtmlFinal}
-        </div>
-    `;
+        <div class="bg-gray-50 p-3 border-t border-gray-200 flex flex-wrap gap-2 justify-end items-center">
+            <div class="flex flex-wrap gap-2 justify-end">
+                ${editButtonHtmlFinal}
+                ${viewTaskButtonHtmlFinal}
+                ${requestMaterialButtonHtml}
+                ${registerProgressButtonHtmlFinal}
+                ${completeButtonHtmlFinal}
+            </div>
+        `;
     return card;
 }
 
 /**
- * Busca la cantidad EXACTA de sub-ítems pendientes especificada en la tarea
- * y abre el modal de progreso múltiple mostrando solo esos sub-ítems.
+ * Inicia el proceso de registrar avance.
+ * Esta función es ahora "ligera" y solo abre el modal.
  * @param {string} taskId - El ID de la tarea.
  */
 async function handleRegisterTaskProgress(taskId) {
     if (!taskId) return;
+    console.log(`[Task Progress] Solicitud para abrir modal para Tarea ID: ${taskId}`);
 
-    console.log(`[Task Progress] Iniciando handleRegisterTaskProgress para Tarea ID: ${taskId}`);
-    loadingOverlay.classList.remove('hidden');
+    // ¡OPTIMIZACIÓN!
+    // No mostramos el overlay. No esperamos NADA.
+    // Solo llamamos a la función que abre el modal.
+    // El modal se encargará de su propia carga interna.
+    await openMultipleProgressModal(taskId);
 
-    try {
-        const taskRef = doc(db, "tasks", taskId);
-        let taskSnap = await getDoc(taskRef); // 'let' en lugar de 'const'
-
-        if (!taskSnap.exists()) {
-            throw new Error(`[Task Progress] La tarea ${taskId} no fue encontrada.`);
-        }
-
-        let taskData = taskSnap.data(); // 'let' en lugar de 'const'
-        console.log(`[Task Progress] Tarea encontrada. Proyecto ID: ${taskData.projectId}`);
-
-        // *** INICIO DE LA MODIFICACIÓN ***
-
-        // Verificamos si la tarea usa el nuevo sistema de IDs específicos
-        if (taskData.specificSubItemIds && taskData.specificSubItemIds.length > 0) {
-
-            // LÓGICA NUEVA (La tarea ya está actualizada)
-            console.log(`[Task Progress] Tarea usa 'specificSubItemIds'. Abriendo modal con ${taskData.specificSubItemIds.length} IDs.`);
-            await openMultipleProgressModal(taskData.specificSubItemIds, taskId);
-
-        } else {
-
-            // LÓGICA ANTIGUA (La tarea debe ser actualizada)
-            console.warn(`[Task Progress] Tarea ${taskId} no tiene 'specificSubItemIds'. Actualizando tarea ahora...`);
-
-            if (!taskData.projectId || !taskData.selectedItems || taskData.selectedItems.length === 0) {
-                throw new Error("[Task Progress] Esta tarea (antigua) no tiene ítems de proyecto relacionados.");
-            }
-
-            const relevantPendingSubItemIds = [];
-            for (const selectedItem of taskData.selectedItems) {
-                const itemId = selectedItem.itemId;
-                const quantityNeeded = selectedItem.quantity;
-
-                if (quantityNeeded <= 0) continue;
-
-                console.log(`[Task Progress] (Migración) Buscando ${quantityNeeded} sub-ítem(s) pendientes para Ítem ID: ${itemId}`);
-
-                const subItemsQuery = query(
-                    collection(db, "subItems"),
-                    where("projectId", "==", taskData.projectId),
-                    where("itemId", "==", itemId),
-                    where("status", "!=", "Instalado"),
-                    orderBy("number", "asc"),
-                    limit(quantityNeeded)
-                );
-
-                const subItemsSnapshot = await getDocs(subItemsQuery);
-
-                if (subItemsSnapshot.empty) {
-                    console.warn(`[Task Progress] (Migración) No se encontraron sub-ítems pendientes para ${itemId}.`);
-                } else {
-                    console.log(`[Task Progress] (Migración) Encontrados ${subItemsSnapshot.size} sub-ítem(s) para ${itemId}.`);
-                    subItemsSnapshot.forEach(subItemDoc => {
-                        relevantPendingSubItemIds.push(subItemDoc.id);
-                    });
-                }
-            } // Fin del bucle for
-
-            console.log(`[Task Progress] (Migración) Total de sub-ítems encontrados: ${relevantPendingSubItemIds.length}`);
-
-            if (relevantPendingSubItemIds.length === 0) {
-                console.warn("[Task Progress] (Migración) No se encontraron sub-ítems pendientes en total.");
-                // (Lógica de alerta existente)
-                const checkGeneralPendingQuery = query(
-                    collection(db, "subItems"),
-                    where("projectId", "==", taskData.projectId),
-                    where("itemId", "in", taskData.selectedItems.map(si => si.itemId)),
-                    where("status", "!=", "Instalado"),
-                    limit(1)
-                );
-                const generalPendingSnapshot = await getDocs(checkGeneralPendingQuery);
-                if (generalPendingSnapshot.empty) {
-                    alert("Todos los sub-ítems relacionados con esta tarea ya han sido marcados como 'Instalado'.");
-                } else {
-                    alert("No se encontraron sub-ítems pendientes específicos para las cantidades requeridas por esta tarea en este momento.");
-                }
-
-            } else {
-
-                // *** ¡EL PASO CLAVE! ***
-                // Guardamos los IDs encontrados en la tarea para futuras ejecuciones
-                console.log(`[Task Progress] (Migración) Guardando ${relevantPendingSubItemIds.length} IDs en la tarea ${taskId}...`);
-                await updateDoc(taskRef, {
-                    specificSubItemIds: relevantPendingSubItemIds
-                });
-
-                // Ahora que la tarea está actualizada, la abrimos
-                console.log(`[Task Progress] (Migración) Tarea actualizada. Llamando a openMultipleProgressModal.`);
-                await openMultipleProgressModal(relevantPendingSubItemIds, taskId);
-            }
-        }
-        // *** FIN DE LA MODIFICACIÓN ***
-
-    } catch (error) {
-        // El error ahora tendrá más contexto gracias a los logs
-        console.error("Error en handleRegisterTaskProgress:", error);
-        alert(`Error: ${error.message}`);
-    } finally {
-        loadingOverlay.classList.add('hidden');
-    }
+    // (Toda la lógica de 'getDoc', 'updateDoc' y migración se movió 
+    // a 'openMultipleProgressModal')
 }
+
 
 /**
 * Marca una tarea como completada en Firestore, SI TODOS sus sub-ítems están instalados.
@@ -9301,51 +9788,70 @@ async function completeTask(taskId) {
         const taskData = taskSnap.data();
         const subItemIds = taskData.specificSubItemIds;
 
-        // --- INICIO DE LA VALIDACIÓN ---
+        // --- INICIO DE CORRECCIÓN DE LÓGICA DE VALIDACIÓN ---
+
         // 1. Verificar si hay sub-ítems asociados
         if (subItemIds && subItemIds.length > 0) {
 
-            // 2. Obtener el estado de TODOS los sub-ítems de la tarea
-            const subItemsQuery = query(
-                collection(db, "subItems"),
-                where("__name__", "in", subItemIds) // Consulta por IDs específicos
-            );
-            const subItemsSnapshot = await getDocs(subItemsQuery);
+            // 2. Verificar que la tarea tenga 'selectedItems' (necesario para los paths)
+            if (!taskData.selectedItems || taskData.selectedItems.length === 0) {
+                console.warn(`Tarea ${taskId} tiene sub-ítems pero no 'selectedItems'. Completando sin verificar.`);
+            } else {
 
-            let allInstalled = true;
-            let foundCount = 0; // Para verificar que encontramos todos los IDs esperados
+                let totalPending = 0;
+                let itemsChecked = 0;
 
-            // --- INICIO DE LA CORRECCIÓN ---
-            // Declaramos installedCount aquí, antes del bucle
-            let installedCount = 0;
-            // --- FIN DE LA CORRECCIÓN ---
+                // 3. Iterar sobre los ítems PADRES de la tarea para encontrar los sub-ítems
+                for (const item of taskData.selectedItems) {
+                    const itemId = item.itemId;
 
-            // 3. Revisar cada sub-ítem
-            subItemsSnapshot.forEach(doc => {
-                foundCount++;
-                if (doc.data().status === 'Instalado') {
-                    // --- INICIO DE LA CORRECCIÓN ---
-                    // Incrementamos la variable ya declarada
-                    installedCount++;
-                    // --- FIN DE LA CORRECCIÓN ---
-                } else {
-                    allInstalled = false;
+                    // Preparamos los IDs de la tarea en lotes (chunks) de 30
+                    const subItemDocs = [];
+                    for (let i = 0; i < subItemIds.length; i += 30) {
+                        const chunkIds = subItemIds.slice(i, i + 30);
+
+                        // Buscamos los sub-ítems de esta tarea DENTRO de la subcolección de este ítem
+                        const q = query(
+                            collection(db, "projects", taskData.projectId, "items", itemId, "subItems"),
+                            where(documentId(), "in", chunkIds) // Filtramos por los IDs de la tarea
+                        );
+
+                        const snapshot = await getDocs(q);
+                        snapshot.forEach(doc => subItemDocs.push(doc));
+                    }
+
+                    // 4. Contamos cuántos de los encontrados NO están instalados
+                    for (const docSnap of subItemDocs) {
+                        if (docSnap.exists()) {
+                            itemsChecked++; // Contamos cuántos encontramos
+                            if (docSnap.data().status !== 'Instalado') {
+                                totalPending++; // Sumamos los pendientes
+                            }
+                        }
+                    }
+                } // Fin del bucle 'for (const item...)'
+
+                // 5. Verificación final
+                if (itemsChecked < subItemIds.length) {
+                    // Esto pasa si un sub-ítem está en la tarea pero no se encontró en la BD
+                    // (lo cual no debería pasar, pero es una salvaguarda)
+                    alert(`Error: No se pudieron encontrar todos los sub-ítems (${subItemIds.length - itemsChecked} faltantes). No se puede completar la tarea.`);
+                    loadingOverlay.classList.add('hidden');
+                    return;
                 }
-            });
 
-            // 4. Verificar si encontramos todos los sub-ítems y si todos están instalados
-            if (foundCount !== subItemIds.length || !allInstalled) {
-                // Si faltan sub-ítems o alguno no está instalado, muestra error
-                // Ahora podemos usar installedCount en el mensaje sin error
-                alert(`No se puede completar la tarea. ${subItemIds.length - foundCount} sub-ítem(s) no se encontraron o ${subItemIds.length - installedCount} aún no están marcados como 'Instalado'.`);
-                loadingOverlay.classList.add('hidden'); // Oculta el loader
-                return; // Detiene la ejecución
+                if (totalPending > 0) {
+                    // ¡AQUÍ ES DONDE SE BLOQUEA!
+                    alert(`No se puede completar la tarea. Aún quedan ${totalPending} sub-ítem(s) pendientes de registrar avance (estado "Instalado").`);
+                    loadingOverlay.classList.add('hidden'); // Oculta el loader
+                    return; // Detiene la ejecución
+                }
             }
         } else {
             // Si la tarea no tiene subItemIds (puede ser antigua o sin ítems)
             console.warn(`Tarea ${taskId} no tiene sub-ítems específicos asociados. Completando sin verificar avance.`);
         }
-        // --- FIN DE LA VALIDACIÓN ---
+        // --- FIN DE CORRECCIÓN ---
 
         // Si pasa la validación (o no tenía subítems), actualiza la tarea
         await updateDoc(taskRef, {
@@ -9515,11 +10021,12 @@ async function createTask(taskData) {
         console.log("Nueva tarea guardada en Firestore con ID:", newTaskRef.id);
 
         // --- INICIO DE LA NUEVA LÓGICA DE NOTIFICACIONES ---
+        const projectName = taskData.projectName || "un proyecto"; // Obtenemos el nombre del proyecto
         const notificationMessage = `Nueva tarea asignada: ${taskData.description.substring(0, 50)}${taskData.description.length > 50 ? '...' : ''}`;
         const notificationData = {
             message: notificationMessage,
+            projectName: projectName, // <-- CAMBIO AÑADIDO
             taskId: newTaskRef.id, // ID de la tarea recién creada
-            projectId: taskData.projectId,
             read: false,
             createdAt: new Date(),
             type: 'new_task_assignment' // Tipo de notificación
@@ -9566,6 +10073,19 @@ async function openTaskDetailsModal(taskId) {
     const actionsEl = document.getElementById('task-details-actions');
 
     if (!modal || !bodyEl || !actionsEl) return;
+
+    // --- INICIO DE CAMBIO: Marcar comentarios como leídos al abrir ---
+    try {
+        const taskRef = doc(db, "tasks", taskId);
+        // Usamos arrayRemove para quitar nuestro ID del array de "no leídos".
+        // Esto es "idempotente", no da error si nuestro ID no estaba.
+        updateDoc(taskRef, {
+            unreadCommentFor: arrayRemove(currentUser.uid)
+        });
+    } catch (error) {
+        console.error("Error al marcar comentarios como leídos:", error);
+    }
+    // --- FIN DE CAMBIO ---
 
     // Establecer el contexto de retorno CADA VEZ que se entra a esta vista
     materialRequestReturnContext = { view: 'detalle-tarea', taskId: taskId };
@@ -9625,34 +10145,71 @@ async function openTaskDetailsModal(taskId) {
                 </table>
              </div>`;
 
+            // Esta es la versión corregida que asume que todos los subItems
+            // pertenecen al primer item listado en la tarea (parche por migración)
             const loadItemDetails = async () => {
                 try {
-                    const subItemIds = task.specificSubItemIds;
-                    const subItemPromises = subItemIds.map(id => getDoc(doc(db, "subItems", id)));
-                    const subItemDocs = await Promise.all(subItemPromises);
+                    const subItemIds = task.specificSubItemIds || [];
+                    const selectedItems = task.selectedItems || [];
+                    if (subItemIds.length === 0 || selectedItems.length === 0) {
+                        throw new Error("La tarea no tiene sub-ítems o ítems seleccionados.");
+                    }
+
                     const itemsStatus = new Map();
-                    for (const docSnap of subItemDocs) {
-                        if (docSnap.exists()) {
-                            const subItem = docSnap.data();
-                            const itemId = subItem.itemId;
-                            if (!itemId) continue;
-                            if (!itemsStatus.has(itemId)) {
-                                const itemDoc = await getDoc(doc(db, "items", itemId));
-                                const itemName = itemDoc.exists() ? itemDoc.data().name : `Ítem ID: ${itemId}`;
-                                itemsStatus.set(itemId, { name: itemName, total: 0, installed: 0 });
-                            }
-                            const statusInfo = itemsStatus.get(itemId);
-                            statusInfo.total++;
-                            if (subItem.status === 'Instalado') {
-                                statusInfo.installed++;
+                    const itemIds = [...new Set(selectedItems.map(i => i.itemId))];
+                    const subItemIdsSet = new Set(subItemIds); // Para un filtrado rápido
+
+                    // 1. Cargar datos de los items (para nombres) - (N lecturas)
+                    const itemDocs = await Promise.all(itemIds.map(id => getDoc(doc(db, "projects", task.projectId, "items", id))));
+                    const itemNames = new Map(itemDocs.map(d => [d.id, d.exists() ? d.data().name : `Ítem ID: ${d.id}`]));
+
+                    itemIds.forEach(id => {
+                        itemsStatus.set(id, { name: itemNames.get(id), total: 0, installed: 0 });
+                    });
+
+                    // 2. Cargar estado de CADA subItem (M lecturas, en lotes de 30)
+                    // Iteramos sobre los ítems padres para construir los paths correctos
+                    for (const itemInfo of selectedItems) {
+                        const itemId = itemInfo.itemId;
+
+                        // Preparamos los IDs de esta tarea en lotes (chunks) de 30
+                        const subItemDocs = [];
+                        for (let i = 0; i < subItemIds.length; i += 30) {
+                            const chunkIds = subItemIds.slice(i, i + 30);
+                            const q = query(
+                                collection(db, "projects", task.projectId, "items", itemId, "subItems"),
+                                where(documentId(), "in", chunkIds)
+                            );
+                            const snapshot = await getDocs(q);
+                            snapshot.forEach(doc => subItemDocs.push(doc));
+                        }
+
+                        for (const docSnap of subItemDocs) {
+                            if (docSnap.exists()) {
+                                // Verificamos que este sub-ítem realmente esté en la lista de la tarea
+                                if (!subItemIdsSet.has(docSnap.id)) continue;
+
+                                const subItem = docSnap.data();
+                                const statusInfo = itemsStatus.get(subItem.itemId);
+                                if (statusInfo) {
+                                    statusInfo.total++;
+                                    if (subItem.status === 'Instalado') {
+                                        statusInfo.installed++;
+                                    }
+                                }
                             }
                         }
                     }
+
+                    // 3. Renderizar la tabla
                     let tableBodyHtml = '';
                     if (itemsStatus.size === 0) {
                         tableBodyHtml = '<tr><td colspan="3" class="text-center py-3 text-red-500">Error: No se encontraron los ítems asociados.</td></tr>';
                     } else {
                         itemsStatus.forEach((statusInfo, itemId) => {
+                            // Si el total es 0, significa que los subitems no se encontraron (eran de otro item)
+                            if (statusInfo.total === 0) return;
+
                             const pendingCount = statusInfo.total - statusInfo.installed;
                             tableBodyHtml += `
                                 <tr class="hover:bg-gray-50">
@@ -9664,6 +10221,7 @@ async function openTaskDetailsModal(taskId) {
                     }
                     const tbodyElement = document.getElementById(`task-detail-items-tbody-${task.id}`);
                     if (tbodyElement) tbodyElement.innerHTML = tableBodyHtml;
+
                 } catch (error) {
                     console.error(`Error loading item details for task ${task.id}:`, error);
                     const tbodyElement = document.getElementById(`task-detail-items-tbody-${task.id}`);
@@ -9811,13 +10369,28 @@ async function openTaskDetailsModal(taskId) {
                     const formattedDate = `${commentDate.toLocaleDateString('es-CO')} ${commentDate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`;
 
                     const commentEl = document.createElement('div');
-                    commentEl.className = "text-sm";
-                    commentEl.innerHTML = `
-                        <p class="text-gray-800">${comment.text}</p>
-                        <p class="text-xs text-gray-500 font-medium">
-                            — ${comment.userName} <span class="font-normal">el ${formattedDate}</span>
-                        </p>
-                    `;
+
+                    // --- INICIO DE CORRECCIÓN (Estilo de Log) ---
+                    if (comment.type === 'log') {
+                        // Es un log del sistema
+                        commentEl.className = "text-sm italic text-gray-500 py-2 border-t border-gray-100";
+                        // Usamos 'innerHTML' para renderizar el <strong> o <b>
+                        commentEl.innerHTML = `
+                            <p class="inline">${comment.text}</p>
+                            <span class="text-xs ml-1">(${formattedDate})</span>
+                        `;
+                    } else {
+                        // Es un comentario normal
+                        commentEl.className = "text-sm py-2 border-t border-gray-100";
+                        commentEl.innerHTML = `
+                            <p class="text-gray-800">${comment.text}</p>
+                            <p class="text-xs text-gray-500 font-medium">
+                                — ${comment.userName} <span class="font-normal">el ${formattedDate}</span>
+                            </p>
+                        `;
+                    }
+                    // --- FIN DE CORRECCIÓN ---
+
                     commentsList.appendChild(commentEl);
                 });
                 // Scroll automático al último comentario
@@ -9928,48 +10501,45 @@ async function handleRequestMaterialFromTask(projectId, taskId) {
 
         currentProject = { id: projectDoc.id, ...projectDoc.data() };
         const taskData = taskDoc.data();
-        const subItemIds = taskData.specificSubItemIds || [];
 
+        const subItemIds = taskData.specificSubItemIds || [];
         let pendingItemsForTask = [];
-        if (subItemIds.length > 0) {
-            // ... (Lógica existente para calcular pendingItemsMap) ...
-            const subItemPromises = subItemIds.map(id => getDoc(doc(db, "subItems", id)));
-            const subItemDocs = await Promise.all(subItemPromises);
-            const pendingItemsMap = new Map();
-            subItemDocs.forEach(docSnap => {
-                if (docSnap.exists() && docSnap.data().status !== 'Instalado') {
-                    const subItem = docSnap.data();
-                    if (subItem.itemId) {
-                        const currentCount = pendingItemsMap.get(subItem.itemId) || 0;
-                        pendingItemsMap.set(subItem.itemId, currentCount + 1);
-                    }
-                }
-            });
-            pendingItemsMap.forEach((quantity, itemId) => {
-                pendingItemsForTask.push({ itemId, quantity });
-            });
+
+        // --- INICIO DE CORRECCIÓN ---
+        // El problema estaba en esta lógica. 
+        // 'pendingItemsForTask' debe ser el array 'selectedItems' original de la tarea.
+        // La función 'showMaterialRequestView' se encargará de buscar los nombres.
+
+        if (taskData.selectedItems && taskData.selectedItems.length > 0) {
+            // Simplemente pasamos los datos de la tarea directamente.
+            // 'taskData.selectedItems' ya tiene el formato [{ itemId: "...", quantity: ... }]
+            pendingItemsForTask = taskData.selectedItems;
         } else {
-            console.warn("La tarea no tiene subítems específicos para pre-seleccionar.");
-            pendingItemsForTask = taskData.selectedItems || null;
+            console.warn("La tarea no tiene ítems ('selectedItems') para pre-seleccionar.");
+            pendingItemsForTask = []; // Pasamos un array vacío
         }
+        // --- FIN DE CORRECCIÓN ---
 
         // 2. Mostrar la vista de solicitud, PASANDO los ítems pendientes
+        // 'pendingItemsForTask' ahora tiene el formato correcto: [{ itemId: "...", quantity: ... }]
         await showMaterialRequestView(pendingItemsForTask);
 
-        // --- INICIO DE LA MODIFICACIÓN ---
         // 3. Guardar el ID de la tarea en el formulario
         const taskIdInput = document.getElementById('material-request-task-id');
         if (taskIdInput) {
             taskIdInput.value = taskId; // Guardamos el ID de la tarea
         }
-        // --- FIN DE LA MODIFICACIÓN ---
 
         // 4. Pre-seleccionar los ítems y cantidades en el formulario
         const itemListContainer = document.getElementById('request-item-list-container-view');
-        pendingItemsForTask.forEach(itemInfo => {
-            const inputElement = itemListContainer.querySelector(`.request-item-quantity[data-item-id="${itemInfo.itemId}"]`);
-            if (inputElement) {
-                inputElement.value = itemInfo.quantity;
+
+        (pendingItemsForTask || []).forEach(itemInfo => {
+            // Usamos 'itemInfo.itemId' que es el formato correcto
+            if (itemInfo && itemInfo.itemId) {
+                const inputElement = itemListContainer.querySelector(`.request-item-quantity[data-item-id="${itemInfo.itemId}"]`);
+                if (inputElement) {
+                    inputElement.value = itemInfo.quantity;
+                }
             }
         });
 
@@ -9988,8 +10558,9 @@ async function handleRequestMaterialFromTask(projectId, taskId) {
  * @param {string} taskId - El ID de la tarea.
  * @param {string} projectId - El ID del proyecto.
  * @param {string} placeholderId - El ID del div donde se renderizará el HTML.
+ * @param {string} renderMode - 'detail' (tabla completa) o 'summary' (barra de progreso).
  */
-function loadTaskMaterialStatus(taskId, projectId, placeholderId) {
+function loadTaskMaterialStatus(taskId, projectId, placeholderId, renderMode = 'detail') {
     // Cancelar cualquier listener anterior para esta misma tarjeta
     if (materialStatusListeners.has(placeholderId)) {
         materialStatusListeners.get(placeholderId)(); // Llama a la función unsubscribe
@@ -10009,77 +10580,188 @@ function loadTaskMaterialStatus(taskId, projectId, placeholderId) {
             return;
         }
 
-        if (snapshot.empty) {
-            container.innerHTML = `
-                <p class="text-xs font-semibold text-gray-700 mb-1 flex items-center">
-                    <svg class="h-4 w-4 mr-1 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"></path></svg>
-                    Estado de Materiales:
-                </p>
-                <p class="text-xs text-gray-500 pl-5">No se ha solicitado material.</p>
-            `;
-            return;
-        }
+        // --- INICIO DE LÓGICA (Modificada para agrupar por tipo/medida) ---
 
-        // Usamos un Map para agrupar por material (itemId)
+        // 1. Agrupar materiales de todas las solicitudes de esta tarea
         const materialSummary = new Map();
 
         snapshot.forEach(doc => {
             const request = doc.data();
-            const status = request.status; // 'pendiente', 'aprobado', 'entregado'
+            const status = request.status; // 'pendiente', 'aprobado', 'entregado', 'entregado_parcial'
             const items = request.consumedItems || [];
 
             items.forEach(item => {
-                const materialId = item.materialId;
-                // Usamos el nombre guardado en la solicitud, o un fallback
+                // --- INICIO DE CORRECCIÓN: Clave Única ---
+                // Creamos una clave única para CADA TIPO de ítem (no solo por materialId)
+                const itemLength = (item.length || 0).toString(); // ej: 2.5 o 0
+                const itemType = item.type || 'full_unit';
+                const uniqueKey = `${item.materialId}-${itemType}-${itemLength}`;
+                // --- FIN DE CORRECCIÓN ---
+
                 const materialName = item.itemName || "Material";
 
-                if (!materialSummary.has(materialId)) {
-                    materialSummary.set(materialId, {
+                if (!materialSummary.has(uniqueKey)) {
+
+                    // --- INICIO DE CORRECCIÓN: Guardar Descripción ---
+                    let description = "Unidad Completa";
+                    if (itemType === 'cut') {
+                        description = `Corte de ${item.length * 100} cm`;
+                    } else if (itemType === 'remnant') {
+                        description = `Retazo de ${item.length * 100} cm`;
+                    }
+                    // --- FIN DE CORRECCIÓN ---
+
+                    materialSummary.set(uniqueKey, {
                         name: materialName,
+                        description: description, // <-- AÑADIDO
                         solicitado: 0,
-                        despachado: 0
+                        despachado: 0 // "unidades pasadas"
                     });
                 }
 
-                const summary = materialSummary.get(materialId);
+                const summary = materialSummary.get(uniqueKey);
                 const quantity = item.quantity || 0;
 
+                // Contamos 'solicitado' solo si está aprobado o ya entregado (no pendiente)
+                if (status === 'aprobado' || status === 'entregado' || status === 'entregado_parcial') {
+                    summary.solicitado += quantity;
+                }
+
+                // Contamos 'despachado' solo si está entregado
                 if (status === 'entregado') {
                     summary.despachado += quantity;
-                    summary.solicitado += quantity; // Si está entregado, también fue solicitado
-                } else if (status === 'aprobado' || status === 'pendiente') {
-                    summary.solicitado += quantity;
+                }
+                // Si es parcial, contamos lo que se ha entregado del historial
+                else if (status === 'entregado_parcial') {
+                    const deliveryHistory = request.deliveryHistory || [];
+                    deliveryHistory.forEach(delivery => {
+                        delivery.items.forEach(deliveredItem => {
+
+                            // --- INICIO DE CORRECCIÓN: Comparación de Clave Única ---
+                            // Comparamos el ítem entregado con nuestra clave única
+                            if (deliveredItem.materialId === item.materialId &&
+                                deliveredItem.type === itemType &&
+                                (deliveredItem.length || 0).toString() === itemLength) {
+                                summary.despachado += deliveredItem.quantity;
+                            }
+                            // --- FIN DE CORRECCIÓN ---
+                        });
+                    });
                 }
             });
         });
 
-        // Generar el HTML final
-        let html = `
-            <p class="text-xs font-semibold text-gray-700 mb-1 flex items-center">
-                <svg class="h-4 w-4 mr-1 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"></path></svg>
-                Estado de Materiales:
-            </p>`;
+        // 2. Generar el HTML basado en el modo de renderizado
+        let html = '';
 
-        if (materialSummary.size === 0) {
-            html += '<p class="text-xs text-gray-500 pl-5">No se ha solicitado material.</p>';
+        if (renderMode === 'detail') {
+            // --- MODO DETALLE (Modificado para mostrar la descripción) ---
+            if (materialSummary.size === 0) {
+                html = `
+                    <p class="font-semibold text-red-600 flex items-center">
+                        <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        No has solicitado material
+                    </p>`;
+            } else {
+                html = `
+                    <div class="overflow-hidden rounded-md border border-gray-200">
+                        <table class="min-w-full text-sm">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th class="px-3 py-2 text-left font-semibold text-gray-600">Material</th>
+                                    <th class="px-3 py-2 text-left font-semibold text-gray-600">Descripción</th>
+                                    <th class="px-3 py-2 text-center font-semibold text-gray-600">Entregado</th>
+                                    <th class="px-3 py-2 text-center font-semibold text-gray-600">Pendiente</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200 bg-white">
+                `;
+
+                materialSummary.forEach((summary) => {
+                    const pendiente = Math.max(0, summary.solicitado - summary.despachado);
+                    const entregado = summary.despachado;
+                    const colorPendiente = pendiente > 0 ? 'text-red-600' : 'text-gray-700';
+
+                    html += `
+                        <tr>
+                            <td class="px-3 py-2 font-medium text-gray-800">${summary.name}</td>
+                            <td class="px-3 py-2 text-gray-600">${summary.description}</td>
+                            <td class="px-3 py-2 text-center font-bold text-green-600">${entregado}</td>
+                            <td class="px-3 py-2 text-center font-bold ${colorPendiente}">${pendiente}</td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+        } else {
+            // --- MODO RESUMEN (CON BARRA DE PROGRESO) ---
+
+            // 1. Calculamos el estado general
+            let overallStatus = 'none';
+            let totalSolicitado = 0;
+            let totalDespachado = 0;
+
+            materialSummary.forEach((summary) => {
+                totalSolicitado += summary.solicitado;
+                totalDespachado += summary.despachado;
+            });
+
+            // 2. Calculamos el porcentaje
+            const porcentaje = (totalSolicitado > 0) ? (totalDespachado / totalSolicitado) * 100 : 0;
+
+            if (totalSolicitado === 0) {
+                overallStatus = 'none';
+            } else if (porcentaje === 0) {
+                overallStatus = 'requested';
+            } else if (porcentaje < 100) {
+                overallStatus = 'partial';
+            } else {
+                overallStatus = 'delivered';
+            }
+            // Fin del cálculo
+
+            // 3. Generar el HTML
+            if (overallStatus === 'none') {
+                html = `
+                    <p class="font-semibold text-red-600 flex items-center">
+                        <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        No has solicitado material
+                    </p>`;
+            } else {
+                let barColor = 'bg-blue-600'; // Color para 'requested'
+                let barTextColor = 'text-blue-700';
+                let barText = `Material Solicitado (${totalDespachado}/${totalSolicitado})`;
+
+                if (overallStatus === 'partial') {
+                    barColor = 'bg-yellow-500'; // Color para 'partial'
+                    barTextColor = 'text-yellow-700';
+                    barText = `Despachado Parcial (${totalDespachado}/${totalSolicitado})`;
+                } else if (overallStatus === 'delivered') {
+                    barColor = 'bg-green-600'; // Color para 'delivered'
+                    barTextColor = 'text-green-700';
+                    barText = `Material Despachado (${totalDespachado}/${totalSolicitado})`;
+                }
+
+                html = `
+                    <div class="flex justify-between mb-1">
+                        <span class="text-xs font-semibold text-gray-700">${barText}</span>
+                        <span class="text-xs font-bold ${barTextColor}">${porcentaje.toFixed(0)}%</span>
+                    </div>
+                    <div class="task-progress-bar-bg"> 
+                        <div class="task-progress-bar-fg ${barColor}" style="width: ${porcentaje.toFixed(0)}%;"></div>
+                    </div>
+                `;
+            }
         }
-
-        html += '<ul class="space-y-1 text-xs pl-5">';
-        materialSummary.forEach((summary, id) => {
-            const pendiente = summary.solicitado - summary.despachado;
-
-            html += `<li class="border-b border-gray-100 pb-1 last:border-b-0">
-                <span class="font-medium text-gray-800">${summary.name}</span>
-                <div class="pl-2">
-                   <span class="text-blue-600">Solicitado: ${summary.solicitado}</span> | 
-                   <span class="text-green-600">Despachado: ${summary.despachado}</span>
-                   ${pendiente > 0 ? `| <span class="font-bold text-red-600">Pendiente: ${pendiente}</span>` : ''}
-                </div>
-            </li>`;
-        });
-        html += '</ul>';
+        // --- FIN DE CAMBIO ---
 
         container.innerHTML = html;
+
 
     }, (error) => {
         console.error(`Error al cargar estado de material para tarea ${taskId}:`, error);
