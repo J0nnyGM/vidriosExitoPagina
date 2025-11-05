@@ -6,6 +6,7 @@ import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-messaging.js";
+import { initHerramientas, resetToolViewAndLoad } from './herramientas.js';
 
 // --- CONFIGURACIÓN Y ESTADO ---
 
@@ -1445,6 +1446,76 @@ function switchProjectTab(tabName) {
     syncTabsState(tabName);
 }
 
+
+/**
+ * Carga la pestaña de "Información General" en la vista de detalles del proyecto.
+ * Rellena los campos de resumen financiero, fechas y avance.
+ */
+async function loadProjectInfoTab() {
+    if (!currentProject) return;
+
+    // --- Referencias a los elementos del DOM (basado en index.html) ---
+    const infoInitialContract = document.getElementById('info-initial-contract-value');
+    const infoContracted = document.getElementById('info-contracted-value');
+    const infoExecuted = document.getElementById('info-executed-value');
+    const pricingModelEl = document.getElementById('project-details-pricingModel');
+
+    const startDateEl = document.getElementById('project-details-startDate');
+    const kickoffDateEl = document.getElementById('project-kickoffDate');
+    const endDateEl = document.getElementById('project-endDate');
+
+    const anticipoTotalEl = document.getElementById('info-anticipo-total');
+    const anticipoAmortizadoEl = document.getElementById('info-anticipo-amortizado');
+    const anticipoPorAmortizarEl = document.getElementById('info-anticipo-por-amortizar');
+
+    const installedItemsEl = document.getElementById('project-details-installedItems');
+    const executedM2El = document.getElementById('project-details-executedM2');
+
+    try {
+        // --- 1. Obtener Resumen de Avance (usamos el pre-calculado) ---
+        const stats = currentProject.progressSummary || { totalM2: 0, executedM2: 0, totalItems: 0, executedItems: 0, executedValue: 0 };
+
+        // --- 2. Calcular Valor Contratado (Ítems) ---
+        const contractedValue = await calculateProjectContractedValue(currentProject.id);
+
+        // --- 3. Calcular Amortización ---
+        const paymentsQuery = query(collection(db, "projects", currentProject.id, "payments"));
+        const paymentsSnapshot = await getDocs(paymentsQuery);
+        const allPayments = paymentsSnapshot.docs.map(doc => doc.data());
+
+        const totalAnticipo = currentProject.advance || 0;
+        const anticipoPayments = allPayments.filter(p => p.type === 'abono_anticipo' || p.type === 'amortizacion_anticipo');
+        const totalAmortizado = anticipoPayments.reduce((sum, p) => sum + p.amount, 0);
+
+        // --- 4. Rellenar los campos ---
+        if (infoInitialContract) infoInitialContract.textContent = currencyFormatter.format(currentProject.value || 0);
+        if (infoContracted) infoContracted.textContent = currencyFormatter.format(contractedValue);
+        if (infoExecuted) infoExecuted.textContent = currencyFormatter.format(stats.executedValue || 0);
+
+        if (pricingModelEl) {
+            pricingModelEl.textContent = currentProject.pricingModel === 'incluido'
+                ? 'Suministro e Instalación (Incluido)'
+                : 'Suministro e Instalación (Separado)';
+        }
+
+        if (startDateEl) startDateEl.textContent = currentProject.startDate ? new Date(currentProject.startDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A';
+        if (kickoffDateEl) kickoffDateEl.textContent = currentProject.kickoffDate ? new Date(currentProject.kickoffDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A';
+        if (endDateEl) endDateEl.textContent = currentProject.endDate ? new Date(currentProject.endDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A';
+
+        if (anticipoTotalEl) anticipoTotalEl.textContent = currencyFormatter.format(totalAnticipo);
+        if (anticipoAmortizadoEl) anticipoAmortizadoEl.textContent = currencyFormatter.format(totalAmortizado);
+        if (anticipoPorAmortizarEl) anticipoPorAmortizarEl.textContent = currencyFormatter.format(totalAnticipo - totalAmortizado);
+
+        if (installedItemsEl) installedItemsEl.textContent = `${stats.executedItems} / ${stats.totalItems}`;
+        if (executedM2El) executedM2El.textContent = `${stats.executedM2.toFixed(2)} m² / ${stats.totalM2.toFixed(2)} m²`;
+
+    } catch (error) {
+        console.error("Error al cargar la pestaña de Información General:", error);
+        // Opcional: Rellenar con texto de error
+        if (infoContracted) infoContracted.textContent = "Error";
+    }
+}
+
 /**
  * Muestra la vista de detalles del proyecto.
  * Acepta un objeto de proyecto (desde el dashboard) O un projectId (desde notificaciones).
@@ -1453,76 +1524,83 @@ function switchProjectTab(tabName) {
  * @param {string} [openTaskId] - (Opcional) El ID de una tarea para abrir automáticamente.
  */
 async function showProjectDetails(project, defaultTabOrProjectId = 'info-general', openTaskId = null) {
-    const projectTitle = document.getElementById('project-detail-title');
-    const projectPOBtn = document.getElementById('project-po-btn');
-    showView('project-details');
+
+    // IDs de tu index.html
+    const projectTitle = document.getElementById('project-details-name');
+    const projectBuilder = document.getElementById('project-details-builder');
+
+    showView('project-details'); // <-- Esto necesita la corrección del Paso 3
     loadingOverlay.classList.remove('hidden');
 
-    let defaultTab = 'info-general'; // Valor por defecto
+    let defaultTab = 'info-general';
 
     try {
-        // --- INICIO DE CORRECCIÓN (Lógica de Carga) ---
-        // Caso 1: Se llama desde Dashboard (project = objeto, defaultTabOrProjectId = 'info-general')
+        // Lógica de Carga (sin cambios)
         if (project && typeof project === 'object') {
             console.log("Cargando proyecto desde objeto (Dashboard)");
-            defaultTab = defaultTabOrProjectId; // El segundo arg es la pestaña
-        } 
-        // Caso 2: Se llama desde Notificación (project = null, defaultTabOrProjectId = projectId, openTaskId = taskId)
+            defaultTab = defaultTabOrProjectId;
+        }
         else if (project === null && typeof defaultTabOrProjectId === 'string') {
             const projectId = defaultTabOrProjectId;
             console.log(`Cargando proyecto desde ID (Notificación): ${projectId}`);
-            
+
             const projectDoc = await getDoc(doc(db, "projects", projectId));
             if (projectDoc.exists()) {
                 project = { id: projectDoc.id, ...projectDoc.data() };
             } else {
                 throw new Error("El proyecto no existe.");
             }
-            // 'openTaskId' ya está seteado por el tercer argumento
-            
+
         } else {
             throw new Error("No se proporcionó proyecto ni ID de proyecto.");
         }
-        // --- FIN DE CORRECCIÓN ---
 
-        // 'project' ahora es un objeto válido
-        currentProject = { id: project.id, ...project }; // Esta era la línea 1452
-        projectTitle.textContent = currentProject.name;
-        projectPOBtn.classList.toggle('hidden', !currentProject.poDocId);
-        projectPOBtn.dataset.poDocId = currentProject.poDocId || '';
+        currentProject = { id: project.id, ...project };
+
+        if (projectTitle) {
+            projectTitle.textContent = currentProject.name;
+        }
+        if (projectBuilder) {
+            projectBuilder.textContent = currentProject.builderName || 'Constructora no especificada';
+        }
 
         materialRequestReturnContext = { view: 'proyecto-detalle', projectId: currentProject.id };
 
-        // Cargar el valor contratado
-        const contractedValue = await calculateProjectContractedValue(currentProject.id);
-        document.getElementById('project-detail-value').textContent = currencyFormatter.format(contractedValue);
-        document.getElementById('project-detail-progress-value').textContent = 'Calculando...';
-
         setupResponsiveTabs();
-        
-        // Cargar pestañas
-        loadProjectInfoTab();
-        loadItems(currentProject.id);
-        loadMaterialsTab(currentProject.id);
-        loadFinanceTab(currentProject.id);
-        loadPeopleOfInterestTab(currentProject.id);
-        loadDocumentsTab(currentProject.id);
-        loadOtrosSiTab(currentProject.id);
-        loadVariosTab(currentProject.id);
 
-        // --- INICIO DE CORRECCIÓN (Manejo de openTaskId) ---
+        // --- INICIO DE LA CORRECCIÓN DE LLAMADAS A FUNCIONES ---
+
+        // Cargar pestañas
+        loadProjectInfoTab(); // <--- Esta es la función del Paso 1
+
+        loadItems(currentProject.id); // Esta ya existía y estaba bien
+
+        // CORREGIDO: 'loadMaterialsTab' espera el objeto completo, no solo el ID.
+        loadMaterialsTab(currentProject);
+
+        loadCortes(currentProject); // Esta ya estaba bien
+        loadPayments(currentProject); // Esta ya estaba bien
+
+        // CORREGIDO: Tu función se llama 'loadPeopleOfInterest' (sin Tab)
+        loadPeopleOfInterest(currentProject.id);
+
+        // CORREGIDO: Tu función se llama 'renderInteractiveDocumentCards'
+        renderInteractiveDocumentCards(currentProject.id);
+
+        // --- FIN DE LA CORRECCIÓN DE LLAMADAS A FUNCIONES ---
+
+
+        // Lógica de 'openTaskId' (sin cambios)
         if (openTaskId) {
-            // Si se pasó un openTaskId (desde la notificación), abrimos esa tarea
-            switchProjectTab('items'); // Forzamos la pestaña de 'items'
+            switchProjectTab('items');
             console.log(`Abriendo tarea ${openTaskId} desde la notificación...`);
             setTimeout(() => {
                 openTaskDetailsModal(openTaskId);
-            }, 500); // Damos tiempo a que se renderice la pestaña
+            }, 500);
         } else {
-            // Comportamiento normal: abrir la pestaña solicitada
             switchProjectTab(defaultTab);
         }
-        // --- FIN DE CORRECCIÓN ---
+        // --- FIN DE LÓGICA ---
 
     } catch (error) {
         console.error("Error al mostrar detalles del proyecto:", error);
@@ -3846,6 +3924,247 @@ async function openMainModal(type, data = {}) {
                 modalForm.querySelector('input[name="date"]').value = new Date().toISOString().split('T')[0];
             }, 100);
             break;
+
+        case 'new-tool': {
+            title = 'Nueva Herramienta';
+            btnText = 'Crear Herramienta';
+            btnClass = 'bg-blue-500 hover:bg-blue-600';
+
+            // --- NUEVO DISEÑO DE HTML MODERNO ---
+            bodyHtml = `
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        
+                        <div class="md:col-span-1">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Foto (Requerida)</label>
+                            
+                            <div id="new-tool-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
+                                
+                                <div id="new-tool-preview" class="hidden absolute inset-0">
+                                    <img src="" id="new-tool-img-preview" class="w-full h-full object-contain">
+                                </div>
+                                
+                                <div id="new-tool-prompt" class="text-center p-4">
+                                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                                    </svg>
+                                    <p class="mt-2 text-sm text-gray-500">Haz clic para subir una foto</p>
+                                </div>
+                            </div>
+                            
+                            <input type="file" id="tool-photo" name="photo" required accept="image/*" class="hidden">
+                        </div>
+                        
+                        <div class="md:col-span-2 space-y-4 pt-5">
+                            <div>
+                                <label for="tool-name" class="block text-sm font-medium text-gray-700">Nombre de la Herramienta</label>
+                                <input type="text" id="tool-name" name="name" required class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Taladro Percutor">
+                            </div>
+                            <div>
+                                <label for="tool-reference" class="block text-sm font-medium text-gray-700">Referencia / Código (Opcional)</label>
+                                <input type="text" id="tool-reference" name="reference" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: MAK-123">
+                            </div>
+                            <p class="text-xs text-gray-500 pt-2">La herramienta se creará con estado "Disponible" en "Bodega".</p>
+                        </div>
+                    </div>
+                `;
+
+            // --- LÓGICA JS PARA LA VISTA PREVIA ---
+            setTimeout(() => {
+                const dropzone = document.getElementById('new-tool-dropzone');
+                const fileInput = document.getElementById('tool-photo');
+                const previewContainer = document.getElementById('new-tool-preview');
+                const previewImg = document.getElementById('new-tool-img-preview');
+                const promptEl = document.getElementById('new-tool-prompt');
+
+                if (!dropzone) return; // Seguridad por si el modal se cierra rápido
+
+                // 1. Abrir el selector de archivos al hacer clic en la zona
+                dropzone.addEventListener('click', () => {
+                    fileInput.click();
+                });
+
+                // 2. Mostrar la vista previa cuando se selecciona un archivo
+                fileInput.addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            previewImg.src = event.target.result;
+                            previewContainer.classList.remove('hidden');
+                            promptEl.classList.add('hidden');
+                        }
+                        reader.readAsDataURL(file);
+                    }
+                });
+            }, 100); // Espera a que el modal se renderice
+
+            break;
+        }
+
+        case 'edit-tool': {
+            title = 'Editar Herramienta (Info Básica)';
+            btnText = 'Guardar Cambios';
+            btnClass = 'bg-yellow-500 hover:bg-yellow-600';
+
+            // --- INICIO DE MODIFICACIÓN: DISEÑO 2 COLUMNAS ---
+            bodyHtml = `
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        
+                        <div class="md:col-span-1">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Foto Actual</label>
+                            <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden border">
+                                <img src="${data.photoURL || 'https://via.placeholder.com/300'}" 
+                                     alt="${data.name || ''}" 
+                                     class="w-full h-full object-contain">
+                            </div>
+                        </div>
+                        
+                        <div class="md:col-span-2 space-y-4 pt-5">
+                            <div>
+                                <label for="tool-name" class="block text-sm font-medium text-gray-700">Nombre de la Herramienta</label>
+                                <input type="text" id="tool-name" name="name" required class="mt-1 w-full border rounded-md p-2" value="${data.name || ''}">
+                            </div>
+                            <div>
+                                <label for="tool-reference" class="block text-sm font-medium text-gray-700">Referencia / Código (Opcional)</label>
+                                <input type="text" id="tool-reference" name="reference" class="mt-1 w-full border rounded-md p-2" value="${data.reference || ''}">
+                            </div>
+                            <p class="text-xs text-gray-500 pt-2">El estado y la asignación se gestionan mediante las acciones "Asignar" y "Recibir".</p>
+                        </div>
+                    </div>
+                `;
+            // --- FIN DE MODIFICACIÓN ---
+            break;
+        }
+
+        case 'assign-tool': {
+            title = 'Asignar Herramienta';
+            btnText = 'Confirmar Asignación';
+            btnClass = 'bg-green-500 hover:bg-green-600';
+
+            // Generamos las opciones de usuarios
+            const userOptions = Array.from(usersMap.entries())
+                .filter(([id, user]) => user.status === 'active') // Solo usuarios activos
+                .map(([id, user]) => `<option value="${id}">${user.firstName} ${user.lastName}</option>`)
+                .join('');
+
+            // --- INICIO DE MODIFICACIÓN ---
+            bodyHtml = `
+                    <div class="space-y-4">
+                        <input type="hidden" name="toolName" value="${data.name || ''}">
+                        <p class="text-sm">Asignando herramienta: <strong>${data.name || 'N/A'}</strong></p>
+                        <div>
+                            <label for="tool-assignedTo" class="block text-sm font-medium">Seleccionar Colaborador</label>
+                            <select id="tool-assignedTo" name="assignedTo" required class="mt-1 w-full border rounded-md p-2 bg-white">
+                                <option value="" disabled selected>Seleccione un usuario...</option>
+                                ${userOptions}
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label for="tool-assign-photo" class="block text-sm font-medium">Foto de Evidencia (Entrega)</label>
+                            <input type="file" id="tool-assign-photo" name="assignPhoto" required accept="image/*" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                        </div>
+
+                        <div>
+                            <label for="tool-assign-comments" class="block text-sm font-medium">Observaciones (Opcional)</label>
+                            <textarea id="tool-assign-comments" name="assignComments" rows="3" class="mt-1 w-full border rounded-md p-2" placeholder="Describa el estado de entrega, acuerdos, etc..."></textarea>
+                        </div>
+                    </div>
+                `;
+            // --- FIN DE MODIFICACIÓN ---
+            break;
+        }
+
+        case 'return-tool': {
+            title = 'Recibir Herramienta (Devolución)';
+            btnText = 'Confirmar Devolución';
+            btnClass = 'bg-blue-500 hover:bg-blue-600';
+
+            const assignedToUser = usersMap.get(data.assignedToId);
+            const assignedToName = assignedToUser ? `${assignedToUser.firstName} ${assignedToUser.lastName}` : 'N/D';
+
+            // --- INICIO DE MODIFICACIÓN: DISEÑO 2 COLUMNAS ---
+            bodyHtml = `
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        
+                        <div class="md:col-span-1">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Foto de Devolución (Req.)</label>
+                            
+                            <div id="return-tool-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
+                                
+                                <div id="return-tool-preview" class="hidden absolute inset-0">
+                                    <img src="" id="return-tool-img-preview" class="w-full h-full object-contain">
+                                </div>
+                                
+                                <div id="return-tool-prompt" class="text-center p-4">
+                                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                                    <p class="mt-2 text-sm text-gray-500">Subir foto de devolución</p>
+                                </div>
+                            </div>
+                            <input type="file" id="tool-return-photo" name="returnPhoto" required accept="image/*" class="hidden">
+                        </div>
+                        
+                        <div class="md:col-span-2 space-y-4">
+                            <input type="hidden" name="toolName" value="${data.name || ''}">
+                            <input type="hidden" name="originalAssigneeId" value="${data.assignedToId || ''}">
+                            
+                            <div>
+                                <p class="text-sm font-medium text-gray-700">Recibiendo:</p>
+                                <p class="text-lg font-semibold text-gray-900">${data.name || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-700">Devuelta por:</p>
+                                <p class="text-lg font-semibold text-gray-900">${assignedToName}</p>
+                            </div>
+
+                            <div>
+                                <label for="tool-return-status" class="block text-sm font-medium text-gray-700">Estado de Devolución</label>
+                                <select id="tool-return-status" name="returnStatus" required class="mt-1 w-full border rounded-md p-2 bg-white">
+                                    <option value="bueno" selected>Bueno (Operativo)</option>
+                                    <option value="con_defecto">Con Defecto (Funciona pero requiere revisión)</option>
+                                    <option value="dañado">Dañado (No operativo, para reparación)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="tool-return-comments" class="block text-sm font-medium text-gray-700">Comentarios (Opcional)</label>
+                                <textarea id="tool-return-comments" name="returnComments" rows="3" class="mt-1 w-full border rounded-md p-2" placeholder="Describa cualquier defecto o detalle..."></textarea>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+            // --- AÑADIMOS LA LÓGICA JS PARA LA VISTA PREVIA ---
+            setTimeout(() => {
+                const dropzone = document.getElementById('return-tool-dropzone');
+                const fileInput = document.getElementById('tool-return-photo');
+                const previewContainer = document.getElementById('return-tool-preview');
+                const previewImg = document.getElementById('return-tool-img-preview');
+                const promptEl = document.getElementById('return-tool-prompt');
+
+                if (!dropzone) return;
+
+                dropzone.addEventListener('click', () => {
+                    fileInput.click();
+                });
+
+                fileInput.addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            previewImg.src = event.target.result;
+                            previewContainer.classList.remove('hidden');
+                            promptEl.classList.add('hidden');
+                        }
+                        reader.readAsDataURL(file);
+                    }
+                });
+            }, 100); // Espera a que el modal se renderice
+
+            // --- FIN DE MODIFICACIÓN ---
+            break;
+        }
+
         case 'addItem':
         case 'editItem': {
             const isEditing = type === 'editItem';
@@ -4546,6 +4865,7 @@ async function openMainModal(type, data = {}) {
 
             break; // Fin del case 'new-task'
         }
+
         case 'editProfile':
             title = 'Mi Perfil'; btnText = 'Guardar Cambios'; btnClass = 'bg-blue-500 hover:bg-blue-600';
             bodyHtml = `<div class="space-y-4">
@@ -4569,10 +4889,16 @@ async function openMainModal(type, data = {}) {
 function closeMainModal() { mainModal.style.display = 'none'; }
 document.getElementById('modal-cancel-btn').addEventListener('click', closeMainModal);
 modalForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
     const data = Object.fromEntries(new FormData(modalForm).entries());
     const type = modalForm.dataset.type;
     const id = modalForm.dataset.id;
+
+    if (['new-tool', 'edit-tool', 'assign-tool', 'return-tool'].includes(type)) {
+        return;
+    }
+
+
+    e.preventDefault();
 
     if (type === 'new-task') {
         await createTask(data); // Llama a la nueva función para crear la tarea
@@ -6298,13 +6624,13 @@ async function handleDeletePhoto(subItemId, itemId, installerId, projectId) {
 function timeAgoFormat(date) {
     // Verificación de seguridad por si la fecha es nula
     if (!date || typeof date.toDate !== 'function') {
-         // Si 'date' es un objeto Timestamp de Firestore, conviértelo
+        // Si 'date' es un objeto Timestamp de Firestore, conviértelo
         if (date && typeof date.toDate === 'function') {
             date = date.toDate();
         } else if (!(date instanceof Date)) {
             // Si sigue sin ser una fecha, no podemos formatear
-             console.warn("timeAgoFormat recibió una fecha inválida:", date);
-             return "hace un momento";
+            console.warn("timeAgoFormat recibió una fecha inválida:", date);
+            return "hace un momento";
         }
     }
 
@@ -6373,7 +6699,7 @@ function loadNotifications() {
 
         // Ordenar por fecha (más nuevas primero)
         allNotifications.sort((a, b) => {
-             // Manejar Timestamps de Firestore
+            // Manejar Timestamps de Firestore
             const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date();
             const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date();
             return dateB - dateA;
@@ -6393,10 +6719,10 @@ function loadNotifications() {
             li.className = 'border-b border-gray-200 last:border-b-0';
 
             // Usamos la función timeAgoFormat que acabamos de definir
-            const timeAgo = timeAgoFormat(notification.createdAt); 
+            const timeAgo = timeAgoFormat(notification.createdAt);
             let iconSvg = '';
             let title = 'Notificación';
-            
+
             // Iconos y títulos (lógica existente)
             switch (notification.type) {
                 case 'task_comment':
@@ -6414,7 +6740,7 @@ function loadNotifications() {
                 default:
                     iconSvg = `<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>`;
             }
-            
+
             // Renderizar el HTML de la notificación
             li.innerHTML = `
                 <div class="flex items-start px-3 py-1 hover:bg-gray-50">
@@ -6443,7 +6769,7 @@ function loadNotifications() {
             listEl.appendChild(li);
         });
     };
-    
+
     // --- 2. LISTENERS DE FIRESTORE (Sin cambios) ---
     let personalNotifs = [];
     let channelNotifs = [];
@@ -6455,7 +6781,7 @@ function loadNotifications() {
         renderNotifications(personalNotifs, channelNotifs);
     }, (error) => console.error("Error en listener personal:", error));
 
-    let unsubscribeChannel = () => {};
+    let unsubscribeChannel = () => { };
     if (currentUserRole === 'admin' || currentUserRole === 'bodega') {
         const channelQuery = query(collection(db, "notifications"), where("channel", "==", "admins_bodega"), where("read", "==", false));
         unsubscribeChannel = onSnapshot(channelQuery, (snapshot) => {
@@ -6490,7 +6816,7 @@ function loadNotifications() {
         // Acción: Navegar
         if (action === 'navigate-notification') {
             const { projectId, taskId, itemId, subitemId, link } = actionElement.dataset;
-            
+
             // --- INICIO DE DEPURACIÓN ---
             console.log("DEBUG: Clic en 'navigate-notification'");
             console.log("DEBUG: projectId:", projectId);
@@ -6526,10 +6852,10 @@ function loadNotifications() {
                         // 3. Cargar el sub-ítem
                         const subItemRef = doc(db, "projects", projectId, "items", itemId, "subItems", subitemId);
                         const subItemSnap = await getDoc(subItemRef);
-                        
+
                         if (subItemSnap.exists()) {
                             // 4. ¡ABRIR LA VENTANA FLOTANTE!
-                            openProgressModal(subItemSnap.data()); 
+                            openProgressModal(subItemSnap.data());
                         } else {
                             throw new Error("Sub-ítem no encontrado");
                         }
@@ -6545,12 +6871,12 @@ function loadNotifications() {
             else if (link === '/catalog') {
                 console.log("DEBUG: Condición 'Catálogo' cumplida.");
                 showView('catalog');
-            } 
+            }
             // Caso: Tarea (comentario o asignación)
             else if (projectId && taskId) {
                 console.log("DEBUG: Condición 'Tarea' cumplida.");
                 showProjectDetails(null, projectId, taskId);
-            } 
+            }
             // Caso: Solo Proyecto
             else if (projectId) {
                 console.log("DEBUG: Condición 'Proyecto' cumplida.");
@@ -6614,7 +6940,12 @@ document.addEventListener('DOMContentLoaded', () => {
         proveedores: document.getElementById('proveedores-view'),
         supplierDetails: document.getElementById('supplier-details-view'),
         adminPanel: document.getElementById('admin-panel-view'),
-        projectDetails: document.getElementById('project-details-view'),
+
+        // --- INICIO DE LA CORRECCIÓN DEFINITIVA ---
+        // La clave debe tener comillas y guion para coincidir con la llamada showView('project-details')
+        'project-details': document.getElementById('project-details-view'),
+        // --- FIN DE LA CORRECCIÓN DEFINITIVA ---
+
         subItems: document.getElementById('sub-items-view'),
         corteDetails: document.getElementById('corte-details-view'),
         catalog: document.getElementById('catalog-view'),
@@ -6624,6 +6955,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     };
 
+    // Inicializamos el nuevo módulo y le pasamos las dependencias globales
+    initHerramientas(
+        db,
+        storage,
+        openMainModal,
+        closeMainModal,
+        openConfirmModal,
+        sendNotification,
+        openImageModal, // <-- AÑADE ESTA LÍNEA
+        () => currentUser,
+        () => usersMap
+    );
 
     document.getElementById('po-details-close-btn').addEventListener('click', closePurchaseOrderModal);
     document.getElementById('po-details-cancel-btn').addEventListener('click', closePurchaseOrderModal);
@@ -6784,6 +7127,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!elementWithAction) return;
 
         const action = elementWithAction.dataset.action;
+        // --- INICIO DE MODIFICACIÓN ---
+        // Si es una acción de herramienta, la ignora (herramientas.js se encarga)
+        const toolActions = ['new-tool', 'edit-tool', 'delete-tool', 'assign-tool', 'return-tool', 'view-tool-history'];
+        if (toolActions.includes(action)) {
+            return;
+        }
+        // --- FIN DE MODIFICACIÓN ---
         const elementId = elementWithAction.dataset.id || elementWithAction.dataset.corteId || elementWithAction.dataset.poId;
         const projectIdForTask = elementWithAction.dataset.projectId; // Para "Ver Proyecto" desde tarea
         const taskIdForProgress = elementWithAction.dataset.taskId; // Específico para "Registrar Avance"
@@ -7464,9 +7814,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (link) {
                 e.preventDefault();
                 const viewName = link.dataset.view;
-                if (viewName === 'tareas') { // Si se hizo clic en 'Tareas'
-                    showView('tareas');   // Muestra la vista
-                    loadTasksView();      // Carga la lógica específica de tareas
+                if (viewName === 'tareas') {
+                    showView('tareas');
+                    loadTasksView();
+                    // --- INICIO DE MODIFICACIÓN ---
+                } else if (viewName === 'herramienta') {
+                    showView('herramienta');
+                    resetToolViewAndLoad(); // <-- Llama a la nueva función de reseteo
+                    // --- FIN DE MODIFICACIÓN ---
                 } else if (viewName === 'adminPanel') {
                     showView('adminPanel');
                     loadUsers('active');
@@ -10775,4 +11130,30 @@ function loadTaskMaterialStatus(taskId, projectId, placeholderId, renderMode = '
     materialStatusListeners.set(placeholderId, unsubscribe);
     // También la añadimos al listener global por si acaso
     activeListeners.push(unsubscribe);
+}
+
+/**
+ * Crea un documento de notificación en Firestore para un usuario específico.
+ * @param {string} userId - ID del usuario a notificar.
+ * @param {string} title - Título de la notificación.
+ * @param {string} message - Mensaje de la notificación.
+ * @param {string} view - La vista a la que debe navegar (ej: 'tareas', 'herramienta').
+ */
+async function sendNotification(userId, title, message, view) {
+    if (!userId || !message) return;
+
+    try {
+        // Asumimos que la colección de notificaciones está en la raíz
+        await addDoc(collection(db, "notifications"), {
+            userId: userId,
+            title: title,
+            message: message,
+            link: `/${view}`, // Usamos un link genérico
+            read: false,
+            createdAt: serverTimestamp(),
+            type: 'system_alert' // Un tipo genérico
+        });
+    } catch (error) {
+        console.error("Error al enviar notificación:", error);
+    }
 }

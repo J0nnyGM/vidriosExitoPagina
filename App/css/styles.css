@@ -669,3 +669,25 @@ dl dd span.block:last-child {
     /* Evita que el usuario seleccione el texto mientras desliza */
     user-select: none;
 }
+
+/* --- AÑADE ESTAS LÍNEAS AL FINAL DEL ARCHIVO --- */
+@tailwind utilities;
+
+.z-60 {
+    @apply z-[60];
+}
+
+/*
+  Esto fuerza al contenedor de Choices.js a tener un z-index
+  cuando está activo, para que el menú flotante aparezca 
+  por encima de otro contenido en la página (como las tarjetas).
+*/
+.choices__inner {
+  position: relative;
+  z-index: 2;
+}
+
+.choices__list--dropdown {
+  position: relative;
+  z-index: 30; /* Suficientemente alto para estar sobre el grid, pero debajo de los modales (z-50) */
+}

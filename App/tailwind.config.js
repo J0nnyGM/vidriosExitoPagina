@@ -2,10 +2,24 @@
 module.exports = {
   content: [
     "./index.html",
-    "./js/app.js"
+    "./js/app.js",
+    "./js/herramientas.js" // <-- Asegúrate que esta línea esté
   ],
   theme: {
-    extend: {},
+    extend: {
+        // --- INICIO DE MODIFICACIÓN ---
+        // Añade este bloque para crear la clase z-60
+        zIndex: {
+            '60': '60',
+        },
+        // --- FIN DE MODIFICACIÓN ---
+        aspectRatio: {
+            '1': '1',
+            'square': '1 / 1',
+        }
+    },
   },
-  plugins: [],
+  plugins: [
+    require('@tailwindcss/aspect-ratio'), // <-- Asegúrate que esta línea esté
+  ],
 }
