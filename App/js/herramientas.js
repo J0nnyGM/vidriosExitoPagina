@@ -184,33 +184,29 @@ export function initHerramientas(
 
     // --- INICIO DE CORRECCIÓN ---
 
-    // 4. Poblar y Configurar Filtros UNA SOLA VEZ
+    // 4. Configurar Filtros (Poblarlos se hará por separado)
     const assigneeFilterSelect = document.getElementById('tool-assignee-filter');
     if (assigneeFilterSelect && !toolAssigneeChoices) { // Solo si no se ha inicializado
 
-        // 4a. Poblar el HTML del <select>
-        const usersMap = getUsersMap();
-        const userOptions = Array.from(usersMap.entries())
-            // Arregla el bug del "all" duplicado
-            .filter(([id, user]) =>
-                user.status === 'active' &&
-                id.toLowerCase() !== 'all' &&
-                user.firstName.toLowerCase() !== 'all'
-            )
-            .sort((a, b) => a[1].firstName.localeCompare(b[1].firstName))
-            .map(([id, user]) => `<option value="${id}">${user.firstName} ${user.lastName}</option>`)
-            .join('');
+        // 4a. Dejar el HTML del <select> vacío.
+        assigneeFilterSelect.innerHTML = ''; // ¡Completamente vacío!
 
-        assigneeFilterSelect.innerHTML = '<option value="all">Todos</option><option value="bodega">En Bodega</option>' + userOptions;
-
-        // 4b. Inicializar Choices.js UNA SOLA VEZ
+        // 4b. Inicializar Choices.js con las opciones estáticas
         toolAssigneeChoices = new Choices(assigneeFilterSelect, {
             itemSelectText: 'Seleccionar',
             searchPlaceholderValue: 'Buscar colaborador...',
             allowHTML: false,
+            // ¡CAMBIO CLAVE! Añadimos las opciones estáticas aquí
+            choices: [
+                { value: 'all', label: 'Todos' }
+                // (La línea de "bodega" se ha eliminado)
+            ]
         });
 
-        // 4c. Conectar el 'change' event A LA INSTANCIA de Choices.js
+        // 4c. Seleccionar "Todos" por defecto INMEDIATAMENTE
+        toolAssigneeChoices.setChoiceByValue('all');
+
+        // 4d. (Era 4c) Conectar el 'change' event A LA INSTANCIA de Choices.js
         toolAssigneeChoices.passedElement.element.addEventListener('change', () => {
             loadHerramientaView();
         });
@@ -223,13 +219,11 @@ export function initHerramientas(
             const button = e.target.closest('.tool-tab-button');
             if (button && !button.classList.contains('active')) {
 
-                const statusFilter = button.dataset.statusFilter;
+                // const statusFilter = button.dataset.statusFilter; // <--- Línea eliminada
 
-                // Si la nueva pestaña NO es "asignada",
-                // reseteamos el filtro de asignación ANTES de recargar.
-                if (statusFilter !== 'asignada' && toolAssigneeChoices) {
-                    toolAssigneeChoices.setValue([{ value: 'all', label: 'Todos' }]);
-                }
+                // --- INICIO DE CORRECCIÓN ---
+                // ¡El bloque 'if' que estaba aquí se ha eliminado!
+                // --- FIN DE CORRECCIÓN ---
 
                 // Actualizar la UI de las pestañas
                 tabsNav.querySelectorAll('.tool-tab-button').forEach(btn => {
@@ -260,6 +254,36 @@ export function initHerramientas(
 }
 
 /**
+ * Puebla la lista de usuarios en el filtro de asignación de herramientas.
+ * Debe ser llamada por app.js DESPUÉS de que el usersMap esté listo.
+ */
+export function updateToolFilterOptions(usersMap) {
+    if (!toolAssigneeChoices) {
+        console.warn("Choices.js de Herramientas (toolAssigneeChoices) no está listo.");
+        return;
+    }
+
+    // 1. Generar SÓLO las opciones de usuario
+    const userOptions = Array.from(usersMap.entries())
+        .filter(([id, user]) =>
+            user.status === 'active' &&
+            id.toLowerCase() !== 'all' &&
+            user.firstName.toLowerCase() !== 'all'
+        )
+        .sort((a, b) => a[1].firstName.localeCompare(b[1].firstName))
+        .map(([id, user]) => ({
+            value: id,
+            label: `${user.firstName} ${user.lastName}`
+        }));
+
+    // 2. Añadir SÓLO los usuarios a la lista existente
+    // El 'false' al final significa AÑADIR, no reemplazar.
+    toolAssigneeChoices.setChoices(userOptions, 'value', 'label', false);
+
+    // 3. (La línea de setChoiceByValue se elimina de aquí, ya está en init)
+}
+
+/**
  * Resetea la vista de Herramientas a su estado por defecto y carga los datos.
  * Esta función es llamada por app.js cuando se hace clic en el menú.
  */
@@ -286,7 +310,8 @@ export function resetToolViewAndLoad() {
 
     if (toolAssigneeChoices) {
         // Arregla el bug de "all" vs "Todos"
-        toolAssigneeChoices.setValue([{ value: 'all', label: 'Todos' }]);
+        toolAssigneeChoices.setChoiceByValue('all');
+
     }
 
     // Oculta asignación, expande búsqueda
@@ -328,6 +353,14 @@ export function loadHerramientaView() {
         searchContainer.classList.remove('md:col-span-2');
         searchContainer.classList.add('md:col-span-3');
         assigneeContainer.classList.add('hidden');
+
+        // --- INICIO DE LA CORRECCIÓN ---
+        // Si el filtro se va a ocultar, lo reseteamos a "Todos".
+        if (toolAssigneeChoices) {
+            toolAssigneeChoices.setChoiceByValue('all');
+
+        }
+        // --- FIN DE LA CORRECCIÓN ---
     }
 
     // 3. (Query a Firestore, sin cambios)

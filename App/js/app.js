@@ -6,8 +6,7 @@ import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-messaging.js";
-import { initHerramientas, resetToolViewAndLoad } from './herramientas.js';
-
+import { initHerramientas, resetToolViewAndLoad, updateToolFilterOptions } from './herramientas.js';
 // --- CONFIGURACIÓN Y ESTADO ---
 
 const firebaseConfig = {
@@ -300,6 +299,11 @@ async function loadUsersMap() {
     querySnapshot.forEach((doc) => {
         usersMap.set(doc.id, doc.data());
     });
+
+    // --- INICIO DE LA LÍNEA A AÑADIR ---
+    // Aquí llamamos a la función para poblar el filtro de herramientas
+    updateToolFilterOptions(usersMap);
+    // --- FIN DE LA LÍNEA A AÑADIR ---
 }
 
 // --- LÓGICA DEL DASHBOARD ---
