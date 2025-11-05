@@ -12,7 +12,8 @@ import {
     getDoc,
     writeBatch,
     getDocs,
-    where // <-- Importación 'where' para las pestañas
+    where, // <-- Importación 'where' para las pestañas
+    collectionGroup // <-- AÑADIR ESTA LÍNEA
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
 // --- AÑADIMOS IMPORTACIONES DE STORAGE ---
@@ -22,6 +23,15 @@ import {
     uploadBytes,
     getDownloadURL
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
+
+export const TOOL_CATEGORIES = [
+    { value: "electrica", label: "Herramienta Eléctrica" },
+    { value: "manual", label: "Herramienta Manual" },
+    { value: "medicion", label: "Equipo de Medición" },
+    { value: "seguridad", label: "Equipo de Seguridad" },
+    { value: "andamios", label: "Andamios y Escaleras" },
+    { value: "otro", label: "Otro" }
+];
 
 // --- Variables locales del módulo (para almacenar dependencias) ---
 let db;
@@ -35,6 +45,7 @@ let getUsersMap;
 
 let unsubscribeTools = null;
 let toolAssigneeChoices = null; // <-- Para el buscador interactivo
+let toolCategoryChoices = null; // <-- AÑADE ESTA LÍNEA
 
 // --- INICIO: Nueva Función de Helper para Redimensionar ---
 /**
@@ -145,6 +156,15 @@ export function initHerramientas(
                 handleViewToolHistory(toolId, toolName);
                 break;
 
+            case 'register-maintenance':
+                handleOpenToolModal(toolId, 'register-maintenance');
+                break;
+            case 'decommission-tool':
+                openConfirmModal(`¿Seguro que quieres "Dar de Baja" (retirar) la herramienta "${toolName}"? Esta acción guardará la herramienta en el historial de "Retiradas" y no se puede deshacer.`, () => {
+                    handleDecommissionTool(toolId);
+                });
+                break;
+
             case 'view-tool-image':
                 const imageUrl = target.dataset.url;
                 if (imageUrl) {
@@ -162,7 +182,9 @@ export function initHerramientas(
         const type = modalForm.dataset.type;
         const form = e.target;
 
-        if (['new-tool', 'edit-tool', 'assign-tool', 'return-tool'].includes(type)) {
+        // --- INICIO DE CORRECCIÓN ---
+        if (['new-tool', 'edit-tool', 'assign-tool', 'return-tool', 'register-maintenance'].includes(type)) {
+            // --- FIN DE CORRECCIÓN ---
 
             e.preventDefault();
 
@@ -207,9 +229,35 @@ export function initHerramientas(
         toolAssigneeChoices.setChoiceByValue('all');
 
         // 4d. (Era 4c) Conectar el 'change' event A LA INSTANCIA de Choices.js
-        toolAssigneeChoices.passedElement.element.addEventListener('change', () => {
+        assigneeFilterSelect.addEventListener('change', () => {
+            console.log('Filtro de Asignación CAMBIÓ'); // <-- Para depurar
             loadHerramientaView();
         });
+        // --- INICIO DE CÓDIGO AÑADIDO (CATEGORÍA) ---
+        // 4e. Inicializar el filtro de Categoría
+        const categoryFilterSelect = document.getElementById('tool-category-filter');
+        if (categoryFilterSelect && !toolCategoryChoices) {
+            // Creamos las opciones, añadiendo "Todas" al principio
+            const categoryOptions = [
+                { value: 'all', label: 'Todas las Categorías' },
+                ...TOOL_CATEGORIES
+            ];
+
+            toolCategoryChoices = new Choices(categoryFilterSelect, {
+                itemSelectText: 'Seleccionar',
+                allowHTML: false,
+                choices: categoryOptions,
+                searchEnabled: false,
+            });
+
+            toolCategoryChoices.setChoiceByValue('all'); // Por defecto
+
+            // 4f. Conectar el 'change' event
+            categoryFilterSelect.addEventListener('change', () => {
+                console.log('Filtro de Categoría CAMBIÓ'); // <-- Para depurar
+                loadHerramientaView();
+            });
+        }
     }
 
     // 5. Conectar las PESTAÑAS (Tabs)
@@ -292,7 +340,7 @@ export function resetToolViewAndLoad() {
     const tabsNav = document.getElementById('tool-tabs-nav');
     if (tabsNav) {
         tabsNav.querySelectorAll('.tool-tab-button').forEach(btn => {
-            const isDefault = btn.dataset.statusFilter === 'disponible';
+            const isDefault = btn.dataset.statusFilter === 'resumen'; // <-- CAMBIADO
             btn.classList.toggle('active', isDefault);
             btn.classList.toggle('border-blue-500', isDefault);
             btn.classList.toggle('text-blue-600', isDefault);
@@ -334,33 +382,60 @@ export function loadHerramientaView() {
     const gridContainer = document.getElementById('tools-grid-container');
     const searchContainer = document.getElementById('tool-search-container');
     const assigneeContainer = document.getElementById('tool-assignee-container');
+    const dashboardContainer = document.getElementById('tool-dashboard-container');
+    const categoryContainer = document.getElementById('tool-category-container');
+    const categoryFilter = (toolCategoryChoices && toolCategoryChoices.getValue(true)) ? toolCategoryChoices.getValue(true) : 'all';
 
-    // Quitamos la dependencia de 'assigneeFilterSelect' ya que 'toolAssigneeChoices' es global
-    if (!gridContainer || !searchContainer || !assigneeContainer || !toolAssigneeChoices) return;
+    const filtersBar = document.getElementById('tool-filter-bar'); // <-- ID Correcto
+
+    if (!gridContainer || !searchContainer || !assigneeContainer || !toolAssigneeChoices || !dashboardContainer || !filtersBar || !categoryContainer) return; // <-- AÑADIDO
     if (unsubscribeTools) unsubscribeTools();
 
     // 1. Leer los valores actuales de TODOS los filtros
-    const statusFilter = document.querySelector('#tool-tabs-nav .active')?.dataset.statusFilter || 'disponible';
+    const statusFilter = document.querySelector('#tool-tabs-nav .active')?.dataset.statusFilter || 'resumen'; // <-- CAMBIADO
     const searchTerm = document.getElementById('tool-search-input').value.toLowerCase();
     const assigneeFilter = toolAssigneeChoices.getValue(true) || 'all';
 
+    // --- INICIO DE CORRECCIÓN DE LÓGICA ---
     // 2. Lógica de Layout (basada en la pestaña activa)
+    if (statusFilter === 'resumen') {
+        // Ocultamos todo lo demás y mostramos el dashboard
+        searchContainer.classList.add('hidden');
+        assigneeContainer.classList.add('hidden');
+        filtersBar.classList.add('hidden');
+        categoryContainer.classList.add('hidden'); // <-- AÑADIDO
+        gridContainer.classList.add('hidden');
+        dashboardContainer.classList.remove('hidden');
+
+        // Llamamos a la nueva función que carga el dashboard
+        loadToolDashboard(dashboardContainer);
+        return; // Detenemos la ejecución aquí
+
+    } else {
+        // Mostramos la vista de cuadrícula/filtros y ocultamos el dashboard
+        searchContainer.classList.remove('hidden');
+        filtersBar.classList.remove('hidden'); // <-- Corregido
+        categoryContainer.classList.remove('hidden'); // <-- AÑADIDO
+        gridContainer.classList.remove('hidden');
+        dashboardContainer.classList.add('hidden');
+    }
+    // --- FIN DE CORRECCIÓN DE LÓGICA ---
+
+    // 2b. Lógica de Layout (basada en la pestaña activa)
     if (statusFilter === 'asignada') {
-        searchContainer.classList.remove('md:col-span-3');
-        searchContainer.classList.add('md:col-span-2');
+        // Asignada: Search (2), Category (1), Assignee (1) = 4 cols
+        searchContainer.classList.remove('md:col-span-3'); // <-- CAMBIADO
+        searchContainer.classList.add('md:col-span-2'); // <-- CAMBIADO
         assigneeContainer.classList.remove('hidden');
     } else {
-        searchContainer.classList.remove('md:col-span-2');
-        searchContainer.classList.add('md:col-span-3');
+        // Disponible, etc: Search (3), Category (1) = 4 cols
+        searchContainer.classList.remove('md:col-span-2'); // <-- CAMBIADO
+        searchContainer.classList.add('md:col-span-3'); // <-- CAMBIADO
         assigneeContainer.classList.add('hidden');
 
-        // --- INICIO DE LA CORRECCIÓN ---
-        // Si el filtro se va a ocultar, lo reseteamos a "Todos".
         if (toolAssigneeChoices) {
             toolAssigneeChoices.setChoiceByValue('all');
-
         }
-        // --- FIN DE LA CORRECCIÓN ---
     }
 
     // 3. (Query a Firestore, sin cambios)
@@ -374,11 +449,11 @@ export function loadHerramientaView() {
         gridContainer.innerHTML = '';
         const usersMap = getUsersMap();
 
-        // 4. (Filtrado JS, sin cambios)
+        // 4. (Filtrado JS, modificado)
         let tools = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        if (assigneeFilter === 'bodega') {
-            tools = tools.filter(tool => !tool.assignedTo);
-        } else if (assigneeFilter !== 'all') {
+
+        // (Se eliminó el filtro 'bodega' ya que no aplica aquí)
+        if (assigneeFilter !== 'all') {
             tools = tools.filter(tool => tool.assignedTo === assigneeFilter);
         }
         if (searchTerm) {
@@ -386,6 +461,9 @@ export function loadHerramientaView() {
                 tool.name.toLowerCase().includes(searchTerm) ||
                 (tool.reference && tool.reference.toLowerCase().includes(searchTerm))
             );
+        }
+        if (categoryFilter !== 'all') {
+            tools = tools.filter(tool => tool.category === categoryFilter);
         }
 
         // 5. Renderizar los resultados filtrados
@@ -395,6 +473,7 @@ export function loadHerramientaView() {
                 if (statusFilter === 'disponible') emptyMessage = "No hay herramientas disponibles en bodega.";
                 if (statusFilter === 'asignada') emptyMessage = "No hay herramientas asignadas.";
                 if (statusFilter === 'en_reparacion') emptyMessage = "No hay herramientas en reparación.";
+                if (statusFilter === 'dada_de_baja') emptyMessage = "No hay herramientas retiradas."; // <--- AÑADIDO
             }
 
             gridContainer.innerHTML = `
@@ -417,7 +496,7 @@ export function loadHerramientaView() {
 }
 
 /**
- * Crea el HTML para una TARJETA de herramienta. (Sin cambios)
+ * Crea el HTML para una TARJETA de herramienta. (Actualizada con Categoría y Costo)
  */
 function createToolCard(tool, usersMap) {
     const card = document.createElement('div');
@@ -425,6 +504,20 @@ function createToolCard(tool, usersMap) {
     card.dataset.id = tool.id;
     card.dataset.name = tool.name;
     card.dataset.assignedto = tool.assignedTo || '';
+
+    // --- INICIO DE LÓGICA AÑADIDA ---
+    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+    // Buscar la etiqueta de la categoría
+    const category = TOOL_CATEGORIES.find(c => c.value === tool.category);
+    const categoryLabel = category ? category.label : (tool.category || 'Sin Categoría');
+
+    // Formatear el costo (solo si es mayor a 0)
+    const purchaseCostLabel = (tool.purchaseCost && tool.purchaseCost > 0)
+        ? currencyFormatter.format(tool.purchaseCost)
+        : null;
+    // --- FIN DE LÓGICA AÑADIDA ---
+
 
     const assignedToUser = usersMap.get(tool.assignedTo);
     const assignedToName = assignedToUser ? `${assignedToUser.firstName} ${assignedToUser.lastName}` : 'En Bodega';
@@ -439,13 +532,26 @@ function createToolCard(tool, usersMap) {
     } else if (tool.status === 'en_reparacion') {
         statusText = 'En Reparación';
         statusColor = 'bg-red-100 text-red-800';
-        actionButton = `<button data-action="return-tool" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Recibir (de Taller)</button>`;
+        actionButton = `<button data-action="register-maintenance" class="bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Registrar Mantenimiento</button>`;
+    } else if (tool.status === 'dada_de_baja') {
+        statusText = 'Dada de Baja';
+        statusColor = 'bg-gray-200 text-gray-800';
+        actionButton = `<button disabled class="bg-gray-400 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Retirada</button>`;
     } else { // 'disponible'
         statusText = 'Disponible';
         statusColor = 'bg-green-100 text-green-800';
         actionButton = `<button data-action="assign-tool" class="bg-green-500 hover:bg-green-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Asignar</button>`;
     }
 
+    // Definimos el tercer botón dinámicamente
+    const thirdButtonHtml = (tool.status === 'en_reparacion')
+        ? `<button data-action="decommission-tool" class="bg-red-700 hover:bg-red-800 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Dar de Baja</button>`
+        : (tool.status === 'dada_de_baja')
+            ? `<button data-action="delete-tool" class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Eliminar</button>`
+            : `<button data-action="edit-tool" class="bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Editar</button>`;
+
+
+    // --- INICIO DE REDISEÑO DE TARJETA ---
     card.innerHTML = `
         <div class="flex-grow flex">
             
@@ -460,10 +566,24 @@ function createToolCard(tool, usersMap) {
             </div>
             
             <div class="w-2/3 flex-grow p-4 flex flex-col">
-                <h3 class="text-lg font-bold text-gray-900">${tool.name}</h3>
-                <p class="text-sm text-gray-500 mb-3">${tool.reference || 'Sin referencia'}</p>
+                <div class="flex-grow">
+                    <h3 class="text-lg font-bold text-gray-900">${tool.name}</h3>
+                    <p class="text-sm text-gray-500">${tool.reference || 'Sin referencia'}</p>
+                    
+                    <div class="mt-3 text-sm space-y-1">
+                        <div>
+                            <span class="font-medium text-gray-600">Categoría:</span>
+                            <span class="font-semibold text-gray-800">${categoryLabel}</span>
+                        </div>
+                        ${purchaseCostLabel ? `
+                        <div>
+                            <span class="font-medium text-gray-600">Costo Adq.:</span>
+                            <span class="font-semibold text-gray-800">${purchaseCostLabel}</span>
+                        </div>` : ''}
+                    </div>
+                </div>
                 
-                <div class="text-sm space-y-2 mt-auto">
+                <div class="text-sm space-y-2 mt-4 pt-2 border-t">
                     <div class="flex justify-between items-center">
                         <span class="font-medium text-gray-600">Estado:</span>
                         <span class="px-2 py-0.5 text-xs font-semibold rounded-full ${statusColor}">${statusText}</span>
@@ -479,9 +599,10 @@ function createToolCard(tool, usersMap) {
         <div class="bg-gray-50 p-3 border-t grid grid-cols-3 gap-2">
             ${actionButton}
             <button data-action="view-tool-history" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-semibold py-2 px-3 rounded-lg w-full">Historial</button>
-            <button data-action="edit-tool" class="bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Editar</button>
+            ${thirdButtonHtml}
         </div>
     `;
+    // --- FIN DE REDISEÑO DE TARJETA ---
     return card;
 }
 
@@ -549,6 +670,9 @@ async function handleSaveTool(form) {
             const toolData = {
                 name: data.name,
                 reference: data.reference,
+                category: data.category || 'otro', // <-- AÑADIDO
+                purchaseCost: parseFloat(data.purchaseCost.replace(/[$. ]/g, '')) || 0, // <-- AÑADIDO
+                purchaseDate: data.purchaseDate || null, // <-- AÑADIDO
                 photoURL: downloadURL,
                 status: 'disponible',
                 assignedTo: null,
@@ -563,6 +687,9 @@ async function handleSaveTool(form) {
             batch.update(toolRef, {
                 name: data.name,
                 reference: data.reference,
+                category: data.category || 'otro', // <-- AÑADIDO
+                purchaseCost: parseFloat(data.purchaseCost.replace(/[$. ]/g, '')) || 0, // <-- AÑADIDO
+                purchaseDate: data.purchaseDate || null, // <-- AÑADIDO
                 lastUpdatedBy: currentUser.uid,
                 updatedAt: serverTimestamp()
             });
@@ -600,6 +727,8 @@ async function handleSaveTool(form) {
                 assignPhotoURL: downloadURL,
                 assignComments: assignComments
             });
+
+
 
             sendNotificationCallback(
                 assigneeId,
@@ -639,6 +768,7 @@ async function handleSaveTool(form) {
             batch.set(historyRef, {
                 action: 'devuelta',
                 adminId: currentUser.uid,
+                returnedByUserId: originalAssigneeId, // <-- AÑADE ESTA LÍNEA
                 timestamp: serverTimestamp(),
                 returnPhotoURL: downloadURL,
                 returnStatus: returnStatus,
@@ -652,8 +782,32 @@ async function handleSaveTool(form) {
                     `Recibimos tu devolución de la herramienta: ${toolName}.`,
                     'herramienta'
                 );
-            }
+            }// --- INICIO DE CÓDIGO AÑADIDO ---
+        } else if (type === 'register-maintenance') {
+            const toolRef = doc(db, "tools", id);
+
+            // 1. Actualizar la herramienta a 'disponible'
+            batch.update(toolRef, {
+                status: 'disponible',
+                lastUpdatedBy: currentUser.uid,
+                updatedAt: serverTimestamp()
+            });
+
+            // 2. Crear el registro en el historial
+            const historyRef = doc(collection(db, "tools", id, "history"));
+            batch.set(historyRef, {
+                action: 'mantenimiento',
+                adminId: currentUser.uid,
+                timestamp: serverTimestamp(),
+                maintenanceProvider: data.maintenanceProvider || 'No especificado',
+                maintenanceCost: parseFloat(data.maintenanceCost.replace(/[$. ]/g, '')) || 0,
+                maintenanceNotes: data.maintenanceNotes || ''
+            });
+            // --- FIN DE CÓDIGO AÑADIDO ---
+
         }
+
+
 
         await batch.commit();
         closeMainModalCallback();
@@ -669,6 +823,7 @@ async function handleSaveTool(form) {
         else if (type === 'edit-tool') confirmBtn.textContent = 'Guardar Cambios';
         else if (type === 'assign-tool') confirmBtn.textContent = 'Confirmar Asignación';
         else if (type === 'return-tool') confirmBtn.textContent = 'Confirmar Devolución';
+        else if (type === 'register-maintenance') confirmBtn.textContent = 'Finalizar Mantenimiento';
         else confirmBtn.textContent = 'Guardar';
     }
 }
@@ -687,6 +842,39 @@ async function handleDeleteTool(toolId) {
 }
 
 /**
+ * Cambia el estado de una herramienta a "dada_de_baja".
+ */
+async function handleDecommissionTool(toolId) {
+    try {
+        const toolRef = doc(db, "tools", toolId);
+        const historyRef = doc(collection(db, "tools", toolId, "history"));
+        const currentUser = getCurrentUser();
+
+        // Usar un batch para asegurar que ambas escrituras funcionen
+        const batch = writeBatch(db);
+
+        batch.update(toolRef, {
+            status: 'dada_de_baja',
+            assignedTo: null, // Se quita de cualquier asignación
+            lastUpdatedBy: currentUser.uid,
+            updatedAt: serverTimestamp()
+        });
+
+        batch.set(historyRef, {
+            action: 'dada_de_baja',
+            adminId: currentUser.uid,
+            timestamp: serverTimestamp()
+        });
+
+        await batch.commit();
+
+    } catch (error) {
+        console.error("Error al dar de baja la herramienta:", error);
+        alert("Error al dar de baja la herramienta.");
+    }
+}
+
+/**
  * Abre un modal y muestra el historial de una herramienta específica. (Sin cambios)
  */
 async function handleViewToolHistory(toolId, toolName) {
@@ -700,9 +888,19 @@ async function handleViewToolHistory(toolId, toolName) {
     body.innerHTML = '<p class="text-gray-500 text-center">Cargando historial...</p>';
     modal.style.display = 'flex';
 
+    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
     const usersMap = getUsersMap();
 
     try {
+        // --- INICIO DE CÓDIGO AÑADIDO ---
+        // 1. Cargar el documento principal de la herramienta
+        const toolDoc = await getDoc(doc(db, "tools", toolId));
+        const toolData = toolDoc.exists() ? toolDoc.data() : {};
+        const purchaseCost = toolData.purchaseCost || 0;
+        let totalMaintenanceCost = 0;
+        // --- FIN DE CÓDIGO AÑADIDO ---
+
         const historyQuery = query(
             collection(db, "tools", toolId, "history"),
             orderBy("timestamp", "desc")
@@ -714,7 +912,32 @@ async function handleViewToolHistory(toolId, toolName) {
             return;
         }
 
-        body.innerHTML = '';
+        body.innerHTML = ''; // Limpiamos el "Cargando..."
+
+        // --- INICIO DE CÓDIGO AÑADIDO ---
+        // 2. Calcular el costo total de mantenimiento (necesitamos un bucle previo)
+        snapshot.forEach(doc => {
+            if (doc.data().action === 'mantenimiento') {
+                totalMaintenanceCost += doc.data().maintenanceCost || 0;
+            }
+        });
+
+        // 3. Renderizar el resumen de costos
+        const costSummaryHtml = `
+            <div class="mb-4 grid grid-cols-2 gap-4">
+                <div class="bg-gray-100 p-3 rounded-lg text-center">
+                    <p class="text-sm font-medium text-gray-700">Costo de Adquisición</p>
+                    <p class="text-2xl font-bold text-gray-900">${currencyFormatter.format(purchaseCost)}</p>
+                </div>
+                <div class="bg-orange-50 p-3 rounded-lg text-center">
+                    <p class="text-sm font-medium text-orange-800">Costo Total Mantenimiento</p>
+                    <p class="text-2xl font-bold text-orange-900">${currencyFormatter.format(totalMaintenanceCost)}</p>
+                </div>
+            </div>
+            <hr class="mb-4">
+        `;
+        body.innerHTML += costSummaryHtml;
+        // --- FIN DE CÓDIGO AÑADIDO ---
 
         snapshot.forEach(doc => {
             const entry = doc.data();
@@ -776,6 +999,24 @@ async function handleViewToolHistory(toolId, toolName) {
                         <p class="text-xs text-gray-500 mt-1">${dateString} - ${timeString}</p>
                     </div>
                 `;
+            } else if (entry.action === 'mantenimiento') {
+
+                entryHtml = `
+                    <div class="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                        <p class="font-semibold text-orange-800">Registro de Mantenimiento</p>
+                        <p class="text-sm text-gray-600">Registrado por: ${adminName}</p>
+                        
+                        <div class="text-sm text-gray-800 mt-2 p-2 bg-white border rounded-md space-y-1">
+                            <p><strong>Proveedor:</strong> ${entry.maintenanceProvider || 'N/A'}</p>
+                            <p><strong>Costo:</strong> ${currencyFormatter.format(entry.maintenanceCost || 0)}</p>
+                            ${entry.maintenanceNotes ? `<p><strong>Notas:</strong> ${entry.maintenanceNotes}</p>` : ''}
+                        </div>
+                        
+                        <p class="text-xs text-gray-500 mt-1">${dateString} - ${timeString}</p>
+                    </div>
+                `;
+                // --- FIN DE CÓDIGO AÑADIDO ---
+
             }
 
             body.innerHTML += entryHtml;
@@ -796,5 +1037,149 @@ function closeToolHistoryModal() {
     const modal = document.getElementById('tool-history-modal');
     if (modal) {
         modal.style.display = 'none';
+    }
+}
+
+/**
+ * Carga los datos y renderiza el dashboard de resumen de herramientas.
+ * @param {HTMLElement} container - El elemento <div> donde se inyectará el HTML.
+ */
+async function loadToolDashboard(container) {
+    container.innerHTML = `
+        <div class="text-center p-10">
+            <p class="text-gray-500">Calculando estadísticas...</p>
+            <div class="loader mx-auto mt-4"></div>
+        </div>`;
+
+    try {
+        const usersMap = getUsersMap();
+        const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+        // 1. Consultas en paralelo
+        const [toolsSnapshot, maintenanceSnapshot, damagedReturnsSnapshot] = await Promise.all([
+            getDocs(query(collection(db, "tools"))), // Todas las herramientas
+            getDocs(query(collectionGroup(db, "history"), where("action", "==", "mantenimiento"))), // Costos
+            getDocs(query(collectionGroup(db, "history"), where("returnStatus", "in", ["dañado", "con_defecto"]))) // Daños
+        ]);
+
+        // 2. Procesar KPIs (Costos y Conteo)
+        let kpi = {
+            total: 0,
+            disponible: 0,
+            asignada: 0,
+            en_reparacion: 0,
+            dada_de_baja: 0,
+            totalMaintenanceCost: 0,
+            totalAssetValue: 0 // <-- AÑADE ESTA LÍNEA (si no existe)
+        };
+        const assignedToMap = new Map(); // Para "Herramientas por Colaborador"
+
+        toolsSnapshot.forEach(doc => {
+            const tool = doc.data();
+            kpi.total++;
+
+            if (tool.status !== 'dada_de_baja') {
+                kpi.totalAssetValue += tool.purchaseCost || 0;
+            }
+
+
+            switch (tool.status) {
+                case 'disponible': kpi.disponible++; break;
+                case 'asignada':
+                    kpi.asignada++;
+                    const userId = tool.assignedTo;
+                    if (userId) { // Solo contamos si hay un ID de usuario
+                        const count = (assignedToMap.get(userId) || 0) + 1;
+                        assignedToMap.set(userId, count);
+                    }
+                    break;
+                case 'en_reparacion': kpi.en_reparacion++; break;
+                case 'dada_de_baja': kpi.dada_de_baja++; break;
+            }
+        });
+
+        maintenanceSnapshot.forEach(doc => {
+            kpi.totalMaintenanceCost += doc.data().maintenanceCost || 0;
+        });
+
+        // 3. Procesar Devoluciones Dañadas (Tu nueva solicitud)
+        const damagedReturnsMap = new Map(); // Para "Devoluciones con daños"
+        damagedReturnsSnapshot.forEach(doc => {
+            const historyEntry = doc.data();
+            // --- INICIO DE CORRECCIÓN ---
+            // Cambiamos 'adminId' por 'returnedByUserId'
+            const returnedById = historyEntry.returnedByUserId;
+            if (returnedById) {
+                const count = (damagedReturnsMap.get(returnedById) || 0) + 1;
+                damagedReturnsMap.set(returnedById, count);
+            }
+            // --- FIN DE CORRECCIÓN ---
+        });
+
+        // 4. Renderizar el HTML
+
+        // HTML para KPIs
+        const kpiHtml = `
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-6">
+                <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 text-center"><p class="text-sm font-medium text-blue-800">Total Herramientas</p><p class="text-3xl font-bold text-blue-900">${kpi.total}</p></div>
+                <div class="bg-green-50 p-4 rounded-lg border border-green-200 text-center"><p class="text-sm font-medium text-green-800">Disponibles</p><p class="text-3xl font-bold text-green-900">${kpi.disponible}</p></div>
+                <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200 text-center"><p class="text-sm font-medium text-yellow-800">Asignadas</p><p class="text-3xl font-bold text-yellow-900">${kpi.asignada}</p></div>
+                <div class="bg-orange-50 p-4 rounded-lg border border-orange-200 text-center"><p class="text-sm font-medium text-orange-800">En Reparación</p><p class="text-3xl font-bold text-orange-900">${kpi.en_reparacion}</p></div>
+                <div class="bg-gray-100 p-4 rounded-lg border border-gray-300 text-center"><p class="text-sm font-medium text-gray-700">Costo Mantenimiento</p><p class="text-3xl font-bold text-gray-800">${currencyFormatter.format(kpi.totalMaintenanceCost)}</p></div>
+                <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200 text-center">
+                    <p class="text-sm font-medium text-indigo-800">Valor Total Activos</p>
+                    <p class="text-3xl font-bold text-indigo-900">${currencyFormatter.format(kpi.totalAssetValue)}</p>
+                </div>
+            </div>
+        `;
+
+        // HTML para Reportes
+        let assignedHtml = '<p class="text-sm text-gray-500">No hay herramientas asignadas.</p>';
+        if (assignedToMap.size > 0) {
+            assignedHtml = '<ul class="divide-y divide-gray-200">';
+            const sortedAssigned = [...assignedToMap.entries()].sort((a, b) => b[1] - a[1]); // Ordenar por quién tiene más
+            sortedAssigned.forEach(([userId, count]) => {
+                const user = usersMap.get(userId);
+                const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido';
+                assignedHtml += `<li class="py-2 flex justify-between items-center"><span class="font-medium text-gray-700">${userName}</span><span class="font-bold text-lg text-blue-600">${count}</span></li>`;
+            });
+            assignedHtml += '</ul>';
+        }
+
+        let damagedHtml = '<p class="text-sm text-gray-500">No hay registros de devoluciones con daños.</p>';
+        if (damagedReturnsMap.size > 0) {
+            damagedHtml = '<ul class="divide-y divide-gray-200">';
+            const sortedDamaged = [...damagedReturnsMap.entries()].sort((a, b) => b[1] - a[1]); // Ordenar por quién reporta más
+            sortedDamaged.forEach(([userId, count]) => { // <-- CAMBIADO DE 'adminId' a 'userId'
+                const user = usersMap.get(userId); // <-- CAMBIADO
+                const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido'; // <-- Ahora es el colaborador
+                damagedHtml += `<li class="py-2 flex justify-between items-center"><span class="font-medium text-gray-700">${userName}</span><span class="font-bold text-lg text-red-600">${count}</span></li>`;
+            });
+            damagedHtml += '</ul>';
+        }
+
+        const reportsHtml = `
+            <div class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white p-4 rounded-lg shadow-md border">
+                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Herramientas por Colaborador</h3>
+                    <div class="max-h-60 overflow-y-auto pr-2">
+                        ${assignedHtml}
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow-md border">
+                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Devoluciones con Daños (Reportadas por)</h3>
+                    <div class="max-h-60 overflow-y-auto pr-2">
+                        ${damagedHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Unir todo
+        container.innerHTML = kpiHtml + reportsHtml;
+
+    } catch (error) {
+        console.error("Error al cargar el dashboard de herramientas:", error);
+        container.innerHTML = `<p class="text-red-500 text-center p-10">Error al cargar las estadísticas: ${error.message}</p>`;
     }
 }

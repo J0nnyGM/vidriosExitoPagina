@@ -6,7 +6,7 @@ import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-messaging.js";
-import { initHerramientas, resetToolViewAndLoad, updateToolFilterOptions } from './herramientas.js';
+import { initHerramientas, resetToolViewAndLoad, updateToolFilterOptions, TOOL_CATEGORIES } from './herramientas.js';
 // --- CONFIGURACIÓN Y ESTADO ---
 
 const firebaseConfig = {
@@ -3934,51 +3934,232 @@ async function openMainModal(type, data = {}) {
             btnText = 'Crear Herramienta';
             btnClass = 'bg-blue-500 hover:bg-blue-600';
 
-            // --- NUEVO DISEÑO DE HTML MODERNO ---
-            bodyHtml = `
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        
-                        <div class="md:col-span-1">
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Foto (Requerida)</label>
-                            
-                            <div id="new-tool-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
-                                
-                                <div id="new-tool-preview" class="hidden absolute inset-0">
-                                    <img src="" id="new-tool-img-preview" class="w-full h-full object-contain">
-                                </div>
-                                
-                                <div id="new-tool-prompt" class="text-center p-4">
-                                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
-                                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-                                    </svg>
-                                    <p class="mt-2 text-sm text-gray-500">Haz clic para subir una foto</p>
-                                </div>
-                            </div>
-                            
-                            <input type="file" id="tool-photo" name="photo" required accept="image/*" class="hidden">
-                        </div>
-                        
-                        <div class="md:col-span-2 space-y-4 pt-5">
-                            <div>
-                                <label for="tool-name" class="block text-sm font-medium text-gray-700">Nombre de la Herramienta</label>
-                                <input type="text" id="tool-name" name="name" required class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Taladro Percutor">
-                            </div>
-                            <div>
-                                <label for="tool-reference" class="block text-sm font-medium text-gray-700">Referencia / Código (Opcional)</label>
-                                <input type="text" id="tool-reference" name="reference" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: MAK-123">
-                            </div>
-                            <p class="text-xs text-gray-500 pt-2">La herramienta se creará con estado "Disponible" en "Bodega".</p>
-                        </div>
-                    </div>
-                `;
+            // --- INICIO DE CÓDIGO AÑADIDO ---
+            // Definir opciones de categoría
+            const categoryOptions = TOOL_CATEGORIES.map(cat =>
+                `<option value="${cat.value}">${cat.label}</option>`
+            ).join('');
+            // --- FIN DE CÓDIGO AÑADIDO ---
 
-            // --- LÓGICA JS PARA LA VISTA PREVIA ---
+            bodyHtml = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    
+                    <div class="md:col-span-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Foto (Requerida)</label>
+                        <div id="new-tool-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
+                            <div id="new-tool-preview" class="hidden absolute inset-0">
+                                <img src="" id="new-tool-img-preview" class="w-full h-full object-contain">
+                            </div>
+                            <div id="new-tool-prompt" class="text-center p-4">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                                <p class="mt-2 text-sm text-gray-500">Haz clic para subir una foto</p>
+                            </div>
+                        </div>
+                        <input type="file" id="tool-photo" name="photo" required accept="image/*" class="hidden">
+                    </div>
+                    
+                    <div class="md:col-span-2 space-y-4 pt-5">
+                        <div>
+                            <label for="tool-name" class="block text-sm font-medium text-gray-700">Nombre de la Herramienta</label>
+                            <input type="text" id="tool-name" name="name" required class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Taladro Percutor">
+                        </div>
+                        <div>
+                            <label for="tool-reference" class="block text-sm font-medium text-gray-700">Referencia / Código (Opcional)</label>
+                            <input type="text" id="tool-reference" name="reference" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: MAK-123">
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label for="tool-category" class="block text-sm font-medium text-gray-700">Categoría</label>
+                                <select id="tool-category" name="category" required class="mt-1 w-full border rounded-md p-2 bg-white">
+                                    <option value="" disabled selected>Seleccione...</option>
+                                    ${categoryOptions}
+                                </select>
+                            </div>
+                            <div>
+                                <label for="tool-purchaseDate" class="block text-sm font-medium text-gray-700">Fecha de Compra</label>
+                                <input type="date" id="tool-purchaseDate" name="purchaseDate" class="mt-1 w-full border rounded-md p-2">
+                            </div>
+                        </div>
+                        <div>
+                            <label for="tool-purchaseCost" class="block text-sm font-medium text-gray-700">Costo de Adquisición (Opcional)</label>
+                            <input type="text" id="tool-purchaseCost" name="purchaseCost" class="currency-input mt-1 w-full border rounded-md p-2" placeholder="$ 0">
+                        </div>
+                        <p class="text-xs text-gray-500 pt-2">La herramienta se creará con estado "Disponible" en "Bodega".</p>
+                    </div>
+                </div>
+            `;
+
+            // Lógica JS para la vista previa y los nuevos campos
             setTimeout(() => {
                 const dropzone = document.getElementById('new-tool-dropzone');
                 const fileInput = document.getElementById('tool-photo');
                 const previewContainer = document.getElementById('new-tool-preview');
                 const previewImg = document.getElementById('new-tool-img-preview');
                 const promptEl = document.getElementById('new-tool-prompt');
+
+                if (dropzone) {
+                    dropzone.addEventListener('click', () => fileInput.click());
+                    fileInput.addEventListener('change', (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                previewImg.src = event.target.result;
+                                previewContainer.classList.remove('hidden');
+                                promptEl.classList.add('hidden');
+                            }
+                            reader.readAsDataURL(file);
+                        }
+                    });
+                }
+
+                // --- INICIO DE CÓDIGO AÑADIDO ---
+                // Activar formateador de moneda
+                const costInput = document.getElementById('tool-purchaseCost');
+                if (costInput) setupCurrencyInput(costInput); // setupCurrencyInput ya existe en tu app.js
+
+                // Poner fecha de hoy por defecto
+                const purchaseDateInput = document.getElementById('tool-purchaseDate');
+                if (purchaseDateInput) purchaseDateInput.value = new Date().toISOString().split('T')[0];
+                // --- FIN DE CÓDIGO AÑADIDO ---
+
+            }, 100);
+
+            break;
+        }
+
+        case 'edit-tool': {
+            title = 'Editar Herramienta (Info Básica)';
+            btnText = 'Guardar Cambios';
+            btnClass = 'bg-yellow-500 hover:bg-yellow-600';
+
+            // --- INICIO DE CÓDIGO AÑADIDO ---
+            const categoryOptions = TOOL_CATEGORIES.map(cat =>
+                `<option value="${cat.value}" ${data.category === cat.value ? 'selected' : ''}>${cat.label}</option>`
+            ).join('');
+            // --- FIN DE CÓDIGO AÑADIDO ---
+
+            bodyHtml = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    
+                    <div class="md:col-span-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Foto Actual</label>
+                        <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden border">
+                            <img src="${data.photoURL || 'https://via.placeholder.com/300'}" 
+                                 alt="${data.name || ''}" 
+                                 class="w-full h-full object-contain">
+                        </div>
+                    </div>
+                    
+                    <div class="md:col-span-2 space-y-4 pt-5">
+                        <div>
+                            <label for="tool-name" class="block text-sm font-medium text-gray-700">Nombre de la Herramienta</label>
+                            <input type="text" id="tool-name" name="name" required class="mt-1 w-full border rounded-md p-2" value="${data.name || ''}">
+                        </div>
+                        <div>
+                            <label for="tool-reference" class="block text-sm font-medium text-gray-700">Referencia / Código (Opcional)</label>
+                            <input type="text" id="tool-reference" name="reference" class="mt-1 w-full border rounded-md p-2" value="${data.reference || ''}">
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label for="tool-category" class="block text-sm font-medium text-gray-700">Categoría</label>
+                                <select id="tool-category" name="category" required class="mt-1 w-full border rounded-md p-2 bg-white">
+                                    <option value="" disabled>Seleccione...</option>
+                                    ${categoryOptions}
+                                </select>
+                            </div>
+                            <div>
+                                <label for="tool-purchaseDate" class="block text-sm font-medium text-gray-700">Fecha de Compra</label>
+                                <input type="date" id="tool-purchaseDate" name="purchaseDate" class="mt-1 w-full border rounded-md p-2" value="${data.purchaseDate || ''}">
+                            </div>
+                        </div>
+                        <div>
+                            <label for="tool-purchaseCost" class="block text-sm font-medium text-gray-700">Costo de Adquisición (Opcional)</label>
+                            <input type="text" id="tool-purchaseCost" name="purchaseCost" class="currency-input mt-1 w-full border rounded-md p-2" placeholder="$ 0" value="${data.purchaseCost || 0}">
+                        </div>
+                        <p class="text-xs text-gray-500 pt-2">El estado y la asignación se gestionan mediante las acciones "Asignar" y "Recibir".</p>
+                    </div>
+                </div>
+            `;
+
+            // --- INICIO DE CÓDIGO AÑADIDO ---
+            setTimeout(() => {
+                const costInput = document.getElementById('tool-purchaseCost');
+                if (costInput) setupCurrencyInput(costInput); // Aplicar formato al costo existente
+            }, 100);
+            // --- FIN DE CÓDIGO AÑADIDO ---
+            break;
+        }
+
+        case 'assign-tool': {
+            title = 'Asignar Herramienta';
+            btnText = 'Confirmar Asignación';
+            btnClass = 'bg-green-500 hover:bg-green-600';
+
+            // --- INICIO DE CORRECCIÓN ---
+            // Generamos un array de objetos (choices) en lugar de un string HTML
+            const userChoices = Array.from(usersMap.entries())
+                .filter(([id, user]) => user.status === 'active') // Solo usuarios activos
+                .sort((a, b) => a[1].firstName.localeCompare(b[1].firstName)) // Ordenamos alfabéticamente
+                .map(([id, user]) => ({
+                    value: id,
+                    label: `${user.firstName} ${user.lastName}`
+                }));
+            // --- FIN DE CORRECCIÓN ---
+
+            // --- INICIO DE MODIFICACIÓN: FORMATO MODERNO ---
+            bodyHtml = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    
+                    <div class="md:col-span-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Herramienta</label>
+                        <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden border">
+                            <img src="${data.photoURL || 'https://via.placeholder.com/300'}" 
+                                 alt="${data.name || ''}" 
+                                 class="w-full h-full object-contain">
+                        </div>
+                        <p class="text-center font-bold text-lg mt-2">${data.name || 'N/A'}</p>
+                        <input type="hidden" name="toolName" value="${data.name || ''}">
+                    </div>
+                    
+                    <div class="md:col-span-2 space-y-4">
+                        <div>
+                            <label for="tool-assignedTo" class="block text-sm font-medium">1. Seleccionar Colaborador</label>
+                            <select id="tool-assignedTo" name="assignedTo" required class="mt-1 w-full border rounded-md"></select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">2. Foto de Evidencia (Entrega)</label>
+                                <div id="assign-tool-dropzone" class="h-72 w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
+                                <div id="assign-tool-preview" class="hidden absolute inset-0">
+                                    <img src="" id="assign-tool-img-preview" class="w-full h-full object-contain">
+                                </div>
+                                <div id="assign-tool-prompt" class="text-center p-4">
+                                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                                    <p class="mt-2 text-sm text-gray-500">Subir foto de entrega</p>
+                                </div>
+                            </div>
+                            <input type="file" id="tool-assign-photo" name="assignPhoto" required accept="image/*" class="hidden">
+                        </div>
+
+                        <div>
+                            <label for="tool-assign-comments" class="block text-sm font-medium">3. Observaciones (Opcional)</label>
+                            <textarea id="tool-assign-comments" name="assignComments" rows="2" class="mt-1 w-full border rounded-md p-2" placeholder="Describa el estado de entrega..."></textarea>
+                        </div>
+                    </div>
+                </div>
+            `;
+            // --- FIN DE MODIFICACIÓN ---
+
+            // --- INICIO DE LÓGICA JS AÑADIDA PARA EL PREVIEW ---
+            setTimeout(() => {
+                const dropzone = document.getElementById('assign-tool-dropzone');
+                const fileInput = document.getElementById('tool-assign-photo');
+                const previewContainer = document.getElementById('assign-tool-preview');
+                const previewImg = document.getElementById('assign-tool-img-preview');
+                const promptEl = document.getElementById('assign-tool-prompt');
 
                 if (!dropzone) return; // Seguridad por si el modal se cierra rápido
 
@@ -4000,82 +4181,22 @@ async function openMainModal(type, data = {}) {
                         reader.readAsDataURL(file);
                     }
                 });
+
+                const assigneeSelect = document.getElementById('tool-assignedTo');
+                if (assigneeSelect) {
+                    new Choices(assigneeSelect, {
+                        choices: userChoices, // El array de objetos que creamos
+                        itemSelectText: 'Seleccionar',
+                        searchPlaceholderValue: 'Buscar colaborador...',
+                        placeholder: true,
+                        placeholderValue: 'Selecciona un usuario...',
+                        allowHTML: false,
+                    });
+                }
+
             }, 100); // Espera a que el modal se renderice
+            // --- FIN DE LÓGICA JS AÑADIDA ---
 
-            break;
-        }
-
-        case 'edit-tool': {
-            title = 'Editar Herramienta (Info Básica)';
-            btnText = 'Guardar Cambios';
-            btnClass = 'bg-yellow-500 hover:bg-yellow-600';
-
-            // --- INICIO DE MODIFICACIÓN: DISEÑO 2 COLUMNAS ---
-            bodyHtml = `
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        
-                        <div class="md:col-span-1">
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Foto Actual</label>
-                            <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden border">
-                                <img src="${data.photoURL || 'https://via.placeholder.com/300'}" 
-                                     alt="${data.name || ''}" 
-                                     class="w-full h-full object-contain">
-                            </div>
-                        </div>
-                        
-                        <div class="md:col-span-2 space-y-4 pt-5">
-                            <div>
-                                <label for="tool-name" class="block text-sm font-medium text-gray-700">Nombre de la Herramienta</label>
-                                <input type="text" id="tool-name" name="name" required class="mt-1 w-full border rounded-md p-2" value="${data.name || ''}">
-                            </div>
-                            <div>
-                                <label for="tool-reference" class="block text-sm font-medium text-gray-700">Referencia / Código (Opcional)</label>
-                                <input type="text" id="tool-reference" name="reference" class="mt-1 w-full border rounded-md p-2" value="${data.reference || ''}">
-                            </div>
-                            <p class="text-xs text-gray-500 pt-2">El estado y la asignación se gestionan mediante las acciones "Asignar" y "Recibir".</p>
-                        </div>
-                    </div>
-                `;
-            // --- FIN DE MODIFICACIÓN ---
-            break;
-        }
-
-        case 'assign-tool': {
-            title = 'Asignar Herramienta';
-            btnText = 'Confirmar Asignación';
-            btnClass = 'bg-green-500 hover:bg-green-600';
-
-            // Generamos las opciones de usuarios
-            const userOptions = Array.from(usersMap.entries())
-                .filter(([id, user]) => user.status === 'active') // Solo usuarios activos
-                .map(([id, user]) => `<option value="${id}">${user.firstName} ${user.lastName}</option>`)
-                .join('');
-
-            // --- INICIO DE MODIFICACIÓN ---
-            bodyHtml = `
-                    <div class="space-y-4">
-                        <input type="hidden" name="toolName" value="${data.name || ''}">
-                        <p class="text-sm">Asignando herramienta: <strong>${data.name || 'N/A'}</strong></p>
-                        <div>
-                            <label for="tool-assignedTo" class="block text-sm font-medium">Seleccionar Colaborador</label>
-                            <select id="tool-assignedTo" name="assignedTo" required class="mt-1 w-full border rounded-md p-2 bg-white">
-                                <option value="" disabled selected>Seleccione un usuario...</option>
-                                ${userOptions}
-                            </select>
-                        </div>
-                        
-                        <div>
-                            <label for="tool-assign-photo" class="block text-sm font-medium">Foto de Evidencia (Entrega)</label>
-                            <input type="file" id="tool-assign-photo" name="assignPhoto" required accept="image/*" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-                        </div>
-
-                        <div>
-                            <label for="tool-assign-comments" class="block text-sm font-medium">Observaciones (Opcional)</label>
-                            <textarea id="tool-assign-comments" name="assignComments" rows="3" class="mt-1 w-full border rounded-md p-2" placeholder="Describa el estado de entrega, acuerdos, etc..."></textarea>
-                        </div>
-                    </div>
-                `;
-            // --- FIN DE MODIFICACIÓN ---
             break;
         }
 
@@ -4168,6 +4289,62 @@ async function openMainModal(type, data = {}) {
             // --- FIN DE MODIFICACIÓN ---
             break;
         }
+
+        // --- INICIO DE CÓDIGO AÑADIDO ---
+        case 'register-maintenance': {
+            title = 'Registrar Mantenimiento';
+            btnText = 'Finalizar Mantenimiento';
+            btnClass = 'bg-green-500 hover:bg-green-600';
+
+            // Aquí puedes añadir un dropdown de proveedores si lo deseas
+            // Por ahora, usaremos un input de texto simple.
+
+            bodyHtml = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    
+                    <div class="md:col-span-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Herramienta</label>
+                        <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden border">
+                            <img src="${data.photoURL || 'https://via.placeholder.com/300'}" 
+                                 alt="${data.name || ''}" 
+                                 class="w-full h-full object-contain">
+                        </div>
+                        <p class="text-center font-bold text-lg mt-2">${data.name || 'N/A'}</p>
+                    </div>
+                    
+                    <div class="md:col-span-2 space-y-4">
+                        <input type="hidden" name="toolName" value="${data.name || ''}">
+                        
+                        <div>
+                            <label for="maintenance-provider" class="block text-sm font-medium">Proveedor / Taller (Opcional)</label>
+                            <input type="text" id="maintenance-provider" name="maintenanceProvider" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Taller Pepito">
+                        </div>
+
+                        <div>
+                            <label for="maintenance-cost" class="block text-sm font-medium">Costo de Reparación (Opcional)</label>
+                            <input type="text" id="maintenance-cost" name="maintenanceCost" class="currency-input mt-1 w-full border rounded-md p-2" placeholder="$ 0">
+                        </div>
+
+                        <div>
+                            <label for="maintenance-notes" class="block text-sm font-medium">Notas (Opcional)</label>
+                            <textarea id="maintenance-notes" name="maintenanceNotes" rows="3" class="mt-1 w-full border rounded-md p-2" placeholder="Describa qué se reparó..."></textarea>
+                        </div>
+
+                        <p class="text-xs text-gray-500 pt-2">Al finalizar, la herramienta volverá a estar "Disponible".</S>
+                    </div>
+
+                </div>
+            `;
+
+            // Activamos el formateador de moneda para el campo de costo
+            setTimeout(() => {
+                const costInput = document.getElementById('maintenance-cost');
+                setupCurrencyInput(costInput); // (Esta función ya existe en tu app.js)
+            }, 100);
+
+            break;
+        }
+        // --- FIN DE CÓDIGO AÑADIDO ---
 
         case 'addItem':
         case 'editItem': {
@@ -4897,7 +5074,7 @@ modalForm.addEventListener('submit', async (e) => {
     const type = modalForm.dataset.type;
     const id = modalForm.dataset.id;
 
-    if (['new-tool', 'edit-tool', 'assign-tool', 'return-tool'].includes(type)) {
+    if (['new-tool', 'edit-tool', 'assign-tool', 'return-tool', 'register-maintenance'].includes(type)) { // <-- AÑADIDO AQUÍ
         return;
     }
 
@@ -7133,7 +7310,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const action = elementWithAction.dataset.action;
         // --- INICIO DE MODIFICACIÓN ---
         // Si es una acción de herramienta, la ignora (herramientas.js se encarga)
-        const toolActions = ['new-tool', 'edit-tool', 'delete-tool', 'assign-tool', 'return-tool', 'view-tool-history'];
+        const toolActions = [
+            'new-tool', 'edit-tool', 'delete-tool', 'assign-tool', 'return-tool', 'view-tool-history',
+            'register-maintenance', // <-- AÑADIDO
+            'decommission-tool'     // <-- AÑADIDO
+        ];
         if (toolActions.includes(action)) {
             return;
         }
