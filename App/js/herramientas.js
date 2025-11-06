@@ -42,10 +42,11 @@ let openConfirmModalCallback;
 let sendNotificationCallback;
 let getCurrentUser;
 let getUsersMap;
+let getCurrentUserRole; // <-- AÑADE ESTA LÍNEA
 
 let unsubscribeTools = null;
-let toolAssigneeChoices = null; // <-- Para el buscador interactivo
-let toolCategoryChoices = null; // <-- AÑADE ESTA LÍNEA
+let toolAssigneeChoices = null;
+let toolCategoryChoices = null;
 
 // --- INICIO: Nueva Función de Helper para Redimensionar ---
 /**
@@ -109,7 +110,8 @@ export function initHerramientas(
     notificationFunc,
     openImageModalFunc,
     userGetter,
-    usersMapGetter
+    usersMapGetter,
+    userRoleGetter // <-- AÑADE ESTA LÍNEA
 ) {
     db = firebaseDb;
     storage = firebaseStorage;
@@ -120,6 +122,7 @@ export function initHerramientas(
     const openImageModalCallback = openImageModalFunc;
     getCurrentUser = userGetter;
     getUsersMap = usersMapGetter;
+    getCurrentUserRole = userRoleGetter; // <-- AÑADE ESTA LÍNEA
 
     // 1. Conectar los botones de la vista
     document.addEventListener('click', (e) => {
@@ -336,41 +339,76 @@ export function updateToolFilterOptions(usersMap) {
  * Esta función es llamada por app.js cuando se hace clic en el menú.
  */
 export function resetToolViewAndLoad() {
-    // 1. Resetea visualmente las pestañas a "Disponible"
+    const role = getCurrentUserRole();
+
+    // 1. Obtenemos el elemento del título
+    const titleElement = document.getElementById('herramienta-view-title');
+
+    // Ocultar/Mostrar elementos según el rol
+    const newToolBtn = document.getElementById('new-tool-btn');
     const tabsNav = document.getElementById('tool-tabs-nav');
-    if (tabsNav) {
-        tabsNav.querySelectorAll('.tool-tab-button').forEach(btn => {
-            const isDefault = btn.dataset.statusFilter === 'resumen'; // <-- CAMBIADO
-            btn.classList.toggle('active', isDefault);
-            btn.classList.toggle('border-blue-500', isDefault);
-            btn.classList.toggle('text-blue-600', isDefault);
-            btn.classList.toggle('border-transparent', !isDefault);
-            btn.classList.toggle('text-gray-500', !isDefault);
-        });
+    const filterBar = document.getElementById('tool-filter-bar');
+
+    if (newToolBtn) newToolBtn.classList.toggle('hidden', role === 'operario');
+    if (tabsNav) tabsNav.classList.toggle('hidden', role === 'operario');
+    if (filterBar) filterBar.classList.toggle('hidden', role === 'operario');
+
+    if (role === 'operario') {
+        // --- INICIO DE LA MODIFICACIÓN ---
+        // 2. Cambiamos el título para el operario
+        if (titleElement) {
+            const currentUser = getCurrentUser(); // Obtenemos el usuario actual
+            const usersMap = getUsersMap(); // Obtenemos el mapa de usuarios
+            let userName = 'Operario'; // Nombre por defecto
+
+            // Buscamos el nombre del usuario en el mapa
+            if (currentUser && usersMap.has(currentUser.uid)) {
+                const userData = usersMap.get(currentUser.uid);
+                // Usamos el primer nombre (o 'Usuario' si no tiene)
+                userName = userData.firstName || 'Usuario';
+            }
+
+            // Asignamos el nuevo título personalizado
+            titleElement.textContent = `Herramientas Asignadas a ${userName}`;
+        }
+        // --- FIN DE LA MODIFICACIÓN ---
+
+        // VISTA DE OPERARIO
+        document.getElementById('tools-grid-container')?.classList.remove('hidden');
+        document.getElementById('tool-dashboard-container')?.classList.add('hidden');
+
+        loadHerramientaView(); // loadHerramientaView ahora se encarga de forzar el filtro
+
+    } else {
+        // 3. Nos aseguramos de que el título sea el original para admin/bodega
+        if (titleElement) {
+            titleElement.textContent = 'Gestión de Herramientas';
+        }
+
+        // VISTA DE ADMIN/BODEGA (Lógica existente)
+        if (tabsNav) {
+            tabsNav.querySelectorAll('.tool-tab-button').forEach(btn => {
+                const isDefault = btn.dataset.statusFilter === 'resumen';
+                btn.classList.toggle('active', isDefault);
+                btn.classList.toggle('border-blue-500', isDefault);
+                btn.classList.toggle('text-blue-600', isDefault);
+                btn.classList.toggle('border-transparent', !isDefault);
+                btn.classList.toggle('text-gray-500', !isDefault);
+            });
+        }
+
+        const searchInput = document.getElementById('tool-search-input');
+        if (searchInput) searchInput.value = '';
+
+        if (toolAssigneeChoices) {
+            toolAssigneeChoices.setChoiceByValue('all');
+        }
+        if (toolCategoryChoices) {
+            toolCategoryChoices.setChoiceByValue('all');
+        }
+
+        loadHerramientaView();
     }
-
-    // 2. Resetea los filtros y el layout
-    const searchInput = document.getElementById('tool-search-input');
-    const searchContainer = document.getElementById('tool-search-container');
-    const assigneeContainer = document.getElementById('tool-assignee-container');
-
-    if (searchInput) searchInput.value = '';
-
-    if (toolAssigneeChoices) {
-        // Arregla el bug de "all" vs "Todos"
-        toolAssigneeChoices.setChoiceByValue('all');
-
-    }
-
-    // Oculta asignación, expande búsqueda
-    if (assigneeContainer) assigneeContainer.classList.add('hidden');
-    if (searchContainer) {
-        searchContainer.classList.remove('md:col-span-2');
-        searchContainer.classList.add('md:col-span-3');
-    }
-
-    // 3. Carga la vista
-    loadHerramientaView();
 }
 
 
@@ -384,96 +422,135 @@ export function loadHerramientaView() {
     const assigneeContainer = document.getElementById('tool-assignee-container');
     const dashboardContainer = document.getElementById('tool-dashboard-container');
     const categoryContainer = document.getElementById('tool-category-container');
-    const categoryFilter = (toolCategoryChoices && toolCategoryChoices.getValue(true)) ? toolCategoryChoices.getValue(true) : 'all';
+    const filtersBar = document.getElementById('tool-filter-bar');
 
-    const filtersBar = document.getElementById('tool-filter-bar'); // <-- ID Correcto
-
-    if (!gridContainer || !searchContainer || !assigneeContainer || !toolAssigneeChoices || !dashboardContainer || !filtersBar || !categoryContainer) return; // <-- AÑADIDO
+    if (!gridContainer || !searchContainer || !assigneeContainer || !toolAssigneeChoices || !dashboardContainer || !filtersBar || !categoryContainer) return;
     if (unsubscribeTools) unsubscribeTools();
 
-    // 1. Leer los valores actuales de TODOS los filtros
-    const statusFilter = document.querySelector('#tool-tabs-nav .active')?.dataset.statusFilter || 'resumen'; // <-- CAMBIADO
-    const searchTerm = document.getElementById('tool-search-input').value.toLowerCase();
-    const assigneeFilter = toolAssigneeChoices.getValue(true) || 'all';
+    // --- INICIO DE LA CORRECCIÓN ---
+    // 1. Obtener el ROL y el USUARIO primero
+    const role = getCurrentUserRole();
+    const currentUser = getCurrentUser();
 
-    // --- INICIO DE CORRECCIÓN DE LÓGICA ---
-    // 2. Lógica de Layout (basada en la pestaña activa)
+    // 2. Determinar el filtro de estado BASADO en el ROL
+    let statusFilter;
+    if (role === 'operario') {
+        statusFilter = 'asignada'; // El operario SIEMPRE ve 'asignada'
+    } else {
+        // Admin/Bodega usa las pestañas
+        statusFilter = document.querySelector('#tool-tabs-nav .active')?.dataset.statusFilter || 'resumen';
+    }
+
+    // 3. Leer los filtros restantes
+    const searchTerm = document.getElementById('tool-search-input').value.toLowerCase();
+    const categoryFilter = (toolCategoryChoices && toolCategoryChoices.getValue(true)) ? toolCategoryChoices.getValue(true) : 'all';
+    let assigneeFilter = (toolAssigneeChoices && toolAssigneeChoices.getValue(true)) ? toolAssigneeChoices.getValue(true) : 'all';
+
+    // 4. Lógica de Layout (basada en el statusFilter determinado)
     if (statusFilter === 'resumen') {
-        // Ocultamos todo lo demás y mostramos el dashboard
+        // Esta rama ahora solo será ejecutada por Admin/Bodega
         searchContainer.classList.add('hidden');
         assigneeContainer.classList.add('hidden');
         filtersBar.classList.add('hidden');
-        categoryContainer.classList.add('hidden'); // <-- AÑADIDO
+        categoryContainer.classList.add('hidden');
         gridContainer.classList.add('hidden');
         dashboardContainer.classList.remove('hidden');
 
-        // Llamamos a la nueva función que carga el dashboard
         loadToolDashboard(dashboardContainer);
-        return; // Detenemos la ejecución aquí
+        return;
 
     } else {
-        // Mostramos la vista de cuadrícula/filtros y ocultamos el dashboard
+        // Esta rama es para Admin/Bodega (en otras pestañas) Y para Operario
         searchContainer.classList.remove('hidden');
-        filtersBar.classList.remove('hidden'); // <-- Corregido
-        categoryContainer.classList.remove('hidden'); // <-- AÑADIDO
+        filtersBar.classList.remove('hidden');
+        categoryContainer.classList.remove('hidden');
         gridContainer.classList.remove('hidden');
         dashboardContainer.classList.add('hidden');
     }
-    // --- FIN DE CORRECCIÓN DE LÓGICA ---
 
-    // 2b. Lógica de Layout (basada en la pestaña activa)
-    if (statusFilter === 'asignada') {
-        // Asignada: Search (2), Category (1), Assignee (1) = 4 cols
-        searchContainer.classList.remove('md:col-span-3'); // <-- CAMBIADO
-        searchContainer.classList.add('md:col-span-2'); // <-- CAMBIADO
+    // 5. Lógica de Layout de Filtros (basada en rol y estado)
+    if (role === 'operario') {
+        // Operario: Ocultar filtros
+        searchContainer.classList.remove('md:col-span-2');
+        searchContainer.classList.add('md:col-span-3'); // El buscador (aunque se oculte)
+        assigneeContainer.classList.add('hidden');
+        // ¡Asegurarse de que los filtros estén ocultos!
+        filtersBar.classList.add('hidden');
+
+    } else if (statusFilter === 'asignada') {
+        // Admin/Bodega en pestaña 'asignada'
+        searchContainer.classList.remove('md:col-span-3');
+        searchContainer.classList.add('md:col-span-2');
         assigneeContainer.classList.remove('hidden');
     } else {
-        // Disponible, etc: Search (3), Category (1) = 4 cols
-        searchContainer.classList.remove('md:col-span-2'); // <-- CAMBIADO
-        searchContainer.classList.add('md:col-span-3'); // <-- CAMBIADO
+        // Admin/Bodega en otras pestañas
+        searchContainer.classList.remove('md:col-span-2');
+        searchContainer.classList.add('md:col-span-3');
         assigneeContainer.classList.add('hidden');
-
         if (toolAssigneeChoices) {
             toolAssigneeChoices.setChoiceByValue('all');
         }
     }
 
-    // 3. (Query a Firestore, sin cambios)
-    const toolsQuery = query(
-        collection(db, "tools"),
-        where("status", "==", statusFilter),
-        orderBy("name")
-    );
+    // 6. Query a Firestore (condicional por rol)
+    let toolsQuery;
+
+    if (role === 'operario') {
+        // El operario solo ve sus herramientas asignadas
+        // El statusFilter ya es 'asignada', pero la consulta es MÁS específica
+        toolsQuery = query(
+            collection(db, "tools"),
+            where("status", "==", "asignada"),
+            where("assignedTo", "==", currentUser.uid), // <-- Filtro clave
+            orderBy("name")
+        );
+    } else {
+        // Admin/Bodega ve la pestaña seleccionada
+        toolsQuery = query(
+            collection(db, "tools"),
+            where("status", "==", statusFilter), // Usa el 'statusFilter' de las pestañas
+            orderBy("name")
+        );
+    }
+    // --- FIN DE LA CORRECCIÓN ---
 
     unsubscribeTools = onSnapshot(toolsQuery, (snapshot) => {
         gridContainer.innerHTML = '';
         const usersMap = getUsersMap();
 
-        // 4. (Filtrado JS, modificado)
+        // 7. Filtrado JS (modificado para que el operario no filtre)
         let tools = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        // (Se eliminó el filtro 'bodega' ya que no aplica aquí)
-        if (assigneeFilter !== 'all') {
-            tools = tools.filter(tool => tool.assignedTo === assigneeFilter);
-        }
-        if (searchTerm) {
-            tools = tools.filter(tool =>
-                tool.name.toLowerCase().includes(searchTerm) ||
-                (tool.reference && tool.reference.toLowerCase().includes(searchTerm))
-            );
-        }
-        if (categoryFilter !== 'all') {
-            tools = tools.filter(tool => tool.category === categoryFilter);
+        // Aplicar filtros solo si no es operario
+        if (role !== 'operario') {
+            if (assigneeFilter !== 'all') {
+                tools = tools.filter(tool => tool.assignedTo === assigneeFilter);
+            }
+            if (searchTerm) {
+                tools = tools.filter(tool =>
+                    tool.name.toLowerCase().includes(searchTerm) ||
+                    (tool.reference && tool.reference.toLowerCase().includes(searchTerm))
+                );
+            }
+            if (categoryFilter !== 'all') {
+                tools = tools.filter(tool => tool.category === categoryFilter);
+            }
         }
 
-        // 5. Renderizar los resultados filtrados
+        // 8. Renderizar los resultados filtrados
         if (tools.length === 0) {
             let emptyMessage = "No se encontraron herramientas con esos filtros.";
-            if (!searchTerm && assigneeFilter === 'all') {
+
+            // --- INICIO CORRECCIÓN MENSAJE OPERARIO ---
+            if (role === 'operario') {
+                emptyMessage = "No tienes herramientas asignadas en este momento.";
+            }
+            // --- FIN CORRECCIÓN MENSAJE OPERARIO ---
+            else if (!searchTerm && assigneeFilter === 'all') {
                 if (statusFilter === 'disponible') emptyMessage = "No hay herramientas disponibles en bodega.";
                 if (statusFilter === 'asignada') emptyMessage = "No hay herramientas asignadas.";
                 if (statusFilter === 'en_reparacion') emptyMessage = "No hay herramientas en reparación.";
-                if (statusFilter === 'dada_de_baja') emptyMessage = "No hay herramientas retiradas."; // <--- AÑADIDO
+                if (statusFilter === 'dada_de_baja') emptyMessage = "No hay herramientas retiradas.";
             }
 
             gridContainer.innerHTML = `
@@ -495,6 +572,7 @@ export function loadHerramientaView() {
     });
 }
 
+
 /**
  * Crea el HTML para una TARJETA de herramienta. (Actualizada con Categoría y Costo)
  */
@@ -505,56 +583,58 @@ function createToolCard(tool, usersMap) {
     card.dataset.name = tool.name;
     card.dataset.assignedto = tool.assignedTo || '';
 
-    // --- INICIO DE LÓGICA AÑADIDA ---
-    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    // --- OBTENER ROL ACTUAL ---
+    const role = getCurrentUserRole();
 
-    // Buscar la etiqueta de la categoría
+    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
     const category = TOOL_CATEGORIES.find(c => c.value === tool.category);
     const categoryLabel = category ? category.label : (tool.category || 'Sin Categoría');
-
-    // Formatear el costo (solo si es mayor a 0)
     const purchaseCostLabel = (tool.purchaseCost && tool.purchaseCost > 0)
         ? currencyFormatter.format(tool.purchaseCost)
         : null;
-    // --- FIN DE LÓGICA AÑADIDA ---
-
 
     const assignedToUser = usersMap.get(tool.assignedTo);
     const assignedToName = assignedToUser ? `${assignedToUser.firstName} ${assignedToUser.lastName}` : 'En Bodega';
 
-    let statusText, statusColor, actionButton;
+    let statusText, statusColor, actionButton, thirdButtonHtml;
 
-    // Lógica de botones dinámicos
-    if (tool.status === 'asignada') {
+    if (role === 'operario') {
+        // --- VISTA SIMPLIFICADA PARA OPERARIO ---
         statusText = 'Asignada';
         statusColor = 'bg-yellow-100 text-yellow-800';
-        actionButton = `<button data-action="return-tool" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Recibir (Devolver)</button>`;
-    } else if (tool.status === 'en_reparacion') {
-        statusText = 'En Reparación';
-        statusColor = 'bg-red-100 text-red-800';
-        actionButton = `<button data-action="register-maintenance" class="bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Registrar Mantenimiento</button>`;
-    } else if (tool.status === 'dada_de_baja') {
-        statusText = 'Dada de Baja';
-        statusColor = 'bg-gray-200 text-gray-800';
-        actionButton = `<button disabled class="bg-gray-400 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Retirada</button>`;
-    } else { // 'disponible'
-        statusText = 'Disponible';
-        statusColor = 'bg-green-100 text-green-800';
-        actionButton = `<button data-action="assign-tool" class="bg-green-500 hover:bg-green-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Asignar</button>`;
+        actionButton = ''; // No puede asignar/devolver
+        thirdButtonHtml = ''; // No puede editar/eliminar
+
+    } else {
+        // --- VISTA COMPLETA PARA ADMIN/BODEGA ---
+        if (tool.status === 'asignada') {
+            statusText = 'Asignada';
+            statusColor = 'bg-yellow-100 text-yellow-800';
+            actionButton = `<button data-action="return-tool" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Recibir (Devolver)</button>`;
+        } else if (tool.status === 'en_reparacion') {
+            statusText = 'En Reparación';
+            statusColor = 'bg-red-100 text-red-800';
+            actionButton = `<button data-action="register-maintenance" class="bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Registrar Mantenimiento</button>`;
+        } else if (tool.status === 'dada_de_baja') {
+            statusText = 'Dada de Baja';
+            statusColor = 'bg-gray-200 text-gray-800';
+            actionButton = `<button disabled class="bg-gray-400 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Retirada</button>`;
+        } else { // 'disponible'
+            statusText = 'Disponible';
+            statusColor = 'bg-green-100 text-green-800';
+            actionButton = `<button data-action="assign-tool" class="bg-green-500 hover:bg-green-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Asignar</button>`;
+        }
+
+        thirdButtonHtml = (tool.status === 'en_reparacion')
+            ? `<button data-action="decommission-tool" class="bg-red-700 hover:bg-red-800 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Dar de Baja</button>`
+            : (tool.status === 'dada_de_baja')
+                ? `<button data-action="delete-tool" class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Eliminar</button>`
+                : `<button data-action="edit-tool" class="bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Editar</button>`;
     }
 
-    // Definimos el tercer botón dinámicamente
-    const thirdButtonHtml = (tool.status === 'en_reparacion')
-        ? `<button data-action="decommission-tool" class="bg-red-700 hover:bg-red-800 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Dar de Baja</button>`
-        : (tool.status === 'dada_de_baja')
-            ? `<button data-action="delete-tool" class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Eliminar</button>`
-            : `<button data-action="edit-tool" class="bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Editar</button>`;
 
-
-    // --- INICIO DE REDISEÑO DE TARJETA ---
     card.innerHTML = `
         <div class="flex-grow flex">
-            
             <div class="w-1/3 flex-shrink-0 aspect-square bg-gray-100"> 
                 <img 
                     src="${tool.photoURL || 'https://via.placeholder.com/300'}" 
@@ -596,13 +676,12 @@ function createToolCard(tool, usersMap) {
             </div>
         </div>
         
-        <div class="bg-gray-50 p-3 border-t grid grid-cols-3 gap-2">
+        <div class="bg-gray-50 p-3 border-t grid ${role === 'operario' ? 'grid-cols-1' : 'grid-cols-3'} gap-2">
             ${actionButton}
             <button data-action="view-tool-history" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-semibold py-2 px-3 rounded-lg w-full">Historial</button>
             ${thirdButtonHtml}
         </div>
     `;
-    // --- FIN DE REDISEÑO DE TARJETA ---
     return card;
 }
 
@@ -878,43 +957,59 @@ async function handleDecommissionTool(toolId) {
  * Abre un modal y muestra el historial de una herramienta específica. (Sin cambios)
  */
 async function handleViewToolHistory(toolId, toolName) {
+    const role = getCurrentUserRole(); 
+    
     const modal = document.getElementById('tool-history-modal');
     const title = document.getElementById('tool-history-title');
     const body = document.getElementById('tool-history-body');
 
     if (!modal || !title || !body) return;
 
-    title.textContent = `Historial de: ${toolName}`;
+    // --- INICIO DE MODIFICACIÓN (TÍTULO) ---
+    // Ponemos un título temporal mientras cargan los datos
+    title.textContent = `Historial de: ${toolName}`; 
+    // --- FIN DE MODIFICACIÓN (TÍTULO) ---
+    
     body.innerHTML = '<p class="text-gray-500 text-center">Cargando historial...</p>';
     modal.style.display = 'flex';
 
     const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
-
     const usersMap = getUsersMap();
 
     try {
-        // --- INICIO DE CÓDIGO AÑADIDO ---
         // 1. Cargar el documento principal de la herramienta
         const toolDoc = await getDoc(doc(db, "tools", toolId));
         const toolData = toolDoc.exists() ? toolDoc.data() : {};
         const purchaseCost = toolData.purchaseCost || 0;
         let totalMaintenanceCost = 0;
-        // --- FIN DE CÓDIGO AÑADIDO ---
-
+        
+        // --- INICIO DE MODIFICACIÓN (TÍTULO FINAL) ---
+        // Construir el título final con el nombre y la referencia
+        const toolReference = toolData.reference || null;
+        if (toolReference) {
+            title.textContent = `Historial de: ${toolName} (${toolReference})`;
+        } else {
+            title.textContent = `Historial de: ${toolName}`;
+        }
+        // --- FIN DE MODIFICACIÓN (TÍTULO FINAL) ---
+        
         const historyQuery = query(
             collection(db, "tools", toolId, "history"),
             orderBy("timestamp", "desc")
         );
         const snapshot = await getDocs(historyQuery);
 
+        body.innerHTML = ''; // Limpiamos el "Cargando..."
+
+        // --- INICIO DE MODIFICACIÓN (Eliminar referencia del body) ---
+        // La línea que imprimía toolData.reference en el body se ha eliminado.
+        // --- FIN DE MODIFICACIÓN ---
+
         if (snapshot.empty) {
-            body.innerHTML = '<p class="text-gray-500 text-center">No hay historial para esta herramienta.</p>';
+            body.innerHTML += '<p class="text-gray-500 text-center">No hay historial para esta herramienta.</p>'; // Usamos +=
             return;
         }
 
-        body.innerHTML = ''; // Limpiamos el "Cargando..."
-
-        // --- INICIO DE CÓDIGO AÑADIDO ---
         // 2. Calcular el costo total de mantenimiento (necesitamos un bucle previo)
         snapshot.forEach(doc => {
             if (doc.data().action === 'mantenimiento') {
@@ -922,22 +1017,23 @@ async function handleViewToolHistory(toolId, toolName) {
             }
         });
 
-        // 3. Renderizar el resumen de costos
-        const costSummaryHtml = `
-            <div class="mb-4 grid grid-cols-2 gap-4">
-                <div class="bg-gray-100 p-3 rounded-lg text-center">
-                    <p class="text-sm font-medium text-gray-700">Costo de Adquisición</p>
-                    <p class="text-2xl font-bold text-gray-900">${currencyFormatter.format(purchaseCost)}</p>
+        // 3. Renderizar el resumen de costos SÓLO si NO es operario
+        if (role !== 'operario') {
+            const costSummaryHtml = `
+                <div class="mb-4 grid grid-cols-2 gap-4">
+                    <div class="bg-gray-100 p-3 rounded-lg text-center">
+                        <p class="text-sm font-medium text-gray-700">Costo de Adquisición</p>
+                        <p class="text-2xl font-bold text-gray-900">${currencyFormatter.format(purchaseCost)}</p>
+                    </div>
+                    <div class="bg-orange-50 p-3 rounded-lg text-center">
+                        <p class="text-sm font-medium text-orange-800">Costo Total Mantenimiento</p>
+                        <p class="text-2xl font-bold text-orange-900">${currencyFormatter.format(totalMaintenanceCost)}</p>
+                    </div>
                 </div>
-                <div class="bg-orange-50 p-3 rounded-lg text-center">
-                    <p class="text-sm font-medium text-orange-800">Costo Total Mantenimiento</p>
-                    <p class="text-2xl font-bold text-orange-900">${currencyFormatter.format(totalMaintenanceCost)}</p>
-                </div>
-            </div>
-            <hr class="mb-4">
-        `;
-        body.innerHTML += costSummaryHtml;
-        // --- FIN DE CÓDIGO AÑADIDO ---
+                <hr class="mb-4">
+            `;
+            body.innerHTML += costSummaryHtml;
+        }
 
         snapshot.forEach(doc => {
             const entry = doc.data();
@@ -952,7 +1048,10 @@ async function handleViewToolHistory(toolId, toolName) {
 
             if (entry.action === 'asignada') {
                 const targetUser = usersMap.get(entry.userId);
-                const targetName = targetUser ? `${targetUser.firstName} ${targetUser.lastName}` : 'Usuario Desconocido';
+                
+                const targetName = (role === 'operario' && entry.userId === getCurrentUser().uid) 
+                    ? "Mí" 
+                    : (targetUser ? `${targetUser.firstName} ${targetUser.lastName}` : 'Usuario Desconocido');
 
                 entryHtml = `
                     <div class="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
@@ -1000,7 +1099,7 @@ async function handleViewToolHistory(toolId, toolName) {
                     </div>
                 `;
             } else if (entry.action === 'mantenimiento') {
-
+                // El rol 'operario' no verá esta sección porque está dentro del 'if' que ya filtramos
                 entryHtml = `
                     <div class="p-3 bg-orange-50 border border-orange-200 rounded-lg">
                         <p class="font-semibold text-orange-800">Registro de Mantenimiento</p>
@@ -1015,8 +1114,6 @@ async function handleViewToolHistory(toolId, toolName) {
                         <p class="text-xs text-gray-500 mt-1">${dateString} - ${timeString}</p>
                     </div>
                 `;
-                // --- FIN DE CÓDIGO AÑADIDO ---
-
             }
 
             body.innerHTML += entryHtml;
@@ -1027,7 +1124,6 @@ async function handleViewToolHistory(toolId, toolName) {
         body.innerHTML = '<p class="text-red-500 text-center">Error al cargar el historial.</p>';
     }
 }
-// --- FIN: Nueva Función para Ver Historial ---
 
 
 /**

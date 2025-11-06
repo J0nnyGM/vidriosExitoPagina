@@ -6803,18 +6803,21 @@ async function handleDeletePhoto(subItemId, itemId, installerId, projectId) {
  * @returns {string} - El texto formateado (ej: "Hace 5 minutos").
  */
 function timeAgoFormat(date) {
-    // Verificación de seguridad por si la fecha es nula
-    if (!date || typeof date.toDate !== 'function') {
-        // Si 'date' es un objeto Timestamp de Firestore, conviértelo
-        if (date && typeof date.toDate === 'function') {
-            date = date.toDate();
-        } else if (!(date instanceof Date)) {
-            // Si sigue sin ser una fecha, no podemos formatear
-            console.warn("timeAgoFormat recibió una fecha inválida:", date);
-            return "hace un momento";
-        }
+    
+    // --- INICIO DE LA CORRECCIÓN ---
+    // La lógica de 'if' fue desenredada.
+    
+    if (date && typeof date.toDate === 'function') {
+        // 1. Si 'date' es un objeto Timestamp de Firestore, conviértelo a JS Date
+        date = date.toDate();
+    } else if (!date || !(date instanceof Date)) {
+        // 2. Si no es un Timestamp, ni una Fecha, o es nulo, retorna un valor seguro.
+        console.warn("timeAgoFormat recibió una fecha inválida:", date);
+        return "hace un momento";
     }
+    // --- FIN DE LA CORRECCIÓN ---
 
+    // 3. El resto de la función ahora funciona porque 'date' SIEMPRE es un JS Date.
     const now = new Date();
     const seconds = Math.round((now - date) / 1000);
 
@@ -7053,6 +7056,14 @@ function loadNotifications() {
                 console.log("DEBUG: Condición 'Catálogo' cumplida.");
                 showView('catalog');
             }
+            // --- INICIO DE MODIFICACIÓN ---
+            else if (link === '/herramienta') {
+                console.log("DEBUG: Condición 'Herramienta' cumplida.");
+                showView('herramienta');
+                // Llamamos a resetToolViewAndLoad() para que cargue la vista correcta (admin vs operario)
+                resetToolViewAndLoad();
+            }
+            // --- FIN DE MODIFICACIÓN ---
             // Caso: Tarea (comentario o asignación)
             else if (projectId && taskId) {
                 console.log("DEBUG: Condición 'Tarea' cumplida.");
@@ -7144,9 +7155,10 @@ document.addEventListener('DOMContentLoaded', () => {
         closeMainModal,
         openConfirmModal,
         sendNotification,
-        openImageModal, // <-- AÑADE ESTA LÍNEA
+        openImageModal,
         () => currentUser,
-        () => usersMap
+        () => usersMap,
+        () => currentUserRole // <-- AÑADE ESTA LÍNEA
     );
 
     document.getElementById('po-details-close-btn').addEventListener('click', closePurchaseOrderModal);

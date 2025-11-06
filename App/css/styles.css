@@ -624,8 +624,10 @@ dl dd span.block:last-child {
     display: grid;
     /* Por defecto, 1 columna para móviles */
     grid-template-columns: repeat(1, minmax(0, 1fr));
-    gap: 1.5rem; /* 24px - Espacio entre tarjetas */
-    align-items: stretch; /* <-- AÑADE ESTA LÍNEA */
+    gap: 1.5rem;
+    /* 24px - Espacio entre tarjetas */
+    align-items: stretch;
+    /* <-- AÑADE ESTA LÍNEA */
 }
 
 /* En pantallas medianas (md) y superiores, cambiamos a 2 columnas */
@@ -637,8 +639,10 @@ dl dd span.block:last-child {
 
 .task-card {
     /* La altura (h-full) se aplica desde JavaScript */
-    display: grid; /* <-- AÑADE ESTA LÍNEA */
-    grid-template-rows: 1fr auto; /* <-- AÑADE ESTA LÍNEA */
+    display: grid;
+    /* <-- AÑADE ESTA LÍNEA */
+    grid-template-rows: 1fr auto;
+    /* <-- AÑADE ESTA LÍNEA */
 }
 
 
@@ -654,9 +658,11 @@ dl dd span.block:last-child {
 }
 
 .task-progress-bar-fg {
-    background-color: #3b82f6; /* azul-600 */
+    background-color: #3b82f6;
+    /* azul-600 */
     height: 100%;
-    border-radius: 9999px; /* rounded-full */
+    border-radius: 9999px;
+    /* rounded-full */
     transition: width 0.5s ease-in-out;
 }
 
@@ -665,7 +671,7 @@ dl dd span.block:last-child {
     /* Obligatorio para que la animación de deslizamiento no afecte a otros elementos */
     position: relative;
     /* Oculta el contenido que se desborda al deslizar */
-    overflow: hidden; 
+    overflow: hidden;
     /* Evita que el usuario seleccione el texto mientras desliza */
     user-select: none;
 }
@@ -683,11 +689,11 @@ dl dd span.block:last-child {
   por encima de otro contenido en la página (como las tarjetas).
 */
 .choices__inner {
-  position: relative;
-  z-index: 2;
+    position: relative;
+    z-index: 2;
 }
 
 .choices__list--dropdown {
-  position: relative;
-  z-index: 30; /* Suficientemente alto para estar sobre el grid, pero debajo de los modales (z-50) */
+    position: absolute;
+    z-index: 30;
 }
