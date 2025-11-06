@@ -3,7 +3,8 @@ module.exports = {
   content: [
     "./index.html",
     "./js/app.js",
-    "./js/herramientas.js" // <-- Asegúrate que esta línea esté
+    "./js/herramientas.js", // <-- Asegúrate que esta línea esté
+    "./js/dotacion.js" // <-- AÑADE ESTA LÍNEA
   ],
   theme: {
     extend: {

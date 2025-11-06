@@ -6,6 +6,7 @@ import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-messaging.js";
+import { initDotacion, loadDotacionView, updateDotacionFilterOptions } from './dotacion.js'; // <-- LÍNEA MODIFICADA
 import { initHerramientas, resetToolViewAndLoad, updateToolFilterOptions, TOOL_CATEGORIES } from './herramientas.js';
 // --- CONFIGURACIÓN Y ESTADO ---
 
@@ -177,7 +178,7 @@ function showView(viewName, fromHistory = false) {
     // --- LÓGICA AÑADIDA PARA EL HISTORIAL ---
     // Si el cambio de vista NO viene de presionar "Atrás",
     // entonces lo añadimos al historial.
-    if (!fromHistory) {
+    if (!fromHistory && viewName !== 'project-details') {
         const state = { viewName: viewName };
         const title = `Gestor de Proyectos - ${viewName}`;
         const url = `#${viewName}`;
@@ -300,10 +301,9 @@ async function loadUsersMap() {
         usersMap.set(doc.id, doc.data());
     });
 
-    // --- INICIO DE LA LÍNEA A AÑADIR ---
     // Aquí llamamos a la función para poblar el filtro de herramientas
     updateToolFilterOptions(usersMap);
-    // --- FIN DE LA LÍNEA A AÑADIR ---
+    updateDotacionFilterOptions(usersMap); // <-- AÑADE ESTA LÍNEA
 }
 
 // --- LÓGICA DEL DASHBOARD ---
@@ -1527,13 +1527,25 @@ async function loadProjectInfoTab() {
  * @param {string} [defaultTabOrProjectId] - La pestaña a abrir, O el ID del proyecto si 'project' es nulo.
  * @param {string} [openTaskId] - (Opcional) El ID de una tarea para abrir automáticamente.
  */
-async function showProjectDetails(project, defaultTabOrProjectId = 'info-general', openTaskId = null) {
+async function showProjectDetails(project, defaultTabOrProjectId = 'info-general', openTaskId = null, fromHistory = false) {
 
     // IDs de tu index.html
     const projectTitle = document.getElementById('project-details-name');
     const projectBuilder = document.getElementById('project-details-builder');
 
     showView('project-details'); // <-- Esto necesita la corrección del Paso 3
+
+    if (!fromHistory) {
+        const state = {
+            viewName: 'project-details',
+            projectId: project.id // <-- Guardamos el ID del proyecto
+        };
+        const title = `Proyecto - ${project.name}`;
+        // Usamos el ID en la URL para que se pueda compartir
+        const url = `#project-details/${project.id}`;
+        history.pushState(state, title, url);
+    }
+
     loadingOverlay.classList.remove('hidden');
 
     let defaultTab = 'info-general';
@@ -3929,75 +3941,68 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
 
-        case 'new-tool': {
-            title = 'Nueva Herramienta';
-            btnText = 'Crear Herramienta';
+        case 'new-dotacion-catalog-item': {
+            title = 'Nuevo Tipo de Ítem (Catálogo)';
+            btnText = 'Crear Ítem';
             btnClass = 'bg-blue-500 hover:bg-blue-600';
 
-            // --- INICIO DE CÓDIGO AÑADIDO ---
-            // Definir opciones de categoría
-            const categoryOptions = TOOL_CATEGORIES.map(cat =>
-                `<option value="${cat.value}">${cat.label}</option>`
-            ).join('');
-            // --- FIN DE CÓDIGO AÑADIDO ---
+            const categoryOptions = `
+                <option value="EPP" selected>EPP (Protección)</option>
+                <option value="Uniforme">Uniforme</option>
+                <option value="Otro">Otro</option>
+            `;
 
             bodyHtml = `
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    
                     <div class="md:col-span-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Foto (Requerida)</label>
-                        <div id="new-tool-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
-                            <div id="new-tool-preview" class="hidden absolute inset-0">
-                                <img src="" id="new-tool-img-preview" class="w-full h-full object-contain">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Foto del Ítem (Opcional)</label>
+                        <div id="new-dotacion-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
+                            <div id="new-dotacion-preview" class="hidden absolute inset-0">
+                                <img src="" id="new-dotacion-img-preview" class="w-full h-full object-contain">
                             </div>
-                            <div id="new-tool-prompt" class="text-center p-4">
+                            <div id="new-dotacion-prompt" class="text-center p-4">
                                 <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                <p class="mt-2 text-sm text-gray-500">Haz clic para subir una foto</p>
+                                <p class="mt-2 text-sm text-gray-500">Foto del ítem (ej. Casco)</p>
                             </div>
                         </div>
-                        <input type="file" id="tool-photo" name="photo" required accept="image/*" class="hidden">
+                        <input type="file" id="dotacion-photo" name="photo" accept="image/*" class="hidden">
                     </div>
                     
                     <div class="md:col-span-2 space-y-4 pt-5">
                         <div>
-                            <label for="tool-name" class="block text-sm font-medium text-gray-700">Nombre de la Herramienta</label>
-                            <input type="text" id="tool-name" name="name" required class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Taladro Percutor">
+                            <label class="block text-sm font-medium text-gray-700">Nombre del Ítem</label>
+                            <input type="text" name="itemName" required class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Casco de Seguridad Blanco">
                         </div>
                         <div>
-                            <label for="tool-reference" class="block text-sm font-medium text-gray-700">Referencia / Código (Opcional)</label>
-                            <input type="text" id="tool-reference" name="reference" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: MAK-123">
+                            <label class="block text-sm font-medium text-gray-700">Referencia / SKU (Opcional)</label>
+                            <input type="text" name="reference" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: REF-CS-001">
                         </div>
-
                         <div class="grid grid-cols-2 gap-4">
                             <div>
-                                <label for="tool-category" class="block text-sm font-medium text-gray-700">Categoría</label>
-                                <select id="tool-category" name="category" required class="mt-1 w-full border rounded-md p-2 bg-white">
-                                    <option value="" disabled selected>Seleccione...</option>
+                                <label class="block text-sm font-medium text-gray-700">Categoría</label>
+                                <select name="category" required class="mt-1 w-full border rounded-md p-2 bg-white">
                                     ${categoryOptions}
                                 </select>
                             </div>
                             <div>
-                                <label for="tool-purchaseDate" class="block text-sm font-medium text-gray-700">Fecha de Compra</label>
-                                <input type="date" id="tool-purchaseDate" name="purchaseDate" class="mt-1 w-full border rounded-md p-2">
+                                <label class="block text-sm font-medium text-gray-700">Talla (Opcional)</label>
+                                <input type="text" name="talla" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: L, 42, N/A">
                             </div>
                         </div>
                         <div>
-                            <label for="tool-purchaseCost" class="block text-sm font-medium text-gray-700">Costo de Adquisición (Opcional)</label>
-                            <input type="text" id="tool-purchaseCost" name="purchaseCost" class="currency-input mt-1 w-full border rounded-md p-2" placeholder="$ 0">
+                            <label class="block text-sm font-medium text-gray-700">Stock Inicial (Opcional)</label>
+                            <input type="number" name="initialStock" class="mt-1 w-full border rounded-md p-2" value="0" min="0">
                         </div>
-                        <p class="text-xs text-gray-500 pt-2">La herramienta se creará con estado "Disponible" en "Bodega".</p>
                     </div>
                 </div>
             `;
 
-            // Lógica JS para la vista previa y los nuevos campos
-            setTimeout(() => {
-                const dropzone = document.getElementById('new-tool-dropzone');
-                const fileInput = document.getElementById('tool-photo');
-                const previewContainer = document.getElementById('new-tool-preview');
-                const previewImg = document.getElementById('new-tool-img-preview');
-                const promptEl = document.getElementById('new-tool-prompt');
-
+            setTimeout(() => { // Lógica para la vista previa de la foto (sin cambios)
+                const dropzone = document.getElementById('new-dotacion-dropzone');
+                const fileInput = document.getElementById('dotacion-photo');
+                const previewContainer = document.getElementById('new-dotacion-preview');
+                const previewImg = document.getElementById('new-dotacion-img-preview');
+                const promptEl = document.getElementById('new-dotacion-prompt');
                 if (dropzone) {
                     dropzone.addEventListener('click', () => fileInput.click());
                     fileInput.addEventListener('change', (e) => {
@@ -4013,19 +4018,140 @@ async function openMainModal(type, data = {}) {
                         }
                     });
                 }
-
-                // --- INICIO DE CÓDIGO AÑADIDO ---
-                // Activar formateador de moneda
-                const costInput = document.getElementById('tool-purchaseCost');
-                if (costInput) setupCurrencyInput(costInput); // setupCurrencyInput ya existe en tu app.js
-
-                // Poner fecha de hoy por defecto
-                const purchaseDateInput = document.getElementById('tool-purchaseDate');
-                if (purchaseDateInput) purchaseDateInput.value = new Date().toISOString().split('T')[0];
-                // --- FIN DE CÓDIGO AÑADIDO ---
-
             }, 100);
+            break;
+        }
 
+        case 'add-dotacion-stock': {
+            title = 'Añadir Stock a Inventario';
+            btnText = 'Añadir Stock';
+            btnClass = 'bg-blue-500 hover:bg-blue-600';
+
+            // --- INICIO DE MODIFICACIÓN ---
+            bodyHtml = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="md:col-span-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Ítem</label>
+                        <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden border">
+                            <img src="${data.itemPhotoURL || 'https://via.placeholder.com/300'}" alt="${data.itemName}" class="w-full h-full object-contain">
+                        </div>
+                        <p class="text-center font-bold text-lg mt-2">${data.itemName}</p>
+                        <p class="text-center text-sm text-gray-500">${data.talla || 'Sin talla'}</p>
+                    </div>
+                    <div class="md:col-span-2 space-y-4 pt-5">
+                        <input type="hidden" name="itemId" value="${data.id}">
+                        <div>
+                            <label class="block text-sm font-medium">Cantidad a Añadir</label>
+                            <input type="number" name="quantity" required class="mt-1 w-full border p-2 rounded-md" min="1">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium">Costo Total de la Compra (Opcional)</label>
+                            <input type="text" id="dotacion-purchase-cost" name="purchaseCost" class="currency-input mt-1 w-full border rounded-md p-2" placeholder="$ 0">
+                        </div>
+                    </div>
+                </div>
+            `;
+            // --- FIN DE MODIFICACIÓN ---
+
+            setTimeout(() => {
+                setupCurrencyInput(document.getElementById('dotacion-purchase-cost'));
+            }, 100);
+            break;
+        }
+
+        case 'register-dotacion-delivery': {
+            title = 'Registrar Entrega de Dotación';
+            btnText = 'Confirmar Entrega';
+            btnClass = 'bg-green-500 hover:bg-green-600';
+
+            const userChoices = Array.from(usersMap.entries())
+                .filter(([id, user]) => user.status === 'active')
+                .sort((a, b) => a[1].firstName.localeCompare(b[1].firstName))
+                .map(([id, user]) => ({
+                    value: id,
+                    label: `${user.firstName} ${user.lastName}`
+                }));
+
+            // --- INICIO DE MODIFICACIÓN ---
+            bodyHtml = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="md:col-span-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Ítem</label>
+                        <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden border">
+                            <img src="${data.itemPhotoURL || 'https://via.placeholder.com/300'}" alt="${data.itemName}" class="w-full h-full object-contain">
+                        </div>
+                        <p class="text-center font-bold text-lg mt-2">${data.itemName}</p>
+                        <p class="text-center text-sm text-gray-500">${data.talla || 'Sin talla'}</p>
+                        <p class="text-lg text-center font-bold mt-2 ${data.quantityInStock > 0 ? 'text-green-600' : 'text-red-600'}">Stock: ${data.quantityInStock}</p>
+                        <input type="hidden" name="itemId" value="${data.id}">
+                        <input type="hidden" name="itemName" value="${data.itemName}">
+                        <input type="hidden" name="talla" value="${data.talla}">
+                    </div>
+                    
+                    <div class="md:col-span-2 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium">1. Seleccionar Colaborador</label>
+                            <select id="dotacion-assignedTo" name="assignedTo" required class="mt-1 w-full border rounded-md"></select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium">2. Cantidad a Entregar</label>
+                            <input type="number" name="quantity" required class="mt-1 w-full border p-2 rounded-md" min="1" max="${data.quantityInStock}" ${data.quantityInStock <= 0 ? 'disabled' : ''}>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">3. Foto de Entrega (Requerida)</label>
+                            <div id="assign-dotacion-dropzone" class="h-48 w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
+                                <div id="assign-dotacion-preview" class="hidden absolute inset-0"><img src="" id="assign-dotacion-img-preview" class="w-full h-full object-contain"></div>
+                                <div id="assign-dotacion-prompt" class="text-center p-4">
+                                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                                    <p class="mt-2 text-sm text-gray-500">Subir foto de entrega</p>
+                                </div>
+                            </div>
+                            <input type="file" id="dotacion-assign-photo" name="assignPhoto" required accept="image/*" class="hidden">
+                        </div>
+                        <div>
+                            <label class"block text-sm font-medium">4. Fecha de Entrega</label>
+                            <input type="date" name="fechaEntrega" required class="mt-1 w-full border p-2 rounded-md">
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            setTimeout(() => { // Lógica para el selector de usuario (copiada)
+                const assigneeSelect = document.getElementById('dotacion-assignedTo');
+                if (assigneeSelect) {
+                    new Choices(assigneeSelect, {
+                        choices: userChoices,
+                        itemSelectText: 'Seleccionar',
+                        searchPlaceholderValue: 'Buscar colaborador...',
+                        placeholder: true,
+                        placeholderValue: 'Selecciona un usuario...',
+                    });
+                }
+                // Lógica para la vista previa de la foto (copiada)
+                const dropzone = document.getElementById('assign-dotacion-dropzone');
+                const fileInput = document.getElementById('dotacion-assign-photo');
+                const previewContainer = document.getElementById('assign-dotacion-preview');
+                const previewImg = document.getElementById('assign-dotacion-img-preview');
+                const promptEl = document.getElementById('assign-dotacion-prompt');
+                if (dropzone) {
+                    dropzone.addEventListener('click', () => fileInput.click());
+                    fileInput.addEventListener('change', (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                previewImg.src = event.target.result;
+                                previewContainer.classList.remove('hidden');
+                                promptEl.classList.add('hidden');
+                            }
+                            reader.readAsDataURL(file);
+                        }
+                    });
+                }
+                // Set default date to today
+                const dateInput = modalForm.querySelector('input[name="fechaEntrega"]');
+                if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
+            }, 100);
             break;
         }
 
@@ -5047,6 +5173,30 @@ async function openMainModal(type, data = {}) {
             break; // Fin del case 'new-task'
         }
 
+            // --- AÑADE ESTE CASE COMPLETO ---
+            if (type === 'new-dotacion') {
+                const userId = data.userId;
+                if (!userId) {
+                    alert("Error: No se seleccionó un usuario.");
+                    closeMainModal();
+                    return;
+                }
+                const dotacionData = {
+                    itemName: data.itemName,
+                    category: data.category,
+                    talla: data.talla || 'N/A',
+                    quantity: parseInt(data.quantity) || 1,
+                    fechaEntrega: data.fechaEntrega,
+                    observaciones: data.observaciones || '',
+                    assignedAt: new Date(),
+                    assignedBy: currentUser.uid
+                };
+                // Usa la nueva subcolección
+                await addDoc(collection(db, "users", userId, "dotacionAsignada"), dotacionData);
+                closeMainModal();
+                return; // Salimos para no ejecutar el switch de abajo
+            }
+        // --- FIN DEL CASE ---
         case 'editProfile':
             title = 'Mi Perfil'; btnText = 'Guardar Cambios'; btnClass = 'bg-blue-500 hover:bg-blue-600';
             bodyHtml = `<div class="space-y-4">
@@ -5074,7 +5224,7 @@ modalForm.addEventListener('submit', async (e) => {
     const type = modalForm.dataset.type;
     const id = modalForm.dataset.id;
 
-    if (['new-tool', 'edit-tool', 'assign-tool', 'return-tool', 'register-maintenance'].includes(type)) { // <-- AÑADIDO AQUÍ
+    if (['new-tool', 'edit-tool', 'assign-tool', 'return-tool', 'register-maintenance', 'new-dotacion-catalog-item', 'add-dotacion-stock', 'register-dotacion-delivery'].includes(type)) {
         return;
     }
 
@@ -5083,6 +5233,29 @@ modalForm.addEventListener('submit', async (e) => {
 
     if (type === 'new-task') {
         await createTask(data); // Llama a la nueva función para crear la tarea
+        return; // Salimos para no ejecutar el switch de abajo
+    }
+
+    if (type === 'new-dotacion') {
+        const userId = data.userId;
+        if (!userId) {
+            alert("Error: No se seleccionó un usuario.");
+            closeMainModal();
+            return;
+        }
+        const dotacionData = {
+            itemName: data.itemName,
+            category: data.category,
+            talla: data.talla || 'N/A',
+            quantity: parseInt(data.quantity) || 1,
+            fechaEntrega: data.fechaEntrega,
+            observaciones: data.observaciones || '',
+            assignedAt: new Date(),
+            assignedBy: currentUser.uid
+        };
+        // Usa la nueva subcolección
+        await addDoc(collection(db, "users", userId, "dotacionAsignada"), dotacionData);
+        closeMainModal();
         return; // Salimos para no ejecutar el switch de abajo
     }
 
@@ -5314,6 +5487,7 @@ modalForm.addEventListener('submit', async (e) => {
             }
             break;
         }
+
         case 'new-purchase-order': {
             modalConfirmBtn.disabled = true;
             modalConfirmBtn.textContent = 'Guardando...';
@@ -6803,10 +6977,10 @@ async function handleDeletePhoto(subItemId, itemId, installerId, projectId) {
  * @returns {string} - El texto formateado (ej: "Hace 5 minutos").
  */
 function timeAgoFormat(date) {
-    
+
     // --- INICIO DE LA CORRECCIÓN ---
     // La lógica de 'if' fue desenredada.
-    
+
     if (date && typeof date.toDate === 'function') {
         // 1. Si 'date' es un objeto Timestamp de Firestore, conviértelo a JS Date
         date = date.toDate();
@@ -7060,8 +7234,13 @@ function loadNotifications() {
             else if (link === '/herramienta') {
                 console.log("DEBUG: Condición 'Herramienta' cumplida.");
                 showView('herramienta');
-                // Llamamos a resetToolViewAndLoad() para que cargue la vista correcta (admin vs operario)
                 resetToolViewAndLoad();
+            }
+            // --- INICIO DE NUEVA MODIFICACIÓN ---
+            else if (link === '/dotacion') {
+                console.log("DEBUG: Condición 'Dotación' cumplida.");
+                showView('dotacion');
+                loadDotacionView(); // Carga la vista de dotación
             }
             // --- FIN DE MODIFICACIÓN ---
             // Caso: Tarea (comentario o asignación)
@@ -7159,6 +7338,20 @@ document.addEventListener('DOMContentLoaded', () => {
         () => currentUser,
         () => usersMap,
         () => currentUserRole // <-- AÑADE ESTA LÍNEA
+    );
+
+    // Inicializamos el módulo de Dotación <-- AÑADE ESTE BLOQUE
+    initDotacion(
+        db,
+        storage, // <-- AÑADE ESTA LÍNEA
+        openMainModal,
+        closeMainModal, // <-- AÑADE ESTA LÍNEA
+        openConfirmModal,
+        sendNotification, // <-- AÑADE ESTA LÍNEA
+        openImageModal, // <-- AÑADE ESTA LÍNEA
+        () => currentUser,
+        () => usersMap,
+        () => currentUserRole
     );
 
     document.getElementById('po-details-close-btn').addEventListener('click', closePurchaseOrderModal);
@@ -7362,9 +7555,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Este bloque maneja los clics en la tabla de Ítems (Ver, Editar, Eliminar)
         const itemRow = elementWithAction.closest('tr[data-id]');
-        if (itemRow) {
+        if (itemRow && itemRow.closest('#items-table-body')) {
             const itemId = itemRow.dataset.id;
-
+            
             // Verificamos que el ID sea válido antes de continuar
             if (!itemId) {
                 console.error("Error: Se hizo clic en un ítem pero su ID no se pudo encontrar.");
@@ -8019,6 +8212,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     showView('herramienta');
                     resetToolViewAndLoad(); // <-- Llama a la nueva función de reseteo
                     // --- FIN DE MODIFICACIÓN ---
+                } else if (viewName === 'dotacion') { // <-- AÑADE ESTE BLOQUE
+                    showView('dotacion');
+                    loadDotacionView();
                 } else if (viewName === 'adminPanel') {
                     showView('adminPanel');
                     loadUsers('active');
@@ -8597,20 +8793,30 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- INICIO DE CORRECCIÓN: Manejador del historial (Botón "Atrás") ---
     // Escucha los eventos de "popstate" (clic en el botón "Atrás" del navegador/mouse)
     window.addEventListener('popstate', (event) => {
-        // 'event.state' contiene el objeto { viewName: "..." } que guardamos con pushState
+        // 'event.state' contiene el objeto { viewName: "..." } que guardamos
         if (event.state && event.state.viewName) {
 
-            // Si encontramos un estado guardado, mostramos esa vista
-            // Pasamos 'true' para indicar que es un cambio desde el historial
-            // y así evitar que 'showView' vuelva a añadir esta vista al historial.
-            showView(event.state.viewName, true);
+            const { viewName, projectId } = event.state;
+
+            if (viewName === 'project-details' && projectId) {
+                // Si es una vista de proyecto, recargamos los datos
+                // Pasamos 'null' como proyecto, el 'projectId' como ID, y 'true' para fromHistory
+                showProjectDetails(null, projectId, null, true);
+
+            } else if (viewName === 'proyectos') {
+                // Si volvemos al dashboard, llamamos a showDashboard
+                showDashboard();
+
+            } else {
+                // Para todas las demás vistas simples (Herramientas, Tareas, etc.)
+                showView(viewName, true);
+            }
 
         } else if (currentUser) {
-            // Si no hay estado (ej. el usuario volvió a la página inicial)
-            // y el usuario está logueado, lo mandamos a la vista de proyectos por defecto.
-            showView('proyectos', true);
+            // Si no hay estado (página inicial) y estamos logueados, vamos al dashboard
+            showDashboard();
         } else {
-            // Si no hay estado y no hay usuario, mostramos el login
+            // Si no, al login
             showAuthView('login');
         }
     });

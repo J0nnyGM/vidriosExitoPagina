@@ -171,7 +171,7 @@ export function initHerramientas(
             case 'view-tool-image':
                 const imageUrl = target.dataset.url;
                 if (imageUrl) {
-                    closeToolHistoryModal();
+                    // closeToolHistoryModal(); // <-- LÍNEA ELIMINADA
                     openImageModalCallback(imageUrl);
                 }
                 break;
@@ -957,8 +957,8 @@ async function handleDecommissionTool(toolId) {
  * Abre un modal y muestra el historial de una herramienta específica. (Sin cambios)
  */
 async function handleViewToolHistory(toolId, toolName) {
-    const role = getCurrentUserRole(); 
-    
+    const role = getCurrentUserRole();
+
     const modal = document.getElementById('tool-history-modal');
     const title = document.getElementById('tool-history-title');
     const body = document.getElementById('tool-history-body');
@@ -967,9 +967,9 @@ async function handleViewToolHistory(toolId, toolName) {
 
     // --- INICIO DE MODIFICACIÓN (TÍTULO) ---
     // Ponemos un título temporal mientras cargan los datos
-    title.textContent = `Historial de: ${toolName}`; 
+    title.textContent = `Historial de: ${toolName}`;
     // --- FIN DE MODIFICACIÓN (TÍTULO) ---
-    
+
     body.innerHTML = '<p class="text-gray-500 text-center">Cargando historial...</p>';
     modal.style.display = 'flex';
 
@@ -982,7 +982,7 @@ async function handleViewToolHistory(toolId, toolName) {
         const toolData = toolDoc.exists() ? toolDoc.data() : {};
         const purchaseCost = toolData.purchaseCost || 0;
         let totalMaintenanceCost = 0;
-        
+
         // --- INICIO DE MODIFICACIÓN (TÍTULO FINAL) ---
         // Construir el título final con el nombre y la referencia
         const toolReference = toolData.reference || null;
@@ -992,7 +992,7 @@ async function handleViewToolHistory(toolId, toolName) {
             title.textContent = `Historial de: ${toolName}`;
         }
         // --- FIN DE MODIFICACIÓN (TÍTULO FINAL) ---
-        
+
         const historyQuery = query(
             collection(db, "tools", toolId, "history"),
             orderBy("timestamp", "desc")
@@ -1048,9 +1048,9 @@ async function handleViewToolHistory(toolId, toolName) {
 
             if (entry.action === 'asignada') {
                 const targetUser = usersMap.get(entry.userId);
-                
-                const targetName = (role === 'operario' && entry.userId === getCurrentUser().uid) 
-                    ? "Mí" 
+
+                const targetName = (role === 'operario' && entry.userId === getCurrentUser().uid)
+                    ? "Mí"
                     : (targetUser ? `${targetUser.firstName} ${targetUser.lastName}` : 'Usuario Desconocido');
 
                 entryHtml = `
