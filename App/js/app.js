@@ -3967,31 +3967,37 @@ async function openMainModal(type, data = {}) {
                         </div>
                         <input type="file" id="dotacion-photo" name="photo" accept="image/*" class="hidden">
                     </div>
-                    
-                    <div class="md:col-span-2 space-y-4 pt-5">
+
+                <div class="md:col-span-2 space-y-4 pt-5">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Nombre del Ítem</label>
+                        <input type="text" name="itemName" required class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Casco de Seguridad Blanco">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Referencia / SKU (Opcional)</label>
+                        <input type="text" name="reference" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: REF-CS-001">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Nombre del Ítem</label>
-                            <input type="text" name="itemName" required class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Casco de Seguridad Blanco">
+                            <label class="block text-sm font-medium text-gray-700">Categoría</label>
+                            <select name="category" required class="mt-1 w-full border rounded-md p-2 bg-white">
+                                ${categoryOptions}
+                            </select>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Referencia / SKU (Opcional)</label>
-                            <input type="text" name="reference" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: REF-CS-001">
+                            <label class="block text-sm font-medium text-gray-700">Talla (Opcional)</label>
+                            <input type="text" name="talla" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: L, 42, N/A">
                         </div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">Categoría</label>
-                                <select name="category" required class="mt-1 w-full border rounded-md p-2 bg-white">
-                                    ${categoryOptions}
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">Talla (Opcional)</label>
-                                <input type="text" name="talla" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: L, 42, N/A">
-                            </div>
-                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Stock Inicial (Opcional)</label>
                             <input type="number" name="initialStock" class="mt-1 w-full border rounded-md p-2" value="0" min="0">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Vida Útil (Días)</label>
+                            <input type="number" name="vidaUtilDias" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: 365 (para 1 año)">
                         </div>
                     </div>
                 </div>
@@ -4093,12 +4099,19 @@ async function openMainModal(type, data = {}) {
                             <label class="block text-sm font-medium">1. Seleccionar Colaborador</label>
                             <select id="dotacion-assignedTo" name="assignedTo" required class="mt-1 w-full border rounded-md"></select>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium">2. Cantidad a Entregar</label>
-                            <input type="number" name="quantity" required class="mt-1 w-full border p-2 rounded-md" min="1" max="${data.quantityInStock}" ${data.quantityInStock <= 0 ? 'disabled' : ''}>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium">2. Cantidad a Entregar</label>
+                                <input type="number" name="quantity" required class="mt-1 w-full border p-2 rounded-md" min="1" max="${data.quantityInStock}" ${data.quantityInStock <= 0 ? 'disabled' : ''}>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium">3. Serial (Opcional)</label>
+                                <input type="text" name="serialNumber" class="mt-1 w-full border p-2 rounded-md" placeholder="Ej: 11-22-33-44">
+                            </div>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">3. Foto de Entrega (Requerida)</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">4. Foto de Entrega (Requerida)</label>
                             <div id="assign-dotacion-dropzone" class="h-48 w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
                                 <div id="assign-dotacion-preview" class="hidden absolute inset-0"><img src="" id="assign-dotacion-img-preview" class="w-full h-full object-contain"></div>
                                 <div id="assign-dotacion-prompt" class="text-center p-4">
@@ -4106,8 +4119,9 @@ async function openMainModal(type, data = {}) {
                                     <p class="mt-2 text-sm text-gray-500">Subir foto de entrega</p>
                                 </div>
                             </div>
+                            
                             <input type="file" id="dotacion-assign-photo" name="assignPhoto" required accept="image/*" class="hidden">
-                        </div>
+                            </div>
                         <div>
                             <label class"block text-sm font-medium">4. Fecha de Entrega</label>
                             <input type="date" name="fechaEntrega" required class="mt-1 w-full border p-2 rounded-md">
@@ -4154,6 +4168,89 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
         }
+
+        // --- INICIO DE CÓDIGO AÑADIDO (MEJORA 1 - DEVOLUCIONES) ---
+        case 'return-dotacion-options':
+            title = `Registrar Devolución de: ${data.itemName}`;
+            btnText = 'Procesar Devolución';
+            btnClass = 'bg-blue-500 hover:bg-blue-600';
+
+            modalForm.dataset.id = data.historyId; // ID del registro de historial
+            modalForm.dataset.itemid = data.itemId;   // ID del ítem en el catálogo
+
+            bodyHtml = `
+                <input type="hidden" name="itemName" value="${data.itemName}">
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="md:col-span-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Foto de Devolución (Req.)</label>
+                        <div id="return-dotacion-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
+                            <div id="return-dotacion-preview" class="hidden absolute inset-0">
+                                <img src="" id="return-dotacion-img-preview" class="w-full h-full object-contain">
+                            </div>
+                            <div id="return-dotacion-prompt" class="text-center p-4">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                                <p class="mt-2 text-sm text-gray-500">Foto del ítem devuelto</p>
+                            </div>
+                        </div>
+                        <input type="file" id="dotacion-return-photo" name="returnPhoto" required accept="image/*" class="hidden">
+                    </div>
+
+                    <div class="md:col-span-2 space-y-4">
+                        <div>
+                            <p class="text-sm font-medium text-gray-700 mb-2">1. Selecciona el tipo de devolución:</p>
+                            <div class="space-y-3">
+                              <label class="flex items-center p-3 border rounded-lg has-[:checked]:bg-blue-50 has-[:checked]:border-blue-500 cursor-pointer">
+                                <input type="radio" name="returnType" value="descarte" class="mr-3" checked>
+                                <div>
+                                  <strong class="font-semibold">Descartar Ítem (EPP)</strong>
+                                  <p class="text-xs text-gray-600">No regresa al inventario (ej. casco vencido, guantes rotos).</p>
+                                </div>
+                              </label>
+                              <label class="flex items-center p-3 border rounded-lg has-[:checked]:bg-green-50 has-[:checked]:border-green-500 cursor-pointer">
+                                <input type="radio" name="returnType" value="stock" class="mr-3">
+                                <div>
+                                  <strong class="font-semibold">Devolver a Inventario (Reutilizable)</strong>
+                                  <p class="text-xs text-gray-600">Regresa al stock para ser reasignado (ej. uniforme).</p>
+                                </div>
+                              </label>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">2. Observaciones (Opcional)</label>
+                            <textarea name="observaciones" rows="3" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Devuelto por rotura en visera..."></textarea>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Añadir la lógica de JS para la vista previa de la foto (copiada de 'register-dotacion-delivery')
+            setTimeout(() => {
+                const dropzone = document.getElementById('return-dotacion-dropzone');
+                const fileInput = document.getElementById('dotacion-return-photo');
+                const previewContainer = document.getElementById('return-dotacion-preview');
+                const previewImg = document.getElementById('return-dotacion-img-preview');
+                const promptEl = document.getElementById('return-dotacion-prompt');
+                if (dropzone) {
+                    dropzone.addEventListener('click', () => fileInput.click());
+                    fileInput.addEventListener('change', (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                previewImg.src = event.target.result;
+                                previewContainer.classList.remove('hidden');
+                                promptEl.classList.add('hidden');
+                            }
+                            reader.readAsDataURL(file);
+                        }
+                    });
+                }
+            }, 100);
+
+            break;
+        // --- FIN DE CÓDIGO AÑADIDO ---
 
         case 'edit-tool': {
             title = 'Editar Herramienta (Info Básica)';
@@ -5224,7 +5321,7 @@ modalForm.addEventListener('submit', async (e) => {
     const type = modalForm.dataset.type;
     const id = modalForm.dataset.id;
 
-    if (['new-tool', 'edit-tool', 'assign-tool', 'return-tool', 'register-maintenance', 'new-dotacion-catalog-item', 'add-dotacion-stock', 'register-dotacion-delivery'].includes(type)) {
+    if (['new-tool', 'edit-tool', 'assign-tool', 'return-tool', 'register-maintenance', 'new-dotacion-catalog-item', 'add-dotacion-stock', 'register-dotacion-delivery', 'return-dotacion-options'].includes(type)) {
         return;
     }
 
@@ -7557,7 +7654,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const itemRow = elementWithAction.closest('tr[data-id]');
         if (itemRow && itemRow.closest('#items-table-body')) {
             const itemId = itemRow.dataset.id;
-            
+
             // Verificamos que el ID sea válido antes de continuar
             if (!itemId) {
                 console.error("Error: Se hizo clic en un ítem pero su ID no se pudo encontrar.");
