@@ -143,39 +143,37 @@ async function loadFaceAPImodels() {
 }
 
 /**
+ * (VERSIÓN CORREGIDA: Devuelve el descriptor)
  * Carga la foto de perfil y genera el descriptor facial para comparar.
- * (VERSIÓN CORREGIDA: Usa SsdMobilenetv1 y verifica si los modelos están cargados)
  * @param {string} imageUrl - La URL de la foto de perfil del usuario.
+ * @returns {Promise<Float32Array|null>} El descriptor facial o null.
  */
 async function generateProfileFaceDescriptor(imageUrl) {
-    // Reseteamos el descriptor
-    currentUserFaceDescriptor = null;
-
-    // --- INICIO DE MODIFICACIÓN ---
     if (!modelsLoaded) {
         console.warn("Los modelos de IA aún no han cargado. Saltando generación de descriptor.");
-        return; // Salir si los modelos no están listos
+        return null;
     }
-    // --- FIN DE MODIFICACIÓN ---
 
     try {
         const img = await faceapi.fetchImage(imageUrl);
 
-        // Usamos el modelo SsdMobilenetv1 (que es el default, por eso no especificamos)
         const detection = await faceapi.detectSingleFace(img)
             .withFaceLandmarks()
             .withFaceDescriptor();
 
         if (detection) {
-            currentUserFaceDescriptor = detection.descriptor;
             console.log("Descriptor de perfil (huella facial) generado y guardado.");
+            return detection.descriptor; // <-- CAMBIO CLAVE
         } else {
             console.warn("No se detectó un rostro en la foto de perfil. El reconocimiento facial se saltará.");
+            return null; // <-- CAMBIO CLAVE
         }
     } catch (error) {
         console.error("Error al generar el descriptor de perfil:", error);
+        return null; // <-- CAMBIO CLAVE
     }
 }
+
 
 /**
  * Convierte un timestamp o fecha a un formato de tiempo relativo.
@@ -296,19 +294,20 @@ onAuthStateChanged(auth, async (user) => {
             currentUser = user;
             const userData = userDoc.data();
             currentUserRole = userData.role;
-            await loadUsersMap(); // Carga el mapa de usuarios
-            authContainer.classList.add('hidden');
-            appContainer.classList.remove('hidden');
 
-            // --- INICIO DE MODIFICACIÓN ---
+            // --- INICIO DE MODIFICACIÓN (Lógica de Carga y Redirección) ---
 
-            // 1. Configurar la Interfaz de Usuario (Perfil)
+            // 1. Cargamos el mapa de usuarios PRIMERO
+            await loadUsersMap();
+
+            // 2. Configurar la Interfaz de Usuario (Perfil)
             const nombre = userData.firstName || 'Usuario';
             const apellido = userData.lastName || '';
             const rolFormateado = currentUserRole.charAt(0).toUpperCase() + currentUserRole.slice(1);
-            const profilePhotoURL = userData.profilePhotoURL || null;
+            const profilePhotoURL = userData.profilePhotoURL || null; // Foto de perfil
             const initials = `${nombre.charAt(0)}${apellido.charAt(0) || ''}`.toUpperCase();
 
+            // (Actualizamos los nuevos elementos del DOM de la cabecera)
             const nameEl = document.getElementById('user-info-name');
             const roleEl = document.getElementById('user-info-role');
             const photoEl = document.getElementById('header-profile-photo');
@@ -316,7 +315,6 @@ onAuthStateChanged(auth, async (user) => {
 
             if (nameEl) nameEl.textContent = `${nombre} ${apellido}`;
             if (roleEl) roleEl.textContent = rolFormateado;
-
             if (photoEl && initialsEl) {
                 if (profilePhotoURL) {
                     photoEl.src = profilePhotoURL;
@@ -329,38 +327,39 @@ onAuthStateChanged(auth, async (user) => {
                 }
             }
 
-            // 5. (NUEVO) Generar descriptor de perfil en segundo plano
+            // 3. (CORRECCIÓN CLAVE) Esperamos a que la huella facial esté lista
             if (profilePhotoURL) {
-                generateProfileFaceDescriptor(profilePhotoURL);
+                // Usamos 'await' y guardamos el resultado en la variable global
+                currentUserFaceDescriptor = await generateProfileFaceDescriptor(profilePhotoURL);
             } else {
                 console.warn("Usuario no tiene foto de perfil. El reconocimiento facial se saltará.");
                 currentUserFaceDescriptor = null;
             }
 
+            // 4. AHORA SÍ mostramos la aplicación
+            authContainer.classList.add('hidden');
+            appContainer.classList.remove('hidden');
 
-            // 2. Configurar Visibilidad de Pestañas (Control de Acceso)
+            // 5. Configurar Visibilidad de Pestañas (Control de Acceso)
             const isAdmin = currentUserRole === 'admin';
             const isBodega = currentUserRole === 'bodega';
             const isSST = currentUserRole === 'sst';
             const isOperario = currentUserRole === 'operario';
 
             // Ocultar/Mostrar Pestañas del Menú
-            // (Usamos el ID 'proyectos-nav-link' que añadiste en el HTML)
             document.getElementById('proyectos-nav-link')?.classList.toggle('hidden', !isAdmin);
             document.getElementById('admin-nav-link')?.classList.toggle('hidden', !isAdmin);
             document.getElementById('inventory-nav-link')?.classList.toggle('hidden', !isAdmin && !isBodega);
             document.getElementById('compras-nav-link')?.classList.toggle('hidden', !isAdmin && !isBodega);
             document.getElementById('reports-nav-link')?.classList.toggle('hidden', !isAdmin);
 
-            // Ajustamos las vistas de Operario
             // Asumimos que los IDs de los enlaces son: 'tareas-nav-link', 'herramienta-nav-link', 'dotacion-nav-link'
-            // (Si no tienen ID, puedes añadirlos como hiciste con 'proyectos-nav-link')
             document.getElementById('tareas-nav-link')?.classList.toggle('hidden', isOperario ? false : !isAdmin); // Operario solo ve Tareas, Admin ve todo
-            document.getElementById('herramienta-nav-link')?.classList.toggle('hidden', !isOperario && !isBodega && !isSST && !isAdmin); // Todos ven herramientas
-            document.getElementById('dotacion-nav-link')?.classList.toggle('hidden', !isOperario && !isBodega && !isSST && !isAdmin); // Todos ven dotación
+            document.getElementById('herramienta-nav-link')?.classList.toggle('hidden', !isOperario && !isBodega && !isSST && !isAdmin);
+            document.getElementById('dotacion-nav-link')?.classList.toggle('hidden', !isOperario && !isBodega && !isSST && !isAdmin);
 
 
-            // 3. Mostrar la Vista por Defecto (Redirección por Rol)
+            // 6. Mostrar la Vista por Defecto (Redirección por Rol)
             if (isAdmin) {
                 showDashboard(); // Admin ve "Mis Proyectos"
             } else if (isOperario) {
@@ -381,7 +380,7 @@ onAuthStateChanged(auth, async (user) => {
             // --- FIN DE MODIFICACIÓN ---
 
             requestNotificationPermission();
-            loadNotifications();
+            loadNotifications(); // <-- ¡Esta es la línea que faltaba!
 
         } else {
             await signOut(auth);
@@ -394,6 +393,7 @@ onAuthStateChanged(auth, async (user) => {
     }
     loadingOverlay.classList.add('hidden');
 });
+
 
 async function handleLogin(e) {
     e.preventDefault();
