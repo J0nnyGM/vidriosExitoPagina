@@ -2,7 +2,7 @@
 importScripts("https://www.gstatic.com/firebasejs/12.0.0/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/12.0.0/firebase-messaging-compat.js");
 
-// Configuración de tu proyecto de Firebase (cópiala de tu archivo principal)
+// Configuración de tu proyecto de Firebase
 const firebaseConfig = {
     apiKey: "AIzaSyC693QE-O4rdx6qPcZRyvgZUwSWDofBFWw",
     authDomain: "vidriosexitoorganizador.firebaseapp.com",
@@ -29,4 +29,22 @@ messaging.onBackgroundMessage((payload) => {
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
+// --- ESTA ES LA ÚNICA SOLUCIÓN QUE NECESITAS ---
+// Este bloque soluciona la advertencia de "Navigation Preload"
+
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        (async () => {
+            if (self.registration.navigationPreload) {
+                try {
+                    await self.registration.navigationPreload.disable();
+                    console.log('Navigation Preload deshabilitado exitosamente.');
+                } catch (error) {
+                    console.error('Error al deshabilitar Navigation Preload:', error);
+                }
+            }
+        })()
+    );
 });

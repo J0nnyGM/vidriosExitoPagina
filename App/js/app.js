@@ -3556,8 +3556,13 @@ async function openMainModal(type, data = {}) {
     if (modalContentDiv) {
         // Quitamos todas las clases de ancho que hayamos añadido
         modalContentDiv.classList.remove('max-w-4xl', 'max-w-6xl', 'max-w-7xl', 'lg:w-3/4');
-        // Añadimos el ancho por defecto
-        modalContentDiv.classList.add('max-w-2xl');
+
+        // (Línea eliminada en el paso anterior, la dejamos fuera)
+        // modalContentDiv.classList.add('max-w-2xl'); 
+
+        // ¡NUEVO! Reseteamos los estilos en línea
+        modalContentDiv.style.width = '';
+        modalContentDiv.style.maxWidth = '';
     }
     // --- FIN DE MODIFICACIÓN ---
 
@@ -3570,6 +3575,7 @@ async function openMainModal(type, data = {}) {
             title = 'Crear Nuevo Proyecto';
             btnText = 'Crear Proyecto';
             btnClass = 'bg-blue-500 hover:bg-blue-600';
+            modalContentDiv.classList.add('max-w-2xl'); // <-- LÍNEA RESTAURADA
             bodyHtml = `
                     <div class="space-y-4">
                         <div class="grid grid-cols-2 gap-4">
@@ -4021,8 +4027,13 @@ async function openMainModal(type, data = {}) {
 
             // --- INICIO DE MODIFICACIÓN (Ancho de 75%) ---
             if (modalContentDiv) {
-                modalContentDiv.classList.remove('max-w-2xl', 'max-w-4xl');
-                modalContentDiv.classList.add('lg:w-3/4');
+                // 1. Quitamos la clase de ancho máximo por defecto
+                modalContentDiv.classList.remove('max-w-2xl');
+
+                // 2. ¡NUEVO! Aplicamos estilos en línea (máxima prioridad)
+                // 75vw = 75% del ancho de la ventana (viewport width)
+                modalContentDiv.style.width = '75vw';
+                modalContentDiv.style.maxWidth = '75vw';
             }
             // --- FIN DE MODIFICACIÓN ---
 
@@ -4091,43 +4102,77 @@ async function openMainModal(type, data = {}) {
 
                     // 4. Construir el NUEVO HTML del formulario (Layout de 2 Columnas con Z-INDEX)
                     formContent.innerHTML = `
-                        <div class="flex-1 flex flex-col lg:flex-row gap-6 min-h-0">
+                        <div class="flex-1 flex flex-col min-h-0 space-y-6">
 
-                            <div class="lg:w-1/3 space-y-4 relative z-20">
+                            <div class="relative z-20 space-y-4 bg-gray-50 p-4 rounded-lg border">
                                 <h4 class="text-lg font-semibold text-gray-800 border-b pb-2">Detalles de la Orden</h4>
-                                <div>
-                                    <label class="block text-sm font-medium">Proveedor</label>
-                                    <select id="po-supplier-select" required>${supplierOptions}</select>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium">Forma de Pago</label>
-                                    <select name="paymentMethod" class="w-full border p-2 rounded-md bg-white">
-                                        <option value="pendiente">Pendiente</option>
-                                        <option value="efectivo">Efectivo</option>
-                                        <option value="tarjeta">Tarjeta</option>
-                                        <option value="transferencia">Transferencia</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium">Fecha de Creación</label>
-                                    <input type="date" name="poDate" class="w-full border p-2 rounded-md bg-gray-100" value="${new Date().toISOString().split('T')[0]}" readonly>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium">Proveedor</label>
+                                        <select id="po-supplier-select" required>${supplierOptions}</select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium">Forma de Pago</label>
+                                        <select name="paymentMethod" class="w-full border p-2 rounded-md bg-white">
+                                            <option value="pendiente">Pendiente</option>
+                                            <option value="efectivo">Efectivo</option>
+                                            <option value="tarjeta">Tarjeta</option>
+                                            <option value="transferencia">Transferencia</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium">Fecha de Creación</label>
+                                        <input type="date" name="poDate" class="w-full border p-2 rounded-md bg-gray-100" value="${new Date().toISOString().split('T')[0]}" readonly>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div class="lg:w-2/3 space-y-3 relative z-10 flex-1 flex flex-col min-h-0">
-                                <h4 class="text-lg font-semibold text-gray-800 border-b pb-2">Ítems de la Orden</h4>
-                                
-                                <div class="hidden sm:grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 px-2 flex-shrink-0">
-                                    <div class="col-span-6">Ítem</div>
-                                    <div class="col-span-2 text-center">Cantidad</div>
-                                    <div class="col-span-3 text-right">Costo Unitario</div>
-                                    <div class="col-span-1"></div>
-                                </div>
-
-                                <div id="po-items-container" class="space-y-2 flex-1 overflow-y-auto max-h-[60vh] p-1">
+                            <fieldset class="relative z-10 border rounded-lg p-4">
+                                <legend class="text-md font-semibold text-gray-700 px-2">Añadir Ítem</legend>
+                                <div class="grid grid-cols-12 gap-3 items-end">
+                                    <div class="col-span-12 md:col-span-5">
+                                        <label class="block text-sm font-medium">Ítem (Material, Dotación o Herramienta)</label>
+                                        <select id="po-add-item-select"></select>
                                     </div>
-                                
-                                <button type="button" id="add-po-item-btn" class="text-sm text-blue-600 font-semibold flex-shrink-0">+ Añadir ítem</button>
+                                    <div class="col-span-4 md:col-span-2">
+                                        <label class="block text-sm font-medium">Cantidad</label>
+                                        <input type="number" id="po-add-quantity" class="w-full border p-2 rounded-md" min="1" placeholder="0">
+                                    </div>
+                                    <div class="col-span-5 md:col-span-3">
+                                        <label class="block text-sm font-medium">Costo Unitario</Tlabel>
+                                        <input type="text" id="po-add-cost" class="currency-input w-full border p-2 rounded-md" placeholder="$ 0">
+                                    </div>
+                                    <div class="col-span-3 md:col-span-2">
+                                        <button type="button" id="po-add-item-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">
+                                            Añadir
+                                        </button>
+                                    </div>
+                                </div>
+                            </fieldset>
+
+                            <div class="flex-1 flex flex-col min-h-0 border rounded-lg overflow-hidden">
+                                <h4 class="text-lg font-semibold text-gray-800 p-4 pb-2">Ítems en la Orden</h4>
+                                <div class="flex-1 overflow-y-auto">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-gray-100 sticky top-0">
+                                            <tr>
+                                                <th class="px-4 py-2 text-left font-semibold text-gray-600">Ítem</th>
+                                                <th class="px-4 py-2 text-center font-semibold text-gray-600">Cantidad</th>
+                                                <th class="px-4 py-2 text-right font-semibold text-gray-600">Costo Unit.</th>
+                                                <th class="px-4 py-2 text-right font-semibold text-gray-600">Subtotal</th>
+                                                <th class="px-4 py-2 text-center font-semibold text-gray-600">Acción</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="po-items-table-body" class="divide-y divide-gray-200">
+                                            </tbody>
+                                    </table>
+                                </div>
+                                <div class="p-4 bg-gray-50 border-t flex justify-end">
+                                    <div class="text-right">
+                                        <p class="text-sm font-medium text-gray-600">Total Orden:</p>
+                                        <p id="po-total-display" class="text-2xl font-bold text-gray-900">$ 0</p>
+                                    </div>
+                                </div>
                             </div>
 
                         </div>`;
@@ -4144,8 +4189,127 @@ async function openMainModal(type, data = {}) {
                         searchResultLimit: 5
                     });
 
-                    // 6. Configurar lógica para añadir/buscar precios
-                    setupPOItemLogic(unifiedItemOptions); // Llamamos a la función helper
+                    // 6. ¡NUEVA LÓGICA! Manejar el nuevo formulario
+
+                    // Inicializar Choices para el ÚNICO selector de ítems
+                    const itemSelectEl = document.getElementById('po-add-item-select');
+                    const itemChoices = new Choices(itemSelectEl, {
+                        choices: unifiedItemOptions,
+                        itemSelectText: 'Seleccionar',
+                        searchPlaceholderValue: 'Buscar ítem...',
+                        searchResultLimit: 7,
+                        placeholder: true,
+                        placeholderValue: 'Escribe para buscar...',
+                    });
+
+                    // Referencias a los elementos del formulario y la tabla
+                    const addBtn = document.getElementById('po-add-item-btn');
+                    const tableBody = document.getElementById('po-items-table-body');
+                    const totalDisplay = document.getElementById('po-total-display');
+                    const quantityInput = document.getElementById('po-add-quantity');
+                    const costInput = document.getElementById('po-add-cost');
+
+                    // Aplicar formato de moneda al input de costo
+                    setupCurrencyInput(costInput);
+
+                    // Función para actualizar el total
+                    const updatePOTotal = () => {
+                        let total = 0;
+                        tableBody.querySelectorAll('tr').forEach(row => {
+                            total += parseFloat(row.dataset.subtotal) || 0;
+                        });
+                        totalDisplay.textContent = currencyFormatter.format(total);
+                    };
+
+                    // Lógica para auto-rellenar el precio
+                    itemSelectEl.addEventListener('change', async () => {
+                        const selectedItem = itemChoices.getValue(true);
+                        if (!selectedItem) return;
+
+                        const materialId = selectedItem.value;
+                        const supplierId = document.getElementById('po-supplier-select').value;
+                        if (!supplierId || !materialId) return;
+
+                        const lastPrice = await findLastPurchasePrice(supplierId, materialId);
+                        if (lastPrice !== null) {
+                            costInput.value = currencyFormatter.format(lastPrice).replace(/\s/g, ' ');
+                        } else {
+                            costInput.value = '';
+                        }
+                        quantityInput.focus();
+                    });
+
+                    // Lógica del botón "Añadir"
+                    addBtn.addEventListener('click', () => {
+
+                        // --- INICIO DE LA CORRECCIÓN ---
+                        // Cambiamos getValue(true) por getValue()
+                        const selectedItem = itemChoices.getValue();
+                        // --- FIN DE LA CORRECCIÓN ---
+
+                        const quantity = parseInt(quantityInput.value);
+                        const unitCost = parseFloat(costInput.value.replace(/[$. ]/g, '')) || 0;
+
+                        if (!selectedItem || !quantity || quantity <= 0 || unitCost <= 0) {
+                            alert("Completa el Ítem, Cantidad y Costo Unitario (mayor a 0).");
+                            return;
+                        }
+
+                        // Verificar si ya existe (por ID y Costo)
+                        const existingRow = tableBody.querySelector(`tr[data-item-id="${selectedItem.value}"][data-cost="${unitCost}"]`);
+
+                        if (existingRow) {
+                            // Si ya existe, solo actualiza la cantidad
+                            const currentQty = parseInt(existingRow.dataset.quantity) || 0;
+                            const newQty = currentQty + quantity;
+                            const newSubtotal = newQty * unitCost;
+
+                            existingRow.dataset.quantity = newQty;
+                            existingRow.dataset.subtotal = newSubtotal;
+                            existingRow.cells[1].textContent = newQty;
+                            existingRow.cells[3].textContent = currencyFormatter.format(newSubtotal);
+                        } else {
+                            // Si es nuevo, crea la fila
+                            const subtotal = quantity * unitCost;
+                            const newRow = document.createElement('tr');
+                            newRow.dataset.itemId = selectedItem.value;
+                            newRow.dataset.itemType = selectedItem.customProperties.type;
+                            newRow.dataset.quantity = quantity;
+                            newRow.dataset.cost = unitCost;
+                            newRow.dataset.subtotal = subtotal;
+
+                            newRow.innerHTML = `
+                                <td class="px-4 py-2 align-top">
+                                    <p class="font-medium text-gray-900">${selectedItem.label}</p>
+                                    <p class="text-xs text-gray-500">${selectedItem.customProperties.unit}</p>
+                                </td>
+                                <td class="px-4 py-2 align-top text-center">${quantity}</td>
+                                <td class="px-4 py-2 align-top text-right">${currencyFormatter.format(unitCost)}</td>
+                                <td class="px-4 py-2 align-top text-right font-medium">${currencyFormatter.format(subtotal)}</td>
+                                <td class="px-4 py-2 align-top text-center">
+                                    <button type="button" class="remove-po-item-btn text-red-500 hover:text-red-700 p-1">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    </button>
+                                </td>
+                            `;
+                            tableBody.appendChild(newRow);
+                        }
+
+                        // Limpiar y actualizar
+                        updatePOTotal();
+                        itemChoices.setChoiceByValue('');
+                        quantityInput.value = '';
+                        costInput.value = '';
+                    });
+
+                    // Lógica para el botón "Quitar" (delegación de eventos)
+                    tableBody.addEventListener('click', (e) => {
+                        const removeBtn = e.target.closest('.remove-po-item-btn');
+                        if (removeBtn) {
+                            removeBtn.closest('tr').remove();
+                            updatePOTotal();
+                        }
+                    });
 
                 } catch (error) {
                     console.error("Error al cargar datos para PO:", error);
@@ -4631,6 +4795,102 @@ async function openMainModal(type, data = {}) {
 
             break;
         // --- FIN DE CÓDIGO AÑADIDO ---
+
+        // --- INICIO DE NUEVO CÓDIGO AÑADIDO ---
+        case 'new-tool': {
+            title = 'Crear Nueva Herramienta';
+            btnText = 'Crear Herramienta';
+            btnClass = 'bg-blue-500 hover:bg-blue-600';
+            modalContentDiv.classList.add('max-w-2xl'); // Aseguramos el tamaño estándar
+
+            // Opciones de categoría (leídas desde herramientas.js)
+            const categoryOptions = TOOL_CATEGORIES.map(cat =>
+                `<option value="${cat.value}">${cat.label}</option>`
+            ).join('');
+
+            bodyHtml = `
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        
+                        <div class="md:col-span-1">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Foto (Requerida)</label>
+                            <div id="new-tool-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
+                                <div id="new-tool-preview" class="hidden absolute inset-0">
+                                    <img src="" id="new-tool-img-preview" class="w-full h-full object-contain">
+                                </div>
+                                <div id="new-tool-prompt" class="text-center p-4">
+                                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3-3a4 4 0 00-5.656 0L28 28M8 32l9-9a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                                    <p class="mt-2 text-sm text-gray-500">Foto de la herramienta</p>
+                                </div>
+                            </div>
+                            <input type="file" id="tool-photo" name="photo" accept="image/*" class="hidden" required> 
+                        </div>
+                        
+                        <div class="md:col-span-2 space-y-4 pt-5">
+                            <div>
+                                <label for="tool-name" class="block text-sm font-medium text-gray-700">Nombre de la Herramienta</label>
+                                <input type="text" id="tool-name" name="name" required class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Taladro Percutor">
+                            </div>
+                            <div>
+                                <label for="tool-reference" class="block text-sm font-medium text-gray-700">Referencia / Código (Opcional)</label>
+                                <input type="text" id="tool-reference" name="reference" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: DEW-DCD796">
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label for="tool-category" class="block text-sm font-medium text-gray-700">Categoría</label>
+                                    <select id="tool-category" name="category" required class="mt-1 w-full border rounded-md p-2 bg-white">
+                                        <option value="" disabled selected>Seleccione...</option>
+                                        ${categoryOptions}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="tool-purchaseDate" class="block text-sm font-medium text-gray-700">Fecha de Compra</label>
+                                    <input type="date" id="tool-purchaseDate" name="purchaseDate" class="mt-1 w-full border rounded-md p-2">
+                                </div>
+                            </div>
+                            <div>
+                                <label for="tool-purchaseCost" class="block text-sm font-medium text-gray-700">Costo de Adquisición (Opcional)</label>
+                                <input type="text" id="tool-purchaseCost" name="purchaseCost" class="currency-input mt-1 w-full border rounded-md p-2" placeholder="$ 0">
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+            // Lógica JS para el dropzone y el formateo de moneda
+            setTimeout(() => {
+                const dropzone = document.getElementById('new-tool-dropzone');
+                const fileInput = document.getElementById('tool-photo');
+                const previewContainer = document.getElementById('new-tool-preview');
+                const previewImg = document.getElementById('new-tool-img-preview');
+                const promptEl = document.getElementById('new-tool-prompt');
+
+                if (dropzone) {
+                    dropzone.addEventListener('click', () => fileInput.click());
+                    fileInput.addEventListener('change', (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                previewImg.src = event.target.result;
+                                previewContainer.classList.remove('hidden');
+                                promptEl.classList.add('hidden');
+                            }
+                            reader.readAsDataURL(file);
+                        }
+                    });
+                }
+
+                const costInput = document.getElementById('tool-purchaseCost');
+                if (costInput) setupCurrencyInput(costInput); // Función que ya existe en app.js
+
+                const dateInput = document.getElementById('tool-purchaseDate');
+                if (dateInput) dateInput.value = new Date().toISOString().split('T')[0]; // Pone la fecha de hoy
+
+            }, 100);
+
+            break;
+        }
+        // --- FIN DE NUEVO CÓDIGO AÑADIDO ---
 
         case 'edit-tool': {
             title = 'Editar Herramienta (Info Básica)';
@@ -5239,129 +5499,28 @@ async function openMainModal(type, data = {}) {
             btnText = 'Enviar Solicitud';
             btnClass = 'bg-green-500 hover:bg-green-600';
 
+            // El HTML de carga sigue siendo útil por si se usa en el futuro
             bodyHtml = `
-        <div id="material-request-loader" class="text-center py-8">
-        <div class="loader mx-auto"></div>
-        <p class="mt-2 text-sm text-gray-500">Cargando datos del proyecto...</p>
-        </div>
-        <div id="material-request-form-content" class="hidden"></div>
-        `;
+                <div id="material-request-loader" class="text-center py-8">
+                <div class="loader mx-auto"></div>
+                <p class="mt-2 text-sm text-gray-500">Cargando datos del proyecto...</p>
+                </div>
+                <div id="material-request-form-content" class="hidden"></div>
+            `;
 
-            const loadDataAndBuildForm = async () => {
-                try {
-                    const loader = document.getElementById('material-request-loader'); // Reutilizamos el loader
-                    const formContent = document.getElementById('material-request-form-content'); // Reutilizamos el form
+            // --- LÓGICA DUPLICADA ELIMINADA ---
+            // Se eliminó la función const loadDataAndBuildForm = async () => { ... }
+            // y la llamada setTimeout(loadDataAndBuildForm, 50);
+            // ya que esta lógica se maneja en showMaterialRequestView()
+            // --- FIN DE LA LIMPIEZA ---
 
-                    // --- INICIO DE MODIFICACIÓN ---
-                    // 1. Cargar TODOS los catálogos en paralelo
-                    const [materialSnap, dotacionSnap, toolsSnap, suppliersSnapshot] = await Promise.all([
-                        getDocs(query(collection(db, "materialCatalog"), orderBy("name"))),
-                        getDocs(query(collection(db, "dotacionCatalog"), orderBy("itemName"))),
-                        getDocs(query(collection(db, "tools"), orderBy("name"))),
-                        getDocs(query(collection(db, "suppliers"), orderBy("name")))
-                    ]);
-
-                    // 2. Mapear Proveedores (Sin cambios)
-                    const suppliers = suppliersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    const supplierOptions = suppliers.map(sup => `<option value="${sup.id}">${sup.name}</option>`).join('');
-
-                    // 3. Unificar todos los ítems comprables
-                    const materialOptions = [];
-
-                    materialSnap.docs.forEach(doc => {
-                        const mat = doc.data();
-                        materialOptions.push({
-                            value: doc.id,
-                            label: `[MAT] ${mat.name} (${mat.reference || 'N/A'})`,
-                            customProperties: { type: 'material', unit: mat.unit || 'Und' }
-                        });
-                    });
-
-                    dotacionSnap.docs.forEach(doc => {
-                        const dot = doc.data();
-                        materialOptions.push({
-                            value: doc.id,
-                            label: `[DOT] ${dot.itemName} (${dot.talla || 'N/A'})`,
-                            customProperties: { type: 'dotacion', unit: 'Und' }
-                        });
-                    });
-
-                    toolsSnap.docs.forEach(doc => {
-                        const tool = doc.data();
-                        // Solo podemos "comprar" herramientas nuevas, no las que ya tenemos
-                        // (A menos que queramos comprar duplicados, lo cual es válido)
-                        materialOptions.push({
-                            value: doc.id, // O podríamos usar un ID genérico si es 'comprar nuevo'
-                            label: `[HER] ${tool.name} (${tool.reference || 'N/A'})`,
-                            customProperties: { type: 'herramienta', unit: 'Und' }
-                        });
-                    });
-
-                    // Ordenamos la lista unificada
-                    materialOptions.sort((a, b) => a.label.localeCompare(b.label));
-                    // --- FIN DE MODIFICACIÓN ---
-
-
-                    // 4. Construir el HTML del formulario (Le pasamos 'supplierOptions')
-                    formContent.innerHTML = `
-                        <div class="space-y-4">
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-sm font-medium">Proveedor</label>
-                                    <select id="po-supplier-select" required>${supplierOptions}</select>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium">Forma de Pago</label>
-                                    <select name="paymentMethod" class="w-full border p-2 rounded-md bg-white">
-                                        <option value="pendiente">Pendiente</option>
-                                        <option value="efectivo">Efectivo</option>
-                                        <option value="tarjeta">Tarjeta</option>
-                                        <option value="transferencia">Transferencia</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div id="po-items-container" class="space-y-2 border-t pt-4">
-                                <h4 class="text-md font-semibold text-gray-700">Ítems</h4>
-                                <div class="po-item flex flex-col sm:flex-row sm:items-end gap-2 p-2 border rounded-md">
-                                    <div class="flex-grow w-full"><label class="block text-xs">Ítem (Material, Dotación o Herramienta)</label>
-                                        <select name="itemId" class="po-item-select w-full border p-2 rounded-md bg-white"></select>
-                                    </div>
-                                    <div class="w-full sm:w-24"><label class="block text-xs">Cantidad</label><input type="number" name="quantity" required class="w-full border p-2 rounded-md"></div>
-                                    <div class="w-full sm:w-32"><label class="block text-xs">Costo Unitario</label><input type="text" name="unitCost" required class="currency-input w-full border p-2 rounded-md"></div>
-                                </div>
-                            </div>
-                            <button type="button" id="add-po-item-btn" class="text-sm text-blue-600 font-semibold">+ Añadir otro ítem</button>
-                        </div>`;
-
-                    loader.classList.add('hidden');
-                    formContent.classList.remove('hidden');
-
-                    // 5. Inicializar Choices.js (para proveedores y el primer ítem)
-                    new Choices('#po-supplier-select', { /* ...opciones... */ });
-
-                    const firstItemSelect = formContent.querySelector('.po-item-select');
-                    const firstChoices = new Choices(firstItemSelect, {
-                        choices: materialOptions, // <-- Usamos la lista unificada
-                        itemSelectText: 'Seleccionar',
-                        searchPlaceholderValue: 'Buscar ítem...',
-                    });
-
-                    // 6. Configurar lógica para añadir/buscar precios (Modificada)
-                    setupPOItemLogic(materialOptions);
-
-                } catch (error) { console.error("Error al cargar datos para PO:", error); }
-            };
-
-            // Necesitamos crear la función 'setupPOItemLogic'
-            // (La muevo fuera de 'loadDataAndBuildForm' para que sea reutilizable)
-
-            setTimeout(loadDataAndBuildForm, 50);
             break;
         }
         case 'edit-task': { // Case con formato mejorado
             title = 'Editar Tarea';
             btnText = 'Guardar Cambios';
             btnClass = 'bg-yellow-500 hover:bg-yellow-600';
+            modalContentDiv.classList.add('max-w-2xl'); // Aseguramos el tamaño estándar
             modalForm.dataset.id = data.id; // Guardamos el ID de la tarea
 
             modalBody.innerHTML = '<div class="text-center py-5"><div class="loader mx-auto"></div> Cargando datos...</div>';
@@ -5382,82 +5541,90 @@ async function openMainModal(type, data = {}) {
                 return;
             }
 
-            // --- Construcción del HTML con formato mejorado ---
-            const additionalAssigneeValues = (data.additionalAssigneeIds || []).map(id => ({ value: id }));
-
+            // --- INICIO DE LA MODIFICACIÓN (Nuevo HTML) ---
             bodyHtml = `
-                <div class="space-y-6"> 
+                <div class="space-y-6">
 
-                     <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
-                         <h4 class="text-md font-semibold text-gray-700 mb-2 border-b pb-1">1. Información Principal</h4>
+                    <fieldset class="space-y-2">
+                        <legend class="text-lg font-semibold text-gray-800 pb-2">1. Proyecto (No editable)</legend>
                         <div>
-                            <label class="block text-sm font-medium text-gray-500 mb-1">Proyecto</label>
-                            <p class="mt-1 font-semibold bg-white p-2 border rounded-md text-gray-700">${data.projectName || 'N/A'}</p>
-                            <input type="hidden" name="projectId" value="${data.projectId}">
-                            <input type="hidden" name="projectName" value="${data.projectName}">
+                            <select id="task-project-choices" name="projectId" required placeholder="Cargando proyecto..."></select>
+                            <input type="hidden" name="projectName" value="${data.projectName || ''}"> 
+                        </div>
+                    </fieldset>
+
+                    <fieldset id="task-items-selection" class="space-y-2">
+                        <legend class="text-lg font-semibold text-gray-800 pb-2">2. Ítems Relacionados (No editable)</legend>
+                        <div id="task-items-list" class="max-h-48 overflow-y-auto space-y-2 text-sm pr-2 border rounded-md p-3 bg-gray-50">
+                            <p class="text-gray-400 italic text-center py-4">Cargando ítems...</p>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="space-y-4">
+                        <legend class="text-lg font-semibold text-gray-800 pb-2">3. Detalles de la Tarea</legend>
+                        
+                        <div>
+                            <label for="task-description" class="block text-sm font-medium mb-1">Descripción de la Tarea</label>
+                            <textarea id="task-description" name="description" rows="3" required class="mt-1 w-full border rounded-md p-2 text-sm">${data.description || ''}</textarea>
                         </div>
 
                         <div>
-                            <label for="edit-task-assignee-choices" class="block text-sm font-medium mb-1">Asignar A (Principal)</label>
-                            <select id="edit-task-assignee-choices" name="assigneeId" required placeholder="Buscar o seleccionar usuario..."></select>
-                            <input type="hidden" name="assigneeName">
-                        </div>
-                    </div>
-
-                    <div class="border border-gray-200 rounded-lg p-4 bg-gray-100">
-                        <label class="block text-sm font-medium text-gray-600 mb-2">2. Ítems Relacionados (No editable)</label>
-                        <ul id="edit-task-items-list" class="max-h-40 overflow-y-auto space-y-1 text-sm text-gray-700 pl-5 pr-2">
-                            <li class="italic text-gray-500">Cargando ítems...</li>
-                        </ul>
-                    </div>
-
-                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
-                         <h4 class="text-md font-semibold text-gray-700 mb-2 border-b pb-1">3. Detalles de la Tarea</h4>
-                        <div>
-                            <label for="edit-task-description" class="block text-sm font-medium mb-1">Descripción de la Tarea</label>
-                            <textarea id="edit-task-description" name="description" rows="3" required class="mt-1 w-full border rounded-md p-2 text-sm">${data.description || ''}</textarea>
+                            <label for="task-assignee-choices" class="block text-sm font-medium mb-1">Asignar A (Principal)</label>
+                            <select id="task-assignee-choices" name="assigneeId" required placeholder="Buscar o seleccionar usuario..."></select>
+                            <input type="hidden" name="assigneeName" value="${data.assigneeName || ''}">
                         </div>
 
                         <div>
-                            <label for="edit-task-additional-assignees-choices" class="block text-sm font-medium mb-1">Asignar a Personas Adicionales</label>
-                            <select id="edit-task-additional-assignees-choices" name="additionalAssigneeIds" multiple placeholder="Buscar o añadir más usuarios..."></select>
+                            <label for="task-additional-assignees-choices" class="block text-sm font-medium mb-1">Asignar a Personas Adicionales</label>
+                            <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple placeholder="Buscar o añadir más usuarios..."></select>
                         </div>
 
                         <div>
-                            <label for="edit-task-dueDate" class="block text-sm font-medium mb-1">Fecha Límite</label>
-                            <input type="date" id="edit-task-dueDate" name="dueDate" class="mt-1 w-full border rounded-md p-2 text-sm" value="${data.dueDate || ''}">
+                            <label for="task-dueDate" class="block text-sm font-medium mb-1">Fecha Límite</label>
+                            <input type="date" id="task-dueDate" name="dueDate" class="mt-1 w-full border rounded-md p-2 text-sm" value="${data.dueDate || ''}">
                         </div>
-                    </div>
+                    </fieldset>
 
                 </div>`; // Fin de space-y-6
+            // --- FIN DE LA MODIFICACIÓN ---
 
             modalBody.innerHTML = bodyHtml;
 
-            // --- Inicialización de Choices.js y Lógica Dinámica (sin cambios) ---
+            // --- INICIO DE MODIFICACIÓN (Lógica JS) ---
             setTimeout(() => {
-                // Asignado Principal
-                const assigneeElement = document.getElementById('edit-task-assignee-choices');
-                const assigneeChoices = new Choices(assigneeElement, { /* ... opciones ... */
+                // 1. Selector de Proyecto (Cargar, seleccionar y deshabilitar)
+                const projectElement = document.getElementById('task-project-choices');
+                const projectChoices = new Choices(projectElement, {
+                    choices: [{ value: data.projectId, label: data.projectName || 'Cargando...' }],
+                    itemSelectText: '',
+                    allowHTML: false,
+                });
+                projectChoices.setValue([{ value: data.projectId, label: data.projectName || 'Proyecto' }]);
+                projectChoices.disable(); // Lo deshabilitamos
+
+                // 2. Asignado Principal (Lógica existente)
+                const assigneeElement = document.getElementById('task-assignee-choices');
+                const assigneeChoices = new Choices(assigneeElement, {
                     choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
                     searchPlaceholderValue: "Buscar usuario...", itemSelectText: 'Seleccionar', allowHTML: false,
                 });
                 if (data.assigneeId) {
                     assigneeChoices.setValue([{ value: data.assigneeId, label: data.assigneeName || 'Usuario' }]);
-                    modalForm.querySelector('input[name="assigneeName"]').value = data.assigneeName || '';
                 }
-                assigneeElement.addEventListener('change', (event) => { /* ... (código para guardar nombre) ... */
+                assigneeElement.addEventListener('change', (event) => {
                     const selectedAssigneeId = event.detail.value;
                     const assigneeNameInput = modalForm.querySelector('input[name="assigneeName"]');
                     const selectedUser = allActiveUsers.find(u => u.id === selectedAssigneeId);
                     assigneeNameInput.value = selectedUser ? selectedUser.name : '';
                 });
 
-                // Asignados Adicionales
-                const additionalAssigneesElement = document.getElementById('edit-task-additional-assignees-choices');
-                const additionalAssigneesChoices = new Choices(additionalAssigneesElement, { /* ... opciones ... */
+                // 3. Asignados Adicionales (Lógica existente)
+                const additionalAssigneesElement = document.getElementById('task-additional-assignees-choices');
+                const additionalAssigneesChoices = new Choices(additionalAssigneesElement, {
                     choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
                     removeItemButton: true, searchPlaceholderValue: "Añadir más usuarios...", allowHTML: false,
                 });
+                const additionalAssigneeValues = (data.additionalAssigneeIds || []).map(id => ({ value: id }));
                 if (additionalAssigneeValues.length > 0) {
                     const preSelectedLabels = additionalAssigneeValues.map(v => {
                         const user = allActiveUsers.find(u => u.id === v.value);
@@ -5466,19 +5633,27 @@ async function openMainModal(type, data = {}) {
                     additionalAssigneesChoices.setValue(preSelectedLabels);
                 }
 
-                // Cargar y mostrar los ítems (solo visualización)
-                const itemsListUl = document.getElementById('edit-task-items-list');
+                // 4. Cargar y mostrar los ítems (Modo solo lectura)
+                const itemsListUl = document.getElementById('task-items-list');
                 if (data.selectedItems && data.selectedItems.length > 0) {
                     const itemDetailPromises = data.selectedItems.map(async itemInfo => {
                         try {
-                            // --- INICIO DE CORRECCIÓN ---
-                            // Usamos data.projectId (que viene de la tarea) para construir el path correcto
                             const itemDoc = await getDoc(doc(db, "projects", data.projectId, "items", itemInfo.itemId));
-                            // --- FIN DE CORRECCIÓN ---
-
                             const itemName = itemDoc.exists() ? itemDoc.data().name : `ID: ${itemInfo.itemId}`;
-                            return `<li class="list-disc">${itemInfo.quantity} x ${itemName}</li>`;
-                        } catch { return `<li class="list-disc text-red-500">Error cargando ítem</li>`; }
+
+                            // HTML de solo lectura (checkbox marcado y deshabilitado)
+                            return `
+                                <div class="task-item-row flex items-center justify-between py-1 px-1">
+                                    <label class="inline-flex items-center flex-grow mr-2"> 
+                                        <input type="checkbox" class="item-checkbox rounded" checked disabled>
+                                        <span class="ml-2 truncate" title="${itemName}">${itemName}</span>
+                                    </label>
+                                    <span class_name="item-quantity-display w-20 text-sm text-center font-medium">${itemInfo.quantity}</span>
+                                </div>
+                            `;
+                        } catch {
+                            return `<li class="list-disc text-red-500">Error cargando ítem</li>`;
+                        }
                     });
                     Promise.all(itemDetailPromises).then(htmlItems => {
                         if (itemsListUl) itemsListUl.innerHTML = htmlItems.join('');
@@ -5487,26 +5662,30 @@ async function openMainModal(type, data = {}) {
                     if (itemsListUl) itemsListUl.innerHTML = '<li class="italic text-gray-500">No hay ítems asociados.</li>';
                 }
 
-                // Fecha mínima
-                const dueDateInput = modalBody.querySelector('#edit-task-dueDate');
+                // 5. Fecha mínima (Lógica existente)
+                const dueDateInput = modalBody.querySelector('#task-dueDate');
                 if (dueDateInput) {
                     dueDateInput.min = new Date().toISOString().split("T")[0];
                 }
 
                 // Destruir Choices al cerrar
                 mainModal.addEventListener('close', () => {
+                    projectChoices.destroy();
                     assigneeChoices.destroy();
                     additionalAssigneesChoices.destroy();
                 }, { once: true });
 
             }, 150);
+            // --- FIN DE MODIFICACIÓN (Lógica JS) ---
 
             break; // Fin del case 'edit-task'
         }
+
         case 'new-task': { // Case con formato mejorado
             title = 'Crear Nueva Tarea';
             btnText = 'Guardar Tarea';
             btnClass = 'bg-green-500 hover:bg-green-600';
+            modalContentDiv.classList.add('max-w-2xl'); // Aseguramos el tamaño estándar
 
             modalBody.innerHTML = '<div class="text-center py-5"><div class="loader mx-auto"></div> Cargando datos...</div>';
             mainModal.style.display = 'flex';
@@ -5532,37 +5711,39 @@ async function openMainModal(type, data = {}) {
                 return;
             }
 
-            // --- Construcción del HTML con formato mejorado ---
+            // --- INICIO DE LA MODIFICACIÓN ---
+            // Reemplazamos el antiguo bodyHtml por este nuevo diseño de 3 pasos
             bodyHtml = `
                 <div class="space-y-6">
 
-                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
-                         <h4 class="text-md font-semibold text-gray-700 mb-2 border-b pb-1">1. Información Principal</h4>
+                    <fieldset class="space-y-2">
+                        <legend class="text-lg font-semibold text-gray-800 pb-2">1. Seleccionar Proyecto</legend>
                         <div>
                             <label for="task-project-choices" class="block text-sm font-medium mb-1">Proyecto (Activos)</label>
                             <select id="task-project-choices" name="projectId" required placeholder="Buscar o seleccionar proyecto..."></select>
-                             <input type="hidden" name="projectName"> 
+                            <input type="hidden" name="projectName"> 
+                        </div>
+                    </fieldset>
+
+                    <fieldset id="task-items-selection" class="hidden space-y-2">
+                        <legend class="text-lg font-semibold text-gray-800 pb-2">2. Ítems Relacionados <span class="text-red-500 font-semibold">*</span></legend>
+                        <div id="task-items-list" class="max-h-48 overflow-y-auto space-y-2 text-sm pr-2 border rounded-md p-3 bg-gray-50">
+                            <p class="text-gray-400 italic text-center py-4">Selecciona un proyecto para ver sus ítems.</p>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="space-y-4">
+                        <legend class="text-lg font-semibold text-gray-800 pb-2">3. Detalles de la Tarea</legend>
+                        
+                        <div>
+                            <label for="task-description" class="block text-sm font-medium mb-1">Descripción de la Tarea</label>
+                            <textarea id="task-description" name="description" rows="3" required class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="Describe brevemente la tarea..."></textarea>
                         </div>
 
                         <div>
                             <label for="task-assignee-choices" class="block text-sm font-medium mb-1">Asignar A (Principal)</label>
                             <select id="task-assignee-choices" name="assigneeId" required placeholder="Buscar o seleccionar usuario..."></select>
                             <input type="hidden" name="assigneeName">
-                        </div>
-                    </div>
-
-                    <div id="task-items-selection" class="hidden border border-gray-200 rounded-lg p-4">
-                        <label class="block text-sm font-medium mb-2 text-gray-700">2. Ítems Relacionados <span class="text-red-500 font-semibold">*</span></label>
-                        <div id="task-items-list" class="max-h-48 overflow-y-auto space-y-2 text-sm pr-2">
-                            <p class="text-gray-400 italic">Selecciona un proyecto para ver sus ítems.</p>
-                        </div>
-                    </div>
-
-                     <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
-                         <h4 class="text-md font-semibold text-gray-700 mb-2 border-b pb-1">3. Detalles de la Tarea</h4>
-                        <div>
-                            <label for="task-description" class="block text-sm font-medium mb-1">Descripción de la Tarea</label>
-                            <textarea id="task-description" name="description" rows="3" required class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="Describe brevemente la tarea..."></textarea>
                         </div>
 
                         <div>
@@ -5574,9 +5755,10 @@ async function openMainModal(type, data = {}) {
                             <label for="task-dueDate" class="block text-sm font-medium mb-1">Fecha Límite (Opcional)</label>
                             <input type="date" id="task-dueDate" name="dueDate" class="mt-1 w-full border rounded-md p-2 text-sm">
                         </div>
-                    </div>
+                    </fieldset>
 
                 </div>`; // Fin de space-y-6
+            // --- FIN DE LA MODIFICACIÓN ---
 
             modalBody.innerHTML = bodyHtml;
             document.getElementById('modal-title').textContent = title;
@@ -5621,7 +5803,14 @@ async function openMainModal(type, data = {}) {
                         itemsSelectionDiv.classList.remove('hidden');
 
                         try {
-                            const itemsQuery = query(collection(db, "items"), where("projectId", "==", selectedProjectId), orderBy("name"));
+                            // --- INICIO DE LA CORRECCIÓN ---
+                            // BUG: La consulta antigua buscaba en la colección raíz "items"
+                            // const itemsQuery = query(collection(db, "items"), where("projectId", "==", selectedProjectId), orderBy("name"));
+
+                            // CORRECCIÓN: Esta consulta busca en la subcolección "items" DENTRO del proyecto seleccionado
+                            const itemsQuery = query(collection(db, "projects", selectedProjectId, "items"), orderBy("name"));
+                            // --- FIN DE LA CORRECCIÓN ---
+
                             const itemsSnapshot = await getDocs(itemsQuery);
                             if (itemsSnapshot.empty) {
                                 itemsListDiv.innerHTML = '<p class="text-gray-400">Este proyecto no tiene ítems definidos.</p>';
@@ -6217,25 +6406,22 @@ modalForm.addEventListener('submit', async (e) => {
                 const items = [];
                 let totalCost = 0;
 
-                // --- INICIO DE MODIFICACIÓN (Guardar 'itemType') ---
-                document.querySelectorAll('#po-items-container .po-item').forEach(itemEl => {
-                    const selectEl = itemEl.querySelector('select[name="itemId"]');
-                    const materialId = selectEl.value;
-                    const itemType = selectEl.dataset.itemType; // <-- Obtenemos el tipo
-                    const quantity = parseInt(itemEl.querySelector('input[name="quantity"]').value);
-                    const unitCost = parseFloat(itemEl.querySelector('input[name="unitCost"]').value.replace(/[$. ]/g, '')) || 0;
+                // --- INICIO DE MODIFICACIÓN (Leer desde la TABLA) ---
+                document.querySelectorAll('#po-items-table-body tr').forEach(row => {
+                    const materialId = row.dataset.itemId;
+                    const itemType = row.dataset.itemType; // 'material', 'dotacion' o 'herramienta'
+                    const quantity = parseInt(row.dataset.quantity);
+                    const unitCost = parseFloat(row.dataset.cost);
+                    const subtotal = parseFloat(row.dataset.subtotal);
 
                     if (materialId && quantity > 0 && itemType) {
                         items.push({
-                            materialId: materialId, // ID del ítem en su catálogo
-                            itemType: itemType,   // 'material', 'dotacion' o 'herramienta'
+                            materialId: materialId,
+                            itemType: itemType,
                             quantity: quantity,
                             unitCost: unitCost
                         });
-                        totalCost += quantity * unitCost;
-                    } else if (materialId && quantity > 0 && !itemType) {
-                        // Fallback por si 'itemType' no se guardó en el dataset
-                        console.warn(`No se pudo determinar el tipo de ítem para ${materialId}, saltando.`);
+                        totalCost += subtotal;
                     }
                 });
                 // --- FIN DE MODIFICACIÓN ---
@@ -9076,6 +9262,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('archived-users-tab').addEventListener('click', () => loadUsers('archived'));
 
     // Modales y otros elementos
+    document.getElementById('modal-cancel-btn').addEventListener('click', closeMainModal);
+    document.getElementById('modal-cancel-btn-footer').addEventListener('click', closeMainModal); // <-- ¡LÍNEA AÑADIDA!
     document.getElementById('progress-modal-cancel-btn').addEventListener('click', closeProgressModal);
     document.getElementById('import-modal-cancel-btn').addEventListener('click', () => document.getElementById('import-modal').style.display = 'none');
     document.getElementById('confirm-modal-cancel-btn').addEventListener('click', closeConfirmModal);
