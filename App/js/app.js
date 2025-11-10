@@ -61,9 +61,6 @@ let onSafetyCheckInSuccess = () => {}; // Callback global
 let videoStream = null; // Variable global para el stream de la cámara
 let verifiedCanvas = null; // Variable global para guardar la selfie verificada
 
-let onSafetyCheckInSuccess = () => { }; // Callback global
-let videoStream = null; // Variable global para el stream de la cámara
-
 
 let lastVisibleCatalogDoc = null; // Guarda el último documento visto del catálogo
 let isFetchingCatalog = false;    // Evita cargas múltiples simultáneas
@@ -12394,11 +12391,13 @@ async function sendNotification(userId, title, message, view) {
  * @returns {boolean} - true si YA HIZO check-in, false si NECESITA hacerlo.
  */
 function checkIfSafetyCheckInNeeded() {
+    // ESTA FUNCIÓN YA NO LA USAMOS (la lógica se movió a 'register-task-progress')
+    // PERO LA DEJAMOS POR SI LA NECESITAMOS EN EL FUTURO
     const lastCheckInString = localStorage.getItem('lastSafetyCheckIn');
     if (!lastCheckInString) {
         return true; // Nunca lo ha hecho
     }
-
+    
     const lastCheckInDate = new Date(lastCheckInString);
     const today = new Date();
 
@@ -12406,10 +12405,10 @@ function checkIfSafetyCheckInNeeded() {
     if (lastCheckInDate.getFullYear() === today.getFullYear() &&
         lastCheckInDate.getMonth() === today.getMonth() &&
         lastCheckInDate.getDate() === today.getDate()) {
-
+        
         return false; // Ya hizo check-in hoy
     }
-
+    
     return true; // El check-in fue de un día anterior
 }
 
@@ -12466,7 +12465,6 @@ async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
     
     // 3. Cargar la dotación (Paso 2)
     try {
-        // (Esta es una consulta rápida, similar a la de dotacion.js)
         const historyQuery = query(
             collection(db, "dotacionHistory"),
             where("action", "==", "asignada"),
@@ -12477,15 +12475,19 @@ async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
 
         if (snapshot.empty) {
             eppList.innerHTML = '<p class="text-sm text-gray-500">No tienes dotación activa asignada.</p>';
-            // Si no tiene EPP, el botón de confirmar se habilitará
-            // después de la verificación facial.
         } else {
             let eppHtml = '';
-            // Necesitamos los datos del catálogo para las fechas de vencimiento
             const catalogIds = snapshot.docs.map(doc => doc.data().itemId);
-            const catalogQuery = query(collection(db, "dotacionCatalog"), where(documentId(), "in", catalogIds));
-            const catalogSnapshot = await getDocs(catalogQuery);
-            const catalogMap = new Map(catalogSnapshot.docs.map(doc => [doc.id, doc.data()]));
+            // Manejo de lotes de consulta (Firestore 'in' tiene un límite de 30)
+            let allCatalogItems = [];
+            for (let i = 0; i < catalogIds.length; i += 30) {
+                const chunk = catalogIds.slice(i, i + 30);
+                const catalogQuery = query(collection(db, "dotacionCatalog"), where(documentId(), "in", chunk));
+                const catalogSnapshot = await getDocs(catalogQuery);
+                catalogSnapshot.forEach(doc => allCatalogItems.push(doc));
+            }
+            
+            const catalogMap = new Map(allCatalogItems.map(doc => [doc.id, doc.data()]));
             
             snapshot.forEach(doc => {
                 const item = doc.data();
@@ -12493,7 +12495,6 @@ async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
                 let vencimientoHtml = '<span class="text-xs text-green-600">(Vigente)</span>';
 
                 if (catalogItem && catalogItem.vidaUtilDias && item.fechaEntrega) {
-                    // (Lógica de vencimiento copiada de dotacion.js)
                     const today = new Date(); today.setHours(0, 0, 0, 0);
                     const deliveryDate = new Date(item.fechaEntrega + 'T00:00:00');
                     const expirationDate = new Date(deliveryDate.getTime());
