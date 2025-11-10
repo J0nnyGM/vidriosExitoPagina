@@ -116,22 +116,66 @@ function resizeImage(file, maxWidth = 800) {
 
 // URL donde están alojados los modelos de IA de face-api.js
 const MODEL_URL = 'models';
+let currentUserFaceDescriptor = null; // <-- AÑADE ESTA LÍNEA
+let modelsLoaded = false; // <-- AÑADE ESTA LÍNEA
+
+
 /**
- * Carga los modelos de IA para la detección de rostros.
- * Se llama una vez cuando la aplicación se inicia.
+ * Carga los modelos de IA para la detección Y RECONOCIMIENTO de rostros.
+ * (VERSIÓN CORREGIDA: Carga SsdMobilenetv1)
  */
 async function loadFaceAPImodels() {
     console.log("Cargando modelos de reconocimiento facial...");
     try {
-        // Cargamos solo el modelo más pequeño y rápido (TinyFaceDetector)
-        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+        // Cargamos TODOS los modelos necesarios en paralelo
+        await Promise.all([
+            // Cargamos el SsdMobilenetv1 (el que da el error)
+            faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+            // Nota: Ya no necesitamos tinyFaceDetector si usamos SsdMobilenetv1
+        ]);
         console.log("Modelos de face-api.js cargados exitosamente.");
+        modelsLoaded = true; // <-- AÑADE ESTA LÍNEA
     } catch (error) {
         console.error("Error crítico: No se pudieron cargar los modelos de face-api.js:", error);
-        // Podríamos mostrar un error al usuario si esto fuera crítico
     }
 }
-// --- FIN DE NUEVO CÓDIGO ---
+
+/**
+ * Carga la foto de perfil y genera el descriptor facial para comparar.
+ * (VERSIÓN CORREGIDA: Usa SsdMobilenetv1 y verifica si los modelos están cargados)
+ * @param {string} imageUrl - La URL de la foto de perfil del usuario.
+ */
+async function generateProfileFaceDescriptor(imageUrl) {
+    // Reseteamos el descriptor
+    currentUserFaceDescriptor = null;
+
+    // --- INICIO DE MODIFICACIÓN ---
+    if (!modelsLoaded) {
+        console.warn("Los modelos de IA aún no han cargado. Saltando generación de descriptor.");
+        return; // Salir si los modelos no están listos
+    }
+    // --- FIN DE MODIFICACIÓN ---
+
+    try {
+        const img = await faceapi.fetchImage(imageUrl);
+
+        // Usamos el modelo SsdMobilenetv1 (que es el default, por eso no especificamos)
+        const detection = await faceapi.detectSingleFace(img)
+            .withFaceLandmarks()
+            .withFaceDescriptor();
+
+        if (detection) {
+            currentUserFaceDescriptor = detection.descriptor;
+            console.log("Descriptor de perfil (huella facial) generado y guardado.");
+        } else {
+            console.warn("No se detectó un rostro en la foto de perfil. El reconocimiento facial se saltará.");
+        }
+    } catch (error) {
+        console.error("Error al generar el descriptor de perfil:", error);
+    }
+}
 
 /**
  * Convierte un timestamp o fecha a un formato de tiempo relativo.
@@ -284,6 +328,15 @@ onAuthStateChanged(auth, async (user) => {
                     initialsEl.classList.remove('hidden');
                 }
             }
+
+            // 5. (NUEVO) Generar descriptor de perfil en segundo plano
+            if (profilePhotoURL) {
+                generateProfileFaceDescriptor(profilePhotoURL);
+            } else {
+                console.warn("Usuario no tiene foto de perfil. El reconocimiento facial se saltará.");
+                currentUserFaceDescriptor = null;
+            }
+
 
             // 2. Configurar Visibilidad de Pestañas (Control de Acceso)
             const isAdmin = currentUserRole === 'admin';
@@ -5604,24 +5657,33 @@ async function openMainModal(type, data = {}) {
         case 'editProfile':
             title = 'Mi Perfil'; btnText = 'Guardar Cambios'; btnClass = 'bg-blue-500 hover:bg-blue-600';
 
-            // --- INICIO DE MODIFICACIÓN (Nuevo Layout) ---
+            // --- INICIO DE MODIFICACIÓN (Nuevo Layout de Foto) ---
             bodyHtml = `
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     
                     <div class="md:col-span-1">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Selfie (Foto de Perfil)</label>
-                        <div id="profile-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
-                            
+                        
+                        <div class="aspect-square w-full rounded-lg bg-gray-200 overflow-hidden relative border">
                             <div id="profile-preview" class="absolute inset-0 ${data.profilePhotoURL ? '' : 'hidden'}">
                                 <img src="${data.profilePhotoURL || ''}" id="profile-img-preview" class="w-full h-full object-cover">
                             </div>
-                            
-                            <div id="profile-prompt" class="text-center p-4 ${data.profilePhotoURL ? 'hidden' : ''}">
+                            <div id="profile-prompt" class="text-center p-4 ${data.profilePhotoURL ? 'hidden' : ''} flex items-center justify-center h-full">
                                 <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                <p class="mt-2 text-sm text-gray-500">Subir tu selfie</p>
                             </div>
                         </div>
-                        <input type="file" id="profile-photo" name="photo" accept="image/*" class="hidden">
+
+                        <input type="file" id="profile-photo-camera" name="photo-camera" accept="image/*" capture="user" class="hidden profile-photo-input">
+                        <input type="file" id="profile-photo-gallery" name="photo-gallery" accept="image/*" class="hidden profile-photo-input">
+
+                        <div class="grid grid-cols-2 gap-2 mt-2">
+                            <button type="button" id="profile-btn-camera" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold p-2 rounded-lg">
+                                Tomar Foto
+                            </button>
+                            <button type="button" id="profile-btn-gallery" class="bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-semibold p-2 rounded-lg">
+                                Galería
+                            </button>
+                        </div>
                         <p class="text-xs text-center text-gray-500 mt-2">Sube una foto clara con fondo blanco.</p>
                     </div>
 
@@ -5666,30 +5728,53 @@ async function openMainModal(type, data = {}) {
                         </div>
                     </div>
                 </div>`;
-            // --- FIN DE MODIFICACIÓN (Nuevo Layout) ---
+            // --- FIN DE MODIFICACIÓN ---
 
-            // Añadimos el JS para el dropzone de la foto
+            // Reemplaza el 'setTimeout' con la nueva lógica de botones
             setTimeout(() => {
-                const dropzone = document.getElementById('profile-dropzone');
-                const fileInput = document.getElementById('profile-photo');
+                // --- INICIO DE MODIFICACIÓN (Lógica de botones) ---
+
+                // 1. Referencias a los nuevos elementos
+                const btnCamera = document.getElementById('profile-btn-camera');
+                const btnGallery = document.getElementById('profile-btn-gallery');
+                const inputCamera = document.getElementById('profile-photo-camera');
+                const inputGallery = document.getElementById('profile-photo-gallery');
+                const allInputs = document.querySelectorAll('.profile-photo-input'); // Clase compartida
+
                 const previewContainer = document.getElementById('profile-preview');
                 const previewImg = document.getElementById('profile-img-preview');
                 const promptEl = document.getElementById('profile-prompt');
-                if (dropzone) {
-                    dropzone.addEventListener('click', () => fileInput.click());
-                    fileInput.addEventListener('change', (e) => {
-                        const file = e.target.files[0];
-                        if (file) {
-                            const reader = new FileReader();
-                            reader.onload = (event) => {
-                                previewImg.src = event.target.result;
-                                previewContainer.classList.remove('hidden');
-                                promptEl.classList.add('hidden');
-                            }
-                            reader.readAsDataURL(file);
+
+                // 2. Conectar botones a inputs
+                if (btnCamera) btnCamera.addEventListener('click', () => inputCamera.click());
+                if (btnGallery) btnGallery.addEventListener('click', () => inputGallery.click());
+
+                // 3. Crear la función de preview
+                const handleFileChange = (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            previewImg.src = event.target.result;
+                            previewContainer.classList.remove('hidden');
+                            promptEl.classList.add('hidden');
                         }
-                    });
-                }
+                        reader.readAsDataURL(file);
+
+                        // Importante: Resetea el otro input
+                        if (e.target.id === 'profile-photo-camera') {
+                            inputGallery.value = '';
+                        } else {
+                            inputCamera.value = '';
+                        }
+                    }
+                };
+
+                // 4. Asignar el listener a AMBOS inputs
+                allInputs.forEach(input => {
+                    input.addEventListener('change', handleFileChange);
+                });
+                // --- FIN DE MODIFICACIÓN ---
             }, 100);
             break;
     }
@@ -6430,35 +6515,50 @@ modalForm.addEventListener('submit', async (e) => {
             });
             break;
         case 'editProfile':
-            let validationSuccess = false; // Flag para controlar el cierre del modal
+            let validationSuccess = false;
             try {
                 const user = auth.currentUser;
                 modalConfirmBtn.disabled = true;
                 modalConfirmBtn.textContent = 'Guardando...';
 
-                const photoFile = data.photo;
+                // --- INICIO DE MODIFICACIÓN ---
+                // 1. Encontrar cuál de los dos inputs tiene un archivo
+                const cameraFile = document.getElementById('profile-photo-camera').files[0];
+                const galleryFile = document.getElementById('profile-photo-gallery').files[0];
+                const photoFile = cameraFile || galleryFile; // Usamos el que tenga un archivo
+                // --- FIN DE MODIFICACIÓN ---
+
                 let downloadURL = null;
 
-                // 1. Si el usuario subió una foto nueva...
+                // 2. Si el usuario subió una foto nueva...
                 if (photoFile && photoFile.size > 0) {
 
-                    // --- INICIO DE VALIDACIÓN FACIAL ---
+                    // ... (Toda tu lógica de validación de face-api.js) ...
                     modalConfirmBtn.textContent = 'Validando rostro...';
-
-                    // Usamos la imagen de la vista previa que el usuario ya está viendo
                     const imgPreview = document.getElementById('profile-img-preview');
                     if (!imgPreview) throw new Error("Error interno: No se encontró la vista previa.");
 
-                    // Ejecutamos la detección (usando el modelo 'tiny' que cargamos)
-                    const detection = await faceapi.detectSingleFace(imgPreview, new faceapi.TinyFaceDetectorOptions());
+                    if (!modelsLoaded) {
+                        throw new Error("Modelos de IA aún cargando. Intenta de nuevo en 5 segundos.");
+                    }
+
+                    const detection = await faceapi.detectSingleFace(imgPreview)
+                        .withFaceLandmarks()
+                        .withFaceDescriptor();
 
                     if (!detection) {
-                        // ¡ERROR! No se encontró un rostro.
                         throw new Error("No se detectó un rostro en la foto. Sube una selfie clara.");
                     }
-                    // Si llegamos aquí, ¡se encontró un rostro!
-                    // --- FIN DE VALIDACIÓN FACIAL ---
 
+                    if (currentUserFaceDescriptor) {
+                        const distance = faceapi.euclideanDistance(currentUserFaceDescriptor, detection.descriptor);
+                        const umbralDeCoincidencia = 0.5;
+                        if (distance > umbralDeCoincidencia) {
+                            throw new Error(`Rostro no coincide (Distancia: ${distance.toFixed(2)}). Intenta de nuevo.`);
+                        }
+                    }
+
+                    // ... (El resto de la lógica de subida de foto) ...
                     modalConfirmBtn.textContent = 'Redimensionando foto...';
                     const resizedBlob = await resizeImage(photoFile, 400);
 
@@ -6469,7 +6569,7 @@ modalForm.addEventListener('submit', async (e) => {
                     downloadURL = await getDownloadURL(photoStorageRef);
                 }
 
-                // 2. Preparamos los datos a guardar
+                // 3. Preparar los datos a guardar (sin cambios)
                 const dataToUpdate = {
                     email: data.email,
                     phone: data.phone,
@@ -6479,45 +6579,30 @@ modalForm.addEventListener('submit', async (e) => {
                     tallaBotas: data.tallaBotas || '',
                 };
 
-                // 3. Añadimos la URL de la foto solo si se subió una nueva
+                // ... (El resto de tu lógica de guardado y 'finally' sigue igual)
                 if (downloadURL) {
                     dataToUpdate.profilePhotoURL = downloadURL;
                 }
-
-                // 4. Actualizamos el email (si cambió)
                 if (data.email !== user.email) {
                     modalConfirmBtn.textContent = 'Actualizando email...';
                     await updateEmail(user, data.email);
                 }
-
-                // 5. Actualizamos el documento en Firestore
                 modalConfirmBtn.textContent = 'Finalizando...';
                 await updateDoc(doc(db, "users", user.uid), dataToUpdate);
-
-                // 6. Actualizamos el 'usersMap' local
                 const updatedUser = { ...usersMap.get(user.uid), ...dataToUpdate };
                 usersMap.set(user.uid, updatedUser);
-
-                // 7. Marcamos como exitoso
                 validationSuccess = true;
 
             } catch (error) {
                 console.error("Error al actualizar perfil:", error);
-
-                // Mostramos el error de validación específico al usuario
-                if (error.message.includes("No se detectó un rostro")) {
+                if (error.message.includes("No se detectó un rostro") || error.message.includes("Rostro no coincide")) {
                     alert(error.message);
                 } else {
                     alert("Error al actualizar el perfil. Es posible que necesites volver a iniciar sesión.");
                 }
-                // validationSuccess sigue siendo 'false'
-
             } finally {
-                // Reseteamos el botón
                 modalConfirmBtn.disabled = false;
                 modalConfirmBtn.textContent = 'Guardar Cambios';
-
-                // ¡IMPORTANTE! Solo cerramos el modal si la validación fue exitosa
                 if (validationSuccess) {
                     closeMainModal();
                 }
@@ -8134,34 +8219,68 @@ document.addEventListener('DOMContentLoaded', () => {
                 const step2 = document.getElementById('checkin-step-2-epp');
 
                 try {
+                    // --- INICIO DE MODIFICACIÓN (Verificar modelos) ---
+                    if (!modelsLoaded) {
+                        throw new Error("Modelos de IA aún cargando. Intenta de nuevo en 5 segundos.");
+                    }
+                    // --- FIN DE MODIFICACIÓN ---
+
                     // 1. Capturar la imagen
                     const ctx = canvasEl.getContext('2d');
+                    ctx.translate(canvasEl.width, 0);
+                    ctx.scale(-1, 1);
                     ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+                    ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-                    // 2. Detener la cámara (ahorro de batería)
+                    // 2. Detener la cámara
                     if (videoStream) videoStream.getTracks().forEach(track => track.stop());
 
-                    // 3. Ejecutar face-api.js
-                    const detection = await faceapi.detectSingleFace(canvasEl, new faceapi.TinyFaceDetectorOptions());
+                    // 3. Ejecutar Detección (Usando el modelo SsdMobilenetv1 por defecto)
+                    faceStatus.textContent = 'Detectando rostro...';
+                    const detection = await faceapi.detectSingleFace(canvasEl)
+                        .withFaceLandmarks()
+                        .withFaceDescriptor();
 
                     if (!detection) {
-                        faceStatus.textContent = "Rostro no detectado. Intenta de nuevo.";
-                        faceStatus.className = "text-center text-sm font-medium text-red-600 mt-2 h-4";
-                        target.disabled = false;
-                        target.textContent = 'Tomar Foto y Verificar Rostro';
-                        // Reiniciar la cámara
-                        videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-                        videoEl.srcObject = videoStream;
-                    } else {
-                        // ¡Éxito!
-                        faceStatus.textContent = "¡Rostro Verificado!";
-                        faceStatus.className = "text-center text-sm font-medium text-green-600 mt-2 h-4";
-                        step2.classList.remove('hidden'); // Mostrar Paso 2 (EPP)
-                        document.getElementById('checkin-confirm-btn').disabled = false;
+                        throw new Error("No se detectó un rostro en la foto. Sube una selfie clara.");
                     }
+
+                    // 4. Comparar rostros
+                    faceStatus.textContent = "Rostro detectado. Comparando...";
+
+                    if (!currentUserFaceDescriptor) {
+                        console.warn("Saltando reconocimiento (no hay descriptor de perfil). Solo se hizo detección.");
+                    } else {
+                        const distance = faceapi.euclideanDistance(currentUserFaceDescriptor, detection.descriptor);
+                        const umbralDeCoincidencia = 0.5;
+
+                        if (distance > umbralDeCoincidencia) {
+                            throw new Error(`Rostro no coincide (Distancia: ${distance.toFixed(2)}). Intenta de nuevo.`);
+                        }
+                        faceStatus.textContent = `Rostro Coincide (Distancia: ${distance.toFixed(2)})`;
+                    }
+
+                    // 5. ¡Éxito!
+                    faceStatus.textContent = "¡Verificación Exitosa!";
+                    faceStatus.className = "text-center text-sm font-medium text-green-600 mt-2 h-4";
+                    step2.classList.remove('hidden');
+                    document.getElementById('checkin-confirm-btn').disabled = false;
+                    target.disabled = true;
+
                 } catch (err) {
-                    faceStatus.textContent = "Error en la verificación.";
+                    // Si falla (no detecta, no coincide, o modelos no cargados)
+                    faceStatus.textContent = err.message;
+                    faceStatus.className = "text-center text-sm font-medium text-red-600 mt-2 h-4";
                     target.disabled = false;
+                    target.textContent = 'Reintentar Verificación';
+
+                    // Reiniciar la cámara para un nuevo intento
+                    try {
+                        videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                        videoEl.srcObject = videoStream;
+                    } catch (camErr) {
+                        faceStatus.textContent = "Error al reiniciar la cámara.";
+                    }
                 }
             }
 
@@ -8184,7 +8303,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 localStorage.setItem('lastSafetyCheckIn', new Date().toISOString());
 
                 // Cerramos el modal
-                document.getElementById('safety-checkin-modal').style.display = 'hidden';
+                document.getElementById('safety-checkin-modal').style.display = 'none';
+
+                // --- INICIO DE MODIFICACIÓN (Paso 4 del Plan) ---
+                // Forzamos la recarga de la vista de tareas para habilitar los botones
+                loadTasksView();
+                // --- FIN DE MODIFICACIÓN ---
 
                 // ¡Ejecutamos la acción original que el usuario quería!
                 if (onSafetyCheckInSuccess) {
@@ -10715,59 +10839,59 @@ function resetMaterialRequestForm() {
 
 /**
  * Prepara la vista de Tareas Asignadas, configura los filtros y carga las tareas iniciales.
+ * (MODIFICADA para el check-in de seguridad y corrección de 'getCurrentUserRole')
  */
 function loadTasksView() {
     const newTaskBtn = document.getElementById('new-task-btn');
-    const adminToggleContainer = document.getElementById('admin-task-toggle-container'); // <-- AÑADIDO
+    const adminToggleContainer = document.getElementById('admin-task-toggle-container');
 
-    if (newTaskBtn && adminToggleContainer) { // <-- AÑADIDO
-        const isAdmin = currentUserRole === 'admin';
+    // --- INICIO DE MODIFICACIÓN ---
+    // const role = getCurrentUserRole(); // <-- Esta línea es el ERROR
+    const role = currentUserRole; // <-- Esta es la CORRECCIÓN
+    const isCheckInPending = checkIfSafetyCheckInNeeded();
+
+    // Solo bloqueamos los botones si es operario Y el check-in está pendiente
+    const blockButtons = (isCheckInPending && role === 'operario');
+    // --- FIN DE MODIFICACIÓN ---
+
+    if (newTaskBtn && adminToggleContainer) {
+        const isAdmin = (role === 'admin');
         newTaskBtn.classList.toggle('hidden', !isAdmin);
-        adminToggleContainer.classList.toggle('hidden', !isAdmin); // <-- AÑADIDO
+        adminToggleContainer.classList.toggle('hidden', !isAdmin);
     }
 
-    // --- INICIO DE CAMBIO: Listener para el Toggle de Admin ---
     const adminToggleCheckbox = document.getElementById('admin-task-toggle-checkbox');
     if (adminToggleCheckbox && !adminToggleCheckbox.dataset.listenerAttached) {
         adminToggleCheckbox.dataset.listenerAttached = 'true';
         adminToggleCheckbox.addEventListener('change', () => {
-            // Cuando el admin cambia el toggle, recargamos la vista actual
             const currentActiveTab = document.querySelector('#tareas-view .task-tab-button.active');
             const currentFilter = currentActiveTab ? currentActiveTab.dataset.statusFilter : 'pendiente';
-
-            // Cambiamos el título principal
             const titleElement = document.querySelector('#tareas-view h1');
             if (titleElement) {
                 titleElement.textContent = adminToggleCheckbox.checked ? 'Todas las Tareas' : 'Mis Tareas Asignadas';
             }
-
-            loadAndDisplayTasks(currentFilter);
+            // Pasamos el 'blockButtons' al recargar
+            loadAndDisplayTasks(currentFilter, blockButtons);
         });
     }
-    // --- FIN DE CAMBIO ---
 
     const tabsContainer = document.querySelector('#tareas-view .mb-4.border-b nav');
-
     if (!tabsContainer) {
         console.error('ERROR CRÍTICO: No se encontró el contenedor de pestañas (nav).');
         return;
     }
 
-    // Asegurarse de que el listener se añada solo una vez
     if (!tabsContainer.dataset.listenerAttached) {
         tabsContainer.addEventListener('click', (e) => {
             const clickedButton = e.target.closest('.task-tab-button');
             if (!clickedButton) return;
-
             const statusFilter = clickedButton.dataset.statusFilter;
             const isActive = clickedButton.classList.contains('active');
-
             if (!isActive) {
-                // 1. Actualizar visualmente las pestañas
                 tabsContainer.querySelectorAll('.task-tab-button').forEach(btn => btn.classList.remove('active'));
                 clickedButton.classList.add('active');
-                // 2. Llamar a la función para cargar las tareas
-                loadAndDisplayTasks(statusFilter);
+                // Pasamos el 'blockButtons' al cambiar de pestaña
+                loadAndDisplayTasks(statusFilter, blockButtons);
             }
         });
         tabsContainer.dataset.listenerAttached = 'true';
@@ -10776,31 +10900,31 @@ function loadTasksView() {
     // Carga inicial
     const currentActiveTab = tabsContainer.querySelector('.task-tab-button.active');
     const initialFilter = currentActiveTab ? currentActiveTab.dataset.statusFilter : 'pendiente';
-
     if (!currentActiveTab) {
         tabsContainer.querySelector('#pending-tasks-tab')?.classList.add('active');
     }
 
-    loadAndDisplayTasks(initialFilter);
+    // Pasamos el 'blockButtons' a la carga inicial
+    loadAndDisplayTasks(initialFilter, blockButtons);
 }
-
 
 /**
  * Carga las tareas desde Firestore filtradas por estado (para asignado principal O adicional)
  * y las muestra en la interfaz usando listeners en tiempo real.
+ * (MODIFICADA para pasar el estado del check-in)
  * @param {string} statusFilter - El estado por el cual filtrar ('pendiente' o 'completada').
+ * @param {boolean} blockButtons - true si los botones de avance deben estar bloqueados.
  */
-function loadAndDisplayTasks(statusFilter = 'pendiente') {
-    // Establecer contexto (sin cambios)
+function loadAndDisplayTasks(statusFilter = 'pendiente', blockButtons = false) {
+    // Establecer contexto
     materialRequestReturnContext = { view: 'tareas' };
-    console.log("Contexto de retorno establecido en: tareas"); // Log para depuración
+    console.log("Contexto de retorno establecido en: tareas");
 
     const tasksContainer = document.getElementById('tasks-container');
     let loadingDiv = document.getElementById('loading-tasks');
 
     // --- Manejo del Loader ---
     if (tasksContainer && !loadingDiv) {
-        // console.warn("[Tareas] El div 'loading-tasks' no se encontró. Recreándolo.");
         loadingDiv = document.createElement('div');
         loadingDiv.id = 'loading-tasks';
         loadingDiv.className = 'text-center py-10';
@@ -10808,7 +10932,7 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
         tasksContainer.appendChild(loadingDiv);
     }
     if (!tasksContainer || !loadingDiv || !currentUser) {
-        // console.error(`[Tareas] Error al iniciar loadAndDisplayTasks('${statusFilter}'): Faltan elementos esenciales.`);
+        console.error(`[Tareas] Error al iniciar loadAndDisplayTasks('${statusFilter}'): Faltan elementos esenciales.`);
         return;
     }
     // No ocultamos el loader aquí, lo hacemos en renderCombinedTasks la primera vez
@@ -10822,11 +10946,11 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
         try { unsubscribeTasks(); } catch (e) { console.warn(`[Tareas] Advertencia al cancelar listener: ${e.message}`); } finally { unsubscribeTasks = null; }
     }
 
-    // --- Lógica de Consulta (Modificada para Admin View) ---
-    let tasksMap = new Map(); // Un solo mapa para todas las tareas
+    // --- Lógica de Consulta ---
+    let tasksMap = new Map();
     let combinedTasksRendered = false;
 
-    // Función para renderizar (reutilizada pero solo con un mapa)
+    // --- Función de Renderizado (Modificada) ---
     const renderCombinedTasks = (tasksMap) => {
         // Ocultar loader la primera vez que se renderiza
         if (!combinedTasksRendered) {
@@ -10868,11 +10992,12 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
         // 3. Iterar sobre las tareas ordenadas
         let previousCard = null; // Para insertar en el orden correcto
         sortedTasks.forEach((taskData) => {
-            const existingCard = currentTasksContainer.querySelector(`.task-card[data-id="${taskData.id}"]`);
+            // --- INICIO DE MODIFICACIÓN ---
+            // Pasamos 'blockButtons' al crear la tarjeta
+            const taskCard = createTaskCard(taskData, blockButtons);
+            // --- FIN DE MODIFICACIÓN ---
 
-            // --- INICIO DE LA CORRECCIÓN (Lógica de reemplazo) ---
-            // Siempre creamos/re-creamos la tarjeta con los datos más frescos
-            const taskCard = createTaskCard(taskData);
+            const existingCard = currentTasksContainer.querySelector(`.task-card[data-id="${taskData.id}"]`);
 
             if (existingCard) {
                 // Si la tarjeta ya existe, la reemplazamos en lugar de saltarla
@@ -10887,17 +11012,17 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
                 } previousCard = taskCard; // Actualizamos la referencia 
             }
 
+            // --- INICIO DE CORRECCIÓN (Llamada a loadTaskMaterialStatus) ---
+            // Llamamos a la función que carga el estado del material (en modo 'summary')
             if (taskData.specificSubItemIds && taskData.specificSubItemIds.length > 0) {
                 const placeholderId = `material-status-${taskData.id}`;
                 loadTaskMaterialStatus(taskData.id, taskData.projectId, placeholderId, 'summary');
             }
-
+            // --- FIN DE CORRECCIÓN ---
         });
 
         // 4. Eliminar las tarjetas que quedaron marcadas para remover
         currentTasksContainer.querySelectorAll('.task-card[data-marked-for-removal="true"]').forEach(card => {
-            console.log(`Removing card for task ${card.dataset.id}`); // Log opcional
-            // Limpiar listener de material antes de remover
             const materialStatusDiv = card.querySelector(`[id^="material-status-${card.dataset.id}"]`);
             if (materialStatusDiv && materialStatusListeners.has(materialStatusDiv.id)) {
                 materialStatusListeners.get(materialStatusDiv.id)();
@@ -10907,7 +11032,7 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
         });
     };
 
-    // --- INICIO DE CAMBIO: Lógica de Consulta ---
+    // --- Lógica de Consulta (Modificada para Admin View) ---
     const adminToggleCheckbox = document.getElementById('admin-task-toggle-checkbox');
     const isAdminView = adminToggleCheckbox?.checked && currentUserRole === 'admin';
 
@@ -10917,7 +11042,6 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
         const allTasksQuery = query(
             collection(db, "tasks"),
             where("status", "==", statusFilter)
-            // (Opcional: podríamos añadir un 'orderBy' aquí si es necesario)
         );
 
         unsubscribeTasks = onSnapshot(allTasksQuery, (querySnapshot) => {
@@ -10937,7 +11061,7 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
         });
 
     } else {
-        // MODO USUARIO: Ver solo "Mis Tareas" (lógica de doble consulta original)
+        // MODO USUARIO: Ver solo "Mis Tareas"
         console.log(`[Tareas] Cargando en MODO USUARIO. Filtro: ${statusFilter}`);
         let principalTasks = new Map();
         let additionalTasks = new Map();
@@ -10988,7 +11112,7 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
             unsubscribeAdditional();
         };
     }
-    // --- FIN DE CAMBIO ---
+    // --- FIN Lógica de Consulta ---
 
     // Añadir el nuevo listener combinado al array de listeners activos
     if (unsubscribeTasks) {
@@ -11001,11 +11125,12 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
 
 /**
  * Crea el elemento HTML (tarjeta) para mostrar una tarea individual.
- * (VERSIÓN MEJORADA: Simplificada, sin lista de ítems, y con doble barra de estado)
+ * (VERSIÓN MODIFICADA: Simplificada, y deshabilita botones si el check-in está pendiente)
  * @param {object} task - El objeto de datos de la tarea desde Firestore.
+ * @param {boolean} blockButtons - true si los botones de avance deben estar bloqueados.
  * @returns {HTMLElement} - El elemento div de la tarjeta de tarea.
  */
-function createTaskCard(task) {
+function createTaskCard(task, blockButtons = false) {
     const card = document.createElement('div');
     card.className = "bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden h-full task-card";
     card.dataset.id = task.id;
@@ -11040,16 +11165,10 @@ function createTaskCard(task) {
     // --- FIN Lógica de Fecha ---
 
 
-    // --- INICIO DE MODIFICACIÓN (Simplificación de Listas y Barras) ---
-
-    // (La lógica 'loadAndSeparateItems' se llamará, 
-    // pero no encontrará los 'ul' y no hará nada, lo cual es perfecto)
-
     // --- Barra de Progreso (Instalación) ---
     let progressBarHtml = '';
     const progressBarId = `task-progress-bar-${task.id}`;
     const progressTextId = `task-progress-text-${task.id}`;
-
     if (task.status === 'completada') {
         progressBarHtml = `
             <div>
@@ -11062,8 +11181,6 @@ function createTaskCard(task) {
                 <div class="flex justify-between mb-1"><span class="text-xs font-medium text-gray-500">Progreso Instalación</span><span id="${progressTextId}" class="text-xs font-medium text-blue-700">Calculando...</span></div>
                 <div class="task-progress-bar-bg"><div id="${progressBarId}" class="task-progress-bar-fg" style="width: 0%;"></div></div>
             </div>`;
-
-        // (La lógica 'calculateProgress' se mantiene igual y poblará esta barra)
         const calculateProgress = async () => {
             try {
                 const subItemIds = task.specificSubItemIds;
@@ -11093,7 +11210,6 @@ function createTaskCard(task) {
         };
         setTimeout(calculateProgress, 100);
     } else {
-        // Tarea sin sub-ítems, no mostramos barra de progreso
         progressBarHtml = '';
     }
 
@@ -11106,36 +11222,42 @@ function createTaskCard(task) {
                 <p class="text-gray-400 italic">Cargando estado de material...</p>
             </div>`;
     }
-    // --- FIN DE MODIFICACIÓN ---
 
-
-    // --- Botones (sin cambios) ---
+    // --- Botones (MODIFICADOS) ---
     const baseButtonClasses = "text-xs font-bold py-2 px-4 rounded-lg transition-colors flex items-center shadow-sm";
     const iconBaseClasses = "h-4 w-4 mr-1";
+
     const editButtonHtmlFinal = currentUserRole === 'admin' ? `
         <button data-action="edit-task" data-id="${task.id}" class="${baseButtonClasses} bg-yellow-500 hover:bg-yellow-600 text-white">
             <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
             Editar
         </button>
     ` : '';
-    const completeButtonHtmlFinal = task.status === 'pendiente' ? `
-        <button data-action="complete-task" data-id="${task.id}" class="${baseButtonClasses} bg-green-500 hover:bg-green-600 text-white">
-            <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-            Completada
-        </button>
-    ` : '';
+
     const viewTaskButtonHtmlFinal = `
         <button data-action="view-task-details" data-id="${task.id}" class="${baseButtonClasses} bg-blue-100 hover:bg-blue-200 text-blue-700">
              <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z"></path></svg>
             Ver Tarea
         </button>
     `;
+
+    // --- INICIO DE MODIFICACIÓN (Paso 3 del Plan) ---
+
+    // Definimos las clases y atributos de deshabilitado
+    const progressButtonClass = blockButtons
+        ? 'bg-gray-400 text-white cursor-not-allowed' // Gris, deshabilitado
+        : 'bg-blue-500 hover:bg-blue-600 text-white'; // Azul, habilitado
+
+    const disabledAttribute = blockButtons ? 'disabled title="Debes completar tu Check-in de Seguridad diario"' : '';
+
     const registerProgressButtonHtmlFinal = task.status === 'pendiente' && task.projectId && ((task.selectedItems && task.selectedItems.length > 0) || (task.specificSubItemIds && task.specificSubItemIds.length > 0)) ? `
-        <button data-action="register-task-progress" data-task-id="${task.id}" class="${baseButtonClasses} bg-blue-500 hover:bg-blue-600 text-white">
+        <button data-action="register-task-progress" data-task-id="${task.id}" class="${baseButtonClasses} ${progressButtonClass}" ${disabledAttribute}>
             <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
             Registrar Avance
         </button>
     ` : '';
+    // --- FIN DE MODIFICACIÓN ---
+
     const requestMaterialButtonHtml = task.status === 'pendiente' && task.projectId && task.specificSubItemIds && task.specificSubItemIds.length > 0 ? `
         <button data-action="request-material-from-task"
                 data-project-id="${task.projectId}"
@@ -11145,6 +11267,14 @@ function createTaskCard(task) {
             Solicitar Material
         </button>
     ` : '';
+
+    const completeButtonHtmlFinal = task.status === 'pendiente' ? `
+        <button data-action="complete-task" data-id="${task.id}" class="${baseButtonClasses} bg-green-500 hover:bg-green-600 text-white">
+            <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+            Completada
+        </button>
+    ` : '';
+
     const adminToggleCheckbox = document.getElementById('admin-task-toggle-checkbox');
     const isAdminView = adminToggleCheckbox?.checked && currentUserRole === 'admin';
     const unreadCommentHtml = (task.unreadCommentFor && task.unreadCommentFor.includes(currentUser.uid)) ? `
@@ -11154,30 +11284,18 @@ function createTaskCard(task) {
         </span>
     ` : '';
 
-    // --- INICIO DE MODIFICACIÓN (Nuevo innerHTML) ---
+    // --- HTML de la Tarjeta (versión simplificada) ---
     card.innerHTML = `
         <div class="p-4 flex-grow">
             <div class="flex justify-between items-start mb-2">
                 <div class="flex-grow">
                     <p class="text-xs font-semibold text-blue-600 uppercase tracking-wide">${task.projectName || 'Proyecto no especificado'}</p>
-                    
-                    ${isAdminView ? `
-                        <p class="text-xs text-purple-600 font-semibold mt-1">
-                            Asignado a: ${task.assigneeName || 'N/A'}
-                        </p>
-                    ` : ''}
-                    
+                    ${isAdminView ? `<p class="text-xs text-purple-600 font-semibold mt-1">Asignado a: ${task.assigneeName || 'N/A'}</p>` : ''}
                     <h3 class="text-lg font-bold text-gray-900 leading-tight mt-1">${task.description}</h3>
                 </div>
-
                 <div class="text-right flex-shrink-0 pl-4">
-                    <p class="text-sm ${dateColor} flex items-center justify-end">
-                        ${dateIcon}
-                        ${dateText}
-                    </p>
-                    <p class="text-xs text-gray-400 mt-1">
-                        Por: ${usersMap.get(task.createdBy)?.firstName || 'N/A'}
-                    </p>
+                    <p class="text-sm ${dateColor} flex items-center justify-end">${dateIcon} ${dateText}</p>
+                    <p class="text-xs text-gray-400 mt-1">Por: ${usersMap.get(task.createdBy)?.firstName || 'N/A'}</p>
                 </div>
             </div>
 
@@ -11187,7 +11305,6 @@ function createTaskCard(task) {
                 ${progressBarHtml}
                 ${materialStatusHtml}
             </div>
-            
         </div>
         
         <div class="bg-gray-50 p-3 border-t border-gray-200 flex flex-wrap gap-2 justify-end items-center">
@@ -11195,12 +11312,10 @@ function createTaskCard(task) {
                 ${editButtonHtmlFinal}
                 ${viewTaskButtonHtmlFinal}
                 ${requestMaterialButtonHtml}
-                ${registerProgressButtonHtmlFinal}
-                ${completeButtonHtmlFinal}
+                ${registerProgressButtonHtmlFinal} ${completeButtonHtmlFinal}
             </div>
         </div>
     `;
-    // --- FIN DE MODIFICACIÓN ---
     return card;
 }
 
