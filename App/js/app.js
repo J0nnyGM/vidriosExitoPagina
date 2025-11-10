@@ -57,6 +57,9 @@ let unsubscribeUsers = null;
 let itemSortState = { key: 'name', direction: 'asc' };
 let currentItemsData = [];
 let catalogSearchTerm = ''; // Guarda el término de búsqueda actual para el catálogo
+let onSafetyCheckInSuccess = () => {}; // Callback global
+let videoStream = null; // Variable global para el stream de la cámara
+let verifiedCanvas = null; // Variable global para guardar la selfie verificada
 
 let onSafetyCheckInSuccess = () => { }; // Callback global
 let videoStream = null; // Variable global para el stream de la cámara
@@ -8206,9 +8209,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // --- INICIO DE NUEVO CÓDIGO ---
         // Manejador de clics para el Modal de Check-in
-        const checkinModal = target.closest('#safety-checkin-modal');
+const checkinModal = target.closest('#safety-checkin-modal');
         if (checkinModal) {
-
+            
             // Botón: Tomar Foto y Verificar
             if (target.id === 'checkin-take-photo-btn') {
                 target.disabled = true;
@@ -8219,11 +8222,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const step2 = document.getElementById('checkin-step-2-epp');
 
                 try {
-                    // --- INICIO DE MODIFICACIÓN (Verificar modelos) ---
                     if (!modelsLoaded) {
                         throw new Error("Modelos de IA aún cargando. Intenta de nuevo en 5 segundos.");
                     }
-                    // --- FIN DE MODIFICACIÓN ---
 
                     // 1. Capturar la imagen
                     const ctx = canvasEl.getContext('2d');
@@ -8234,27 +8235,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // 2. Detener la cámara
                     if (videoStream) videoStream.getTracks().forEach(track => track.stop());
-
-                    // 3. Ejecutar Detección (Usando el modelo SsdMobilenetv1 por defecto)
+                    
+                    // 3. Ejecutar Detección Y Reconocimiento
                     faceStatus.textContent = 'Detectando rostro...';
                     const detection = await faceapi.detectSingleFace(canvasEl)
-                        .withFaceLandmarks()
-                        .withFaceDescriptor();
-
+                                                 .withFaceLandmarks()
+                                                 .withFaceDescriptor();
+                    
                     if (!detection) {
                         throw new Error("No se detectó un rostro en la foto. Sube una selfie clara.");
                     }
 
                     // 4. Comparar rostros
                     faceStatus.textContent = "Rostro detectado. Comparando...";
-
+                    
                     if (!currentUserFaceDescriptor) {
                         console.warn("Saltando reconocimiento (no hay descriptor de perfil). Solo se hizo detección.");
                     } else {
                         const distance = faceapi.euclideanDistance(currentUserFaceDescriptor, detection.descriptor);
                         const umbralDeCoincidencia = 0.5;
-
-                        if (distance > umbralDeCoincidencia) {
+                        
+                        if (distance > umbralDeCoincidencia) { 
                             throw new Error(`Rostro no coincide (Distancia: ${distance.toFixed(2)}). Intenta de nuevo.`);
                         }
                         faceStatus.textContent = `Rostro Coincide (Distancia: ${distance.toFixed(2)})`;
@@ -8263,9 +8264,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     // 5. ¡Éxito!
                     faceStatus.textContent = "¡Verificación Exitosa!";
                     faceStatus.className = "text-center text-sm font-medium text-green-600 mt-2 h-4";
-                    step2.classList.remove('hidden');
+                    step2.classList.remove('hidden'); // Mostrar Paso 2 (EPP)
+                    
+                    // Guardamos el canvas verificado para subirlo después
+                    verifiedCanvas = canvasEl; // Asumiendo que 'verifiedCanvas' está definido globalmente
+                    
                     document.getElementById('checkin-confirm-btn').disabled = false;
-                    target.disabled = true;
+                    target.disabled = true; // Deshabilitamos el botón de tomar foto (ya fue exitoso)
 
                 } catch (err) {
                     // Si falla (no detecta, no coincide, o modelos no cargados)
@@ -8273,7 +8278,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     faceStatus.className = "text-center text-sm font-medium text-red-600 mt-2 h-4";
                     target.disabled = false;
                     target.textContent = 'Reintentar Verificación';
-
+                    verifiedCanvas = null; // Reseteamos la foto
+                    
                     // Reiniciar la cámara para un nuevo intento
                     try {
                         videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -8286,33 +8292,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Botón: Confirmar Check-in
             if (target.id === 'checkin-confirm-btn') {
-                const checkboxes = document.querySelectorAll('.epp-checkbox');
-                const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-
-                if (!allChecked) {
-                    alert("Por favor, confirma que tienes todos tus equipos de protección (EPP) marcando las casillas.");
+                const taskId = target.dataset.taskId; // Obtenemos el taskId
+                if (!taskId) {
+                    alert("Error crítico: No se pudo identificar la tarea. Cierra este modal e inténtalo de nuevo.");
                     return;
                 }
 
-                target.textContent = 'Guardando...';
+                if (!verifiedCanvas) {
+                    alert("Error: Aún no se ha verificado una foto.");
+                    return;
+                }
 
-                // (Aquí guardaríamos la auditoría en Firestore - Opcional por ahora)
-                // await addDoc(collection(db, "safetyCheckIns"), { ... });
+                const checkboxes = document.querySelectorAll('.epp-checkbox');
+                // Si hay checkboxes, deben estar todos marcados. Si no hay, saltamos.
+                if (checkboxes.length > 0) { 
+                    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+                    if (!allChecked) {
+                        alert("Por favor, confirma que tienes todos tus equipos de protección (EPP) marcando las casillas.");
+                        return;
+                    }
+                }
+                
+                target.disabled = true;
+                target.textContent = 'Guardando evidencia...';
 
-                // Guardamos el timestamp en el navegador
-                localStorage.setItem('lastSafetyCheckIn', new Date().toISOString());
+                try {
+                    // 1. Convertir el Canvas (selfie) a Blob
+                    const selfieBlob = await new Promise(resolve => verifiedCanvas.toBlob(resolve, 'image/jpeg', 0.85));
 
-                // Cerramos el modal
-                document.getElementById('safety-checkin-modal').style.display = 'none';
+                    // 2. Subir la selfie a Storage
+                    const selfiePath = `checkin_evidence/${taskId}/${currentUser.uid}_${Date.now()}.jpg`;
+                    const selfieStorageRef = ref(storage, selfiePath);
+                    await uploadBytes(selfieStorageRef, selfieBlob);
+                    const downloadURL = await getDownloadURL(selfieStorageRef);
 
-                // --- INICIO DE MODIFICACIÓN (Paso 4 del Plan) ---
-                // Forzamos la recarga de la vista de tareas para habilitar los botones
-                loadTasksView();
-                // --- FIN DE MODIFICACIÓN ---
+                    // 3. Guardar el log en la bitácora de la Tarea
+                    await addDoc(collection(db, "tasks", taskId, "comments"), {
+                        type: 'log', // Para que se vea diferente
+                        text: `<b>Check-in de seguridad verificado.</b>`,
+                        photoURL: downloadURL, // La selfie
+                        userId: currentUser.uid,
+                        userName: `${usersMap.get(currentUser.uid)?.firstName || 'Usuario'} ${usersMap.get(currentUser.uid)?.lastName || ''}`,
+                        createdAt: new Date()
+                    });
 
-                // ¡Ejecutamos la acción original que el usuario quería!
-                if (onSafetyCheckInSuccess) {
-                    onSafetyCheckInSuccess();
+                    // 4. ELIMINAMOS el 'localStorage'
+                    // localStorage.setItem('lastSafetyCheckIn', new Date().toISOString());
+
+                    // 5. Cerramos el modal
+                    document.getElementById('safety-checkin-modal').style.display = 'none';
+                    
+                    // 6. ¡Ejecutamos la acción original!
+                    if (onSafetyCheckInSuccess) {
+                        onSafetyCheckInSuccess();
+                    }
+                } catch (err) {
+                    console.error("Error al guardar la evidencia del check-in:", err);
+                    alert("No se pudo guardar la evidencia. Inténtalo de nuevo.");
+                    target.disabled = false;
+                    target.textContent = 'Confirmar Check-in del Día';
                 }
             }
 
@@ -8512,19 +8550,12 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'register-task-progress':
                 if (taskIdForProgress) {
                     // --- INICIO DE MODIFICACIÓN ---
-                    // 1. Verificamos si el check-in es necesario
-                    if (checkIfSafetyCheckInNeeded()) {
-                        // 2. Si es necesario, abrimos el modal
-                        // Le pasamos la función que debe ejecutar al terminar
-                        openSafetyCheckInModal(() => {
-                            closeTaskDetailsModal();
-                            handleRegisterTaskProgress(taskIdForProgress);
-                        });
-                    } else {
-                        // 3. Si no es necesario, ejecutamos la acción directamente
+                    // Ya no hay 'if'. Siempre llamamos al modal
+                    // y le pasamos el ID de la tarea y el callback.
+                    openSafetyCheckInModal(taskIdForProgress, () => {
                         closeTaskDetailsModal();
                         handleRegisterTaskProgress(taskIdForProgress);
-                    }
+                    });
                     // --- FIN DE MODIFICACIÓN ---
                 } else {
                     console.error("register-task-progress: data-task-id faltante.");
@@ -10839,19 +10870,14 @@ function resetMaterialRequestForm() {
 
 /**
  * Prepara la vista de Tareas Asignadas, configura los filtros y carga las tareas iniciales.
- * (MODIFICADA para el check-in de seguridad y corrección de 'getCurrentUserRole')
+ * (MODIFICADA: Se elimina la lógica de 'blockButtons' del check-in diario)
  */
 function loadTasksView() {
     const newTaskBtn = document.getElementById('new-task-btn');
     const adminToggleContainer = document.getElementById('admin-task-toggle-container');
 
     // --- INICIO DE MODIFICACIÓN ---
-    // const role = getCurrentUserRole(); // <-- Esta línea es el ERROR
-    const role = currentUserRole; // <-- Esta es la CORRECCIÓN
-    const isCheckInPending = checkIfSafetyCheckInNeeded();
-
-    // Solo bloqueamos los botones si es operario Y el check-in está pendiente
-    const blockButtons = (isCheckInPending && role === 'operario');
+    const role = currentUserRole; // Usamos la variable global
     // --- FIN DE MODIFICACIÓN ---
 
     if (newTaskBtn && adminToggleContainer) {
@@ -10870,8 +10896,7 @@ function loadTasksView() {
             if (titleElement) {
                 titleElement.textContent = adminToggleCheckbox.checked ? 'Todas las Tareas' : 'Mis Tareas Asignadas';
             }
-            // Pasamos el 'blockButtons' al recargar
-            loadAndDisplayTasks(currentFilter, blockButtons);
+            loadAndDisplayTasks(currentFilter); // <-- 'blockButtons' eliminado
         });
     }
 
@@ -10890,8 +10915,7 @@ function loadTasksView() {
             if (!isActive) {
                 tabsContainer.querySelectorAll('.task-tab-button').forEach(btn => btn.classList.remove('active'));
                 clickedButton.classList.add('active');
-                // Pasamos el 'blockButtons' al cambiar de pestaña
-                loadAndDisplayTasks(statusFilter, blockButtons);
+                loadAndDisplayTasks(statusFilter); // <-- 'blockButtons' eliminado
             }
         });
         tabsContainer.dataset.listenerAttached = 'true';
@@ -10904,19 +10928,15 @@ function loadTasksView() {
         tabsContainer.querySelector('#pending-tasks-tab')?.classList.add('active');
     }
 
-    // Pasamos el 'blockButtons' a la carga inicial
-    loadAndDisplayTasks(initialFilter, blockButtons);
+    loadAndDisplayTasks(initialFilter); // <-- 'blockButtons' eliminado
 }
 
 /**
- * Carga las tareas desde Firestore filtradas por estado (para asignado principal O adicional)
- * y las muestra en la interfaz usando listeners en tiempo real.
- * (MODIFICADA para pasar el estado del check-in)
- * @param {string} statusFilter - El estado por el cual filtrar ('pendiente' o 'completada').
- * @param {boolean} blockButtons - true si los botones de avance deben estar bloqueados.
+ * Carga las tareas desde Firestore y las muestra en la interfaz.
+ * (MODIFICADA: Se elimina 'blockButtons')
+ * @param {string} statusFilter - 'pendiente' o 'completada'.
  */
-function loadAndDisplayTasks(statusFilter = 'pendiente', blockButtons = false) {
-    // Establecer contexto
+function loadAndDisplayTasks(statusFilter = 'pendiente') { // <-- 'blockButtons' eliminado
     materialRequestReturnContext = { view: 'tareas' };
     console.log("Contexto de retorno establecido en: tareas");
 
@@ -10992,10 +11012,11 @@ function loadAndDisplayTasks(statusFilter = 'pendiente', blockButtons = false) {
         // 3. Iterar sobre las tareas ordenadas
         let previousCard = null; // Para insertar en el orden correcto
         sortedTasks.forEach((taskData) => {
+
             // --- INICIO DE MODIFICACIÓN ---
             // Pasamos 'blockButtons' al crear la tarjeta
-            const taskCard = createTaskCard(taskData, blockButtons);
-            // --- FIN DE MODIFICACIÓN ---
+            const taskCard = createTaskCard(taskData); // <-- 'blockButtons' eliminado
+            //             // --- FIN DE MODIFICACIÓN ---
 
             const existingCard = currentTasksContainer.querySelector(`.task-card[data-id="${taskData.id}"]`);
 
@@ -11125,12 +11146,11 @@ function loadAndDisplayTasks(statusFilter = 'pendiente', blockButtons = false) {
 
 /**
  * Crea el elemento HTML (tarjeta) para mostrar una tarea individual.
- * (VERSIÓN MODIFICADA: Simplificada, y deshabilita botones si el check-in está pendiente)
+ * (VERSIÓN FINAL: Simplificada, y botón de avance siempre activo)
  * @param {object} task - El objeto de datos de la tarea desde Firestore.
- * @param {boolean} blockButtons - true si los botones de avance deben estar bloqueados.
  * @returns {HTMLElement} - El elemento div de la tarjeta de tarea.
  */
-function createTaskCard(task, blockButtons = false) {
+function createTaskCard(task) {
     const card = document.createElement('div');
     card.className = "bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden h-full task-card";
     card.dataset.id = task.id;
@@ -11184,6 +11204,8 @@ function createTaskCard(task, blockButtons = false) {
         const calculateProgress = async () => {
             try {
                 const subItemIds = task.specificSubItemIds;
+                // NOTA: Esta consulta a 'subItems' puede fallar si la colección está anidada.
+                // Si da error, tendríamos que cambiarla.
                 const subItemPromises = subItemIds.map(id => getDoc(doc(db, "subItems", id)));
                 const subItemDocs = await Promise.all(subItemPromises);
                 let installedCount = 0;
@@ -11226,7 +11248,7 @@ function createTaskCard(task, blockButtons = false) {
     // --- Botones (MODIFICADOS) ---
     const baseButtonClasses = "text-xs font-bold py-2 px-4 rounded-lg transition-colors flex items-center shadow-sm";
     const iconBaseClasses = "h-4 w-4 mr-1";
-
+    
     const editButtonHtmlFinal = currentUserRole === 'admin' ? `
         <button data-action="edit-task" data-id="${task.id}" class="${baseButtonClasses} bg-yellow-500 hover:bg-yellow-600 text-white">
             <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
@@ -11241,14 +11263,9 @@ function createTaskCard(task, blockButtons = false) {
         </button>
     `;
 
-    // --- INICIO DE MODIFICACIÓN (Paso 3 del Plan) ---
-
-    // Definimos las clases y atributos de deshabilitado
-    const progressButtonClass = blockButtons
-        ? 'bg-gray-400 text-white cursor-not-allowed' // Gris, deshabilitado
-        : 'bg-blue-500 hover:bg-blue-600 text-white'; // Azul, habilitado
-
-    const disabledAttribute = blockButtons ? 'disabled title="Debes completar tu Check-in de Seguridad diario"' : '';
+    // --- Botón "Registrar Avance" (Siempre habilitado) ---
+    const progressButtonClass = 'bg-blue-500 hover:bg-blue-600 text-white';
+    const disabledAttribute = ''; // Ya no se deshabilita
 
     const registerProgressButtonHtmlFinal = task.status === 'pendiente' && task.projectId && ((task.selectedItems && task.selectedItems.length > 0) || (task.specificSubItemIds && task.specificSubItemIds.length > 0)) ? `
         <button data-action="register-task-progress" data-task-id="${task.id}" class="${baseButtonClasses} ${progressButtonClass}" ${disabledAttribute}>
@@ -11256,7 +11273,7 @@ function createTaskCard(task, blockButtons = false) {
             Registrar Avance
         </button>
     ` : '';
-    // --- FIN DE MODIFICACIÓN ---
+    // --- FIN MODIFICACIÓN ---
 
     const requestMaterialButtonHtml = task.status === 'pendiente' && task.projectId && task.specificSubItemIds && task.specificSubItemIds.length > 0 ? `
         <button data-action="request-material-from-task"
@@ -11267,7 +11284,7 @@ function createTaskCard(task, blockButtons = false) {
             Solicitar Material
         </button>
     ` : '';
-
+    
     const completeButtonHtmlFinal = task.status === 'pendiente' ? `
         <button data-action="complete-task" data-id="${task.id}" class="${baseButtonClasses} bg-green-500 hover:bg-green-600 text-white">
             <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
@@ -11312,7 +11329,8 @@ function createTaskCard(task, blockButtons = false) {
                 ${editButtonHtmlFinal}
                 ${viewTaskButtonHtmlFinal}
                 ${requestMaterialButtonHtml}
-                ${registerProgressButtonHtmlFinal} ${completeButtonHtmlFinal}
+                ${registerProgressButtonHtmlFinal}
+                ${completeButtonHtmlFinal}
             </div>
         </div>
     `;
@@ -12397,11 +12415,14 @@ function checkIfSafetyCheckInNeeded() {
 
 /**
  * Abre el modal de Check-in de Seguridad.
+ * (MODIFICADA para aceptar taskId y guardar evidencia)
+ * @param {string} taskId - El ID de la tarea para la auditoría.
  * @param {function} callbackOnSuccess - La función a ejecutar cuando el check-in sea exitoso.
  */
-async function openSafetyCheckInModal(callbackOnSuccess) {
-    onSafetyCheckInSuccess = callbackOnSuccess; // Guarda la función (ej. handleRegisterTaskProgress)
-
+async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
+    onSafetyCheckInSuccess = callbackOnSuccess; // Guarda la función
+    verifiedCanvas = null; // Resetea la foto verificada
+    
     const modal = document.getElementById('safety-checkin-modal');
     const step1 = document.getElementById('checkin-step-1-face');
     const step2 = document.getElementById('checkin-step-2-epp');
@@ -12422,6 +12443,9 @@ async function openSafetyCheckInModal(callbackOnSuccess) {
     faceStatus.textContent = '';
     eppList.innerHTML = '<p class="text-gray-400">Cargando dotación...</p>';
 
+    // Guardamos el taskId en el botón de confirmar para usarlo al guardar
+    confirmBtn.dataset.taskId = taskId;
+
     modal.style.display = 'flex';
 
     // 2. Iniciar la cámara (Paso 1)
@@ -12429,22 +12453,17 @@ async function openSafetyCheckInModal(callbackOnSuccess) {
         if (videoStream) {
             videoStream.getTracks().forEach(track => track.stop());
         }
-
-        // --- INICIO DE CORRECCIÓN ---
-        // Pedimos "video: true" (cualquier cámara de video) en lugar de "facingMode: user".
-        // Esto permite que funcionen las webcams de escritorio.
-        videoStream = await navigator.mediaDevices.getUserMedia({
-            video: true
+        // Pedimos "video: true" (cualquier cámara de video)
+        videoStream = await navigator.mediaDevices.getUserMedia({ 
+            video: true 
         });
-        // --- FIN DE CORRECCIÓN ---
-
         videoEl.srcObject = videoStream;
     } catch (err) {
         console.error("Error al acceder a la cámara:", err);
         faceStatus.textContent = "Error al acceder a la cámara. Revisa los permisos.";
         return;
     }
-
+    
     // 3. Cargar la dotación (Paso 2)
     try {
         // (Esta es una consulta rápida, similar a la de dotacion.js)
@@ -12458,16 +12477,16 @@ async function openSafetyCheckInModal(callbackOnSuccess) {
 
         if (snapshot.empty) {
             eppList.innerHTML = '<p class="text-sm text-gray-500">No tienes dotación activa asignada.</p>';
-            // Si no tiene EPP, puede saltar este paso
-            confirmBtn.disabled = false; // Permitir confirmar sin EPP
+            // Si no tiene EPP, el botón de confirmar se habilitará
+            // después de la verificación facial.
         } else {
             let eppHtml = '';
             // Necesitamos los datos del catálogo para las fechas de vencimiento
             const catalogIds = snapshot.docs.map(doc => doc.data().itemId);
-            const catalogQuery = query(collection(db, "dotacionCatalog"), where("__name__", "in", catalogIds));
+            const catalogQuery = query(collection(db, "dotacionCatalog"), where(documentId(), "in", catalogIds));
             const catalogSnapshot = await getDocs(catalogQuery);
             const catalogMap = new Map(catalogSnapshot.docs.map(doc => [doc.id, doc.data()]));
-
+            
             snapshot.forEach(doc => {
                 const item = doc.data();
                 const catalogItem = catalogMap.get(item.itemId);
@@ -12481,14 +12500,14 @@ async function openSafetyCheckInModal(callbackOnSuccess) {
                     expirationDate.setDate(expirationDate.getDate() + catalogItem.vidaUtilDias);
                     const diffTime = expirationDate.getTime() - today.getTime();
                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
+                    
                     if (diffDays <= 0) {
                         vencimientoHtml = `<span class="text-xs text-red-600 font-bold">(VENCIDO)</span>`;
                     } else if (diffDays <= 30) {
                         vencimientoHtml = `<span class="text-xs text-yellow-600 font-bold">(Vence en ${diffDays} días)</span>`;
                     }
                 }
-
+                
                 eppHtml += `
                     <label class="flex items-center p-2 bg-white border rounded-md">
                         <input type="checkbox" class="h-5 w-5 rounded epp-checkbox">
