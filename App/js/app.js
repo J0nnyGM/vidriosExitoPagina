@@ -3549,8 +3549,18 @@ const modalTitle = document.getElementById('modal-title');
 const modalBody = document.getElementById('modal-body');
 const modalForm = document.getElementById('modal-form');
 const modalConfirmBtn = document.getElementById('modal-confirm-btn');
+const modalContentDiv = document.getElementById('main-modal-content'); // <-- AÑADE ESTA LÍNEA
 
 async function openMainModal(type, data = {}) {
+    // --- INICIO DE MODIFICACIÓN (Resetear tamaño) ---
+    if (modalContentDiv) {
+        // Quitamos todas las clases de ancho que hayamos añadido
+        modalContentDiv.classList.remove('max-w-4xl', 'max-w-6xl', 'max-w-7xl', 'lg:w-3/4');
+        // Añadimos el ancho por defecto
+        modalContentDiv.classList.add('max-w-2xl');
+    }
+    // --- FIN DE MODIFICACIÓN ---
+
     let title, bodyHtml, btnText, btnClass;
     modalForm.reset();
     modalForm.dataset.type = type;
@@ -4005,94 +4015,151 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
         case 'new-purchase-order': {
-            title = 'Crear Orden de Compra';
+            title = 'Crear Nueva Orden de Compra';
             btnText = 'Guardar Orden';
             btnClass = 'bg-blue-500 hover:bg-blue-600';
 
-            const catalog = data.catalog || [];
-            const suppliers = data.suppliers || [];
-
-            const materialOptions = catalog.map(mat => `<option value="${mat.id}" data-unit="${mat.unit}">${mat.name} (${mat.reference || 'N/A'})</option>`).join('');
-
-            // --- INICIO DE LA CORRECCIÓN ---
-            // Ahora construimos las opciones de los proveedores directamente aquí.
-            const supplierOptions = suppliers.map(sup => `<option value="${sup.id}">${sup.name}</option>`).join('');
-            // --- FIN DE LA CORRECCIÓN ---
+            // --- INICIO DE MODIFICACIÓN (Ancho de 75%) ---
+            if (modalContentDiv) {
+                modalContentDiv.classList.remove('max-w-2xl', 'max-w-4xl');
+                modalContentDiv.classList.add('lg:w-3/4');
+            }
+            // --- FIN DE MODIFICACIÓN ---
 
             bodyHtml = `
-        <div class="space-y-4">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-medium">Proveedor</label>
-                    <select id="po-supplier-select" required>${supplierOptions}</select>
+                <div id="material-request-loader" class="text-center py-8">
+                    <div class="loader mx-auto"></div>
+                    <p class="mt-2 text-sm text-gray-500">Cargando catálogos y proveedores...</p>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium">Forma de Pago</label>
-                    <select name="paymentMethod" class="w-full border p-2 rounded-md bg-white">
-                        <option value="pendiente">Pendiente</option>
-                        <option value="efectivo">Efectivo</option>
-                        <option value="tarjeta">Tarjeta</option>
-                        <option value="transferencia">Transferencia</option>
-                    </select>
-                </div>
-            </div>
-            <div id="po-items-container" class="space-y-2 border-t pt-4">
-                <h4 class="text-md font-semibold text-gray-700">Materiales</h4>
-                <div class="po-item flex flex-col sm:flex-row sm:items-end gap-2 p-2 border rounded-md">
-                    <div class="flex-grow w-full"><label class="block text-xs">Material</label><select name="materialId" class="po-material-select w-full border p-2 rounded-md bg-white">${materialOptions}</select></div>
-                    <div class="w-full sm:w-24"><label class="block text-xs">Cantidad</label><input type="number" name="quantity" required class="w-full border p-2 rounded-md"></div>
-                    <div class="w-full sm:w-32"><label class="block text-xs">Costo Unitario</label><input type="text" name="unitCost" required class="currency-input w-full border p-2 rounded-md"></div>
-                </div>
-            </div>
-            <button type="button" id="add-po-item-btn" class="text-sm text-blue-600 font-semibold">+ Añadir otro material</button>
-        </div>`;
+                <div id="material-request-form-content" class="hidden h-full flex-1 flex flex-col min-h-0"></div>
+            `;
 
-            setTimeout(() => {
-                // --- INICIO DE LA CORRECCIÓN ---
-                // Ahora, simplemente inicializamos Choices.js en el <select> que ya tiene los datos.
-                const supplierSelectEl = document.getElementById('po-supplier-select');
-                if (supplierSelectEl) {
-                    new Choices(supplierSelectEl, {
+            const loadDataAndBuildForm = async () => {
+                try {
+                    const loader = document.getElementById('material-request-loader');
+                    const formContent = document.getElementById('material-request-form-content');
+
+                    // 1. Cargar TODOS los catálogos (Sin cambios)
+                    const [materialSnap, dotacionSnap, toolsSnap, suppliersSnapshot] = await Promise.all([
+                        getDocs(query(collection(db, "materialCatalog"), orderBy("name"))),
+                        getDocs(query(collection(db, "dotacionCatalog"), orderBy("itemName"))),
+                        getDocs(query(collection(db, "tools"), orderBy("name"))),
+                        getDocs(query(collection(db, "suppliers"), orderBy("name")))
+                    ]);
+
+                    // 2. Mapear Proveedores (Sin cambios)
+                    const suppliers = suppliersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    const supplierOptions = suppliers.map(sup => `<option value="${sup.id}">${sup.name}</option>`).join('');
+
+
+                    // 3. Unificar todos los ítems comprables
+                    const unifiedItemOptions = [];
+
+                    materialSnap.docs.forEach(doc => {
+                        const mat = doc.data();
+                        unifiedItemOptions.push({
+                            value: doc.id,
+                            label: `[MAT] ${mat.name} (${mat.reference || 'N/A'})`,
+                            customProperties: { type: 'material', unit: mat.unit || 'Und' }
+                        });
+                    });
+
+                    dotacionSnap.docs.forEach(doc => {
+                        const dot = doc.data();
+                        unifiedItemOptions.push({
+                            value: doc.id,
+                            label: `[DOT] ${dot.itemName} (${dot.talla || 'N/A'})`,
+                            customProperties: { type: 'dotacion', unit: 'Und' }
+                        });
+                    });
+
+                    toolsSnap.docs.forEach(doc => {
+                        const tool = doc.data();
+                        // Solo mostramos herramientas "disponibles" o "en mantenimiento" como plantillas
+                        if (tool.status === 'disponible' || tool.status === 'mantenimiento') {
+                            unifiedItemOptions.push({
+                                value: doc.id, // Usamos el ID de la herramienta como "plantilla"
+                                label: `[HER] ${tool.name} (${tool.reference || 'N/A'})`,
+                                customProperties: { type: 'herramienta', unit: 'Und' }
+                            });
+                        }
+                    });
+
+                    // Ordenamos la lista unificada
+                    unifiedItemOptions.sort((a, b) => a.label.localeCompare(b.label));
+
+
+                    // 4. Construir el NUEVO HTML del formulario (Layout de 2 Columnas con Z-INDEX)
+                    formContent.innerHTML = `
+                        <div class="flex-1 flex flex-col lg:flex-row gap-6 min-h-0">
+
+                            <div class="lg:w-1/3 space-y-4 relative z-20">
+                                <h4 class="text-lg font-semibold text-gray-800 border-b pb-2">Detalles de la Orden</h4>
+                                <div>
+                                    <label class="block text-sm font-medium">Proveedor</label>
+                                    <select id="po-supplier-select" required>${supplierOptions}</select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium">Forma de Pago</label>
+                                    <select name="paymentMethod" class="w-full border p-2 rounded-md bg-white">
+                                        <option value="pendiente">Pendiente</option>
+                                        <option value="efectivo">Efectivo</option>
+                                        <option value="tarjeta">Tarjeta</option>
+                                        <option value="transferencia">Transferencia</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium">Fecha de Creación</label>
+                                    <input type="date" name="poDate" class="w-full border p-2 rounded-md bg-gray-100" value="${new Date().toISOString().split('T')[0]}" readonly>
+                                </div>
+                            </div>
+
+                            <div class="lg:w-2/3 space-y-3 relative z-10 flex-1 flex flex-col min-h-0">
+                                <h4 class="text-lg font-semibold text-gray-800 border-b pb-2">Ítems de la Orden</h4>
+                                
+                                <div class="hidden sm:grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 px-2 flex-shrink-0">
+                                    <div class="col-span-6">Ítem</div>
+                                    <div class="col-span-2 text-center">Cantidad</div>
+                                    <div class="col-span-3 text-right">Costo Unitario</div>
+                                    <div class="col-span-1"></div>
+                                </div>
+
+                                <div id="po-items-container" class="space-y-2 flex-1 overflow-y-auto max-h-[60vh] p-1">
+                                    </div>
+                                
+                                <button type="button" id="add-po-item-btn" class="text-sm text-blue-600 font-semibold flex-shrink-0">+ Añadir ítem</button>
+                            </div>
+
+                        </div>`;
+
+                    loader.classList.add('hidden');
+                    formContent.classList.remove('hidden');
+
+                    // 5. Inicializar Choices.js (Proveedor)
+                    new Choices('#po-supplier-select', {
                         itemSelectText: 'Seleccionar',
                         searchPlaceholderValue: 'Buscar proveedor...',
                         placeholder: true,
                         placeholderValue: 'Selecciona un proveedor',
+                        searchResultLimit: 5
                     });
+
+                    // 6. Configurar lógica para añadir/buscar precios
+                    setupPOItemLogic(unifiedItemOptions); // Llamamos a la función helper
+
+                } catch (error) {
+                    console.error("Error al cargar datos para PO:", error);
+                    const loader = document.getElementById('material-request-loader');
+                    if (loader) {
+                        loader.innerHTML = `<p class="text-red-500">Error al cargar datos: ${error.message}</p>`;
+                    }
                 }
-                // --- FIN DE LA CORRECCIÓN ---
+            };
 
-                // El resto de la lógica no cambia
-                const container = document.getElementById('po-items-container');
-                const firstItem = container.querySelector('.po-item');
-                document.getElementById('add-po-item-btn').addEventListener('click', () => {
-                    const newItem = firstItem.cloneNode(true);
-                    newItem.querySelectorAll('input').forEach(input => input.value = '');
-                    container.appendChild(newItem);
-                });
-
-                container.addEventListener('change', async (e) => {
-                    if (e.target.classList.contains('po-material-select')) {
-                        const materialId = e.target.value;
-                        const supplierId = supplierSelectEl.value;
-                        if (!supplierId || !materialId) return;
-                        const costInput = e.target.closest('.po-item').querySelector('.currency-input');
-                        const lastPrice = await findLastPurchasePrice(supplierId, materialId);
-                        if (lastPrice !== null) {
-                            costInput.value = currencyFormatter.format(lastPrice).replace(/\s/g, ' ');
-                        } else {
-                            costInput.value = '';
-                        }
-                    }
-                });
-
-                container.addEventListener('input', (e) => {
-                    if (e.target.classList.contains('currency-input')) {
-                        setupCurrencyInput(e.target);
-                    }
-                });
-            }, 100);
+            setTimeout(loadDataAndBuildForm, 50);
             break;
         }
+
         case 'add-other-payment':
             title = 'Registrar Otro Movimiento';
             btnText = 'Guardar Movimiento';
@@ -5744,49 +5811,106 @@ async function openMainModal(type, data = {}) {
 }
 
 /**
- * (NUEVA FUNCIÓN MODIFICADA)
  * Configura la lógica para añadir nuevos ítems a la PO y buscar precios.
- * @param {Array} materialOptions - El array de opciones de ítems unificados.
+ * (VERSIÓN CORREGIDA: Crea el HTML de la fila en lugar de clonarlo)
+ * @param {Array} unifiedItemOptions - El array de opciones de ítems unificados.
  */
-function setupPOItemLogic(materialOptions) {
+function setupPOItemLogic(unifiedItemOptions) {
     const container = document.getElementById('po-items-container');
     if (!container) return;
 
-    // Clonar el primer ítem
-    const firstItem = container.querySelector('.po-item');
-    document.getElementById('add-po-item-btn').addEventListener('click', () => {
-        const newItem = firstItem.cloneNode(true);
-        newItem.querySelectorAll('input').forEach(input => input.value = '');
+    const addBtn = document.getElementById('add-po-item-btn');
 
-        // Quitar la inicialización de Choices.js anterior (si la hay)
-        const oldChoices = newItem.querySelector('.choices');
-        if (oldChoices) oldChoices.remove();
+    /**
+     * Función interna para crear una nueva fila de ítem
+     */
+    const addPOItemRow = () => {
+        // 1. Crear un nuevo div
+        const newItem = document.createElement('div');
 
-        const newSelect = newItem.querySelector('select[name="itemId"]');
+        // 2. Establecer sus clases y HTML (con layout Grid y z-10)
+        newItem.className = "po-item grid grid-cols-12 gap-2 items-center p-2 border rounded-md relative z-10 bg-white";
+        newItem.innerHTML = `
+            <div class="col-span-12 sm:col-span-6">
+                <label class="block text-xs sm:hidden">Ítem</label>
+                <select name="itemId" class="po-item-select w-full border p-2 rounded-md bg-white"></select>
+            </div>
+            
+            <div class="col-span-6 sm:col-span-2">
+                <label class="block text-xs sm:hidden">Cantidad</label>
+                <input type="number" name="quantity" required class="w-full border p-2 rounded-md" placeholder="Cant.">
+            </div>
+            
+            <div class="col-span-6 sm:col-span-3">
+                <label class="block text-xs sm:hidden">Costo Unitario</label>
+                <input type="text" name="unitCost" required class="currency-input w-full border p-2 rounded-md" placeholder="Costo Unit.">
+            </div>
+
+            <div class="col-span-12 sm:col-span-1 text-right sm:text-center">
+                <button type="button" class="remove-po-item-btn text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+        `;
+
+        // 3. Añadir el nuevo elemento
         container.appendChild(newItem);
 
-        // Inicializar Choices en el *nuevo* select
+        // 4. Encontrar el <select> DENTRO del nuevo elemento
+        const newSelect = newItem.querySelector('select[name="itemId"]');
+
+        // 5. Inicializar Choices.js en el <select>
         new Choices(newSelect, {
-            choices: materialOptions,
+            choices: unifiedItemOptions,
             itemSelectText: 'Seleccionar',
             searchPlaceholderValue: 'Buscar ítem...',
+            searchResultLimit: 5 // <-- LÍNEA AÑADIDA
         });
+    };
+
+    // --- FIN DE LA FUNCIÓN INTERNA ---
+
+    // Llamamos a la función para añadir la primera fila al cargar
+    addPOItemRow();
+
+    // El botón "+ Añadir ítem" ahora solo llama a esa función
+    addBtn.onclick = addPOItemRow;
+
+    // Listener para el nuevo botón "Eliminar"
+    container.addEventListener('click', (e) => {
+        const removeBtn = e.target.closest('.remove-po-item-btn');
+        if (removeBtn) {
+            if (container.querySelectorAll('.po-item').length > 1) {
+                removeBtn.closest('.po-item').remove();
+            } else {
+                alert("Debes tener al menos un ítem en la orden.");
+            }
+        }
     });
 
-    // Listener para buscar precios y guardar el tipo de ítem
+    // Listener para buscar precios y guardar el tipo de ítem (Sin cambios)
     container.addEventListener('change', async (e) => {
         if (e.target.name === 'itemId') {
+            // ... (lógica de findLastPurchasePrice - sin cambios) ...
             const selectEl = e.target;
-            const selectedOption = selectEl.options[selectEl.selectedIndex];
-            const materialId = selectedOption.value;
-            const itemType = selectedOption.dataset.customProperties ? JSON.parse(selectedOption.dataset.customProperties).type : null;
-
-            // Guardamos el tipo de ítem en el 'dataset' del select
-            selectEl.dataset.itemType = itemType;
-
+            let itemType = null;
+            try {
+                const choicesInstance = selectEl.choices;
+                const selectedChoice = choicesInstance?.getValue(true);
+                itemType = selectedChoice?.customProperties?.type || null;
+            } catch (error) {
+                console.warn("No se pudo obtener la instancia de Choices.js, reintentando por dataset.");
+                const selectedOption = selectEl.options[selectEl.selectedIndex];
+                if (selectedOption && selectedOption.dataset.customProperties) {
+                    itemType = JSON.parse(selectedOption.dataset.customProperties).type;
+                }
+            }
+            if (itemType) {
+                selectEl.dataset.itemType = itemType;
+            }
+            const materialId = selectEl.value;
             const supplierId = document.getElementById('po-supplier-select').value;
             if (!supplierId || !materialId) return;
-
             const costInput = e.target.closest('.po-item').querySelector('.currency-input');
             const lastPrice = await findLastPurchasePrice(supplierId, materialId);
             if (lastPrice !== null) {
@@ -5797,13 +5921,14 @@ function setupPOItemLogic(materialOptions) {
         }
     });
 
-    // Formateador de moneda
+    // Formateador de moneda (Sin cambios)
     container.addEventListener('input', (e) => {
         if (e.target.classList.contains('currency-input')) {
             setupCurrencyInput(e.target);
         }
     });
 }
+
 
 function closeMainModal() { mainModal.style.display = 'none'; }
 document.getElementById('modal-cancel-btn').addEventListener('click', closeMainModal);
@@ -5823,7 +5948,7 @@ modalForm.addEventListener('submit', async (e) => {
         await createTask(data); // Llama a la nueva función para crear la tarea
         return; // Salimos para no ejecutar el switch de abajo
     }
-    
+
     // --- AÑADE ESTE CASE COMPLETO ---
     if (type === 'new-dotacion') {
         const userId = data.userId;
@@ -6082,7 +6207,6 @@ modalForm.addEventListener('submit', async (e) => {
             modalConfirmBtn.disabled = true;
             modalConfirmBtn.textContent = 'Guardando...';
             try {
-                // ... (lógica para obtener supplierId, supplierName, paymentMethod) ...
                 const supplierSelect = document.getElementById('po-supplier-select');
                 const selectedSupplierOption = supplierSelect.options[supplierSelect.selectedIndex];
                 const supplierId = selectedSupplierOption.value;
@@ -6109,6 +6233,9 @@ modalForm.addEventListener('submit', async (e) => {
                             unitCost: unitCost
                         });
                         totalCost += quantity * unitCost;
+                    } else if (materialId && quantity > 0 && !itemType) {
+                        // Fallback por si 'itemType' no se guardó en el dataset
+                        console.warn(`No se pudo determinar el tipo de ítem para ${materialId}, saltando.`);
                     }
                 });
                 // --- FIN DE MODIFICACIÓN ---
@@ -6117,7 +6244,7 @@ modalForm.addEventListener('submit', async (e) => {
                     throw new Error("Debes añadir al menos un ítem válido a la orden.");
                 }
 
-                // ... (el resto de la lógica de 'runTransaction' para guardar la PO sigue igual) ...
+                // (Lógica de 'runTransaction' para guardar la PO - sin cambios)
                 const counterRef = doc(db, "counters", "purchaseOrders");
                 const newPoRef = doc(collection(db, "purchaseOrders"));
 
@@ -6152,7 +6279,6 @@ modalForm.addEventListener('submit', async (e) => {
                 alert("No se pudo guardar la orden de compra: " + error.message);
             } finally {
                 modalConfirmBtn.disabled = false;
-                // El texto del botón se resetea en 'openMainModal'
             }
             break;
         }
