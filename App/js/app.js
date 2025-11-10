@@ -12432,6 +12432,8 @@ async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
     const eppList = document.getElementById('checkin-epp-list');
     const confirmBtn = document.getElementById('checkin-confirm-btn');
 
+    modal.style.zIndex = "60"; // <-- ¡AÑADE ESTA LÍNEA!
+
     // 1. Resetear el modal a su estado inicial
     step1.classList.remove('hidden');
     step2.classList.add('hidden');
