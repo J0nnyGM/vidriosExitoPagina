@@ -57,7 +57,7 @@ let unsubscribeUsers = null;
 let itemSortState = { key: 'name', direction: 'asc' };
 let currentItemsData = [];
 let catalogSearchTerm = ''; // Guarda el término de búsqueda actual para el catálogo
-let onSafetyCheckInSuccess = () => {}; // Callback global
+let onSafetyCheckInSuccess = () => { }; // Callback global
 let videoStream = null; // Variable global para el stream de la cámara
 let verifiedCanvas = null; // Variable global para guardar la selfie verificada
 
@@ -5630,61 +5630,30 @@ async function openMainModal(type, data = {}) {
             break; // Fin del case 'new-task'
         }
 
-            // --- AÑADE ESTE CASE COMPLETO ---
-            if (type === 'new-dotacion') {
-                const userId = data.userId;
-                if (!userId) {
-                    alert("Error: No se seleccionó un usuario.");
-                    closeMainModal();
-                    return;
-                }
-                const dotacionData = {
-                    itemName: data.itemName,
-                    category: data.category,
-                    talla: data.talla || 'N/A',
-                    quantity: parseInt(data.quantity) || 1,
-                    fechaEntrega: data.fechaEntrega,
-                    observaciones: data.observaciones || '',
-                    assignedAt: new Date(),
-                    assignedBy: currentUser.uid
-                };
-                // Usa la nueva subcolección
-                await addDoc(collection(db, "users", userId, "dotacionAsignada"), dotacionData);
-                closeMainModal();
-                return; // Salimos para no ejecutar el switch de abajo
-            }
-        // --- FIN DEL CASE ---
         case 'editProfile':
             title = 'Mi Perfil'; btnText = 'Guardar Cambios'; btnClass = 'bg-blue-500 hover:bg-blue-600';
 
-            // --- INICIO DE MODIFICACIÓN (Nuevo Layout de Foto) ---
+            // --- INICIO DE MODIFICACIÓN (Layout Simplificado) ---
             bodyHtml = `
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     
                     <div class="md:col-span-1">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Selfie (Foto de Perfil)</label>
                         
-                        <div class="aspect-square w-full rounded-lg bg-gray-200 overflow-hidden relative border">
+                        <div id="profile-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
+                            
                             <div id="profile-preview" class="absolute inset-0 ${data.profilePhotoURL ? '' : 'hidden'}">
                                 <img src="${data.profilePhotoURL || ''}" id="profile-img-preview" class="w-full h-full object-cover">
                             </div>
+                            
                             <div id="profile-prompt" class="text-center p-4 ${data.profilePhotoURL ? 'hidden' : ''} flex items-center justify-center h-full">
                                 <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                             </div>
                         </div>
 
-                        <input type="file" id="profile-photo-camera" name="photo-camera" accept="image/*" capture="user" class="hidden profile-photo-input">
-                        <input type="file" id="profile-photo-gallery" name="photo-gallery" accept="image/*" class="hidden profile-photo-input">
+                        <input type="file" id="profile-photo-input" name="photo" accept="image/*" class="hidden">
 
-                        <div class="grid grid-cols-2 gap-2 mt-2">
-                            <button type="button" id="profile-btn-camera" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold p-2 rounded-lg">
-                                Tomar Foto
-                            </button>
-                            <button type="button" id="profile-btn-gallery" class="bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-semibold p-2 rounded-lg">
-                                Galería
-                            </button>
-                        </div>
-                        <p class="text-xs text-center text-gray-500 mt-2">Sube una foto clara con fondo blanco.</p>
+                        <p class="text-xs text-center text-gray-500 mt-2">Toca la imagen para cambiar tu foto.<br>Usa una foto clara con fondo blanco.</p>
                     </div>
 
                     <div class="md:col-span-2 space-y-4">
@@ -5730,50 +5699,37 @@ async function openMainModal(type, data = {}) {
                 </div>`;
             // --- FIN DE MODIFICACIÓN ---
 
-            // Reemplaza el 'setTimeout' con la nueva lógica de botones
+            // Reemplaza el 'setTimeout' con esta lógica de listener simplificada
             setTimeout(() => {
-                // --- INICIO DE MODIFICACIÓN (Lógica de botones) ---
+                // --- INICIO DE MODIFICACIÓN (Lógica de Dropzone) ---
 
-                // 1. Referencias a los nuevos elementos
-                const btnCamera = document.getElementById('profile-btn-camera');
-                const btnGallery = document.getElementById('profile-btn-gallery');
-                const inputCamera = document.getElementById('profile-photo-camera');
-                const inputGallery = document.getElementById('profile-photo-gallery');
-                const allInputs = document.querySelectorAll('.profile-photo-input'); // Clase compartida
-
+                // 1. Referencias a los elementos
+                const dropzone = document.getElementById('profile-dropzone');
+                const fileInput = document.getElementById('profile-photo-input'); // El nuevo ID
                 const previewContainer = document.getElementById('profile-preview');
                 const previewImg = document.getElementById('profile-img-preview');
                 const promptEl = document.getElementById('profile-prompt');
 
-                // 2. Conectar botones a inputs
-                if (btnCamera) btnCamera.addEventListener('click', () => inputCamera.click());
-                if (btnGallery) btnGallery.addEventListener('click', () => inputGallery.click());
+                // 2. Conectar el clic del 'dropzone' al 'input' único
+                if (dropzone) {
+                    dropzone.addEventListener('click', () => fileInput.click());
+                }
 
-                // 3. Crear la función de preview
-                const handleFileChange = (e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (event) => {
-                            previewImg.src = event.target.result;
-                            previewContainer.classList.remove('hidden');
-                            promptEl.classList.add('hidden');
+                // 3. El listener de 'change' para la vista previa
+                if (fileInput) {
+                    fileInput.addEventListener('change', (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                previewImg.src = event.target.result;
+                                previewContainer.classList.remove('hidden');
+                                promptEl.classList.add('hidden');
+                            }
+                            reader.readAsDataURL(file);
                         }
-                        reader.readAsDataURL(file);
-
-                        // Importante: Resetea el otro input
-                        if (e.target.id === 'profile-photo-camera') {
-                            inputGallery.value = '';
-                        } else {
-                            inputCamera.value = '';
-                        }
-                    }
-                };
-
-                // 4. Asignar el listener a AMBOS inputs
-                allInputs.forEach(input => {
-                    input.addEventListener('change', handleFileChange);
-                });
+                    });
+                }
                 // --- FIN DE MODIFICACIÓN ---
             }, 100);
             break;
@@ -5867,7 +5823,8 @@ modalForm.addEventListener('submit', async (e) => {
         await createTask(data); // Llama a la nueva función para crear la tarea
         return; // Salimos para no ejecutar el switch de abajo
     }
-
+    
+    // --- AÑADE ESTE CASE COMPLETO ---
     if (type === 'new-dotacion') {
         const userId = data.userId;
         if (!userId) {
@@ -5890,6 +5847,7 @@ modalForm.addEventListener('submit', async (e) => {
         closeMainModal();
         return; // Salimos para no ejecutar el switch de abajo
     }
+    // --- FIN DEL CASE ---
 
     switch (type) {
         case 'newProject':
@@ -6520,6 +6478,8 @@ modalForm.addEventListener('submit', async (e) => {
                 const user = auth.currentUser;
                 modalConfirmBtn.disabled = true;
                 modalConfirmBtn.textContent = 'Guardando...';
+
+
 
                 // --- INICIO DE MODIFICACIÓN ---
                 // 1. Encontrar cuál de los dos inputs tiene un archivo
@@ -8206,9 +8166,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // --- INICIO DE NUEVO CÓDIGO ---
         // Manejador de clics para el Modal de Check-in
-const checkinModal = target.closest('#safety-checkin-modal');
+        const checkinModal = target.closest('#safety-checkin-modal');
         if (checkinModal) {
-            
+
             // Botón: Tomar Foto y Verificar
             if (target.id === 'checkin-take-photo-btn') {
                 target.disabled = true;
@@ -8223,61 +8183,70 @@ const checkinModal = target.closest('#safety-checkin-modal');
                         throw new Error("Modelos de IA aún cargando. Intenta de nuevo en 5 segundos.");
                     }
 
-                    // 1. Capturar la imagen
+                    // 1. Capturar la imagen (Sin cambios)
                     const ctx = canvasEl.getContext('2d');
                     ctx.translate(canvasEl.width, 0);
                     ctx.scale(-1, 1);
                     ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
                     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-                    // 2. Detener la cámara
+                    // 2. Detener la cámara (Sin cambios)
                     if (videoStream) videoStream.getTracks().forEach(track => track.stop());
-                    
-                    // 3. Ejecutar Detección Y Reconocimiento
+
+                    // 3. Ejecutar Detección (Sin cambios)
                     faceStatus.textContent = 'Detectando rostro...';
                     const detection = await faceapi.detectSingleFace(canvasEl)
-                                                 .withFaceLandmarks()
-                                                 .withFaceDescriptor();
-                    
+                        .withFaceLandmarks()
+                        .withFaceDescriptor();
+
+                    // --- INICIO DE MODIFICACIÓN (Mejores Guías de Error) ---
                     if (!detection) {
-                        throw new Error("No se detectó un rostro en la foto. Sube una selfie clara.");
+                        throw new Error("Rostro no detectado. Asegúrate de estar en un lugar bien iluminado.");
                     }
 
-                    // 4. Comparar rostros
+                    // 4. NUEVO: Verificar la calidad de la detección
+                    // (Si 'score' es bajo, la foto es de mala calidad)
+                    if (detection.detection.score < 0.7) {
+                        throw new Error(`Detección de baja calidad (${detection.detection.score.toFixed(2)}). Intenta con mejor luz.`);
+                    }
+                    // --- FIN DE MODIFICACIÓN ---
+
+                    // 5. Comparar rostros
                     faceStatus.textContent = "Rostro detectado. Comparando...";
-                    
+
                     if (!currentUserFaceDescriptor) {
                         console.warn("Saltando reconocimiento (no hay descriptor de perfil). Solo se hizo detección.");
                     } else {
                         const distance = faceapi.euclideanDistance(currentUserFaceDescriptor, detection.descriptor);
-                        const umbralDeCoincidencia = 0.5;
-                        
-                        if (distance > umbralDeCoincidencia) { 
-                            throw new Error(`Rostro no coincide (Distancia: ${distance.toFixed(2)}). Intenta de nuevo.`);
+
+                        // --- INICIO DE MODIFICACIÓN (Más Flexible) ---
+                        // El estándar es 0.6. 0.5 era muy estricto. Usemos 0.55
+                        const umbralDeCoincidencia = 0.55; // (Original era 0.5)
+
+                        if (distance > umbralDeCoincidencia) {
+                            throw new Error(`Rostro no coincide (Distancia: ${distance.toFixed(2)}). Verifica que eres tú y no usas gafas de sol.`);
                         }
                         faceStatus.textContent = `Rostro Coincide (Distancia: ${distance.toFixed(2)})`;
+                        // --- FIN DE MODIFICACIÓN ---
                     }
 
-                    // 5. ¡Éxito!
+                    // 6. ¡Éxito! (Sin cambios)
                     faceStatus.textContent = "¡Verificación Exitosa!";
                     faceStatus.className = "text-center text-sm font-medium text-green-600 mt-2 h-4";
-                    step2.classList.remove('hidden'); // Mostrar Paso 2 (EPP)
-                    
-                    // Guardamos el canvas verificado para subirlo después
-                    verifiedCanvas = canvasEl; // Asumiendo que 'verifiedCanvas' está definido globalmente
-                    
+                    step2.classList.remove('hidden');
+                    verifiedCanvas = canvasEl;
                     document.getElementById('checkin-confirm-btn').disabled = false;
-                    target.disabled = true; // Deshabilitamos el botón de tomar foto (ya fue exitoso)
+                    target.disabled = true;
 
                 } catch (err) {
-                    // Si falla (no detecta, no coincide, o modelos no cargados)
+                    // (El 'catch' ahora recibe los mensajes de error mejorados)
                     faceStatus.textContent = err.message;
                     faceStatus.className = "text-center text-sm font-medium text-red-600 mt-2 h-4";
                     target.disabled = false;
                     target.textContent = 'Reintentar Verificación';
-                    verifiedCanvas = null; // Reseteamos la foto
-                    
-                    // Reiniciar la cámara para un nuevo intento
+                    verifiedCanvas = null;
+
+                    // Reiniciar la cámara para un nuevo intento (Sin cambios)
                     try {
                         videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
                         videoEl.srcObject = videoStream;
@@ -8302,14 +8271,14 @@ const checkinModal = target.closest('#safety-checkin-modal');
 
                 const checkboxes = document.querySelectorAll('.epp-checkbox');
                 // Si hay checkboxes, deben estar todos marcados. Si no hay, saltamos.
-                if (checkboxes.length > 0) { 
+                if (checkboxes.length > 0) {
                     const allChecked = Array.from(checkboxes).every(cb => cb.checked);
                     if (!allChecked) {
                         alert("Por favor, confirma que tienes todos tus equipos de protección (EPP) marcando las casillas.");
                         return;
                     }
                 }
-                
+
                 target.disabled = true;
                 target.textContent = 'Guardando evidencia...';
 
@@ -8338,7 +8307,7 @@ const checkinModal = target.closest('#safety-checkin-modal');
 
                     // 5. Cerramos el modal
                     document.getElementById('safety-checkin-modal').style.display = 'none';
-                    
+
                     // 6. ¡Ejecutamos la acción original!
                     if (onSafetyCheckInSuccess) {
                         onSafetyCheckInSuccess();
@@ -11245,7 +11214,7 @@ function createTaskCard(task) {
     // --- Botones (MODIFICADOS) ---
     const baseButtonClasses = "text-xs font-bold py-2 px-4 rounded-lg transition-colors flex items-center shadow-sm";
     const iconBaseClasses = "h-4 w-4 mr-1";
-    
+
     const editButtonHtmlFinal = currentUserRole === 'admin' ? `
         <button data-action="edit-task" data-id="${task.id}" class="${baseButtonClasses} bg-yellow-500 hover:bg-yellow-600 text-white">
             <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
@@ -11281,7 +11250,7 @@ function createTaskCard(task) {
             Solicitar Material
         </button>
     ` : '';
-    
+
     const completeButtonHtmlFinal = task.status === 'pendiente' ? `
         <button data-action="complete-task" data-id="${task.id}" class="${baseButtonClasses} bg-green-500 hover:bg-green-600 text-white">
             <svg class="${iconBaseClasses}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
@@ -12397,7 +12366,7 @@ function checkIfSafetyCheckInNeeded() {
     if (!lastCheckInString) {
         return true; // Nunca lo ha hecho
     }
-    
+
     const lastCheckInDate = new Date(lastCheckInString);
     const today = new Date();
 
@@ -12405,10 +12374,10 @@ function checkIfSafetyCheckInNeeded() {
     if (lastCheckInDate.getFullYear() === today.getFullYear() &&
         lastCheckInDate.getMonth() === today.getMonth() &&
         lastCheckInDate.getDate() === today.getDate()) {
-        
+
         return false; // Ya hizo check-in hoy
     }
-    
+
     return true; // El check-in fue de un día anterior
 }
 
@@ -12421,7 +12390,7 @@ function checkIfSafetyCheckInNeeded() {
 async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
     onSafetyCheckInSuccess = callbackOnSuccess; // Guarda la función
     verifiedCanvas = null; // Resetea la foto verificada
-    
+
     const modal = document.getElementById('safety-checkin-modal');
     const step1 = document.getElementById('checkin-step-1-face');
     const step2 = document.getElementById('checkin-step-2-epp');
@@ -12455,8 +12424,8 @@ async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
             videoStream.getTracks().forEach(track => track.stop());
         }
         // Pedimos "video: true" (cualquier cámara de video)
-        videoStream = await navigator.mediaDevices.getUserMedia({ 
-            video: true 
+        videoStream = await navigator.mediaDevices.getUserMedia({
+            video: true
         });
         videoEl.srcObject = videoStream;
     } catch (err) {
@@ -12464,7 +12433,7 @@ async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
         faceStatus.textContent = "Error al acceder a la cámara. Revisa los permisos.";
         return;
     }
-    
+
     // 3. Cargar la dotación (Paso 2)
     try {
         const historyQuery = query(
@@ -12488,9 +12457,9 @@ async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
                 const catalogSnapshot = await getDocs(catalogQuery);
                 catalogSnapshot.forEach(doc => allCatalogItems.push(doc));
             }
-            
+
             const catalogMap = new Map(allCatalogItems.map(doc => [doc.id, doc.data()]));
-            
+
             snapshot.forEach(doc => {
                 const item = doc.data();
                 const catalogItem = catalogMap.get(item.itemId);
@@ -12503,14 +12472,14 @@ async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
                     expirationDate.setDate(expirationDate.getDate() + catalogItem.vidaUtilDias);
                     const diffTime = expirationDate.getTime() - today.getTime();
                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                    
+
                     if (diffDays <= 0) {
                         vencimientoHtml = `<span class="text-xs text-red-600 font-bold">(VENCIDO)</span>`;
                     } else if (diffDays <= 30) {
                         vencimientoHtml = `<span class="text-xs text-yellow-600 font-bold">(Vence en ${diffDays} días)</span>`;
                     }
                 }
-                
+
                 eppHtml += `
                     <label class="flex items-center p-2 bg-white border rounded-md">
                         <input type="checkbox" class="h-5 w-5 rounded epp-checkbox">
