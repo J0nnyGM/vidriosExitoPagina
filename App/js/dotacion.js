@@ -127,6 +127,37 @@ export function initDotacion(
             case 'new-dotacion-catalog-item':
                 openMainModalCallback('new-dotacion-catalog-item');
                 return; // Detener para no ser capturado por 'dotacionCard'
+
+            case 'export-dotacion-inventario-csv':
+                exportInventarioCSV();
+                return;
+
+            case 'export-dotacion-inventario-pdf':
+                exportInventarioPDF();
+                return;
+            // --- INICIO DE NUEVO CÓDIGO ---
+            case 'export-dotacion-asignaciones-csv':
+                exportAsignacionesCSV();
+                return;
+
+            case 'export-dotacion-asignaciones-pdf':
+                exportAsignacionesPDF();
+                return;
+        }
+
+        // --- INICIO DE NUEVA LÓGICA (Reportes Dashboard Nivel 2) ---
+        const dashboardContainer = target.closest('#dotacion-dashboard-container');
+        if (dashboardContainer) {
+            const button = e.target.closest('[data-action="view-user-report-details"]');
+            if (button) {
+                const userId = button.dataset.userid;
+                const userName = button.dataset.username;
+                const type = button.dataset.type; // 'consumo' o 'descarte'
+
+                // Llamamos a la nueva función (Paso 3)
+                openUserReportModal(userId, userName, type);
+            }
+            return; // Detener
         }
 
         // Acciones dentro de la tarjeta de dotación (Inventario)
@@ -134,16 +165,26 @@ export function initDotacion(
         if (dotacionCard) {
             const itemId = dotacionCard.dataset.id;
 
-            // Cargar datos del ítem para los modales
+            // Cargar datos del ítem para los modales (CON MÁS DATOS)
             const cardData = {
                 id: itemId,
                 itemName: dotacionCard.dataset.name,
                 talla: dotacionCard.dataset.talla,
                 itemPhotoURL: dotacionCard.dataset.photourl,
-                quantityInStock: parseInt(dotacionCard.dataset.stock) || 0
+                quantityInStock: parseInt(dotacionCard.dataset.stock) || 0,
+                // --- INICIO DE MODIFICACIÓN ---
+                reference: dotacionCard.dataset.reference, // Nuevo
+                category: dotacionCard.dataset.category,   // Nuevo
+                vidaUtilDias: dotacionCard.dataset.vidautil // Nuevo
+                // --- FIN DE MODIFICACIÓN ---
             };
 
             switch (action) {
+                // --- INICIO DE MODIFICACIÓN ---
+                case 'edit-dotacion-catalog-item':
+                    openMainModalCallback('edit-dotacion-catalog-item', cardData);
+                    break;
+                // --- FIN DE MODIFICACIÓN ---
                 case 'register-dotacion-delivery':
                     openMainModalCallback('register-dotacion-delivery', cardData);
                     break;
@@ -173,6 +214,7 @@ export function initDotacion(
                     const userId = button.dataset.userid;
                     const userName = button.dataset.username;
                     if (userId && dotacionAssigneeChoices) {
+                        const userHistoryMap = new Map();
                         // 1. Sincroniza el <select>
                         dotacionAssigneeChoices.setValue([{ value: userId, label: userName }]);
                         // 2. Llama manualmente a la función de carga
@@ -225,8 +267,8 @@ export function initDotacion(
                 // --- INICIO DE CORRECCIÓN ---
                 // Nivel 2: Clic en "Ver Foto"
                 case 'view-dotacion-delivery-image': {
-                    // Usamos .closest() para asegurar que obtenemos el 'photourl' de la fila <tr>
-                    const deliveryUrl = button.closest('.dotacion-history-row')?.dataset.photourl;
+                    // Obtenemos la URL directamente del botón en el que se hizo clic
+                    const deliveryUrl = button.dataset.photourl;
                     if (deliveryUrl) {
                         openImageModalCallback(deliveryUrl);
                     }
@@ -259,7 +301,7 @@ export function initDotacion(
         const form = e.target;
 
         // --- INICIO DE MODIFICACIÓN (Añadir el nuevo tipo) ---
-        if (['new-dotacion-catalog-item', 'add-dotacion-stock', 'register-dotacion-delivery', 'return-dotacion-options'].includes(type)) {
+        if (['new-dotacion-catalog-item', 'add-dotacion-stock', 'register-dotacion-delivery', 'return-dotacion-options', 'edit-dotacion-catalog-item'].includes(type)) {
             // --- FIN DE MODIFICACIÓN ---
             e.preventDefault();
             if (!form.checkValidity()) {
@@ -379,7 +421,17 @@ export function loadDotacionView() {
         const userName = getUsersMap().get(currentUser.uid)?.firstName || 'Usuario';
         titleElement.textContent = `Mi Dotación (${userName})`;
 
-        filterBar.classList.add('hidden'); // Operario no usa filtros
+        // --- INICIO DE MODIFICACIÓN DEFINITIVA ---
+        // Ocultamos explícitamente la barra Y todo su contenido
+        filterBar.classList.add('hidden');
+        if (assigneeContainer) assigneeContainer.classList.add('hidden');
+        if (searchContainer) searchContainer.classList.add('hidden');
+        if (categoryContainer) categoryContainer.classList.add('hidden');
+
+        // Removemos las clases de layout que pueden estar causando el conflicto
+        filterBar.classList.remove('md:grid', 'md:grid-cols-4', 'md:grid-cols-1');
+        // --- FIN DE MODIFICACIÓN DEFINITIVA ---
+
         historyContainer.classList.remove('hidden'); // Mostrar el contenedor de Asignaciones
 
         // El operario solo ve su historial detallado (Nivel 2)
@@ -411,6 +463,12 @@ export function loadDotacionView() {
             searchContainer.classList.add('md:col-span-3'); // 3 columnas
             categoryContainer.classList.add('md:col-span-1'); // 1 columna
         }
+
+        const inventarioActions = document.getElementById('dotacion-inventario-actions');
+        const asignacionesActions = document.getElementById('dotacion-asignaciones-actions');
+
+        if (inventarioActions) inventarioActions.classList.toggle('hidden', !isInventarioTab);
+        if (asignacionesActions) asignacionesActions.classList.toggle('hidden', !isAsignacionesTab);
 
         // Cargar la vista de la pestaña activa
         if (activeTab === 'resumen') {
@@ -477,6 +535,8 @@ function loadDotacionCatalog() {
 
 /**
  * Carga la pestaña "Asignaciones" (Nivel 1: Resumen o Nivel 2: Detalle).
+ * (VERSIÓN MEJORADA CON REAL-TIME Y FOTO DE ENTREGA)
+ *
  * @param {string} userIdFilter - 'all' (para resumen) o un ID de usuario específico (para detalle).
  */
 async function loadDotacionAsignaciones(userIdFilter = 'all') {
@@ -486,8 +546,6 @@ async function loadDotacionAsignaciones(userIdFilter = 'all') {
     const summaryContainer = document.getElementById('dotacion-summary-table-container');
     const detailGrid = document.getElementById('dotacion-detail-grid-container');
     const backBtn = document.getElementById('dotacion-back-to-summary-btn');
-
-    // Elementos del Resumen (Nivel 1)
     const summaryTableBody = document.getElementById('dotacion-summary-table-body');
 
     if (unsubscribeDotacion) unsubscribeDotacion();
@@ -496,16 +554,15 @@ async function loadDotacionAsignaciones(userIdFilter = 'all') {
 
     if (userIdFilter === 'all') {
         // --- 1. VISTA RESUMEN (NIVEL 1: POR EMPLEADO) ---
+        // (Esta parte SÍ usa onSnapshot y ya funciona en tiempo real)
         summaryContainer.classList.remove('hidden');
         detailGrid.classList.add('hidden');
         backBtn.classList.add('hidden');
-
         summaryTableBody.innerHTML = '<tr><td colspan="3" class="text-center py-6"><div class="loader mx-auto"></div></td></tr>';
 
-        // (Esta consulta solo alimenta la tabla resumen, está bien)
         let historyQuery = query(collection(db, "dotacionHistory"), where("action", "==", "asignada"));
-
         unsubscribeDotacion = onSnapshot(historyQuery, (snapshot) => {
+            // ... (Toda la lógica de summaryMap sigue igual)
             const summaryMap = new Map();
             snapshot.forEach(doc => {
                 const entry = doc.data();
@@ -515,17 +572,14 @@ async function loadDotacionAsignaciones(userIdFilter = 'all') {
                     summaryMap.set(entry.userId, current);
                 }
             });
-
             summaryTableBody.innerHTML = '';
             if (summaryMap.size === 0) {
                 summaryTableBody.innerHTML = '<tr><td colspan="3" class="text-center py-6 text-gray-500">No hay asignaciones registradas.</td></tr>';
                 return;
             }
-
             summaryMap.forEach((data, userId) => {
                 const user = usersMap.get(userId);
                 const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido';
-
                 const row = document.createElement('tr');
                 row.className = 'bg-white border-b hover:bg-gray-50 dotacion-summary-row';
                 row.innerHTML = `
@@ -539,101 +593,128 @@ async function loadDotacionAsignaciones(userIdFilter = 'all') {
                 `;
                 summaryTableBody.appendChild(row);
             });
-
         }, (error) => {
             console.error("Error al cargar resumen de dotación:", error);
             summaryTableBody.innerHTML = '<tr><td colspan="3" class="text-center py-6 text-red-500">Error al cargar el resumen.</td></tr>';
         });
 
     } else {
-        // --- 2. VISTA DETALLADA (NIVEL 2: LÓGICA CORREGIDA) ---
+        // --- 2. VISTA DETALLADA (NIVEL 2: AHORA CON REAL-TIME) ---
         summaryContainer.classList.add('hidden');
         detailGrid.classList.remove('hidden');
         backBtn.classList.toggle('hidden', role === 'operario');
-
         detailGrid.innerHTML = '<div class="loader-container col-span-full"><div class="loader mx-auto"></div></div>';
 
         try {
-            // 1. Consultas en paralelo: Catálogo e Historial del Usuario
-            const [catalogSnapshot, historySnapshot] = await Promise.all([
-                getDocs(query(collection(db, "dotacionCatalog"), orderBy("itemName"))),
-                // (Query de historial: trae TODAS las entregas (asignada) para este usuario, de la más nueva a la más vieja)
-                getDocs(query(
-                    collection(db, "dotacionHistory"),
-                    where("action", "==", "asignada"),
-                    where("userId", "==", userIdFilter),
-                    orderBy("fechaEntrega", "desc") // <-- Ordenado DESC para que el primero sea el más nuevo
-                ))
-            ]);
+            // 1. Cargar el Catálogo UNA VEZ
+            const catalogSnapshot = await getDocs(query(collection(db, "dotacionCatalog"), orderBy("itemName")));
+            const catalogMap = new Map();
+            catalogSnapshot.forEach(doc => {
+                catalogMap.set(doc.id, { id: doc.id, ...doc.data() });
+            });
 
-            // --- ESTA ES LA LÓGICA CLAVE CORREGIDA ---
-            // 2. Procesar el historial del usuario PRIMERO
-            const userHistoryMap = new Map();
+            // 2. Definir la consulta de HISTORIAL
+            const historyQuery = query(
+                collection(db, "dotacionHistory"),
+                where("action", "==", "asignada"),
+                where("userId", "==", userIdFilter),
+                orderBy("fechaEntrega", "desc")
+            );
 
-            historySnapshot.forEach(doc => {
-                const entry = { id: doc.id, ...doc.data() };
-                const key = entry.itemId; // Agrupar por ID de ítem
+            // 3. Crear el listener REAL-TIME para el HISTORIAL
+            if (unsubscribeDotacion) unsubscribeDotacion();
+            unsubscribeDotacion = onSnapshot(historyQuery, (historySnapshot) => {
 
-                // Si es la primera vez que vemos este ítem, creamos su resumen
-                if (!userHistoryMap.has(key)) {
-                    userHistoryMap.set(key, {
-                        itemId: entry.itemId,
-                        itemName: entry.itemName,
-                        talla: entry.talla,
-                        totalConsumido: 0,
-                        lastDeliveryDate: null,
-                        lastHistoryId: null, // Default es null
-                        status: 'ninguno' // Default es ninguno
+                const userHistoryMap = new Map();
+                const activeItemFound = new Set();
+
+                historySnapshot.forEach(doc => {
+                    const entry = { id: doc.id, ...doc.data() };
+                    const key = entry.itemId;
+
+                    if (!userHistoryMap.has(key)) {
+                        userHistoryMap.set(key, {
+                            itemId: entry.itemId,
+                            itemName: entry.itemName,
+                            talla: entry.talla,
+                            totalConsumido: 0,
+                            lastDeliveryDate: null,
+                            lastHistoryId: null,
+                            status: 'ninguno',
+                            deliveryPhotoURL: null // <-- Añadido el campo por defecto
+                        });
+                    }
+
+                    const summary = userHistoryMap.get(key);
+                    summary.totalConsumido += (entry.quantity || 0);
+
+                    if (activeItemFound.has(key)) return;
+
+                    const entryStatus = entry.status || 'activo';
+
+                    if (entryStatus === 'activo') {
+                        summary.lastDeliveryDate = entry.fechaEntrega;
+                        summary.lastHistoryId = entry.id;
+                        summary.status = 'activo';
+                        // --- INICIO DE MODIFICACIÓN ---
+                        summary.deliveryPhotoURL = entry.deliveryPhotoURL || null; // <-- LÍNEA AÑADIDA
+                        // --- FIN DE MODIFICACIÓN ---
+                        activeItemFound.add(key);
+                    } else if (summary.status === 'ninguno') {
+                        summary.lastDeliveryDate = entry.fechaEntrega;
+                        summary.lastHistoryId = entry.id;
+                        summary.status = entryStatus;
+                        // --- INICIO DE MODIFICACIÓN ---
+                        summary.deliveryPhotoURL = entry.deliveryPhotoURL || null; // <-- LÍNEA AÑADIDA
+                        // --- FIN DE MODIFICACIÓN ---
+                    }
+                });
+
+                // 4. Renderizar (la lógica de 'role === operario' va AQUI DENTRO)
+                detailGrid.innerHTML = '';
+
+                if (role === 'operario') {
+                    // ... (VISTA OPERARIO)
+                    if (userHistoryMap.size === 0) {
+                        detailGrid.innerHTML = '<p class="text-gray-500 text-center col-span-full">Aún no tienes dotación asignada.</p>';
+                        return;
+                    }
+                    userHistoryMap.forEach((historySummary, itemId) => {
+                        const catalogItem = catalogMap.get(itemId);
+                        if (!catalogItem) return;
+                        const card = createDotacionDetailCard(catalogItem, historySummary, userIdFilter, role);
+                        detailGrid.appendChild(card);
+                    });
+
+                } else {
+                    // ... (VISTA ADMIN)
+                    if (catalogMap.size === 0) {
+                        detailGrid.innerHTML = '<p class="text-gray-500 text-center col-span-full">No hay ítems de dotación en el catálogo.</p>';
+                        return;
+                    }
+                    catalogMap.forEach((catalogItem, catalogId) => {
+                        const historySummary = userHistoryMap.get(catalogId) || {
+                            totalConsumido: 0,
+                            lastDeliveryDate: null,
+                            lastHistoryId: null,
+                            status: 'ninguno',
+                            deliveryPhotoURL: null // <-- Añadido por si acaso
+                        };
+                        const card = createDotacionDetailCard(catalogItem, historySummary, userIdFilter, role);
+                        detailGrid.appendChild(card);
                     });
                 }
-
-                const summary = userHistoryMap.get(key);
-
-                // Sumar al consumo total
-                summary.totalConsumido += (entry.quantity || 0);
-
-                // Como la consulta está ordenada (desc), la PRIMERA que encontramos es la más reciente.
-                // Usamos 'lastHistoryId === null' para asegurar que solo seteamos la info de la más reciente.
-                if (summary.lastHistoryId === null) {
-                    summary.lastDeliveryDate = entry.fechaEntrega;
-                    summary.lastHistoryId = entry.id; // <-- AQUÍ SE GUARDA EL ID
-                    summary.status = entry.status || 'activo'; // <-- AQUÍ SE GUARDA EL ESTADO ('activo' o 'devuelto')
-                }
+            }, (error) => {
+                console.error("Error al escuchar historial de dotación (real-time):", error);
+                detailGrid.innerHTML = '<p class="text-red-500 text-center col-span-full">Error al cargar datos en tiempo real.</p>';
             });
-
-            // 3. Renderizar: Iterar sobre el CATÁLOGO (para mostrar TODOS los ítems)
-            detailGrid.innerHTML = '';
-            if (catalogSnapshot.empty) {
-                detailGrid.innerHTML = '<p class="text-gray-500 text-center col-span-full">No hay ítems de dotación en el catálogo.</p>';
-                return;
-            }
-
-            catalogSnapshot.forEach((catalogDoc) => {
-                const catalogItem = { id: catalogDoc.id, ...catalogDoc.data() };
-
-                // Si el usuario tiene historial para este ítem, lo usamos.
-                // Si no, usamos el objeto default.
-                const historySummary = userHistoryMap.get(catalogItem.id) || {
-                    totalConsumido: 0,
-                    lastDeliveryDate: null,
-                    lastHistoryId: null, // (Se queda en null)
-                    status: 'ninguno'     // (Se queda en 'ninguno')
-                };
-
-                // 4. Crear la tarjeta de estado
-                // Ahora, si el ítem está 'activo', 'historySummary.lastHistoryId' SÍ tendrá un valor.
-                const card = createDotacionDetailCard(catalogItem, historySummary, userIdFilter, role);
-                detailGrid.appendChild(card);
-            });
-            // --- FIN DE LÓGICA CORREGIDA ---
 
         } catch (error) {
-            console.error("Error al cargar el detalle de dotación del empleado:", error);
-            detailGrid.innerHTML = '<p class="text-red-500 text-center col-span-full">Error al cargar el historial.</p>';
+            console.error("Error al cargar el catálogo de dotación:", error);
+            detailGrid.innerHTML = '<p class="text-red-500 text-center col-span-full">Error fatal al cargar el catálogo.</p>';
         }
     }
 }
-
 
 
 /**
@@ -647,6 +728,11 @@ function createDotacionCatalogCard(item) {
     card.dataset.talla = item.talla || 'N/A';
     card.dataset.photourl = item.itemPhotoURL || '';
     card.dataset.stock = item.quantityInStock || 0;
+    // --- INICIO DE MODIFICACIÓN ---
+    card.dataset.reference = item.reference || '';
+    card.dataset.category = item.category || '';
+    card.dataset.vidautil = item.vidaUtilDias || ''; // Usamos vidautil para el dataset
+    // --- FIN DE MODIFICACIÓN ---
 
     const stock = item.quantityInStock || 0;
     const stockColor = stock > 5 ? 'text-green-600' : (stock > 0 ? 'text-yellow-600' : 'text-red-600');
@@ -668,6 +754,7 @@ function createDotacionCatalogCard(item) {
                     <div class="mt-3 text-sm space-y-1">
                         <p><strong>Categoría:</strong> ${item.category}</p>
                         <p><strong>Talla:</strong> ${item.talla || 'N/A'}</p>
+                        <p><strong>Vida Útil:</strong> ${item.vidaUtilDias ? `${item.vidaUtilDias} días` : 'N/A'}</p>
                     </div>
                 </div>
                 <div class="text-sm space-y-2 mt-4 pt-2 border-t">
@@ -679,18 +766,21 @@ function createDotacionCatalogCard(item) {
             </div>
         </div>
         
-        <div class="bg-gray-50 p-3 border-t grid grid-cols-3 gap-2">
-            <button data-action="register-dotacion-delivery" class="bg-green-500 hover:bg-green-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Registrar Entrega</button>
-            <button data-action="add-dotacion-stock" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Añadir Stock</button>
-            <button data-action="view-dotacion-catalog-history" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-semibold py-2 px-3 rounded-lg w-full">Historial</button>
+        <div class="bg-gray-50 p-3 border-t grid grid-cols-4 gap-2">
+            <button data-action="register-dotacion-delivery" class="bg-green-500 hover:bg-green-600 text-white text-xs font-semibold py-2 px-2 rounded-lg w-full">Entrega</button>
+            <button data-action="add-dotacion-stock" class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold py-2 px-2 rounded-lg w-full">Stock</button>
+            
+            <button data-action="edit-dotacion-catalog-item" class="bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-semibold py-2 px-2 rounded-lg w-full">Editar</button>
+            
+            <button data-action="view-dotacion-catalog-history" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-semibold py-2 px-2 rounded-lg w-full">Historial</button>
         </div>
-    `;
+        `;
     return card;
 }
 
 /**
  * Carga el dashboard de resumen de dotación.
- * (Corregido el error de HTML y AÑADIDO el reporte por tallas)
+ * (MEJORADO con reportes de Consumo y Descarte)
  */
 async function loadDotacionDashboard(container) {
     container.innerHTML = `<div class="text-center p-10"><p class="text-gray-500">Calculando estadísticas...</p><div class="loader mx-auto mt-4"></div></div>`;
@@ -698,26 +788,31 @@ async function loadDotacionDashboard(container) {
     try {
         const usersMap = getUsersMap();
 
-        // Consultas en paralelo
-        const [catalogSnapshot, historySnapshot] = await Promise.all([
+        // Consultas en paralelo (AÑADIMOS 'historyFullSnapshot')
+        const [catalogSnapshot, historyActiveSnapshot, historyFullSnapshot] = await Promise.all([
             getDocs(query(collection(db, "dotacionCatalog"))),
-            // --- INICIO DE MODIFICACIÓN: Consultar solo historial activo ---
+
+            // 1. Historial ACTIVO (para reporte de Vencimiento)
             getDocs(query(
                 collection(db, "dotacionHistory"),
                 where("action", "==", "asignada"),
-                where("status", "==", "activo") // <-- Solo nos importa lo que está activo
-            ))
-            // --- FIN DE MODIFICACIÓN ---
+                where("status", "==", "activo")
+            )),
+
+            // --- INICIO DE NUEVA CONSULTA ---
+            // 2. Historial COMPLETO (para reportes de Consumo y Descarte)
+            getDocs(query(collection(db, "dotacionHistory")))
+            // --- FIN DE NUEVA CONSULTA ---
         ]);
 
         let kpi = { totalTipos: 0, totalStock: 0, totalAsignado: 0 };
-        const assignedToMap = new Map();
-        const categoryStockMap = new Map();
         const tallaStockMap = new Map();
+        const catalogVidaUtilMap = new Map(); // Para Vencimiento
 
-        // --- INICIO DE NUEVA LÓGICA (VENCIMIENTO) ---
-        const catalogVidaUtilMap = new Map(); // Mapa para guardar la vida útil por ID
-        // --- FIN DE NUEVA LÓGICA ---
+        // --- INICIO DE NUEVOS MAPS ---
+        const consumoMap = new Map(); // Nuevo: Para "Top Consumo"
+        const descarteMap = new Map(); // Nuevo: Para "Top Descarte"
+        // --- FIN DE NUEVOS MAPS ---
 
         catalogSnapshot.forEach(doc => {
             const item = doc.data();
@@ -725,11 +820,8 @@ async function loadDotacionDashboard(container) {
             const stock = item.quantityInStock || 0;
             kpi.totalStock += stock;
 
-            const category = item.category || 'Otro';
-            categoryStockMap.set(category, (categoryStockMap.get(category) || 0) + stock);
-
+            // (Lógica de tallaStockMap - Sin cambios)
             if (stock > 0) {
-                // ... (lógica existente de tallaStockMap) ...
                 const baseName = item.itemName;
                 const talla = item.talla || 'N/A';
                 if (!tallaStockMap.has(baseName)) {
@@ -740,43 +832,32 @@ async function loadDotacionDashboard(container) {
                 group.tallas.push({ talla: talla, stock: stock });
             }
 
-            // --- INICIO DE NUEVA LÓGICA (VENCIMIENTO) ---
-            // 3. Guardar la vida útil de cada ítem del catálogo
+            // (Lógica de catalogVidaUtilMap - Sin cambios)
             if (item.vidaUtilDias) {
                 catalogVidaUtilMap.set(doc.id, item.vidaUtilDias);
             }
-            // --- FIN DE NUEVA LÓGICA ---
         });
 
-        // --- INICIO DE NUEVA LÓGICA (VENCIMIENTO) ---
-        // 4. Procesar el historial (que ya está filtrado por 'activo')
-        const vencimientoList = []; // Array para el nuevo reporte
+        // --- Lógica de Vencimiento (Sin cambios) ---
+        const vencimientoList = [];
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        // --- FIN DE NUEVA LÓGICA ---
 
-        historySnapshot.forEach(doc => {
+        historyActiveSnapshot.forEach(doc => {
             const entry = doc.data();
             const quantity = entry.quantity || 0;
-            kpi.totalAsignado += quantity;
-            if (entry.userId) {
-                assignedToMap.set(entry.userId, (assignedToMap.get(entry.userId) || 0) + quantity);
-            }
+            kpi.totalAsignado += quantity; // <-- Esto se queda aquí
 
-            // --- INICIO DE NUEVA LÓGICA (VENCIMIENTO) ---
-            // 5. Calcular vencimiento para el reporte
+            // (Lógica de vencimientoList - Sin cambios)
             const vidaUtilDias = catalogVidaUtilMap.get(entry.itemId);
             const deliveryDateStr = entry.fechaEntrega;
-
             if (vidaUtilDias && deliveryDateStr) {
                 const deliveryDate = new Date(deliveryDateStr + 'T00:00:00');
                 const expirationDate = new Date(deliveryDate.getTime());
                 expirationDate.setDate(expirationDate.getDate() + vidaUtilDias);
-
                 const diffTime = expirationDate.getTime() - today.getTime();
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-                // Solo nos importa si está vencido o vence en los próximos 30 días
                 if (diffDays <= 30) {
                     const user = usersMap.get(entry.userId);
                     vencimientoList.push({
@@ -788,8 +869,28 @@ async function loadDotacionDashboard(container) {
                     });
                 }
             }
-            // --- FIN DE NUEVA LÓGICA ---
         });
+
+        // --- INICIO DE NUEVA LÓGICA (Reportes de Consumo y Descarte) ---
+        // 5. Procesar el historial COMPLETO
+        historyFullSnapshot.forEach(doc => {
+            const entry = doc.data();
+            const userId = entry.userId;
+
+            if (userId) {
+                // Contar Consumo (cada vez que se 'asigna')
+                if (entry.action === 'asignada') {
+                    consumoMap.set(userId, (consumoMap.get(userId) || 0) + (entry.quantity || 0));
+                }
+
+                // Contar Descarte (cada vez que se 'devuelve' como descarte)
+                if (entry.action === 'devuelto') {
+                    descarteMap.set(userId, (descarteMap.get(userId) || 0) + (entry.quantity || 0));
+                }
+            }
+        });
+        // --- FIN DE NUEVA LÓGICA ---
+
 
         // HTML para KPIs (Sin cambios)
         const kpiHtml = `
@@ -803,7 +904,7 @@ async function loadDotacionDashboard(container) {
                     <p class="text-3xl font-bold text-green-900">${kpi.totalStock}</p>
                 </div>
                 <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200 text-center">
-                    <p class="text-sm font-medium text-yellow-800">Total Asignado</p>
+                    <p class="text-sm font-medium text-yellow-800">Total Asignado (Activo)</p>
                     <p class="text-3xl font-bold text-yellow-900">${kpi.totalAsignado}</p>
                 </div>
                 <div class="bg-gray-100 p-4 rounded-lg border border-gray-300 text-center">
@@ -813,53 +914,63 @@ async function loadDotacionDashboard(container) {
             </div>
         `;
 
-        // HTML para Reportes
+        // --- INICIO DE MODIFICACIÓN: HTML para Nuevos Reportes ---
 
-        // Reporte 1: Asignados (Sin cambios)
-        let assignedHtml = '<p class="text-sm text-gray-500">No hay ítems asignados.</p>';
-        if (assignedToMap.size > 0) {
-            assignedHtml = '<ul class="divide-y divide-gray-200">';
-            const sortedAssigned = [...assignedToMap.entries()].sort((a, b) => b[1] - a[1]);
-            sortedAssigned.forEach(([userId, count]) => {
+        // Reporte 1: Top Consumo (Histórico)
+        let consumoHtml = '<p class="text-sm text-gray-500">No hay historial de consumo.</p>';
+        if (consumoMap.size > 0) {
+            consumoHtml = '<ul class="divide-y divide-gray-200">';
+            const sortedConsumo = [...consumoMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10); // Top 10
+            sortedConsumo.forEach(([userId, count]) => {
                 const user = usersMap.get(userId);
                 const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido';
-                assignedHtml += `<li class="py-2 flex justify-between items-center"><span class="font-medium text-gray-700">${userName}</span><span class="font-bold text-lg text-blue-600">${count}</span></li>`;
+
+                // --- INICIO DE MODIFICACIÓN ---
+                consumoHtml += `<li class="py-2 flex justify-between items-center">
+                    <button data-action="view-user-report-details" data-userid="${userId}" data-username="${userName}" data-type="consumo" class="font-medium text-blue-600 hover:text-blue-800 hover:underline text-left">
+                        ${userName}
+                    </button>
+                    <span class="font-bold text-lg text-blue-600">${count}</span>
+                </li>`;
+                // --- FIN DE MODIFICACIÓN ---
             });
-            assignedHtml += '</ul>';
+            consumoHtml += '</ul>';
         }
 
-        // Reporte 2: Categorías (Sin cambios)
-        let categoryHtml = '<p class="text-sm text-gray-500">No hay ítems en stock.</p>';
-        if (categoryStockMap.size > 0) {
-            categoryHtml = '<ul class="divide-y divide-gray-200">';
-            [...categoryStockMap.entries()].sort((a, b) => b[1] - a[1]).forEach(([category, count]) => {
-                categoryHtml += `<li class="py-2 flex justify-between items-center"><span class="font-medium text-gray-700">${category}</span><span class="font-bold text-lg text-green-600">${count}</span></li>`;
+        // Reporte 2: Top Descarte (Histórico)
+        let descarteHtml = '<p class="text-sm text-gray-500">No hay historial de descartes.</p>';
+        if (descarteMap.size > 0) {
+            descarteHtml = '<ul class="divide-y divide-gray-200">';
+            const sortedDescarte = [...descarteMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10); // Top 10
+            sortedDescarte.forEach(([userId, count]) => {
+                const user = usersMap.get(userId);
+                const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido';
+
+                // --- INICIO DE MODIFICACIÓN ---
+                descarteHtml += `<li class="py-2 flex justify-between items-center">
+                    <button data-action="view-user-report-details" data-userid="${userId}" data-username="${userName}" data-type="descarte" class="font-medium text-blue-600 hover:text-blue-800 hover:underline text-left">
+                        ${userName}
+                    </button>
+                    <span class="font-bold text-lg text-red-600">${count}</span>
+                </li>`;
+                // --- FIN DE MODIFICACIÓN ---
             });
-            categoryHtml += '</ul>';
+            descarteHtml += '</ul>';
         }
 
-        // --- INICIO DE NUEVA LÓGICA ---
-        // 3. Generar el HTML para el nuevo reporte de tallas
+        // Reporte 3: Tallas (Sin cambios)
         let tallasHtml = '<p class="text-sm text-gray-500">No hay stock detallado para mostrar.</p>';
         if (tallaStockMap.size > 0) {
             tallasHtml = '<ul class="divide-y divide-gray-200">';
-
-            // Ordenar alfabéticamente por el nombre base del ítem
             const sortedTallaGroups = [...tallaStockMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-
             for (const [baseName, group] of sortedTallaGroups) {
-                // Cabecera del grupo (Ej: Botas de Seguridad (Total: 15))
                 tallasHtml += `<li class="py-3">
                     <div class="flex justify-between items-center mb-2">
                         <span class="font-semibold text-gray-800">${baseName}</span>
                         <span class="font-bold text-lg text-blue-600">Total: ${group.total}</span>
                     </div>
                     <ul class="pl-4 space-y-1">`;
-
-                // Ordenar las tallas (Ej: 40, 41, L, M)
                 group.tallas.sort((a, b) => a.talla.localeCompare(b.talla, undefined, { numeric: true, sensitivity: 'base' }));
-
-                // Lista de tallas y su stock
                 for (const item of group.tallas) {
                     tallasHtml += `
                         <li class="text-sm flex justify-between">
@@ -871,44 +982,44 @@ async function loadDotacionDashboard(container) {
             }
             tallasHtml += '</ul>';
         }
-        // --- FIN DE NUEVA LÓGICA ---
 
-
-        // --- INICIO DE NUEVA LÓGICA (VENCIMIENTO) ---
-        // 6. Generar HTML para el reporte de vencimiento
+        // Reporte 4: Vencimiento (Sin cambios)
         let vencimientoReportHtml = '<p class="text-sm text-gray-500">No hay ítems próximos a vencer.</p>';
         if (vencimientoList.length > 0) {
-            // Ordenar por los más urgentes (vencidos primero)
             vencimientoList.sort((a, b) => a.diffDays - b.diffDays);
-
             vencimientoReportHtml = '<ul class="divide-y divide-gray-200">';
             vencimientoList.forEach(item => {
                 const color = item.diffDays <= 0 ? 'text-red-600 font-bold' : 'text-yellow-700 font-semibold';
                 const status = item.diffDays <= 0 ? `(Vencido hace ${Math.abs(item.diffDays)} días)` : `(Vence en ${item.diffDays} días)`;
-
                 vencimientoReportHtml += `
-                    <li classli="py-2">
+                    <li class="py-2">
                         <p class="${color}">${item.itemName} (Talla: ${item.talla}) ${status}</p>
                         <p class="text-xs text-gray-600">Empleado: ${item.userName} - Vence: ${item.expirationDate}</p>
                     </li>`;
             });
             vencimientoReportHtml += '</ul>';
         }
-        // --- FIN DE NUEVA LÓGICA ---
+
+        // --- FIN DE MODIFICACIÓN ---
 
 
         // --- INICIO DE MODIFICACIÓN DEL LAYOUT ---
-        // 7. Modificar el grid para que acepte 4 reportes (2x2)
+        // 7. Reordenar el grid 2x2
         const reportsHtml = `
             <div class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
                 
                 <div class="bg-white p-4 rounded-lg shadow-md border">
-                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Ítems Asignados (por Colaborador)</h3>
-                    <div class="max-h-60 overflow-y-auto pr-2">${assignedHtml}</div>
+                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Top 10 - Consumo Histórico (Entregas)</h3>
+                    <div class="max-h-60 overflow-y-auto pr-2">${consumoHtml}</div>
                 </div>
 
                 <div class="bg-white p-4 rounded-lg shadow-md border border-red-200">
-                    <h3 class="text-lg font-semibold text-red-800 border-b border-red-200 pb-2 mb-3">Dotación Vencida o por Vencer (30 días)</h3>
+                    <h3 class="text-lg font-semibold text-red-800 border-b border-red-200 pb-2 mb-3">Top 10 - Descarte/Desgaste (Devoluciones)</h3>
+                    <div class="max-h-60 overflow-y-auto pr-2">${descarteHtml}</div>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow-md border">
+                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Dotación Vencida o por Vencer (30 días)</h3>
                     <div class="max-h-60 overflow-y-auto pr-2">${vencimientoReportHtml}</div>
                 </div>
 
@@ -917,13 +1028,9 @@ async function loadDotacionDashboard(container) {
                     <div class="max-h-60 overflow-y-auto pr-2">${tallasHtml}</div>
                 </div>
 
-                <div class="bg-white p-4 rounded-lg shadow-md border">
-                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Stock Actual (por Categoría)</h3>
-                    <div class="max-h-60 overflow-y-auto pr-2">${categoryHtml}</div>
-                </div>
-
             </div>
         `;
+        // --- FIN DE MODIFICACIÓN DEL LAYOUT ---
 
         container.innerHTML = kpiHtml + reportsHtml;
 
@@ -973,10 +1080,52 @@ async function handleSaveDotacion(form) {
                 talla: data.talla || 'N/A',
                 itemPhotoURL: downloadURL,
                 quantityInStock: parseInt(data.initialStock) || 0,
+                vidaUtilDias: parseInt(data.vidaUtilDias) || null, // <-- AÑADIDO
                 createdAt: serverTimestamp(),
                 createdBy: currentUser.uid,
             };
             batch.set(newItemRef, itemData);
+
+            // --- INICIO DE NUEVA LÓGICA DE EDICIÓN ---
+        } else if (type === 'edit-dotacion-catalog-item') {
+            const itemId = data.itemId;
+            if (!itemId) throw new Error("ID de ítem inválido para editar.");
+
+            const itemRef = doc(db, "dotacionCatalog", itemId);
+            const photoFile = data.photo;
+            let downloadURL = null;
+
+            // 1. Verificar si se subió una NUEVA foto
+            if (photoFile && photoFile.size > 0) {
+                confirmBtn.textContent = 'Redimensionando foto...';
+                const resizedBlob = await resizeImage(photoFile, 800);
+                confirmBtn.textContent = 'Subiendo foto...';
+                const photoPath = `dotacion_catalog_photos/${itemId}/${photoFile.name}`;
+                const photoStorageRef = ref(storage, photoPath);
+                await uploadBytes(photoStorageRef, resizedBlob);
+                downloadURL = await getDownloadURL(photoStorageRef);
+            }
+
+            // 2. Preparar los datos a actualizar
+            const itemData = {
+                itemName: data.itemName,
+                reference: data.reference || '',
+                category: data.category,
+                talla: data.talla || 'N/A',
+                vidaUtilDias: parseInt(data.vidaUtilDias) || null,
+                updatedAt: serverTimestamp(),
+                updatedBy: currentUser.uid,
+            };
+
+            // 3. Añadir la URL de la foto SOLO SI se subió una nueva
+            if (downloadURL) {
+                itemData.itemPhotoURL = downloadURL;
+            }
+
+            // 4. Añadir al batch
+            // NO TOCAMOS EL STOCK. El stock se maneja con 'add-dotacion-stock'
+            batch.update(itemRef, itemData);
+            // --- FIN DE NUEVA LÓGICA DE EDICIÓN ---
 
         } else if (type === 'add-dotacion-stock') {
             const itemId = data.itemId;
@@ -1137,12 +1286,14 @@ async function handleSaveDotacion(form) {
             loadDotacionView();
         }
 
-        
+
         closeMainModalCallback();
 
-        // --- INICIO DE LA CORRECCIÓN ---
+        // --- INICIO DE LA CORRECCIÓN (Modificación) ---
         // (El bloque 'try' termina aquí)
-        loadDotacionView();
+
+        // loadDotacionView(); // <-- ELIMINAR O COMENTAR ESTA LÍNEA
+
         // Los bloques 'catch' y 'finally' ahora están DENTRO de la función
     } catch (error) {
         console.error("Error al guardar dotación:", error);
@@ -1154,6 +1305,7 @@ async function handleSaveDotacion(form) {
         else if (type === 'add-dotacion-stock') confirmBtn.textContent = 'Añadir Stock';
         else if (type === 'register-dotacion-delivery') confirmBtn.textContent = 'Confirmar Entrega';
         else if (type === 'return-dotacion-options') confirmBtn.textContent = 'Procesar Devolución';
+        else if (type === 'edit-dotacion-catalog-item') confirmBtn.textContent = 'Actualizar Ítem';
         else confirmBtn.textContent = 'Guardar';
     }
     // --- FIN DE LA CORRECCIÓN ---
@@ -1243,7 +1395,7 @@ async function logDotacionReturnToStock(batch, historyRef, itemId, itemName, adm
 /**
  * Crea la tarjeta para la vista "Detalle de Empleado" (Nivel 2).
  * Muestra el ESTADO de un ítem de catálogo para un empleado.
- * (Con lógica de vencimiento y botones corregida)
+ * (Con lógica de vencimiento, botones corregidos y foto de entrega)
  * @param {object} catalogItem - El ítem del catálogo (ej. "Casco").
  * @param {object} historySummary - El historial resumido de ese ítem para el empleado.
  * @param {string} userId - El ID del empleado.
@@ -1255,54 +1407,40 @@ function createDotacionDetailCard(catalogItem, historySummary, userId, role) {
 
     const canAdmin = (role === 'admin' || role === 'bodega' || role === 'sst');
 
-    // --- LÓGICA DE VENCIMIENTO (Mejora 2) ---
+    // --- LÓGICA DE VENCIMIENTO (Sin cambios) ---
     let statusBorder = 'border-gray-200';
     let vencimientoHtml = '<p class="font-semibold text-gray-800">N/A</p>';
-
     const vidaUtilDias = catalogItem.vidaUtilDias;
     const lastDeliveryDateStr = historySummary.lastDeliveryDate;
-
-    // Solo calculamos si el ítem está activo y tiene días de vida útil definidos
     if (historySummary.status === 'activo' && vidaUtilDias && lastDeliveryDateStr) {
         const today = new Date();
-        today.setHours(0, 0, 0, 0); // Normalizar a medianoche
-
+        today.setHours(0, 0, 0, 0);
         const deliveryDate = new Date(lastDeliveryDateStr + 'T00:00:00');
         const expirationDate = new Date(deliveryDate.getTime());
         expirationDate.setDate(expirationDate.getDate() + vidaUtilDias);
-
         const diffTime = expirationDate.getTime() - today.getTime();
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
         const expirationDateString = expirationDate.toLocaleDateString('es-CO');
-
         if (diffDays <= 0) {
-            // Vencido
             statusBorder = 'border-red-500 border-2';
             vencimientoHtml = `<p class="font-bold text-lg text-red-600">${expirationDateString} (VENCIDO)</p>`;
         } else if (diffDays <= 30) {
-            // Próximo a vencer
             statusBorder = 'border-yellow-500 border-2';
             vencimientoHtml = `<p class="font-bold text-lg text-yellow-600">${expirationDateString} (Vence en ${diffDays} días)</p>`;
         } else {
-            // Activo y OK
             statusBorder = 'border-green-500 border-2';
             vencimientoHtml = `<p class="font-semibold text-gray-800">${expirationDateString}</p>`;
         }
-
     } else if (historySummary.status === 'activo') {
-        // Activo pero sin fecha de vencimiento
         statusBorder = 'border-green-500 border-2';
     } else if (historySummary.status === 'devuelto' || historySummary.status === 'devuelto_stock') {
-        // Devuelto
         statusBorder = 'border-gray-400';
     }
     // --- FIN LÓGICA VENCIMIENTO ---
 
-
     card.className = `bg-white rounded-lg shadow ${statusBorder} p-4 flex flex-col dotacion-detail-card`;
 
-    // Calcular duración
+    // --- Calcular duración (Sin cambios) ---
     let durationText = "N/A";
     if (historySummary.lastDeliveryDate) {
         const lastDate = new Date(historySummary.lastDeliveryDate + 'T00:00:00');
@@ -1312,11 +1450,8 @@ function createDotacionDetailCard(catalogItem, historySummary, userId, role) {
         durationText = `Hace ${diffDays} día(s)`;
     }
 
-    // --- INICIO DE CORRECCIÓN LÓGICA DE BOTONES ---
+    // --- LÓGICA DE BOTONES DE DEVOLUCIÓN (Sin cambios) ---
     let returnButtonHtml = '';
-
-    // Condición 1: (Admin) Y (Ítem activo) Y (TENEMOS el ID del historial)
-    // Con la función 'loadDotacionAsignaciones' corregida, esto AHORA SÍ funcionará.
     if (canAdmin && historySummary.status === 'activo' && historySummary.lastHistoryId) {
         returnButtonHtml = `
             <button data-action="return-dotacion-item" 
@@ -1326,35 +1461,43 @@ function createDotacionDetailCard(catalogItem, historySummary, userId, role) {
                     class="bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">
                 Registrar Devolución
             </button>`;
-        // Condición 2: El ítem ya fue devuelto (cualquier tipo de devolución)
     } else if (historySummary.status === 'devuelto' || historySummary.status === 'devuelto_stock') {
         returnButtonHtml = `
             <button class="bg-gray-400 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full" disabled>
                 Devuelto
             </button>`;
-        // Condición 3: (Cualquier otro caso: Operario, Ítem no entregado, etc.)
     } else {
-
-        let disabledText = 'N/A'; // Texto por defecto
-
+        let disabledText = 'N/A';
         if (role === 'operario') {
-            // Es operario, no puede autodevolverse
             disabledText = 'Devolver (Admin)';
         } else if (historySummary.status === 'ninguno') {
-            // Es admin, pero el ítem nunca se ha entregado
             disabledText = 'No Entregado';
         } else if (canAdmin && historySummary.status === 'activo' && !historySummary.lastHistoryId) {
-            // Este era el BUG: Es admin, ítem activo, pero falta el ID
             disabledText = 'Error (Sin ID)';
         }
-
         returnButtonHtml = `
             <button class="bg-gray-400 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full" disabled>
                 ${disabledText}
             </button>`;
     }
-    // --- FIN DE CORRECCIÓN LÓGICA DE BOTONES ---
+    // --- FIN LÓGICA DE BOTONES DE DEVOLUCIÓN ---
 
+
+    // --- INICIO DE MODIFICACIÓN (Botón de Foto Entrega) ---
+    let fotoEntregaHtml = '';
+
+    // CORRECCIÓN: Mostramos el botón si la URL existe, SIN importar el 'status'
+    if (historySummary.deliveryPhotoURL) {
+        fotoEntregaHtml = `
+            <button data-action="view-dotacion-delivery-image" data-photourl="${historySummary.deliveryPhotoURL}" class="text-sm text-blue-600 hover:underline mt-2 inline-block font-medium">
+                Ver Foto de Entrega (Recibo)
+            </button>
+        `;
+    }
+    // --- FIN DE MODIFICACIÓN ---
+
+
+    // --- HTML de la tarjeta (Sin cambios, solo recibe la variable 'fotoEntregaHtml') ---
     card.innerHTML = `
         <div class="flex-grow flex">
             <div class="w-1/3 flex-shrink-0 aspect-square bg-gray-100 rounded-lg overflow-hidden"> 
@@ -1370,12 +1513,12 @@ function createDotacionDetailCard(catalogItem, historySummary, userId, role) {
                     <h3 class="text-lg font-bold text-gray-900">${catalogItem.itemName}</h3>
                     <p class="text-sm text-gray-500">Talla: ${catalogItem.talla || 'N/A'}</p>
                     
-                    <div class="mt-4 text-sm space-y-3"> <div>
+                    ${fotoEntregaHtml} <div class="mt-4 text-sm space-y-3"> <div>
                             <p class="font-medium text-gray-600">Total Consumido:</p>
                             <p class="font-bold text-2xl text-blue-600">${historySummary.totalConsumido}</p>
                         </div>
                         <div>
-                            <p class="font-medium text-gray-600">Última Entrega:</p>
+                            <p class="font-medium text-gray-600">Asignado hace:</p>
                             <p class="font-semibold text-gray-800">${durationText}</p>
                         </div>
                         
@@ -1576,4 +1719,394 @@ export function updateDotacionFilterOptions(usersMap) {
     // 2. Añadir SÓLO los usuarios a la lista existente
     // (El 'false' al final significa AÑADIR, no reemplazar)
     dotacionAssigneeChoices.setChoices(userOptions, 'value', 'label', false);
+}
+
+/**
+ * (NUEVA FUNCIÓN)
+ * Abre un modal (Nivel 2) que muestra el desglose de ítems para un usuario.
+ * @param {string} userId - El ID del usuario.
+ * @param {string} userName - El nombre del usuario.
+ * @param {string} type - 'consumo' o 'descarte'.
+ */
+async function openUserReportModal(userId, userName, type) {
+    // Reutilizamos el modal de historial de herramientas/dotación
+    const modal = document.getElementById('tool-history-modal');
+    const titleEl = document.getElementById('tool-history-title');
+    const bodyEl = document.getElementById('tool-history-body');
+
+    if (!modal || !titleEl || !bodyEl) return;
+
+    // 1. Definir la acción a buscar y el título
+    const action = (type === 'consumo') ? 'asignada' : 'devuelto';
+    const title = (type === 'consumo') ? 'Reporte de Consumo' : 'Reporte de Descarte';
+
+    titleEl.textContent = `${title} de: ${userName}`;
+    bodyEl.innerHTML = '<p class="text-gray-500 text-center">Cargando reporte...</p>';
+    modal.style.display = 'flex';
+
+    try {
+        // 2. Consultar el historial del usuario filtrando por la acción
+        const historyQuery = query(
+            collection(db, "dotacionHistory"),
+            where("userId", "==", userId),
+            where("action", "==", action)
+        );
+        const snapshot = await getDocs(historyQuery);
+
+        if (snapshot.empty) {
+            bodyEl.innerHTML = '<p class="text-gray-500 text-center">No hay registros para este reporte.</p>';
+            return;
+        }
+
+        // 3. Agrupar los resultados por ítem
+        const itemMap = new Map();
+        snapshot.forEach(doc => {
+            const entry = doc.data();
+            const key = entry.itemId;
+            if (!key) return; // Ignorar si no hay itemId
+
+            if (!itemMap.has(key)) {
+                itemMap.set(key, {
+                    count: 0,
+                    itemName: entry.itemName || 'Ítem desconocido',
+                    talla: entry.talla || 'N/A', // Usamos la primera talla que encontramos
+                    itemId: key
+                });
+            }
+            // Sumamos la cantidad (generalmente 1, pero por si acaso)
+            itemMap.get(key).count += (entry.quantity || 0);
+        });
+
+        // 4. Renderizar la lista (Nivel 2)
+        bodyEl.innerHTML = '<ul class="divide-y divide-gray-200"></ul>';
+        const listEl = bodyEl.querySelector('ul');
+
+        // Ordenar por los más consumidos/descartados
+        const sortedItems = [...itemMap.values()].sort((a, b) => b.count - a.count);
+
+        sortedItems.forEach(item => {
+            const li = document.createElement('li');
+            li.className = "py-3 px-2 flex justify-between items-center";
+
+            // Este botón nos lleva al Nivel 3 (reutiliza la acción existente)
+            li.innerHTML = `
+                <button class="text-left" 
+                        data-action="view-dotacion-catalog-history" 
+                        data-itemid="${item.itemId}" 
+                        data-itemname="${item.itemName}" 
+                        data-talla="${item.talla}" 
+                        data-userid="${userId}"
+                        title="Ver historial detallado de este ítem para ${userName}"
+                        >
+                    <p class="font-medium text-blue-600 hover:underline">${item.itemName}</p>
+                    <p class="text-sm text-gray-500">Talla (referencia): ${item.talla}</p>
+                </button>
+                <span class="font-bold text-lg ${type === 'consumo' ? 'text-blue-600' : 'text-red-600'}">${item.count}</span>
+            `;
+            listEl.appendChild(li);
+        });
+
+    } catch (error) {
+        console.error("Error al generar reporte de usuario:", error);
+        bodyEl.innerHTML = '<p class="text-red-500 text-center">Error al cargar el reporte.</p>';
+    }
+}
+
+/**
+ * Convierte un array de objetos a un string CSV.
+ * @param {Array<Object>} data - Los datos a convertir.
+ * @param {Array<string>} headers - Un array con los nombres de las columnas.
+ * @returns {string} El contenido completo del CSV como string.
+ */
+function convertToCSV(data, headers) {
+    // Mapea los nombres de cabecera a las claves (si son diferentes, pero aquí son iguales)
+    const headerKeys = headers;
+
+    const headerRow = headers.join(',');
+    const rows = data.map(obj => {
+        return headerKeys.map(key => {
+            let value = obj[key] === null || obj[key] === undefined ? '' : String(obj[key]);
+            value = value.replace(/"/g, '""'); // Escapa comillas dobles
+            if (value.includes(',')) {
+                value = `"${value}"`; // Envuelve en comillas si contiene comas
+            }
+            return value;
+        }).join(',');
+    });
+    return [headerRow, ...rows].join('\n');
+}
+
+/**
+ * Dispara la descarga de un archivo CSV en el navegador.
+ * @param {string} csvContent - El contenido del archivo CSV.
+ * @param {string} filename - El nombre del archivo (ej. "reporte.csv").
+ */
+function downloadCSV(csvContent, filename) {
+    // Añadimos el BOM para asegurar que Excel reconozca el UTF-8 (acentos)
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+
+    if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+}
+// --- FIN: NUEVAS FUNCIONES HELPER PARA CSV ---
+
+// --- INICIO: NUEVAS FUNCIONES DE EXPORTACIÓN ---
+
+/**
+ * Obtiene los datos del inventario de dotación, aplicando los filtros actuales
+ * de la interfaz de usuario (búsqueda y categoría).
+ * @returns {Promise<Array<Object>>} Una promesa que resuelve a un array de ítems filtrados.
+ */
+async function getFilteredInventarioData() {
+    // 1. Obtener filtros actuales (igual que en loadDotacionCatalog)
+    const searchTerm = document.getElementById('dotacion-search-input').value.toLowerCase();
+    const categoryFilter = (dotacionCategoryChoices && dotacionCategoryChoices.getValue(true)) ? dotacionCategoryChoices.getValue(true) : 'all';
+
+    // 2. Obtener TODOS los datos del catálogo
+    let dotacionQuery = query(collection(db, "dotacionCatalog"), orderBy("itemName"));
+    const snapshot = await getDocs(dotacionQuery);
+    let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // 3. Aplicar filtros de JS (lógica idéntica a loadDotacionCatalog)
+    if (searchTerm) {
+        items = items.filter(item =>
+            item.itemName.toLowerCase().includes(searchTerm) ||
+            (item.reference && item.reference.toLowerCase().includes(searchTerm))
+        );
+    }
+    if (categoryFilter !== 'all') {
+        items = items.filter(item => item.category === categoryFilter);
+    }
+
+    return items;
+}
+
+/**
+ * Exporta la vista actual del INVENTARIO a CSV.
+ */
+async function exportInventarioCSV() {
+    // Asumimos que 'loadingOverlay' es accesible globalmente desde app.js
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (loadingOverlay) loadingOverlay.classList.remove('hidden');
+
+    try {
+        const items = await getFilteredInventarioData();
+
+        if (items.length === 0) {
+            alert("No hay datos para exportar con los filtros actuales.");
+            return;
+        }
+
+        // 4. Formatear para CSV
+        const headers = ['itemName', 'reference', 'category', 'talla', 'quantityInStock', 'vidaUtilDias'];
+        // Mapeamos los datos a los nombres de las cabeceras
+        const dataToExport = items.map(item => ({
+            itemName: item.itemName || '',
+            reference: item.reference || '',
+            category: item.category || '',
+            talla: item.talla || 'N/A',
+            quantityInStock: item.quantityInStock || 0,
+            vidaUtilDias: item.vidaUtilDias || 'N/A'
+        }));
+
+        const csvContent = convertToCSV(dataToExport, headers);
+        downloadCSV(csvContent, 'Reporte_Inventario_Dotacion.csv');
+
+    } catch (error) {
+        console.error("Error al exportar inventario CSV:", error);
+        alert("No se pudo generar el reporte CSV: " + error.message);
+    } finally {
+        if (loadingOverlay) loadingOverlay.classList.add('hidden');
+    }
+}
+
+/**
+ * Exporta la vista actual del INVENTARIO a PDF.
+ * (VERSIÓN MEJORADA con filtros y cabecera)
+ */
+async function exportInventarioPDF() {
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (loadingOverlay) loadingOverlay.classList.remove('hidden');
+
+    try {
+        // Verificamos que jsPDF y autoTable estén cargados (como en app.js)
+        const { jsPDF } = window.jspdf;
+        if (!jsPDF || !jsPDF.API.autoTable) {
+            throw new Error("La librería jsPDF o jsPDF-AutoTable no está cargada.");
+        }
+        const doc = new jsPDF();
+
+        const items = await getFilteredInventarioData();
+
+        if (items.length === 0) {
+            alert("No hay datos para exportar con los filtros actuales.");
+            return;
+        }
+
+        // 4. Formatear para PDF AutoTable
+        const head = [['Ítem', 'Referencia', 'Categoría', 'Talla', 'Stock', 'Vida Útil (Días)']];
+        const body = items.map(item => [
+            item.itemName || '',
+            item.reference || '',
+            item.category || '',
+            item.talla || 'N/A',
+            item.quantityInStock || 0,
+            item.vidaUtilDias || 'N/A'
+        ]);
+
+        // --- INICIO DE MODIFICACIÓN (Añadir cabecera) ---
+        const categoryFilter = (dotacionCategoryChoices && dotacionCategoryChoices.getValue(true)) ? dotacionCategoryChoices.getValue(true) : 'all';
+        const searchTerm = document.getElementById('dotacion-search-input').value || 'Ninguna';
+        const fecha = new Date().toLocaleDateString('es-CO');
+
+        doc.setFontSize(18);
+        doc.text("Reporte de Inventario de Dotación", 14, 22);
+
+        doc.setFontSize(11);
+        doc.setTextColor(100);
+        doc.text(`Fecha de Reporte: ${fecha}`, 14, 30);
+
+        doc.setFontSize(12);
+        doc.setTextColor(0);
+        doc.text("Filtros Aplicados:", 14, 40);
+        doc.setFontSize(10);
+        doc.setTextColor(50);
+        doc.text(`- Categoría: ${categoryFilter}`, 14, 46);
+        doc.text(`- Búsqueda: ${searchTerm}`, 14, 52);
+
+        doc.autoTable({
+            startY: 60, // Ajustamos la posición inicial
+            // --- FIN DE MODIFICACIÓN ---
+            head: head,
+            body: body,
+            theme: 'grid',
+            headStyles: { fillColor: [41, 128, 185] }, // Azul
+        });
+
+        doc.save('Reporte_Inventario_Dotacion.pdf');
+
+    } catch (error) {
+        console.error("Error al exportar inventario PDF:", error);
+        alert("No se pudo generar el PDF: " + error.message);
+    } finally {
+        if (loadingOverlay) loadingOverlay.classList.add('hidden');
+    }
+}
+// --- FIN: NUEVAS FUNCIONES DE EXPORTACIÓN ---
+
+/**
+ * Obtiene los datos del resumen de asignaciones (Nivel 1).
+ * @returns {Promise<Array<Object>>} Datos de asignación por usuario.
+ */
+async function getAsignacionesSummaryData() {
+    const usersMap = getUsersMap();
+
+    // Consulta (idéntica a la de loadDotacionAsignaciones Nivel 1)
+    let historyQuery = query(collection(db, "dotacionHistory"), where("action", "==", "asignada"));
+    const snapshot = await getDocs(historyQuery);
+
+    const summaryMap = new Map();
+    snapshot.forEach(doc => {
+        const entry = doc.data();
+        if (entry.userId) {
+            const current = summaryMap.get(entry.userId) || { count: 0 };
+            current.count += (entry.quantity || 0);
+            summaryMap.set(entry.userId, current);
+        }
+    });
+
+    if (summaryMap.size === 0) return [];
+
+    // Formatear los datos para exportar
+    const dataToExport = [];
+    summaryMap.forEach((data, userId) => {
+        const user = usersMap.get(userId);
+        const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido';
+        dataToExport.push({
+            Empleado: userName,
+            TotalAsignado: data.count
+        });
+    });
+
+    // Ordenar por nombre de empleado
+    return dataToExport.sort((a, b) => a.Empleado.localeCompare(b.Empleado));
+}
+
+/**
+ * Exporta el Resumen de Asignaciones a CSV.
+ */
+async function exportAsignacionesCSV() {
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (loadingOverlay) loadingOverlay.classList.remove('hidden');
+    try {
+        const data = await getAsignacionesSummaryData();
+        if (data.length === 0) {
+            alert("No hay datos de asignaciones para exportar.");
+            return;
+        }
+
+        const headers = ['Empleado', 'TotalAsignado'];
+        const csvContent = convertToCSV(data, headers); // Reutiliza la función helper
+        downloadCSV(csvContent, 'Reporte_Asignaciones_Dotacion.csv'); // Reutiliza la función helper
+
+    } catch (error) {
+        console.error("Error al exportar asignaciones CSV:", error);
+    } finally {
+        if (loadingOverlay) loadingOverlay.classList.add('hidden');
+    }
+}
+
+/**
+ * Exporta el Resumen de Asignaciones a PDF.
+ */
+async function exportAsignacionesPDF() {
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (loadingOverlay) loadingOverlay.classList.remove('hidden');
+    try {
+        const { jsPDF } = window.jspdf;
+        if (!jsPDF || !jsPDF.API.autoTable) {
+            throw new Error("La librería jsPDF o jsPDF-AutoTable no está cargada.");
+        }
+        const doc = new jsPDF();
+
+        const data = await getAsignacionesSummaryData();
+        if (data.length === 0) {
+            alert("No hay datos de asignaciones para exportar.");
+            return;
+        }
+
+        const head = [['Empleado', 'Total Ítems Asignados']];
+        const body = data.map(item => [item.Empleado, item.TotalAsignado]);
+        const fecha = new Date().toLocaleDateString('es-CO');
+
+        doc.setFontSize(18);
+        doc.text("Reporte de Asignaciones de Dotación", 14, 22);
+        doc.setFontSize(11);
+        doc.setTextColor(100);
+        doc.text(`Fecha de Reporte: ${fecha}`, 14, 30);
+        doc.text("Este reporte muestra el conteo total de ítems entregados (histórico).", 14, 36);
+
+        doc.autoTable({
+            startY: 45,
+            head: head,
+            body: body,
+            theme: 'grid',
+            headStyles: { fillColor: [41, 128, 185] },
+        });
+
+        doc.save('Reporte_Asignaciones_Dotacion.pdf');
+
+    } catch (error) {
+        console.error("Error al exportar asignaciones PDF:", error);
+    } finally {
+        if (loadingOverlay) loadingOverlay.classList.add('hidden');
+    }
 }

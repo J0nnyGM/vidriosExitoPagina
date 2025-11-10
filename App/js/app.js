@@ -58,6 +58,9 @@ let itemSortState = { key: 'name', direction: 'asc' };
 let currentItemsData = [];
 let catalogSearchTerm = ''; // Guarda el término de búsqueda actual para el catálogo
 
+let onSafetyCheckInSuccess = () => { }; // Callback global
+let videoStream = null; // Variable global para el stream de la cámara
+
 
 let lastVisibleCatalogDoc = null; // Guarda el último documento visto del catálogo
 let isFetchingCatalog = false;    // Evita cargas múltiples simultáneas
@@ -74,6 +77,61 @@ function normalizeString(str) {
     if (!str) return "";
     return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
+
+// --- INICIO: FUNCIÓN DE HELPER (Copiada de dotacion.js) ---
+function resizeImage(file, maxWidth = 800) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                let width = img.width, height = img.height;
+                if (width > maxWidth) {
+                    height *= maxWidth / width;
+                    width = maxWidth;
+                }
+                canvas.width = width;
+                canvas.height = height;
+                ctx.drawImage(img, 0, 0, width, height);
+                canvas.toBlob((blob) => {
+                    if (blob) {
+                        resolve(blob);
+                    } else {
+                        reject(new Error('Error al convertir canvas a Blob.'));
+                    }
+                }, 'image/jpeg', 0.85);
+            };
+            img.onerror = reject;
+            img.src = event.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+// --- FIN: FUNCIÓN DE HELPER ---
+
+// --- INICIO DE NUEVO CÓDIGO (FACE-API) ---
+
+// URL donde están alojados los modelos de IA de face-api.js
+const MODEL_URL = 'models';
+/**
+ * Carga los modelos de IA para la detección de rostros.
+ * Se llama una vez cuando la aplicación se inicia.
+ */
+async function loadFaceAPImodels() {
+    console.log("Cargando modelos de reconocimiento facial...");
+    try {
+        // Cargamos solo el modelo más pequeño y rápido (TinyFaceDetector)
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+        console.log("Modelos de face-api.js cargados exitosamente.");
+    } catch (error) {
+        console.error("Error crítico: No se pudieron cargar los modelos de face-api.js:", error);
+        // Podríamos mostrar un error al usuario si esto fuera crítico
+    }
+}
+// --- FIN DE NUEVO CÓDIGO ---
 
 /**
  * Convierte un timestamp o fecha a un formato de tiempo relativo.
@@ -192,17 +250,85 @@ onAuthStateChanged(auth, async (user) => {
         const userDoc = await getDoc(doc(db, "users", user.uid));
         if (userDoc.exists() && userDoc.data().status === 'active') {
             currentUser = user;
-            currentUserRole = userDoc.data().role;
-            await loadUsersMap();
+            const userData = userDoc.data();
+            currentUserRole = userData.role;
+            await loadUsersMap(); // Carga el mapa de usuarios
             authContainer.classList.add('hidden');
             appContainer.classList.remove('hidden');
-            document.getElementById('user-info').textContent = `Usuario: ${currentUser.email} (Rol: ${currentUserRole})`;
-            showDashboard();
-            requestNotificationPermission();
 
-            // --- INICIO DE LA LÍNEA AÑADIDA ---
-            loadNotifications(); // <-- ¡Esta es la línea que faltaba!
-            // --- FIN DE LA LÍNEA AÑADIDA ---
+            // --- INICIO DE MODIFICACIÓN ---
+
+            // 1. Configurar la Interfaz de Usuario (Perfil)
+            const nombre = userData.firstName || 'Usuario';
+            const apellido = userData.lastName || '';
+            const rolFormateado = currentUserRole.charAt(0).toUpperCase() + currentUserRole.slice(1);
+            const profilePhotoURL = userData.profilePhotoURL || null;
+            const initials = `${nombre.charAt(0)}${apellido.charAt(0) || ''}`.toUpperCase();
+
+            const nameEl = document.getElementById('user-info-name');
+            const roleEl = document.getElementById('user-info-role');
+            const photoEl = document.getElementById('header-profile-photo');
+            const initialsEl = document.getElementById('header-profile-initials');
+
+            if (nameEl) nameEl.textContent = `${nombre} ${apellido}`;
+            if (roleEl) roleEl.textContent = rolFormateado;
+
+            if (photoEl && initialsEl) {
+                if (profilePhotoURL) {
+                    photoEl.src = profilePhotoURL;
+                    photoEl.classList.remove('hidden');
+                    initialsEl.classList.add('hidden');
+                } else {
+                    photoEl.classList.add('hidden');
+                    initialsEl.textContent = initials;
+                    initialsEl.classList.remove('hidden');
+                }
+            }
+
+            // 2. Configurar Visibilidad de Pestañas (Control de Acceso)
+            const isAdmin = currentUserRole === 'admin';
+            const isBodega = currentUserRole === 'bodega';
+            const isSST = currentUserRole === 'sst';
+            const isOperario = currentUserRole === 'operario';
+
+            // Ocultar/Mostrar Pestañas del Menú
+            // (Usamos el ID 'proyectos-nav-link' que añadiste en el HTML)
+            document.getElementById('proyectos-nav-link')?.classList.toggle('hidden', !isAdmin);
+            document.getElementById('admin-nav-link')?.classList.toggle('hidden', !isAdmin);
+            document.getElementById('inventory-nav-link')?.classList.toggle('hidden', !isAdmin && !isBodega);
+            document.getElementById('compras-nav-link')?.classList.toggle('hidden', !isAdmin && !isBodega);
+            document.getElementById('reports-nav-link')?.classList.toggle('hidden', !isAdmin);
+
+            // Ajustamos las vistas de Operario
+            // Asumimos que los IDs de los enlaces son: 'tareas-nav-link', 'herramienta-nav-link', 'dotacion-nav-link'
+            // (Si no tienen ID, puedes añadirlos como hiciste con 'proyectos-nav-link')
+            document.getElementById('tareas-nav-link')?.classList.toggle('hidden', isOperario ? false : !isAdmin); // Operario solo ve Tareas, Admin ve todo
+            document.getElementById('herramienta-nav-link')?.classList.toggle('hidden', !isOperario && !isBodega && !isSST && !isAdmin); // Todos ven herramientas
+            document.getElementById('dotacion-nav-link')?.classList.toggle('hidden', !isOperario && !isBodega && !isSST && !isAdmin); // Todos ven dotación
+
+
+            // 3. Mostrar la Vista por Defecto (Redirección por Rol)
+            if (isAdmin) {
+                showDashboard(); // Admin ve "Mis Proyectos"
+            } else if (isOperario) {
+                showView('tareas'); // Operario ve "Mis Tareas"
+                loadTasksView();
+            } else if (isBodega) {
+                showView('catalog'); // Bodega ve "Inventario"
+                loadCatalogView();
+            } else if (isSST) {
+                showView('dotacion'); // SST ve "Dotación"
+                loadDotacionView();
+            } else {
+                // Un fallback por si acaso (ej. un rol no definido)
+                showView('tareas'); // Por defecto a Tareas
+                loadTasksView();
+            }
+
+            // --- FIN DE MODIFICACIÓN ---
+
+            requestNotificationPermission();
+            loadNotifications();
 
         } else {
             await signOut(auth);
@@ -318,20 +444,10 @@ function showDashboard() {
     if (unsubscribePeopleOfInterest) unsubscribePeopleOfInterest();
     if (unsubscribePayments) unsubscribePayments();
 
-    // Actualiza la visibilidad de los enlaces del menú según el rol
-    const isAdmin = currentUserRole === 'admin';
-    const isBodega = currentUserRole === 'bodega';
-    document.getElementById('admin-nav-link').classList.toggle('hidden', !isAdmin);
-    document.getElementById('inventory-nav-link').classList.toggle('hidden', !isAdmin && !isBodega);
-    document.getElementById('compras-nav-link').classList.toggle('hidden', currentUserRole !== 'admin' && currentUserRole !== 'bodega');
-    document.getElementById('reports-nav-link').classList.toggle('hidden', currentUserRole !== 'admin');
-
+    // (La lógica de ocultar/mostrar enlaces de menú se movió a onAuthStateChanged)
 
     if (currentUser) {
         loadProjects();
-    } else if (viewName === 'reports') {
-        showView('reports');
-        loadReportsView();
     }
 }
 
@@ -3991,7 +4107,7 @@ async function openMainModal(type, data = {}) {
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">
-                        <div>
+                        <div id="dotacion-initial-stock-group">
                             <label class="block text-sm font-medium text-gray-700">Stock Inicial (Opcional)</label>
                             <input type="number" name="initialStock" class="mt-1 w-full border rounded-md p-2" value="0" min="0">
                         </div>
@@ -4027,6 +4143,110 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
         }
+
+        case 'edit-dotacion-catalog-item': {
+            title = 'Editar Ítem del Catálogo';
+            btnText = 'Actualizar Ítem';
+            btnClass = 'bg-yellow-500 hover:bg-yellow-600';
+            modalForm.dataset.id = data.id; // Pasa el ID del ítem al formulario
+
+            // Re-crear las opciones de categoría, seleccionando la correcta
+            const categories = [
+                { value: "EPP", label: "EPP (Protección)" },
+                { value: "Uniforme", label: "Uniforme" },
+                { value: "Otro", label: "Otro" }
+            ];
+            const categoryOptions = categories.map(cat =>
+                `<option value="${cat.value}" ${data.category === cat.value ? 'selected' : ''}>${cat.label}</option>`
+            ).join('');
+
+            // Construimos el HTML, rellenando los 'value' con los datos existentes
+            bodyHtml = `
+                <input type="hidden" name="itemId" value="${data.id}">
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="md:col-span-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Foto del Ítem (Opcional)</label>
+                        <div id="new-dotacion-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
+                            
+                            <div id="new-dotacion-preview" class="absolute inset-0">
+                                <img src="${data.itemPhotoURL || 'https://via.placeholder.com/300'}" id="new-dotacion-img-preview" class="w-full h-full object-contain">
+                            </div>
+
+                            <div id="new-dotacion-prompt" class="hidden text-center p-4">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                                <p class="mt-2 text-sm text-gray-500">Reemplazar foto</p>
+                            </div>
+                        </div>
+                        <input type="file" id="dotacion-photo" name="photo" accept="image/*" class="hidden">
+                    </div>
+
+                    <div class="md:col-span-2 space-y-4 pt-5">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Nombre del Ítem</label>
+                            <input type="text" name="itemName" required class="mt-1 w-full border rounded-md p-2" value="${data.itemName || ''}">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Referencia / SKU (Opcional)</label>
+                            <input type="text" name="reference" class="mt-1 w-full border rounded-md p-2" value="${data.reference || ''}">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Categoría</label>
+                                <select name="category" required class="mt-1 w-full border rounded-md p-2 bg-white">
+                                    ${categoryOptions}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Talla (Opcional)</label>
+                                <input type="text" name="talla" class="mt-1 w-full border rounded-md p-2" value="${data.talla || ''}">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="col-span-2">
+                                <label class="block text-sm font-medium text-gray-700">Vida Útil (Días)</label>
+                                <input type="number" name="vidaUtilDias" class="mt-1 w-full border rounded-md p-2" value="${data.vidaUtilDias || ''}" placeholder="Ej: 365 (para 1 año)">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Reutilizamos la misma lógica de dropzone que 'new-dotacion-catalog-item'
+            setTimeout(() => {
+                const dropzone = document.getElementById('new-dotacion-dropzone');
+                const fileInput = document.getElementById('dotacion-photo');
+                const previewContainer = document.getElementById('new-dotacion-preview');
+                const previewImg = document.getElementById('new-dotacion-img-preview');
+                const promptEl = document.getElementById('new-dotacion-prompt');
+
+                // Lógica para mostrar el prompt si NO hay fotoURL
+                if (!data.itemPhotoURL) {
+                    previewContainer.classList.add('hidden');
+                    promptEl.classList.remove('hidden');
+                }
+
+                if (dropzone) {
+                    dropzone.addEventListener('click', () => fileInput.click());
+                    fileInput.addEventListener('change', (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                previewImg.src = event.target.result;
+                                previewContainer.classList.remove('hidden');
+                                promptEl.classList.add('hidden');
+                            }
+                            reader.readAsDataURL(file);
+                        }
+                    });
+                }
+            }, 100);
+            break;
+        }
+
+        // --- FIN DE NUEVO CÓDIGO ---
 
         case 'add-dotacion-stock': {
             title = 'Añadir Stock a Inventario';
@@ -4098,7 +4318,10 @@ async function openMainModal(type, data = {}) {
                         <div>
                             <label class="block text-sm font-medium">1. Seleccionar Colaborador</label>
                             <select id="dotacion-assignedTo" name="assignedTo" required class="mt-1 w-full border rounded-md"></select>
-                        </div>
+                            
+                            <div id="preferred-talla-suggestion" class="hidden text-sm text-blue-600 font-semibold text-center mt-2 p-2 bg-blue-50 rounded-md border border-blue-200">
+                                </div>
+                            </div>
 
                         <div class="grid grid-cols-2 gap-4">
                             <div>
@@ -4130,16 +4353,53 @@ async function openMainModal(type, data = {}) {
                 </div>
             `;
 
-            setTimeout(() => { // Lógica para el selector de usuario (copiada)
+            setTimeout(() => {
                 const assigneeSelect = document.getElementById('dotacion-assignedTo');
                 if (assigneeSelect) {
-                    new Choices(assigneeSelect, {
+                    // --- INICIO DE MODIFICACIÓN (Lógica JS) ---
+
+                    // 1. Inicializamos Choices
+                    const choicesInstance = new Choices(assigneeSelect, {
                         choices: userChoices,
                         itemSelectText: 'Seleccionar',
                         searchPlaceholderValue: 'Buscar colaborador...',
                         placeholder: true,
                         placeholderValue: 'Selecciona un usuario...',
                     });
+
+                    // 2. Añadimos el listener 'change'
+                    assigneeSelect.addEventListener('change', (event) => {
+                        const suggestionDiv = document.getElementById('preferred-talla-suggestion');
+                        if (!event.detail.value || !suggestionDiv) {
+                            suggestionDiv.classList.add('hidden');
+                            return;
+                        }
+
+                        const userId = event.detail.value;
+                        const user = usersMap.get(userId); // Usamos el mapa de usuarios (¡eficiente!)
+                        const itemNameLower = data.itemName.toLowerCase();
+
+                        let preferredTalla = '';
+
+                        // Hacemos el "match" entre el ítem y la talla guardada
+                        if (itemNameLower.includes('camisa') || itemNameLower.includes('camiseta') || itemNameLower.includes('buzo')) {
+                            preferredTalla = user.tallaCamiseta;
+                        } else if (itemNameLower.includes('pantalón') || itemNameLower.includes('pantalon') || itemNameLower.includes('jean')) {
+                            preferredTalla = user.tallaPantalón;
+                        } else if (itemNameLower.includes('bota')) {
+                            preferredTalla = user.tallaBotas;
+                        }
+
+                        // Mostramos u ocultamos la sugerencia
+                        if (preferredTalla) {
+                            suggestionDiv.textContent = `Talla preferida del usuario: ${preferredTalla}`;
+                            suggestionDiv.classList.remove('hidden');
+                        } else {
+                            suggestionDiv.classList.add('hidden');
+                        }
+                    });
+
+                    // --- FIN DE MODIFICACIÓN (Lógica JS) ---
                 }
                 // Lógica para la vista previa de la foto (copiada)
                 const dropzone = document.getElementById('assign-dotacion-dropzone');
@@ -4742,6 +5002,8 @@ async function openMainModal(type, data = {}) {
         }
         case 'editUser':
             title = 'Editar Usuario'; btnText = 'Guardar Cambios'; btnClass = 'bg-yellow-500 hover:bg-yellow-600';
+
+            // --- INICIO DE MODIFICACIÓN ---
             bodyHtml = `<div class="space-y-4">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div><label for="user-firstName" class="block text-sm font-medium text-gray-700">Nombre</label><input type="text" id="user-firstName" name="firstName" value="${data.firstName}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
@@ -4751,7 +5013,26 @@ async function openMainModal(type, data = {}) {
                 <div><label for="user-email" class="block text-sm font-medium text-gray-700">Correo</label><input type="email" id="user-email" name="email" value="${data.email}" required class="mt-1 block w-full px-3 py-2 border rounded-md bg-gray-100" readonly></div>
                 <div><label for="user-phone" class="block text-sm font-medium text-gray-700">Celular</label><input type="tel" id="user-phone" name="phone" value="${data.phone}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
                 <div><label for="user-address" class="block text-sm font-medium text-gray-700">Dirección</label><input type="text" id="user-address" name="address" value="${data.address}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
+            
+                <div class="border-t pt-4">
+                    <h4 class="text-md font-semibold text-gray-700 mb-2">Tallas Preferidas</h4>
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium">Camiseta</label>
+                            <input type="text" name="tallaCamiseta" class="mt-1 w-full border rounded-md p-2" value="${data.tallaCamiseta || ''}" placeholder="Ej: L">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium">Pantalón</label>
+                            <input type="text" name="tallaPantalón" class="mt-1 w-full border rounded-md p-2" value="${data.tallaPantalón || ''}" placeholder="Ej: 32">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium">Botas</label>
+                            <input type="text" name="tallaBotas" class="mt-1 w-full border rounded-md p-2" value="${data.tallaBotas || ''}" placeholder="Ej: 42">
+                        </div>
+                    </div>
+                </div>
             </div>`;
+            // --- FIN DE MODIFICACIÓN ---
             break;
         case 'add-purchase':
             title = 'Registrar Compra en Inventario';
@@ -4848,85 +5129,111 @@ async function openMainModal(type, data = {}) {
 
             const loadDataAndBuildForm = async () => {
                 try {
-                    const loader = document.getElementById('material-request-loader');
-                    const formContent = document.getElementById('material-request-form-content');
+                    const loader = document.getElementById('material-request-loader'); // Reutilizamos el loader
+                    const formContent = document.getElementById('material-request-form-content'); // Reutilizamos el form
 
-                    const [inventorySnapshot, itemsSnapshot] = await Promise.all([
-                        getDocs(query(collection(db, "materialCatalog"))),
-                        getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id)))
+                    // --- INICIO DE MODIFICACIÓN ---
+                    // 1. Cargar TODOS los catálogos en paralelo
+                    const [materialSnap, dotacionSnap, toolsSnap, suppliersSnapshot] = await Promise.all([
+                        getDocs(query(collection(db, "materialCatalog"), orderBy("name"))),
+                        getDocs(query(collection(db, "dotacionCatalog"), orderBy("itemName"))),
+                        getDocs(query(collection(db, "tools"), orderBy("name"))),
+                        getDocs(query(collection(db, "suppliers"), orderBy("name")))
                     ]);
 
-                    const inventory = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    const items = itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    // 2. Mapear Proveedores (Sin cambios)
+                    const suppliers = suppliersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    const supplierOptions = suppliers.map(sup => `<option value="${sup.id}">${sup.name}</option>`).join('');
 
-                    const materialOptions = inventory.map(mat => ({
-                        value: mat.id,
-                        label: `${mat.name} (Stock: ${mat.quantityInStock || 0})`,
-                        // --- AÑADE 'stock' A ESTA LÍNEA ---
-                        customProperties: { isDivisible: mat.isDivisible, name: mat.name, defaultLength: mat.defaultSize?.length || 0, stock: mat.quantityInStock || 0 }
-                    }));
+                    // 3. Unificar todos los ítems comprables
+                    const materialOptions = [];
 
-                    let userSelectorHtml = '';
-                    if (currentUserRole === 'admin' || currentUserRole === 'bodega') {
-                        const userOptions = Array.from(usersMap.entries()).filter(([uid, user]) => user.status === 'active').map(([uid, user]) => `<option value="${uid}" ${uid === currentUser.uid ? 'selected' : ''}>${user.firstName} ${user.lastName}</option>`).join('');
-                        userSelectorHtml = `<div class="border p-3 rounded-lg"><h4 class="font-semibold text-gray-700 mb-2">3. ¿Quién solicita?</h4><select id="request-as-user-select" class="w-full border p-2 rounded-md bg-white text-sm">${userOptions}</select></div>`;
-                    }
+                    materialSnap.docs.forEach(doc => {
+                        const mat = doc.data();
+                        materialOptions.push({
+                            value: doc.id,
+                            label: `[MAT] ${mat.name} (${mat.reference || 'N/A'})`,
+                            customProperties: { type: 'material', unit: mat.unit || 'Und' }
+                        });
+                    });
 
-                    const itemInputsHtml = items.filter(item => item && item.id && item.name).map(item => `<div class="request-item-card p-2 border rounded-md bg-gray-50"><label class="block text-sm font-semibold">${item.name} <span class="text-xs font-normal text-gray-500">(${item.quantity} Unidades)</span></label><div class="flex items-center mt-1"><span class="text-sm mr-2">Cantidad:</span><input type="number" data-item-id="${item.id}" class="request-item-quantity w-24 border p-1 rounded-md text-sm" placeholder="0" min="0" max="${item.quantity}"></div></div>`).join('');
+                    dotacionSnap.docs.forEach(doc => {
+                        const dot = doc.data();
+                        materialOptions.push({
+                            value: doc.id,
+                            label: `[DOT] ${dot.itemName} (${dot.talla || 'N/A'})`,
+                            customProperties: { type: 'dotacion', unit: 'Und' }
+                        });
+                    });
 
+                    toolsSnap.docs.forEach(doc => {
+                        const tool = doc.data();
+                        // Solo podemos "comprar" herramientas nuevas, no las que ya tenemos
+                        // (A menos que queramos comprar duplicados, lo cual es válido)
+                        materialOptions.push({
+                            value: doc.id, // O podríamos usar un ID genérico si es 'comprar nuevo'
+                            label: `[HER] ${tool.name} (${tool.reference || 'N/A'})`,
+                            customProperties: { type: 'herramienta', unit: 'Und' }
+                        });
+                    });
+
+                    // Ordenamos la lista unificada
+                    materialOptions.sort((a, b) => a.label.localeCompare(b.label));
+                    // --- FIN DE MODIFICACIÓN ---
+
+
+                    // 4. Construir el HTML del formulario (Le pasamos 'supplierOptions')
                     formContent.innerHTML = `
-            <div class="space-y-4">
-                <div class="border p-3 rounded-lg">
-                    <h4 class="font-semibold text-gray-700 mb-2">1. Añadir Materiales</h4>
-                    <div class="flex-grow w-full mb-2">
-                        <label class="block text-xs font-medium">Buscar Material</label>
-                        <select id="material-choices-select"></select>
-                    </div>
-                    
-                    <div id="units-section" class="hidden flex items-end gap-2">
-                        <div class="flex-grow">
-                            <label class="block text-xs font-medium">Cantidad de Unidades Completas</label>
-                            <input type="number" id="new-request-quantity" class="w-full border p-2 rounded-md">
-                        </div>
-                        <button type="button" id="add-material-to-request-btn" class="flex-shrink-0 bg-blue-500 text-white py-2 px-3 rounded-md text-sm">Añadir</button>
-                    </div>
-
-                    <div id="divisible-section" class="hidden mt-2 pt-2 border-t">
-                        <p class="text-xs text-gray-500 mb-2">Este material se puede pedir por cortes. Añade las medidas que necesitas.</p>
-                            <div id="cuts-container" class="space-y-2"></div>
-                            <button type="button" id="add-cut-btn" class="text-sm text-blue-600 font-semibold mt-2">+ Añadir Medida de Corte</button>
-                    </div>
-                    
-                    <div id="remnants-container" class="hidden mt-4 pt-4 border-t">
-                        <h5 class="text-sm font-semibold text-gray-700 mb-2">Retazos Disponibles</h5>
-                        <div id="remnants-list" class="space-y-2 max-h-32 overflow-y-auto"></div>
-                    </div>
-
-                    <div id="request-items-list" class="mt-3 space-y-2 max-h-48 overflow-y-auto border-t pt-3"></div>
-                </div>
-                <div class="border p-3 rounded-lg">
-                    <h4 class="font-semibold text-gray-700 mb-2">2. ¿Para cuántas unidades se usará?</h4>
-                    <input type="text" id="request-item-search" placeholder="Buscar ítem por nombre..." class="w-full border p-2 rounded-md text-sm mb-3">
-                    <div id="request-item-list-container" class="max-h-48 overflow-y-auto space-y-2 pr-2">${itemInputsHtml}</div>
-                </div>
-                ${userSelectorHtml}
-            </div>`;
+                        <div class="space-y-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium">Proveedor</label>
+                                    <select id="po-supplier-select" required>${supplierOptions}</select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium">Forma de Pago</label>
+                                    <select name="paymentMethod" class="w-full border p-2 rounded-md bg-white">
+                                        <option value="pendiente">Pendiente</option>
+                                        <option value="efectivo">Efectivo</option>
+                                        <option value="tarjeta">Tarjeta</option>
+                                        <option value="transferencia">Transferencia</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="po-items-container" class="space-y-2 border-t pt-4">
+                                <h4 class="text-md font-semibold text-gray-700">Ítems</h4>
+                                <div class="po-item flex flex-col sm:flex-row sm:items-end gap-2 p-2 border rounded-md">
+                                    <div class="flex-grow w-full"><label class="block text-xs">Ítem (Material, Dotación o Herramienta)</label>
+                                        <select name="itemId" class="po-item-select w-full border p-2 rounded-md bg-white"></select>
+                                    </div>
+                                    <div class="w-full sm:w-24"><label class="block text-xs">Cantidad</label><input type="number" name="quantity" required class="w-full border p-2 rounded-md"></div>
+                                    <div class="w-full sm:w-32"><label class="block text-xs">Costo Unitario</label><input type="text" name="unitCost" required class="currency-input w-full border p-2 rounded-md"></div>
+                                </div>
+                            </div>
+                            <button type="button" id="add-po-item-btn" class="text-sm text-blue-600 font-semibold">+ Añadir otro ítem</button>
+                        </div>`;
 
                     loader.classList.add('hidden');
                     formContent.classList.remove('hidden');
 
-                    const choices = new Choices('#material-choices-select', {
-                        choices: materialOptions,
-                        searchEnabled: true, itemSelectText: 'Seleccionar', placeholder: true, placeholderValue: 'Escribe para buscar...',
+                    // 5. Inicializar Choices.js (para proveedores y el primer ítem)
+                    new Choices('#po-supplier-select', { /* ...opciones... */ });
+
+                    const firstItemSelect = formContent.querySelector('.po-item-select');
+                    const firstChoices = new Choices(firstItemSelect, {
+                        choices: materialOptions, // <-- Usamos la lista unificada
+                        itemSelectText: 'Seleccionar',
+                        searchPlaceholderValue: 'Buscar ítem...',
                     });
 
-                    setupMaterialChoices(choices);
-                    setupAddMaterialButton(choices);
-                    setupCutManagement(choices);
-                    setupRequestItemSearch();
+                    // 6. Configurar lógica para añadir/buscar precios (Modificada)
+                    setupPOItemLogic(materialOptions);
 
-                } catch (error) { console.error("Error al cargar datos para solicitud:", error); }
+                } catch (error) { console.error("Error al cargar datos para PO:", error); }
             };
+
+            // Necesitamos crear la función 'setupPOItemLogic'
+            // (La muevo fuera de 'loadDataAndBuildForm' para que sea reutilizable)
 
             setTimeout(loadDataAndBuildForm, 50);
             break;
@@ -5296,13 +5603,94 @@ async function openMainModal(type, data = {}) {
         // --- FIN DEL CASE ---
         case 'editProfile':
             title = 'Mi Perfil'; btnText = 'Guardar Cambios'; btnClass = 'bg-blue-500 hover:bg-blue-600';
-            bodyHtml = `<div class="space-y-4">
-                    <div><label class="block text-sm font-medium text-gray-500">Nombre</label><p class="mt-1">${data.firstName} ${data.lastName}</p></div>
-                    <div><label class="block text-sm font-medium text-gray-500">Cédula</label><p class="mt-1">${data.idNumber}</p></div>
-                    <div><label for="profile-email" class="block text-sm font-medium text-gray-700">Correo</label><input type="email" id="profile-email" name="email" value="${data.email}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
-                    <div><label for="profile-phone" class="block text-sm font-medium text-gray-700">Celular</label><input type="tel" id="profile-phone" name="phone" value="${data.phone}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
-                    <div><label for="profile-address" class="block text-sm font-medium text-gray-700">Dirección</label><input type="text" id="profile-address" name="address" value="${data.address}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
+
+            // --- INICIO DE MODIFICACIÓN (Nuevo Layout) ---
+            bodyHtml = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    
+                    <div class="md:col-span-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Selfie (Foto de Perfil)</label>
+                        <div id="profile-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
+                            
+                            <div id="profile-preview" class="absolute inset-0 ${data.profilePhotoURL ? '' : 'hidden'}">
+                                <img src="${data.profilePhotoURL || ''}" id="profile-img-preview" class="w-full h-full object-cover">
+                            </div>
+                            
+                            <div id="profile-prompt" class="text-center p-4 ${data.profilePhotoURL ? 'hidden' : ''}">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                                <p class="mt-2 text-sm text-gray-500">Subir tu selfie</p>
+                            </div>
+                        </div>
+                        <input type="file" id="profile-photo" name="photo" accept="image/*" class="hidden">
+                        <p class="text-xs text-center text-gray-500 mt-2">Sube una foto clara con fondo blanco.</p>
+                    </div>
+
+                    <div class="md:col-span-2 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500">Nombre</label>
+                            <p class="mt-1 p-2 bg-gray-100 rounded-md border">${data.firstName} ${data.lastName}</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500">Cédula</label>
+                            <p class="mt-1 p-2 bg-gray-100 rounded-md border">${data.idNumber}</p>
+                        </div>
+                        <div>
+                            <label for="profile-email" class="block text-sm font-medium text-gray-700">Correo</label>
+                            <input type="email" id="profile-email" name="email" value="${data.email}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        </div>
+                        <div>
+                            <label for="profile-phone" class="block text-sm font-medium text-gray-700">Celular</label>
+                            <input type="tel" id="profile-phone" name="phone" value="${data.phone}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        </div>
+                        <div>
+                            <label for="profile-address" class="block text-sm font-medium text-gray-700">Dirección</label>
+                            <input type="text" id="profile-address" name="address" value="${data.address}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        </div>
+                    </div>
+
+                    <div class="md:col-span-3 border-t pt-4">
+                        <h4 class="text-md font-semibold text-gray-700 mb-2">Tallas Preferidas</h4>
+                        <div class="grid grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium">Camiseta</label>
+                                <input type="text" name="tallaCamiseta" class="mt-1 w-full border rounded-md p-2" value="${data.tallaCamiseta || ''}" placeholder="Ej: L">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium">Pantalón</label>
+                                <input type="text" name="tallaPantalón" class="mt-1 w-full border rounded-md p-2" value="${data.tallaPantalón || ''}" placeholder="Ej: 32">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium">Botas</label>
+                                <input type="text" name="tallaBotas" class="mt-1 w-full border rounded-md p-2" value="${data.tallaBotas || ''}" placeholder="Ej: 42">
+                            </div>
+                        </div>
+                    </div>
                 </div>`;
+            // --- FIN DE MODIFICACIÓN (Nuevo Layout) ---
+
+            // Añadimos el JS para el dropzone de la foto
+            setTimeout(() => {
+                const dropzone = document.getElementById('profile-dropzone');
+                const fileInput = document.getElementById('profile-photo');
+                const previewContainer = document.getElementById('profile-preview');
+                const previewImg = document.getElementById('profile-img-preview');
+                const promptEl = document.getElementById('profile-prompt');
+                if (dropzone) {
+                    dropzone.addEventListener('click', () => fileInput.click());
+                    fileInput.addEventListener('change', (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                previewImg.src = event.target.result;
+                                previewContainer.classList.remove('hidden');
+                                promptEl.classList.add('hidden');
+                            }
+                            reader.readAsDataURL(file);
+                        }
+                    });
+                }
+            }, 100);
             break;
     }
 
@@ -5312,6 +5700,68 @@ async function openMainModal(type, data = {}) {
     confirmBtn.textContent = btnText;
     confirmBtn.className = `text-white font-bold py-2 px-4 rounded-lg transition-all ${btnClass}`;
     mainModal.style.display = 'flex';
+}
+
+/**
+ * (NUEVA FUNCIÓN MODIFICADA)
+ * Configura la lógica para añadir nuevos ítems a la PO y buscar precios.
+ * @param {Array} materialOptions - El array de opciones de ítems unificados.
+ */
+function setupPOItemLogic(materialOptions) {
+    const container = document.getElementById('po-items-container');
+    if (!container) return;
+
+    // Clonar el primer ítem
+    const firstItem = container.querySelector('.po-item');
+    document.getElementById('add-po-item-btn').addEventListener('click', () => {
+        const newItem = firstItem.cloneNode(true);
+        newItem.querySelectorAll('input').forEach(input => input.value = '');
+
+        // Quitar la inicialización de Choices.js anterior (si la hay)
+        const oldChoices = newItem.querySelector('.choices');
+        if (oldChoices) oldChoices.remove();
+
+        const newSelect = newItem.querySelector('select[name="itemId"]');
+        container.appendChild(newItem);
+
+        // Inicializar Choices en el *nuevo* select
+        new Choices(newSelect, {
+            choices: materialOptions,
+            itemSelectText: 'Seleccionar',
+            searchPlaceholderValue: 'Buscar ítem...',
+        });
+    });
+
+    // Listener para buscar precios y guardar el tipo de ítem
+    container.addEventListener('change', async (e) => {
+        if (e.target.name === 'itemId') {
+            const selectEl = e.target;
+            const selectedOption = selectEl.options[selectEl.selectedIndex];
+            const materialId = selectedOption.value;
+            const itemType = selectedOption.dataset.customProperties ? JSON.parse(selectedOption.dataset.customProperties).type : null;
+
+            // Guardamos el tipo de ítem en el 'dataset' del select
+            selectEl.dataset.itemType = itemType;
+
+            const supplierId = document.getElementById('po-supplier-select').value;
+            if (!supplierId || !materialId) return;
+
+            const costInput = e.target.closest('.po-item').querySelector('.currency-input');
+            const lastPrice = await findLastPurchasePrice(supplierId, materialId);
+            if (lastPrice !== null) {
+                costInput.value = currencyFormatter.format(lastPrice).replace(/\s/g, ' ');
+            } else {
+                costInput.value = '';
+            }
+        }
+    });
+
+    // Formateador de moneda
+    container.addEventListener('input', (e) => {
+        if (e.target.classList.contains('currency-input')) {
+            setupCurrencyInput(e.target);
+        }
+    });
 }
 
 function closeMainModal() { mainModal.style.display = 'none'; }
@@ -5588,48 +6038,55 @@ modalForm.addEventListener('submit', async (e) => {
         case 'new-purchase-order': {
             modalConfirmBtn.disabled = true;
             modalConfirmBtn.textContent = 'Guardando...';
-
             try {
+                // ... (lógica para obtener supplierId, supplierName, paymentMethod) ...
                 const supplierSelect = document.getElementById('po-supplier-select');
                 const selectedSupplierOption = supplierSelect.options[supplierSelect.selectedIndex];
                 const supplierId = selectedSupplierOption.value;
                 const supplierName = selectedSupplierOption.text;
                 const paymentMethod = modalForm.querySelector('select[name="paymentMethod"]').value;
-
                 if (!supplierId) throw new Error("Debes seleccionar un proveedor.");
 
                 const items = [];
                 let totalCost = 0;
+
+                // --- INICIO DE MODIFICACIÓN (Guardar 'itemType') ---
                 document.querySelectorAll('#po-items-container .po-item').forEach(itemEl => {
-                    const materialId = itemEl.querySelector('select[name="materialId"]').value;
+                    const selectEl = itemEl.querySelector('select[name="itemId"]');
+                    const materialId = selectEl.value;
+                    const itemType = selectEl.dataset.itemType; // <-- Obtenemos el tipo
                     const quantity = parseInt(itemEl.querySelector('input[name="quantity"]').value);
                     const unitCost = parseFloat(itemEl.querySelector('input[name="unitCost"]').value.replace(/[$. ]/g, '')) || 0;
 
-                    if (materialId && quantity > 0) {
-                        items.push({ materialId, quantity, unitCost });
+                    if (materialId && quantity > 0 && itemType) {
+                        items.push({
+                            materialId: materialId, // ID del ítem en su catálogo
+                            itemType: itemType,   // 'material', 'dotacion' o 'herramienta'
+                            quantity: quantity,
+                            unitCost: unitCost
+                        });
                         totalCost += quantity * unitCost;
                     }
                 });
+                // --- FIN DE MODIFICACIÓN ---
 
                 if (items.length === 0) {
-                    throw new Error("Debes añadir al menos un material a la orden.");
+                    throw new Error("Debes añadir al menos un ítem válido a la orden.");
                 }
 
-                // Usamos una transacción para obtener el nuevo número y crear la orden de forma segura
+                // ... (el resto de la lógica de 'runTransaction' para guardar la PO sigue igual) ...
                 const counterRef = doc(db, "counters", "purchaseOrders");
                 const newPoRef = doc(collection(db, "purchaseOrders"));
 
                 await runTransaction(db, async (transaction) => {
                     const counterDoc = await transaction.get(counterRef);
                     if (!counterDoc.exists()) {
-                        throw "El documento contador de órdenes de compra no existe. Por favor, créalo.";
+                        throw "El documento contador de órdenes de compra no existe.";
                     }
-
                     const newCount = (counterDoc.data().count || 0) + 1;
-                    const poNumber = `PO-${String(newCount).padStart(4, '0')}`; // Formato: PO-0001
-
+                    const poNumber = `PO-${String(newCount).padStart(4, '0')}`;
                     const poData = {
-                        poNumber: poNumber, // <-- EL NUEVO NÚMERO CORTO
+                        poNumber: poNumber,
                         supplierId: supplierId,
                         supplierName: supplierName,
                         provider: supplierName,
@@ -5637,16 +6094,12 @@ modalForm.addEventListener('submit', async (e) => {
                         createdAt: new Date(),
                         createdBy: currentUser.uid,
                         status: 'pendiente',
-                        items: items,
+                        items: items, // 'items' ahora contiene el 'itemType'
                         totalCost: totalCost
                     };
-
-                    // Creamos la nueva orden y actualizamos el contador
                     transaction.set(newPoRef, poData);
                     transaction.update(counterRef, { count: newCount });
                 });
-
-                // --- FIN DE LA MODIFICACIÓN ---
 
                 alert("¡Orden de compra creada con éxito!");
                 closeMainModal();
@@ -5656,9 +6109,11 @@ modalForm.addEventListener('submit', async (e) => {
                 alert("No se pudo guardar la orden de compra: " + error.message);
             } finally {
                 modalConfirmBtn.disabled = false;
+                // El texto del botón se resetea en 'openMainModal'
             }
             break;
         }
+
         case 'new-supplier-payment': {
             if (currentSupplierId) {
                 const paymentData = {
@@ -5967,22 +6422,105 @@ modalForm.addEventListener('submit', async (e) => {
                 idNumber: data.idNumber,
                 phone: data.phone,
                 address: data.address,
+                // --- INICIO DE MODIFICACIÓN ---
+                tallaCamiseta: data.tallaCamiseta || '',
+                tallaPantalón: data.tallaPantalón || '',
+                tallaBotas: data.tallaBotas || '',
+                // --- FIN DE MODIFICACIÓN ---
             });
             break;
         case 'editProfile':
+            let validationSuccess = false; // Flag para controlar el cierre del modal
             try {
                 const user = auth.currentUser;
-                if (data.email !== user.email) {
-                    await updateEmail(user, data.email);
+                modalConfirmBtn.disabled = true;
+                modalConfirmBtn.textContent = 'Guardando...';
+
+                const photoFile = data.photo;
+                let downloadURL = null;
+
+                // 1. Si el usuario subió una foto nueva...
+                if (photoFile && photoFile.size > 0) {
+
+                    // --- INICIO DE VALIDACIÓN FACIAL ---
+                    modalConfirmBtn.textContent = 'Validando rostro...';
+
+                    // Usamos la imagen de la vista previa que el usuario ya está viendo
+                    const imgPreview = document.getElementById('profile-img-preview');
+                    if (!imgPreview) throw new Error("Error interno: No se encontró la vista previa.");
+
+                    // Ejecutamos la detección (usando el modelo 'tiny' que cargamos)
+                    const detection = await faceapi.detectSingleFace(imgPreview, new faceapi.TinyFaceDetectorOptions());
+
+                    if (!detection) {
+                        // ¡ERROR! No se encontró un rostro.
+                        throw new Error("No se detectó un rostro en la foto. Sube una selfie clara.");
+                    }
+                    // Si llegamos aquí, ¡se encontró un rostro!
+                    // --- FIN DE VALIDACIÓN FACIAL ---
+
+                    modalConfirmBtn.textContent = 'Redimensionando foto...';
+                    const resizedBlob = await resizeImage(photoFile, 400);
+
+                    modalConfirmBtn.textContent = 'Subiendo foto...';
+                    const photoPath = `profile_photos/${user.uid}/profile.jpg`;
+                    const photoStorageRef = ref(storage, photoPath);
+                    await uploadBytes(photoStorageRef, resizedBlob);
+                    downloadURL = await getDownloadURL(photoStorageRef);
                 }
-                await updateDoc(doc(db, "users", user.uid), {
+
+                // 2. Preparamos los datos a guardar
+                const dataToUpdate = {
                     email: data.email,
                     phone: data.phone,
                     address: data.address,
-                });
+                    tallaCamiseta: data.tallaCamiseta || '',
+                    tallaPantalón: data.tallaPantalón || '',
+                    tallaBotas: data.tallaBotas || '',
+                };
+
+                // 3. Añadimos la URL de la foto solo si se subió una nueva
+                if (downloadURL) {
+                    dataToUpdate.profilePhotoURL = downloadURL;
+                }
+
+                // 4. Actualizamos el email (si cambió)
+                if (data.email !== user.email) {
+                    modalConfirmBtn.textContent = 'Actualizando email...';
+                    await updateEmail(user, data.email);
+                }
+
+                // 5. Actualizamos el documento en Firestore
+                modalConfirmBtn.textContent = 'Finalizando...';
+                await updateDoc(doc(db, "users", user.uid), dataToUpdate);
+
+                // 6. Actualizamos el 'usersMap' local
+                const updatedUser = { ...usersMap.get(user.uid), ...dataToUpdate };
+                usersMap.set(user.uid, updatedUser);
+
+                // 7. Marcamos como exitoso
+                validationSuccess = true;
+
             } catch (error) {
                 console.error("Error al actualizar perfil:", error);
-                alert("Error al actualizar el perfil. Es posible que necesites volver a iniciar sesión.");
+
+                // Mostramos el error de validación específico al usuario
+                if (error.message.includes("No se detectó un rostro")) {
+                    alert(error.message);
+                } else {
+                    alert("Error al actualizar el perfil. Es posible que necesites volver a iniciar sesión.");
+                }
+                // validationSuccess sigue siendo 'false'
+
+            } finally {
+                // Reseteamos el botón
+                modalConfirmBtn.disabled = false;
+                modalConfirmBtn.textContent = 'Guardar Cambios';
+
+                // ¡IMPORTANTE! Solo cerramos el modal si la validación fue exitosa
+                if (validationSuccess) {
+                    closeMainModal();
+                }
             }
             break;
     }
@@ -7451,6 +7989,11 @@ document.addEventListener('DOMContentLoaded', () => {
         () => currentUserRole
     );
 
+    // --- INICIO DE NUEVO CÓDIGO ---
+    // Cargar los modelos de IA para la validación de rostros
+    loadFaceAPImodels();
+    // --- FIN DE NUEVO CÓDIGO ---
+
     document.getElementById('po-details-close-btn').addEventListener('click', closePurchaseOrderModal);
     document.getElementById('po-details-cancel-btn').addEventListener('click', closePurchaseOrderModal);
 
@@ -7575,6 +8118,88 @@ document.addEventListener('DOMContentLoaded', () => {
     // ====================================================================
     document.body.addEventListener('click', async (e) => {
         const target = e.target;
+
+        // --- INICIO DE NUEVO CÓDIGO ---
+        // Manejador de clics para el Modal de Check-in
+        const checkinModal = target.closest('#safety-checkin-modal');
+        if (checkinModal) {
+
+            // Botón: Tomar Foto y Verificar
+            if (target.id === 'checkin-take-photo-btn') {
+                target.disabled = true;
+                target.textContent = 'Verificando...';
+                const faceStatus = document.getElementById('checkin-face-status');
+                const videoEl = document.getElementById('checkin-video-feed');
+                const canvasEl = document.getElementById('checkin-video-canvas');
+                const step2 = document.getElementById('checkin-step-2-epp');
+
+                try {
+                    // 1. Capturar la imagen
+                    const ctx = canvasEl.getContext('2d');
+                    ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+
+                    // 2. Detener la cámara (ahorro de batería)
+                    if (videoStream) videoStream.getTracks().forEach(track => track.stop());
+
+                    // 3. Ejecutar face-api.js
+                    const detection = await faceapi.detectSingleFace(canvasEl, new faceapi.TinyFaceDetectorOptions());
+
+                    if (!detection) {
+                        faceStatus.textContent = "Rostro no detectado. Intenta de nuevo.";
+                        faceStatus.className = "text-center text-sm font-medium text-red-600 mt-2 h-4";
+                        target.disabled = false;
+                        target.textContent = 'Tomar Foto y Verificar Rostro';
+                        // Reiniciar la cámara
+                        videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+                        videoEl.srcObject = videoStream;
+                    } else {
+                        // ¡Éxito!
+                        faceStatus.textContent = "¡Rostro Verificado!";
+                        faceStatus.className = "text-center text-sm font-medium text-green-600 mt-2 h-4";
+                        step2.classList.remove('hidden'); // Mostrar Paso 2 (EPP)
+                        document.getElementById('checkin-confirm-btn').disabled = false;
+                    }
+                } catch (err) {
+                    faceStatus.textContent = "Error en la verificación.";
+                    target.disabled = false;
+                }
+            }
+
+            // Botón: Confirmar Check-in
+            if (target.id === 'checkin-confirm-btn') {
+                const checkboxes = document.querySelectorAll('.epp-checkbox');
+                const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+
+                if (!allChecked) {
+                    alert("Por favor, confirma que tienes todos tus equipos de protección (EPP) marcando las casillas.");
+                    return;
+                }
+
+                target.textContent = 'Guardando...';
+
+                // (Aquí guardaríamos la auditoría en Firestore - Opcional por ahora)
+                // await addDoc(collection(db, "safetyCheckIns"), { ... });
+
+                // Guardamos el timestamp en el navegador
+                localStorage.setItem('lastSafetyCheckIn', new Date().toISOString());
+
+                // Cerramos el modal
+                document.getElementById('safety-checkin-modal').style.display = 'hidden';
+
+                // ¡Ejecutamos la acción original que el usuario quería!
+                if (onSafetyCheckInSuccess) {
+                    onSafetyCheckInSuccess();
+                }
+            }
+
+            // Botón: Cerrar Modal
+            if (target.id === 'safety-checkin-close-btn') {
+                if (videoStream) videoStream.getTracks().forEach(track => track.stop());
+                document.getElementById('safety-checkin-modal').style.display = 'none';
+            }
+            return; // Detener el listener
+        }
+        // --- FIN DE NUEVO CÓDIGO ---
 
         // --- MANEJO DE CLICS QUE NO SON BOTONES DE ACCIÓN ---
         const inventoryTab = target.closest('.inventory-tab');
@@ -7762,8 +8387,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             case 'register-task-progress':
                 if (taskIdForProgress) {
-                    closeTaskDetailsModal();
-                    handleRegisterTaskProgress(taskIdForProgress);
+                    // --- INICIO DE MODIFICACIÓN ---
+                    // 1. Verificamos si el check-in es necesario
+                    if (checkIfSafetyCheckInNeeded()) {
+                        // 2. Si es necesario, abrimos el modal
+                        // Le pasamos la función que debe ejecutar al terminar
+                        openSafetyCheckInModal(() => {
+                            closeTaskDetailsModal();
+                            handleRegisterTaskProgress(taskIdForProgress);
+                        });
+                    } else {
+                        // 3. Si no es necesario, ejecutamos la acción directamente
+                        closeTaskDetailsModal();
+                        handleRegisterTaskProgress(taskIdForProgress);
+                    }
+                    // --- FIN DE MODIFICACIÓN ---
                 } else {
                     console.error("register-task-progress: data-task-id faltante.");
                 }
@@ -8011,29 +8649,103 @@ document.addEventListener('DOMContentLoaded', () => {
                     try {
                         const poRef = doc(db, "purchaseOrders", elementId);
 
+                        // --- INICIO DE MODIFICACIÓN (Lógica de Recepción Unificada) ---
                         await runTransaction(db, async (transaction) => {
                             const poDoc = await transaction.get(poRef);
                             if (!poDoc.exists()) throw new Error("La orden de compra no existe.");
 
                             const poData = poDoc.data();
                             if (poData.status !== "pendiente") throw new Error("Esta orden ya fue procesada.");
-                            if (!Array.isArray(poData.items) || poData.items.length === 0) throw new Error("La orden no contiene materiales.");
+                            if (!Array.isArray(poData.items) || poData.items.length === 0) throw new Error("La orden no contiene ítems.");
 
+                            // Iteramos por los ítems de la PO
                             for (const item of poData.items) {
-                                const materialRef = doc(db, "materialCatalog", item.materialId);
-                                const batchRef = doc(collection(materialRef, "stockBatches"));
+                                const itemType = item.itemType; // 'material', 'dotacion', 'herramienta'
+                                const materialId = item.materialId; // ID del ítem en su catálogo
+                                const quantity = item.quantity;
+                                const unitCost = item.unitCost || 0;
 
-                                transaction.set(batchRef, {
-                                    purchaseDate: new Date(),
-                                    quantityInitial: item.quantity,
-                                    quantityRemaining: item.quantity,
-                                    unitCost: item.unitCost || 0,
-                                    purchaseOrderId: elementId,
-                                });
-                                transaction.update(materialRef, { quantityInStock: increment(item.quantity) });
-                            }
+                                // Usamos un switch para dirigir el stock al inventario correcto
+                                switch (itemType) {
+
+                                    case 'material': { // Lógica existente para Materiales
+                                        const materialRef = doc(db, "materialCatalog", materialId);
+                                        const batchRef = doc(collection(materialRef, "stockBatches"));
+
+                                        transaction.set(batchRef, {
+                                            purchaseDate: new Date(),
+                                            quantityInitial: quantity,
+                                            quantityRemaining: quantity,
+                                            unitCost: unitCost,
+                                            purchaseOrderId: elementId,
+                                        });
+                                        transaction.update(materialRef, { quantityInStock: increment(quantity) });
+                                        break;
+                                    }
+
+                                    case 'dotacion': { // NUEVA Lógica para Dotación
+                                        const dotacionRef = doc(db, "dotacionCatalog", materialId);
+                                        const historyRef = doc(collection(db, "dotacionHistory")); // Log de auditoría
+
+                                        // 1. Incrementar el stock
+                                        transaction.update(dotacionRef, { quantityInStock: increment(quantity) });
+
+                                        // 2. Añadir al historial de dotación
+                                        const dotacionDoc = await transaction.get(dotacionRef);
+                                        const dotacionName = dotacionDoc.exists() ? dotacionDoc.data().itemName : 'Ítem de Dotación';
+
+                                        transaction.set(historyRef, {
+                                            action: 'stock_added',
+                                            itemId: materialId,
+                                            itemName: dotacionName,
+                                            quantity: quantity,
+                                            adminId: currentUser.uid,
+                                            timestamp: serverTimestamp(),
+                                            purchaseCost: unitCost * quantity,
+                                            notes: `Recibido de PO: ${poData.poNumber || elementId.substring(0, 6)}`
+                                        });
+                                        break;
+                                    }
+
+                                    case 'herramienta': { // NUEVA Lógica para Herramienta
+                                        // "Comprar" herramientas significa crear NUEVAS instancias de esa herramienta
+
+                                        // 1. Leer la "plantilla" de la herramienta que se compró
+                                        const plantillaRef = doc(db, "tools", materialId);
+                                        const plantillaDoc = await transaction.get(plantillaRef);
+                                        if (!plantillaDoc.exists()) continue; // Si la plantilla no existe, no podemos clonarla
+
+                                        const plantillaData = plantillaDoc.data();
+
+                                        // 2. Crear 'quantity' número de nuevas herramientas
+                                        for (let i = 0; i < quantity; i++) {
+                                            const newToolRef = doc(collection(db, "tools"));
+                                            transaction.set(newToolRef, {
+                                                name: plantillaData.name, // Copia el nombre
+                                                reference: plantillaData.reference || '',
+                                                category: plantillaData.category || 'Varios',
+                                                photoURL: plantillaData.photoURL || null,
+                                                status: 'disponible', // La nueva herramienta entra a Bodega
+                                                assignedToId: null,
+                                                assignedToName: null,
+                                                lastUsedBy: null,
+                                                purchaseDate: new Date().toISOString().split('T')[0],
+                                                purchaseCost: unitCost,
+                                                createdAt: serverTimestamp(),
+                                                createdBy: currentUser.uid,
+                                                notes: `Comprado con PO: ${poData.poNumber || elementId.substring(0, 6)}`
+                                            });
+                                        }
+                                        break;
+                                    }
+                                }
+                            } // Fin del bucle for
+
+                            // Actualiza el estado de la orden (sin cambios)
                             transaction.update(poRef, { status: "recibida", receivedAt: new Date(), receivedBy: currentUser.uid });
                         });
+                        // --- FIN DE MODIFICACIÓN ---
+
                         alert("¡Mercancía recibida! El stock se ha actualizado.");
                         closePurchaseOrderModal();
                     } catch (error) {
@@ -8044,6 +8756,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
                 break;
+
             case 'reject-purchase-order':
                 openConfirmModal('¿Seguro que quieres eliminar esta orden?', async () => {
                     await deleteDoc(doc(db, "purchaseOrders", elementId));
@@ -10153,7 +10866,6 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
         });
 
         // 3. Iterar sobre las tareas ordenadas
-        // 3. Iterar sobre las tareas ordenadas
         let previousCard = null; // Para insertar en el orden correcto
         sortedTasks.forEach((taskData) => {
             const existingCard = currentTasksContainer.querySelector(`.task-card[data-id="${taskData.id}"]`);
@@ -10175,14 +10887,10 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
                 } previousCard = taskCard; // Actualizamos la referencia 
             }
 
-            // --- INICIO DE CORRECCIÓN ---
-            // Volvemos a añadir la llamada, pero indicando el modo 'summary'
             if (taskData.specificSubItemIds && taskData.specificSubItemIds.length > 0) {
                 const placeholderId = `material-status-${taskData.id}`;
                 loadTaskMaterialStatus(taskData.id, taskData.projectId, placeholderId, 'summary');
             }
-            // --- FIN DE CORRECCIÓN ---
-
 
         });
 
@@ -10292,14 +11000,13 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') {
 }
 
 /**
- * Crea el elemento HTML (tarjeta) para mostrar una tarea individual, asegurando altura uniforme y pie alineado.
+ * Crea el elemento HTML (tarjeta) para mostrar una tarea individual.
+ * (VERSIÓN MEJORADA: Simplificada, sin lista de ítems, y con doble barra de estado)
  * @param {object} task - El objeto de datos de la tarea desde Firestore.
  * @returns {HTMLElement} - El elemento div de la tarjeta de tarea.
  */
 function createTaskCard(task) {
     const card = document.createElement('div');
-    // --- INICIO DE LA MODIFICACIÓN ---
-    // ASEGURAMOS que 'h-full' esté aquí
     card.className = "bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden h-full task-card";
     card.dataset.id = task.id;
 
@@ -10307,16 +11014,12 @@ function createTaskCard(task) {
     const dueDate = task.dueDate ? new Date(task.dueDate + 'T00:00:00') : null;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     let dateColor = 'text-gray-500';
     let dateText = 'Sin fecha límite';
     let dateIcon = `<svg class="h-4 w-4 mr-1 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>`;
-
     if (dueDate && task.status === 'pendiente') {
         const diffTime = dueDate.getTime() - today.getTime();
-        // Usamos Math.ceil para asegurar que "mañana" (incluso si son < 24h) cuente como 1 día
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
         if (diffDays < 0) {
             dateColor = 'text-red-600 font-bold';
             dateText = 'Vencida';
@@ -10325,156 +11028,42 @@ function createTaskCard(task) {
             dateColor = 'text-yellow-600 font-bold';
             dateText = 'Hoy';
             dateIcon = `<svg class="h-4 w-4 mr-1 inline-block text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.414-1.414L11 10.586V6z" clip-rule="evenodd"></path></svg>`;
-        } else if (diffDays === 1) {
-            dateColor = 'text-gray-700 font-semibold';
-            dateText = 'Falta 1 día';
-            // (Usamos el ícono de calendario por defecto)
         } else if (diffDays <= 3) {
             dateColor = 'text-gray-700 font-semibold';
             dateText = `Faltan ${diffDays} días`;
-            // (Usamos el ícono de calendario por defecto)
         } else {
-            // Más de 3 días, muestra la fecha
-            dateColor = 'text-gray-500';
             dateText = dueDate.toLocaleDateString('es-CO');
-            // (Usamos el ícono de calendario por defecto)
         }
     } else if (dueDate) {
-        // Para tareas completadas, solo muestra la fecha
         dateText = dueDate.toLocaleDateString('es-CO');
     }
+    // --- FIN Lógica de Fecha ---
 
-    // --- Lógica para listas de ítems (con carga asíncrona) ---
-    let itemsSectionHtml = '';
-    const pendingListId = `task-items-pending-${task.id}`;
-    const completedListId = `task-items-completed-${task.id}`;
 
-    if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
-        itemsSectionHtml = `
-            <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div class="bg-yellow-50 p-3 rounded-md border border-yellow-200">
-                    <p class="text-xs font-semibold text-yellow-800 mb-1 flex items-center">
-                        <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        Ítems por Trabajar:
-                    </p>
-                    <ul id="${pendingListId}" class="space-y-1 pl-5">
-                        <li class="text-xs text-gray-400 italic">Cargando...</li>
-                    </ul>
-                </div>
-                <div class="bg-green-50 p-3 rounded-md border border-green-200">
-                    <p class="text-xs font-semibold text-green-800 mb-1 flex items-center">
-                        <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        Ítems Trabajados:
-                    </p>
-                    <ul id="${completedListId}" class="space-y-1 pl-5">
-                        <li class="text-xs text-gray-400 italic">Cargando...</li>
-                    </ul>
-                </div>
-            </div>
-        `;
+    // --- INICIO DE MODIFICACIÓN (Simplificación de Listas y Barras) ---
 
-        const loadAndSeparateItems = async () => {
-            try {
-                const subItemIds = task.specificSubItemIds || [];
-                const selectedItems = task.selectedItems || [];
-                if (subItemIds.length === 0 || selectedItems.length === 0) {
-                    throw new Error("La tarea no tiene sub-ítems o ítems seleccionados.");
-                }
+    // (La lógica 'loadAndSeparateItems' se llamará, 
+    // pero no encontrará los 'ul' y no hará nada, lo cual es perfecto)
 
-                const itemsStatus = new Map();
-                const itemIds = [...new Set(selectedItems.map(i => i.itemId))];
-                const subItemIdsSet = new Set(subItemIds); // Para un filtrado rápido
-
-                // 1. Cargar datos de los items (para nombres) - (N lecturas)
-                const itemDocs = await Promise.all(itemIds.map(id => getDoc(doc(db, "projects", task.projectId, "items", id))));
-                const itemNames = new Map(itemDocs.map(d => [d.id, d.exists() ? d.data().name : `Ítem ID: ${d.id}`]));
-
-                itemIds.forEach(id => {
-                    itemsStatus.set(id, { name: itemNames.get(id), total: 0, installed: 0 });
-                });
-
-                // 2. Cargar estado de CADA subItem (M lecturas, en lotes de 30)
-                // Iteramos sobre los ítems padres para construir los paths correctos
-                for (const itemInfo of selectedItems) {
-                    const itemId = itemInfo.itemId;
-
-                    // Preparamos los IDs de esta tarea en lotes (chunks) de 30
-                    const subItemDocs = [];
-                    for (let i = 0; i < subItemIds.length; i += 30) {
-                        const chunkIds = subItemIds.slice(i, i + 30);
-                        const q = query(
-                            collection(db, "projects", task.projectId, "items", itemId, "subItems"),
-                            where(documentId(), "in", chunkIds)
-                        );
-                        const snapshot = await getDocs(q);
-                        snapshot.forEach(doc => subItemDocs.push(doc));
-                    }
-
-                    for (const docSnap of subItemDocs) {
-                        if (docSnap.exists()) {
-                            // Verificamos que este sub-ítem realmente esté en la lista de la tarea
-                            if (!subItemIdsSet.has(docSnap.id)) continue;
-
-                            const subItem = docSnap.data();
-                            const statusInfo = itemsStatus.get(subItem.itemId);
-                            if (statusInfo) {
-                                statusInfo.total++;
-                                if (subItem.status === 'Instalado') {
-                                    statusInfo.installed++;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 3. Renderizar el HTML
-                let pendingHtml = '';
-                let completedHtml = '';
-                itemsStatus.forEach((statusInfo) => {
-                    // Si el total es 0, significa que los subitems no se encontraron (eran de otro item)
-                    if (statusInfo.total === 0) return;
-
-                    const pendingCount = statusInfo.total - statusInfo.installed;
-                    if (pendingCount > 0) {
-                        pendingHtml += `<li class="text-xs text-gray-800 list-disc">${pendingCount} x ${statusInfo.name}</li>`;
-                    }
-                    if (statusInfo.installed > 0) {
-                        completedHtml += `<li class="text-xs text-gray-800 list-disc">${statusInfo.installed} x ${statusInfo.name}</li>`;
-                    }
-                });
-
-                const pendingListElement = document.getElementById(pendingListId);
-                const completedListElement = document.getElementById(completedListId);
-                if (pendingListElement) pendingListElement.innerHTML = pendingHtml || '<li class="text-xs text-gray-400 italic">Ninguno pendiente</li>';
-                if (completedListElement) completedListElement.innerHTML = completedHtml || '<li class="text-xs text-gray-400 italic">Ninguno trabajado</li>';
-
-            } catch (error) {
-                console.error(`Error loading item details for task ${task.id}:`, error);
-                const pendingListElement = document.getElementById(pendingListId);
-                const completedListElement = document.getElementById(completedListId);
-                if (pendingListElement) pendingListElement.innerHTML = `<li class="text-xs text-red-500 list-disc">Error al cargar</li>`;
-                if (completedListElement) completedListElement.innerHTML = `<li class="text-xs text-red-500 list-disc">Error al cargar</li>`;
-            }
-        };
-        setTimeout(loadAndSeparateItems, 50);
-    }
-
-    // --- Barra de Progreso (con carga asíncrona) ---
+    // --- Barra de Progreso (Instalación) ---
     let progressBarHtml = '';
     const progressBarId = `task-progress-bar-${task.id}`;
     const progressTextId = `task-progress-text-${task.id}`;
+
     if (task.status === 'completada') {
         progressBarHtml = `
-            <div class="mt-4 px-4">
-                <div class="flex justify-between mb-1"><span class="text-xs font-medium text-green-700">Completada</span><span class="text-xs font-medium text-green-700">100%</span></div>
+            <div>
+                <div class="flex justify-between mb-1"><span class="text-xs font-medium text-green-700">Progreso Instalación</span><span class="text-xs font-medium text-green-700">100%</span></div>
                 <div class="task-progress-bar-bg"><div class="task-progress-bar-fg bg-green-500" style="width: 100%;"></div></div>
             </div>`;
     } else if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
         progressBarHtml = `
-            <div class="mt-4 px-4">
-                <div class="flex justify-between mb-1"><span class="text-xs font-medium text-gray-500">Progreso General</span><span id="${progressTextId}" class="text-xs font-medium text-blue-700">Calculando...</span></div>
+            <div>
+                <div class="flex justify-between mb-1"><span class="text-xs font-medium text-gray-500">Progreso Instalación</span><span id="${progressTextId}" class="text-xs font-medium text-blue-700">Calculando...</span></div>
                 <div class="task-progress-bar-bg"><div id="${progressBarId}" class="task-progress-bar-fg" style="width: 0%;"></div></div>
             </div>`;
+
+        // (La lógica 'calculateProgress' se mantiene igual y poblará esta barra)
         const calculateProgress = async () => {
             try {
                 const subItemIds = task.specificSubItemIds;
@@ -10504,9 +11093,21 @@ function createTaskCard(task) {
         };
         setTimeout(calculateProgress, 100);
     } else {
-        progressBarHtml = `
-            <div class="mt-4 px-4"><p class="text-xs text-gray-400 italic text-center">Progreso no disponible.</p></div>`;
+        // Tarea sin sub-ítems, no mostramos barra de progreso
+        progressBarHtml = '';
     }
+
+    // --- Placeholder para el Estado de Materiales ---
+    const materialStatusId = `material-status-${task.id}`;
+    let materialStatusHtml = '';
+    if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
+        materialStatusHtml = `
+            <div id="${materialStatusId}" class="mt-2 text-xs">
+                <p class="text-gray-400 italic">Cargando estado de material...</p>
+            </div>`;
+    }
+    // --- FIN DE MODIFICACIÓN ---
+
 
     // --- Botones (sin cambios) ---
     const baseButtonClasses = "text-xs font-bold py-2 px-4 rounded-lg transition-colors flex items-center shadow-sm";
@@ -10544,25 +11145,20 @@ function createTaskCard(task) {
             Solicitar Material
         </button>
     ` : '';
-
-    // --- INICIO DE CAMBIO: Definir el ícono de "No Leído" ---
     const adminToggleCheckbox = document.getElementById('admin-task-toggle-checkbox');
     const isAdminView = adminToggleCheckbox?.checked && currentUserRole === 'admin';
-
-    // Definimos el HTML del ícono de "No Leído" aquí
     const unreadCommentHtml = (task.unreadCommentFor && task.unreadCommentFor.includes(currentUser.uid)) ? `
         <span class="flex items-center font-medium text-blue-600 mr-2" title="Nuevos comentarios">
             <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17.608V14.5A8 8 0 0110 3c4.418 0 8 3.134 8 7zm-7-1a1 1 0 11-2 0 1 1 0 012 0zm4 0a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd"></path></svg>
             <span class="ml-1">¡Nuevo!</span>
         </span>
     ` : '';
-    // --- FIN DE CAMBIO ---
 
+    // --- INICIO DE MODIFICACIÓN (Nuevo innerHTML) ---
     card.innerHTML = `
         <div class="p-4 flex-grow">
-            <div class="flex justify-between items-center mb-2">
-                
-                <div>
+            <div class="flex justify-between items-start mb-2">
+                <div class="flex-grow">
                     <p class="text-xs font-semibold text-blue-600 uppercase tracking-wide">${task.projectName || 'Proyecto no especificado'}</p>
                     
                     ${isAdminView ? `
@@ -10574,9 +11170,6 @@ function createTaskCard(task) {
                     <h3 class="text-lg font-bold text-gray-900 leading-tight mt-1">${task.description}</h3>
                 </div>
 
-                <div class="flex-shrink-0 px-4"> ${unreadCommentHtml}
-                </div>
-                
                 <div class="text-right flex-shrink-0 pl-4">
                     <p class="text-sm ${dateColor} flex items-center justify-end">
                         ${dateIcon}
@@ -10587,13 +11180,16 @@ function createTaskCard(task) {
                     </p>
                 </div>
             </div>
-            ${itemsSectionHtml}
-            
-            <div id="material-status-${task.id}" class="mt-4 px-4 text-xs">
-                ${(task.specificSubItemIds && task.specificSubItemIds.length > 0) ? '<p class="text-gray-400 italic">Cargando estado de material...</p>' : ''}
+
+            ${unreadCommentHtml ? `<div class="mb-2">${unreadCommentHtml}</div>` : ''}
+
+            <div class="mt-4 px-4 py-3 bg-gray-50 rounded-lg border space-y-3">
+                ${progressBarHtml}
+                ${materialStatusHtml}
             </div>
-            ${progressBarHtml}
+            
         </div>
+        
         <div class="bg-gray-50 p-3 border-t border-gray-200 flex flex-wrap gap-2 justify-end items-center">
             <div class="flex flex-wrap gap-2 justify-end">
                 ${editButtonHtmlFinal}
@@ -10602,7 +11198,9 @@ function createTaskCard(task) {
                 ${registerProgressButtonHtmlFinal}
                 ${completeButtonHtmlFinal}
             </div>
-        `;
+        </div>
+    `;
+    // --- FIN DE MODIFICACIÓN ---
     return card;
 }
 
@@ -11655,5 +12253,139 @@ async function sendNotification(userId, title, message, view) {
         });
     } catch (error) {
         console.error("Error al enviar notificación:", error);
+    }
+}
+
+/**
+ * Revisa si el usuario ya hizo el check-in hoy.
+ * @returns {boolean} - true si YA HIZO check-in, false si NECESITA hacerlo.
+ */
+function checkIfSafetyCheckInNeeded() {
+    const lastCheckInString = localStorage.getItem('lastSafetyCheckIn');
+    if (!lastCheckInString) {
+        return true; // Nunca lo ha hecho
+    }
+
+    const lastCheckInDate = new Date(lastCheckInString);
+    const today = new Date();
+
+    // Comparamos si es el mismo día (ignorando la hora)
+    if (lastCheckInDate.getFullYear() === today.getFullYear() &&
+        lastCheckInDate.getMonth() === today.getMonth() &&
+        lastCheckInDate.getDate() === today.getDate()) {
+
+        return false; // Ya hizo check-in hoy
+    }
+
+    return true; // El check-in fue de un día anterior
+}
+
+/**
+ * Abre el modal de Check-in de Seguridad.
+ * @param {function} callbackOnSuccess - La función a ejecutar cuando el check-in sea exitoso.
+ */
+async function openSafetyCheckInModal(callbackOnSuccess) {
+    onSafetyCheckInSuccess = callbackOnSuccess; // Guarda la función (ej. handleRegisterTaskProgress)
+
+    const modal = document.getElementById('safety-checkin-modal');
+    const step1 = document.getElementById('checkin-step-1-face');
+    const step2 = document.getElementById('checkin-step-2-epp');
+    const videoEl = document.getElementById('checkin-video-feed');
+    const canvasEl = document.getElementById('checkin-video-canvas');
+    const takePhotoButton = document.getElementById('checkin-take-photo-btn');
+    const faceStatus = document.getElementById('checkin-face-status');
+    const eppList = document.getElementById('checkin-epp-list');
+    const confirmBtn = document.getElementById('checkin-confirm-btn');
+
+    // 1. Resetear el modal a su estado inicial
+    step1.classList.remove('hidden');
+    step2.classList.add('hidden');
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Confirmar Check-in del Día';
+    takePhotoButton.disabled = false;
+    takePhotoButton.textContent = 'Tomar Foto y Verificar Rostro';
+    faceStatus.textContent = '';
+    eppList.innerHTML = '<p class="text-gray-400">Cargando dotación...</p>';
+
+    modal.style.display = 'flex';
+
+    // 2. Iniciar la cámara (Paso 1)
+    try {
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+        }
+
+        // --- INICIO DE CORRECCIÓN ---
+        // Pedimos "video: true" (cualquier cámara de video) en lugar de "facingMode: user".
+        // Esto permite que funcionen las webcams de escritorio.
+        videoStream = await navigator.mediaDevices.getUserMedia({
+            video: true
+        });
+        // --- FIN DE CORRECCIÓN ---
+
+        videoEl.srcObject = videoStream;
+    } catch (err) {
+        console.error("Error al acceder a la cámara:", err);
+        faceStatus.textContent = "Error al acceder a la cámara. Revisa los permisos.";
+        return;
+    }
+
+    // 3. Cargar la dotación (Paso 2)
+    try {
+        // (Esta es una consulta rápida, similar a la de dotacion.js)
+        const historyQuery = query(
+            collection(db, "dotacionHistory"),
+            where("action", "==", "asignada"),
+            where("userId", "==", currentUser.uid),
+            where("status", "==", "activo")
+        );
+        const snapshot = await getDocs(historyQuery);
+
+        if (snapshot.empty) {
+            eppList.innerHTML = '<p class="text-sm text-gray-500">No tienes dotación activa asignada.</p>';
+            // Si no tiene EPP, puede saltar este paso
+            confirmBtn.disabled = false; // Permitir confirmar sin EPP
+        } else {
+            let eppHtml = '';
+            // Necesitamos los datos del catálogo para las fechas de vencimiento
+            const catalogIds = snapshot.docs.map(doc => doc.data().itemId);
+            const catalogQuery = query(collection(db, "dotacionCatalog"), where("__name__", "in", catalogIds));
+            const catalogSnapshot = await getDocs(catalogQuery);
+            const catalogMap = new Map(catalogSnapshot.docs.map(doc => [doc.id, doc.data()]));
+
+            snapshot.forEach(doc => {
+                const item = doc.data();
+                const catalogItem = catalogMap.get(item.itemId);
+                let vencimientoHtml = '<span class="text-xs text-green-600">(Vigente)</span>';
+
+                if (catalogItem && catalogItem.vidaUtilDias && item.fechaEntrega) {
+                    // (Lógica de vencimiento copiada de dotacion.js)
+                    const today = new Date(); today.setHours(0, 0, 0, 0);
+                    const deliveryDate = new Date(item.fechaEntrega + 'T00:00:00');
+                    const expirationDate = new Date(deliveryDate.getTime());
+                    expirationDate.setDate(expirationDate.getDate() + catalogItem.vidaUtilDias);
+                    const diffTime = expirationDate.getTime() - today.getTime();
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                    if (diffDays <= 0) {
+                        vencimientoHtml = `<span class="text-xs text-red-600 font-bold">(VENCIDO)</span>`;
+                    } else if (diffDays <= 30) {
+                        vencimientoHtml = `<span class="text-xs text-yellow-600 font-bold">(Vence en ${diffDays} días)</span>`;
+                    }
+                }
+
+                eppHtml += `
+                    <label class="flex items-center p-2 bg-white border rounded-md">
+                        <input type="checkbox" class="h-5 w-5 rounded epp-checkbox">
+                        <span class="ml-3 text-sm font-medium">${item.itemName || 'Ítem'}</span>
+                        <span class="ml-auto">${vencimientoHtml}</span>
+                    </label>
+                `;
+            });
+            eppList.innerHTML = eppHtml;
+        }
+    } catch (err) {
+        console.error("Error al cargar EPP:", err);
+        eppList.innerHTML = '<p class="text-red-500">Error al cargar tu dotación.</p>';
     }
 }

@@ -132,7 +132,8 @@
                 <nav id="main-nav">
                     <ul class="space-y-2">
                         <li>
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
+                            <a href="#" id="proyectos-nav-link"
+                                class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
                                 data-view="proyectos">
                                 <svg class="h-6 w-6 mr-4 flex-shrink-0" fill="none" viewBox="0 0 24 24"
                                     stroke="currentColor">
@@ -308,7 +309,19 @@
                                 d="M4 6h16M4 12h16M4 18h16" />
                         </svg>
                     </button>
-                    <p id="user-info" class="text-sm text-gray-500"></p>
+                    <div id="user-info-container" class="flex items-center gap-3">
+
+                        <div
+                            class="flex-shrink-0 w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center text-white font-bold overflow-hidden border-2 border-white shadow">
+                            <img id="header-profile-photo" src="" alt="Foto" class="hidden w-full h-full object-cover">
+                            <span id="header-profile-initials" class="text-lg"></span>
+                        </div>
+
+                        <div>
+                            <span id="user-info-name" class="block text-sm font-bold text-gray-900">Cargando...</span>
+                            <span id="user-info-role" class="block text-xs font-semibold text-blue-800">...</span>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="relative flex items-center space-x-4 w-full md:w-auto justify-end">
@@ -469,13 +482,59 @@
             </div>
 
             <div id="dotacion-view" class="hidden">
-                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-4">
-                    <h1 id="dotacion-view-title" class="text-3xl font-bold text-gray-700">Gestión de Dotación</h1>
+                <div class="flex flex-col md:flex-row justify-between md:items-center mb-4">
 
-                    <button id="new-dotacion-item-btn" data-action="new-dotacion-catalog-item"
-                        class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">
-                        + Añadir Tipo de Ítem
-                    </button>
+                    <h1 id="dotacion-view-title" class="text-3xl font-bold text-gray-800">Gestión de Dotación</h1>
+
+                    <div class="flex flex-col md:flex-row items-stretch md:items-center gap-2 mt-4 md:mt-0">
+
+                        <div id="dotacion-inventario-actions" class="flex flex-col sm:flex-row gap-2 hidden">
+                            <button data-action="export-dotacion-inventario-csv"
+                                class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center justify-center">
+                                <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                </svg>
+                                Exportar <span class="hidden sm:inline">Inventario</span> (CSV)
+                            </button>
+                            <button data-action="export-dotacion-inventario-pdf"
+                                class="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center justify-center">
+                                <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                </svg>
+                                Exportar <span class="hidden sm:inline">Inventario</span> (PDF)
+                            </button>
+                        </div>
+
+                        <div id="dotacion-asignaciones-actions" class="flex flex-col sm:flex-row gap-2 hidden">
+                            <button data-action="export-dotacion-asignaciones-csv"
+                                class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center justify-center">
+                                <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                </svg>
+                                Exportar <span class="hidden sm:inline">Asignaciones</span> (CSV)
+                            </button>
+                            <button data-action="export-dotacion-asignaciones-pdf"
+                                class="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center justify-center">
+                                <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                </svg>
+                                Exportar <span class="hidden sm:inline">Asignaciones</span> (PDF)
+                            </button>
+                        </div>
+
+                        <button id="new-dotacion-item-btn" data-action="new-dotacion-catalog-item"
+                            class="w-full md:w-auto bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hidden">
+                            + Nuevo Ítem
+                        </button>
+                    </div>
                 </div>
 
                 <div class="border-b border-gray-200">
@@ -495,23 +554,46 @@
                     </nav>
                 </div>
 
-                <div id="dotacion-filter-bar" class="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div id="dotacion-filter-bar"
+                    class="md:grid md:grid-cols-4 gap-4 items-center p-4 bg-gray-50 rounded-lg hidden">
                     <div id="dotacion-search-container" class="md:col-span-2">
                         <label for="dotacion-search-input" class="block text-sm font-medium text-gray-700">Buscar por
-                            Nombre o Ref.</label>
+                            Nombre o Referencia</label>
                         <input type="search" id="dotacion-search-input" class="mt-1 w-full border rounded-md p-2"
-                            placeholder="Ej: Casco...">
+                            placeholder="Ej: Casco, Guante...">
                     </div>
                     <div id="dotacion-category-container" class="md:col-span-1">
-                        <label for="dotacion-category-filter" class="block text-sm font-medium text-gray-700">Filtrar
-                            por Categoría</label>
-                        <select id="dotacion-category-filter" class="mt-1"></select>
+                        <label for="dotacion-category-filter"
+                            class="block text-sm font-medium text-gray-700">Categoría</label>
+                        <select id="dotacion-category-filter" class="mt-1 w-full border rounded-md p-2"></select>
                     </div>
-                    <div id="dotacion-assignee-container" class="md:col-span-1 hidden">
-                        <label for="dotacion-assignee-filter" class="block text-sm font-medium text-gray-700">Filtrar
-                            por Empleado</label>
-                        <select id="dotacion-assignee-filter" class="mt-1"></select>
+                    <div id="dotacion-assignee-container" class="md:col-span-1">
+                        <label for="dotacion-assignee-filter"
+                            class="block text-sm font-medium text-gray-700">Empleado</label>
+                        <select id="dotacion-assignee-filter" class="mt-1 w-full border rounded-md p-2"></select>
                     </div>
+                </div>
+
+                <div id="dotacion-inventario-actions" class="flex gap-2 p-4 justify-end hidden">
+                    <button data-action="export-dotacion-inventario-csv"
+                        class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded-lg">
+                        Exportar Inventario (CSV)
+                    </button>
+                    <button data-action="export-dotacion-inventario-pdf"
+                        class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-4 rounded-lg">
+                        Exportar Inventario (PDF)
+                    </button>
+                </div>
+
+                <div id="dotacion-asignaciones-actions" class="flex gap-2 p-4 justify-end hidden">
+                    <button data-action="export-dotacion-asignaciones-csv"
+                        class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded-lg">
+                        Exportar Asignaciones (CSV)
+                    </button>
+                    <button data-action="export-dotacion-asignaciones-pdf"
+                        class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-4 rounded-lg">
+                        Exportar Asignaciones (PDF)
+                    </button>
                 </div>
 
                 <div id="dotacion-grid-container" class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1433,6 +1515,57 @@
         </div>
     </div>
 
+    <div id="safety-checkin-modal"
+        class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50 hidden">
+
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+
+            <div class="flex justify-between items-center p-4 border-b">
+                <h2 id="safety-checkin-title" class="text-2xl font-bold text-gray-800">Check-in de Seguridad Diario</h2>
+                <button id="safety-checkin-close-btn" class="text-gray-400 hover:text-gray-600">&times;</button>
+            </div>
+
+            <div class="p-6 space-y-6 overflow-y-auto">
+
+                <div id="checkin-step-1-face">
+                    <h3 class="text-lg font-semibold text-gray-700">Paso 1: Verificación Facial</h3>
+                    <p class="text-sm text-gray-500 mb-3">Por favor, tómate una selfie clara para verificar tu
+                        identidad.</p>
+
+                    <div class="w-full aspect-video bg-gray-200 rounded-lg overflow-hidden relative">
+                        <video id="checkin-video-feed" class="w-full h-full object-cover" autoplay playsinline></video>
+                        <canvas id="checkin-video-canvas" class="absolute top-0 left-0 w-full h-full hidden"></canvas>
+                    </div>
+
+                    <button id="checkin-take-photo-btn"
+                        class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg mt-4">
+                        Tomar Foto y Verificar Rostro
+                    </button>
+                    <p id="checkin-face-status" class="text-center text-sm font-medium text-blue-600 mt-2 h-4"></p>
+                </div>
+
+                <div id="checkin-step-2-epp" class="hidden">
+                    <h3 class="text-lg font-semibold text-gray-700">Paso 2: Checklist de Dotación Activa</h3>
+                    <p class="text-sm text-gray-500 mb-3">Confirma que tienes contigo los siguientes equipos de
+                        protección:</p>
+
+                    <div id="checkin-epp-list"
+                        class="space-y-2 max-h-48 overflow-y-auto p-3 bg-gray-50 border rounded-md">
+                        <p class="text-gray-400">Cargando dotación...</p>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="p-4 bg-gray-50 border-t flex justify-end">
+                <button id="checkin-confirm-btn"
+                    class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg" disabled>
+                    Confirmar Check-in del Día
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div id="documents-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
         <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto p-6 max-h-[90vh] flex flex-col">
             <h3 id="documents-modal-title" class="text-xl font-bold mb-4">Gestionar Documentos</h3>
@@ -1910,6 +2043,7 @@
     </div>
     <script type="module" src="js/herramientas.js"></script>
     <script type="module" src="js/dotacion.js"></script>
+    <script src="js/vendor/face-api.min.js"></script>
     <script type="module" src="js/app.js"></script>
 </body>
 
