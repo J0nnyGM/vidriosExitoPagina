@@ -24,13 +24,6 @@ import {
     getDownloadURL
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 
-const currencyFormatter = new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-});
-
 export const TOOL_CATEGORIES = [
     { value: "electrica", label: "Herramienta Eléctrica" },
     { value: "manual", label: "Herramienta Manual" },
@@ -1144,168 +1137,141 @@ function closeToolHistoryModal() {
 }
 
 /**
- * Carga el dashboard de resumen de Herramientas.
- * (VERSIÓN MEJORADA con reportes de Mantenimiento, Costos y Reparaciones)
+ * Carga los datos y renderiza el dashboard de resumen de herramientas.
+ * @param {HTMLElement} container - El elemento <div> donde se inyectará el HTML.
  */
 async function loadToolDashboard(container) {
-    container.innerHTML = `<div class="text-center p-10"><p class="text-gray-500">Calculando estadísticas...</p><div class="loader mx-auto mt-4"></div></div>`;
+    container.innerHTML = `
+        <div class="text-center p-10">
+            <p class="text-gray-500">Calculando estadísticas...</p>
+            <div class="loader mx-auto mt-4"></div>
+        </div>`;
 
     try {
         const usersMap = getUsersMap();
+        const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
-        // --- INICIO DE NUEVAS CONSULTAS ---
-        // Consultas en paralelo para KPIs, Historial de Mantenimiento y Herramientas en Mantenimiento
-        const [toolsSnapshot, historySnapshot, maintenanceToolsSnapshot] = await Promise.all([
-            getDocs(collection(db, "tools")),
-            
-            // 1. Historial COMPLETO de mantenimiento
-            getDocs(query(
-                collectionGroup(db, "toolHistory"),
-                where("action", "==", "register-maintenance") // <-- Obtenemos todas las reparaciones
-            )),
-
-            // 2. Herramientas que están AHORA en mantenimiento
-            getDocs(query(
-                collection(db, "tools"),
-                where("status", "==", "mantenimiento") // <-- Obtenemos las que están en reparación
-            ))
+        // 1. Consultas en paralelo
+        const [toolsSnapshot, maintenanceSnapshot, damagedReturnsSnapshot] = await Promise.all([
+            getDocs(query(collection(db, "tools"))), // Todas las herramientas
+            getDocs(query(collectionGroup(db, "history"), where("action", "==", "mantenimiento"))), // Costos
+            getDocs(query(collectionGroup(db, "history"), where("returnStatus", "in", ["dañado", "con_defecto"]))) // Daños
         ]);
-        // --- FIN DE NUEVAS CONSULTAS ---
 
-        // --- 1. Cálculo de KPIs (Lógica existente) ---
-        let kpi = { total: 0, assigned: 0, available: 0, maintenance: 0 };
+        // 2. Procesar KPIs (Costos y Conteo)
+        let kpi = {
+            total: 0,
+            disponible: 0,
+            asignada: 0,
+            en_reparacion: 0,
+            dada_de_baja: 0,
+            totalMaintenanceCost: 0,
+            totalAssetValue: 0 // <-- AÑADE ESTA LÍNEA (si no existe)
+        };
+        const assignedToMap = new Map(); // Para "Herramientas por Colaborador"
+
         toolsSnapshot.forEach(doc => {
             const tool = doc.data();
             kpi.total++;
-            if (tool.status === 'asignada') kpi.assigned++;
-            else if (tool.status === 'disponible') kpi.available++;
-            else if (tool.status === 'mantenimiento') kpi.maintenance++;
+
+            if (tool.status !== 'dada_de_baja') {
+                kpi.totalAssetValue += tool.purchaseCost || 0;
+            }
+
+
+            switch (tool.status) {
+                case 'disponible': kpi.disponible++; break;
+                case 'asignada':
+                    kpi.asignada++;
+                    const userId = tool.assignedTo;
+                    if (userId) { // Solo contamos si hay un ID de usuario
+                        const count = (assignedToMap.get(userId) || 0) + 1;
+                        assignedToMap.set(userId, count);
+                    }
+                    break;
+                case 'en_reparacion': kpi.en_reparacion++; break;
+                case 'dada_de_baja': kpi.dada_de_baja++; break;
+            }
         });
 
-        // --- 2. Procesar Historial de Mantenimiento (Nueva Lógica) ---
-        const repairCountMap = new Map();
-        const costMap = new Map();
-        let kpiTotalCost = 0;
-
-        historySnapshot.forEach(doc => {
-            const entry = doc.data();
-            const toolId = entry.toolId;
-            const toolName = entry.toolName || 'Herramienta desconocida';
-            const cost = entry.maintenanceCost || 0;
-
-            // Contar reparaciones
-            repairCountMap.set(toolName, (repairCountMap.get(toolName) || 0) + 1);
-
-            // Sumar costos
-            costMap.set(toolName, (costMap.get(toolName) || 0) + cost);
-            kpiTotalCost += cost;
+        maintenanceSnapshot.forEach(doc => {
+            kpi.totalMaintenanceCost += doc.data().maintenanceCost || 0;
         });
 
-        // Añadimos el nuevo KPI de Costo
-        kpi.maintenanceCost = kpiTotalCost;
-        
-        // --- 3. Procesar Herramientas 'En Mantenimiento' (Nueva Lógica) ---
-        const maintenanceList = maintenanceToolsSnapshot.docs.map(doc => {
-            const tool = { id: doc.id, ...doc.data() };
-            const lastAssignedUser = usersMap.get(tool.assignedToId); // Último usuario
-            return {
-                id: tool.id,
-                name: tool.name,
-                lastUser: lastAssignedUser ? `${lastAssignedUser.firstName} ${lastAssignedUser.lastName}` : 'N/A',
-                photoURL: tool.photoURL
-            };
+        // 3. Procesar Devoluciones Dañadas (Tu nueva solicitud)
+        const damagedReturnsMap = new Map(); // Para "Devoluciones con daños"
+        damagedReturnsSnapshot.forEach(doc => {
+            const historyEntry = doc.data();
+            // --- INICIO DE CORRECCIÓN ---
+            // Cambiamos 'adminId' por 'returnedByUserId'
+            const returnedById = historyEntry.returnedByUserId;
+            if (returnedById) {
+                const count = (damagedReturnsMap.get(returnedById) || 0) + 1;
+                damagedReturnsMap.set(returnedById, count);
+            }
+            // --- FIN DE CORRECCIÓN ---
         });
 
+        // 4. Renderizar el HTML
 
-        // --- 4. Renderizar HTML ---
-
-        // HTML para KPIs (Añadimos el de Costo Total)
+        // HTML para KPIs
         const kpiHtml = `
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-6">
-                <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 text-center">
-                    <p class="text-sm font-medium text-blue-800">Total Inventario</p>
-                    <p class="text-3xl font-bold text-blue-900">${kpi.total}</p>
-                </div>
-                <div class="bg-green-50 p-4 rounded-lg border border-green-200 text-center">
-                    <p class="text-sm font-medium text-green-800">Disponibles</p>
-                    <p class="text-3xl font-bold text-green-900">${kpi.available}</p>
-                </div>
-                <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200 text-center">
-                    <p class="text-sm font-medium text-yellow-800">Asignadas</p>
-                    <p class="text-3xl font-bold text-yellow-900">${kpi.assigned}</p>
-                </div>
-                <div class="bg-orange-50 p-4 rounded-lg border border-orange-200 text-center">
-                    <p class="text-sm font-medium text-orange-800">En Mantenimiento</p>
-                    <p class="text-3xl font-bold text-orange-900">${kpi.maintenance}</p>
-                </div>
-                <div class="bg-red-50 p-4 rounded-lg border border-red-200 text-center col-span-2 md:col-span-1">
-                    <p class="text-sm font-medium text-red-800">Costo Histórico Mtto.</p>
-                    <p class="text-3xl font-bold text-red-900">${currencyFormatter.format(kpi.maintenanceCost)}</p>
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-6">
+                <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 text-center"><p class="text-sm font-medium text-blue-800">Total Herramientas</p><p class="text-3xl font-bold text-blue-900">${kpi.total}</p></div>
+                <div class="bg-green-50 p-4 rounded-lg border border-green-200 text-center"><p class="text-sm font-medium text-green-800">Disponibles</p><p class="text-3xl font-bold text-green-900">${kpi.disponible}</p></div>
+                <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200 text-center"><p class="text-sm font-medium text-yellow-800">Asignadas</p><p class="text-3xl font-bold text-yellow-900">${kpi.asignada}</p></div>
+                <div class="bg-orange-50 p-4 rounded-lg border border-orange-200 text-center"><p class="text-sm font-medium text-orange-800">En Reparación</p><p class="text-3xl font-bold text-orange-900">${kpi.en_reparacion}</p></div>
+                <div class="bg-gray-100 p-4 rounded-lg border border-gray-300 text-center"><p class="text-sm font-medium text-gray-700">Costo Mantenimiento</p><p class="text-3xl font-bold text-gray-800">${currencyFormatter.format(kpi.totalMaintenanceCost)}</p></div>
+                <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200 text-center">
+                    <p class="text-sm font-medium text-indigo-800">Valor Total Activos</p>
+                    <p class="text-3xl font-bold text-indigo-900">${currencyFormatter.format(kpi.totalAssetValue)}</p>
                 </div>
             </div>
         `;
 
-        // Reporte 1: Herramientas en Mantenimiento AHORA
-        let maintenanceHtml = '<p class="text-sm text-gray-500">No hay herramientas en mantenimiento.</p>';
-        if (maintenanceList.length > 0) {
-            maintenanceHtml = '<ul class="divide-y divide-gray-200">';
-            maintenanceList.forEach(tool => {
-                maintenanceHtml += `
-                    <li class="py-2 flex items-center space-x-3">
-                        <img src="${tool.photoURL || 'https://via.placeholder.com/100'}" alt="${tool.name}" class="w-10 h-10 object-contain rounded-md border bg-white">
-                        <div class="flex-grow">
-                            <button data-action="view-tool-history" data-id="${tool.id}" class="font-medium text-blue-600 hover:underline">${tool.name}</button>
-                            <p class="text-xs text-gray-500">Último en usar: ${tool.lastUser}</p>
-                        </div>
-                    </li>`;
+        // HTML para Reportes
+        let assignedHtml = '<p class="text-sm text-gray-500">No hay herramientas asignadas.</p>';
+        if (assignedToMap.size > 0) {
+            assignedHtml = '<ul class="divide-y divide-gray-200">';
+            const sortedAssigned = [...assignedToMap.entries()].sort((a, b) => b[1] - a[1]); // Ordenar por quién tiene más
+            sortedAssigned.forEach(([userId, count]) => {
+                const user = usersMap.get(userId);
+                const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido';
+                assignedHtml += `<li class="py-2 flex justify-between items-center"><span class="font-medium text-gray-700">${userName}</span><span class="font-bold text-lg text-blue-600">${count}</span></li>`;
             });
-            maintenanceHtml += '</ul>';
+            assignedHtml += '</ul>';
         }
 
-        // Reporte 2: Herramientas MÁS Reparadas (Histórico)
-        let repairCountHtml = '<p class="text-sm text-gray-500">No hay historial de reparaciones.</p>';
-        if (repairCountMap.size > 0) {
-            repairCountHtml = '<ul class="divide-y divide-gray-200">';
-            const sortedRepairs = [...repairCountMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10); // Top 10
-            sortedRepairs.forEach(([toolName, count]) => {
-                repairCountHtml += `<li class="py-2 flex justify-between items-center"><span class="font-medium text-gray-700">${toolName}</span><span class="font-bold text-lg text-orange-600">${count}</span></li>`;
+        let damagedHtml = '<p class="text-sm text-gray-500">No hay registros de devoluciones con daños.</p>';
+        if (damagedReturnsMap.size > 0) {
+            damagedHtml = '<ul class="divide-y divide-gray-200">';
+            const sortedDamaged = [...damagedReturnsMap.entries()].sort((a, b) => b[1] - a[1]); // Ordenar por quién reporta más
+            sortedDamaged.forEach(([userId, count]) => { // <-- CAMBIADO DE 'adminId' a 'userId'
+                const user = usersMap.get(userId); // <-- CAMBIADO
+                const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido'; // <-- Ahora es el colaborador
+                damagedHtml += `<li class="py-2 flex justify-between items-center"><span class="font-medium text-gray-700">${userName}</span><span class="font-bold text-lg text-red-600">${count}</span></li>`;
             });
-            repairCountHtml += '</ul>';
+            damagedHtml += '</ul>';
         }
 
-        // Reporte 3: Costo por Herramienta (Histórico)
-        let costHtml = '<p class="text-sm text-gray-500">No hay costos registrados.</p>';
-        if (costMap.size > 0) {
-            costHtml = '<ul class="divide-y divide-gray-200">';
-            const sortedCosts = [...costMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10); // Top 10
-            sortedCosts.forEach(([toolName, cost]) => {
-                costHtml += `<li class="py-2 flex justify-between items-center"><span class="font-medium text-gray-700">${toolName}</span><span class="font-bold text-lg text-red-600">${currencyFormatter.format(cost)}</span></li>`;
-            });
-            costHtml += '</ul>';
-        }
-
-        // HTML Final del Layout de Reportes
         const reportsHtml = `
-            <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-                
-                <div class="bg-white p-4 rounded-lg shadow-md border border-orange-200">
-                    <h3 class="text-lg font-semibold text-orange-800 border-b border-orange-200 pb-2 mb-3">Actualmente en Mantenimiento</h3>
-                    <div class="max-h-60 overflow-y-auto pr-2">${maintenanceHtml}</div>
-                </div>
-
+            <div class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="bg-white p-4 rounded-lg shadow-md border">
-                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Top 10 - Más Reparadas</h3>
-                    <div class="max-h-60 overflow-y-auto pr-2">${repairCountHtml}</div>
+                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Herramientas por Colaborador</h3>
+                    <div class="max-h-60 overflow-y-auto pr-2">
+                        ${assignedHtml}
+                    </div>
                 </div>
-                
                 <div class="bg-white p-4 rounded-lg shadow-md border">
-                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Top 10 - Costo de Mantenimiento</h3>
-                    <div class="max-h-60 overflow-y-auto pr-2">${costHtml}</div>
+                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Devoluciones con Daños (Reportadas por)</h3>
+                    <div class="max-h-60 overflow-y-auto pr-2">
+                        ${damagedHtml}
+                    </div>
                 </div>
-
             </div>
         `;
 
+        // Unir todo
         container.innerHTML = kpiHtml + reportsHtml;
 
     } catch (error) {

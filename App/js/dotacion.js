@@ -435,7 +435,7 @@ export function loadDotacionView() {
         historyContainer.classList.remove('hidden'); // Mostrar el contenedor de Asignaciones
 
         // El operario solo ve su historial detallado (Nivel 2)
-        loadDotacionAsignaciones(currentUser.uid);
+        loadDotacionAsignaciones(currentUser.uid, 'dotacion-history-container'); // <-- ID AÑADIDO
 
     } else {
         // --- VISTA DE ADMIN/BODEGA ---
@@ -480,9 +480,8 @@ export function loadDotacionView() {
             loadDotacionCatalog();
         } else if (activeTab === 'asignaciones') {
             historyContainer.classList.remove('hidden');
-            // Leemos el filtro y dejamos que loadDotacionAsignaciones decida
             const assigneeFilter = (dotacionAssigneeChoices && dotacionAssigneeChoices.getValue(true)) ? dotacionAssigneeChoices.getValue(true) : 'all';
-            loadDotacionAsignaciones(assigneeFilter);
+            loadDotacionAsignaciones(assigneeFilter, 'dotacion-history-container'); // <-- ID AÑADIDO
         }
     }
 }
@@ -538,15 +537,59 @@ function loadDotacionCatalog() {
  * (VERSIÓN MEJORADA CON REAL-TIME Y FOTO DE ENTREGA)
  *
  * @param {string} userIdFilter - 'all' (para resumen) o un ID de usuario específico (para detalle).
+ * @param {string | null} containerId - El ID del div donde se renderizará el historial. Si es null, usa el ID por defecto.
  */
-async function loadDotacionAsignaciones(userIdFilter = 'all') {
+export async function loadDotacionAsignaciones(userIdFilter = 'all', containerId = null) { // <-- PARÁMETRO AÑADIDO
     const role = getCurrentUserRole();
 
+    // --- INICIO DE MODIFICACIÓN ---
+    // IDs de contenedor dinámicos. Si containerId es null, usa los IDs por defecto.
+    const historyContainerId = containerId || 'dotacion-history-container';
+    const summaryContainerId = 'dotacion-summary-table-container';
+    const detailGridId = 'dotacion-detail-grid-container';
+    const backBtnId = 'dotacion-back-to-summary-btn';
+    const summaryTableBodyId = 'dotacion-summary-table-body';
+
+    const historyContainer = document.getElementById(historyContainerId);
+    if (!historyContainer) {
+        console.error(`Contenedor de historial '${historyContainerId}' no encontrado.`);
+        return;
+    }
+
+    // Si estamos en modo "widget", inyectamos la estructura HTML necesaria
+    if (containerId && userIdFilter !== 'all') {
+        // Esta es la vista Nivel 2 (detalle) para el operario en el dashboard
+        historyContainer.innerHTML = `
+            <div id="${detailGridId}" class="grid grid-cols-1 gap-4"></div>
+            `;
+    } else if (containerId) {
+        // Esto es por si un admin ve el resumen en un widget (no implementado, pero por seguridad)
+        historyContainer.innerHTML = `
+             <div id="${summaryContainerId}" class="bg-white p-6 rounded-lg shadow-md">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3">Empleado</th>
+                                <th class="px-6 py-3 text-center">Total Ítems Entregados</th>
+                                <th class="px-6 py-3 text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="${summaryTableBodyId}"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div id="${detailGridId}" class="hidden grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+        `;
+    }
+    
     // Contenedores
-    const summaryContainer = document.getElementById('dotacion-summary-table-container');
-    const detailGrid = document.getElementById('dotacion-detail-grid-container');
-    const backBtn = document.getElementById('dotacion-back-to-summary-btn');
-    const summaryTableBody = document.getElementById('dotacion-summary-table-body');
+    const summaryContainer = document.getElementById(summaryContainerId);
+    const detailGrid = document.getElementById(detailGridId);
+    const backBtn = document.getElementById(backBtnId);
+    const summaryTableBody = document.getElementById(summaryTableBodyId);
+    // --- FIN DE MODIFICACIÓN ---
+
 
     if (unsubscribeDotacion) unsubscribeDotacion();
 
@@ -555,9 +598,14 @@ async function loadDotacionAsignaciones(userIdFilter = 'all') {
     if (userIdFilter === 'all') {
         // --- 1. VISTA RESUMEN (NIVEL 1: POR EMPLEADO) ---
         // (Esta parte SÍ usa onSnapshot y ya funciona en tiempo real)
+        if (!summaryContainer || !detailGrid || !summaryTableBody) {
+            console.error("Faltan contenedores para la vista Nivel 1 (Resumen).");
+            return;
+        }
+        
         summaryContainer.classList.remove('hidden');
         detailGrid.classList.add('hidden');
-        backBtn.classList.add('hidden');
+        if (backBtn) backBtn.classList.add('hidden'); // backBtn es opcional
         summaryTableBody.innerHTML = '<tr><td colspan="3" class="text-center py-6"><div class="loader mx-auto"></div></td></tr>';
 
         let historyQuery = query(collection(db, "dotacionHistory"), where("action", "==", "asignada"));
@@ -600,9 +648,14 @@ async function loadDotacionAsignaciones(userIdFilter = 'all') {
 
     } else {
         // --- 2. VISTA DETALLADA (NIVEL 2: AHORA CON REAL-TIME) ---
-        summaryContainer.classList.add('hidden');
-        detailGrid.classList.remove('hidden');
-        backBtn.classList.toggle('hidden', role === 'operario');
+        if (summaryContainer) summaryContainer.classList.add('hidden'); // summaryContainer es opcional
+        if (detailGrid) detailGrid.classList.remove('hidden');
+        if (backBtn) backBtn.classList.toggle('hidden', role === 'operario' || containerId); // Ocultar si es operario O si es un widget
+        
+        if (!detailGrid) {
+            console.error("Contenedor de detalle (detailGrid) no encontrado.");
+            return;
+        }
         detailGrid.innerHTML = '<div class="loader-container col-span-full"><div class="loader mx-auto"></div></div>';
 
         try {
@@ -782,7 +835,7 @@ function createDotacionCatalogCard(item) {
  * Carga el dashboard de resumen de dotación.
  * (MEJORADO con reportes de Consumo y Descarte)
  */
-async function loadDotacionDashboard(container) {
+export async function loadDotacionDashboard(container) {
     container.innerHTML = `<div class="text-center p-10"><p class="text-gray-500">Calculando estadísticas...</p><div class="loader mx-auto mt-4"></div></div>`;
 
     try {

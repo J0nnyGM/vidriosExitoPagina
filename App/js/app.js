@@ -62,6 +62,121 @@ let videoStream = null; // Variable global para el stream de la cámara
 let verifiedCanvas = null; // Variable global para guardar la selfie verificada
 let pendingProfileUpdateData = null; // Guarda los datos del formulario de perfil temporalmente
 
+/**
+ * Carga y muestra el historial de cambios de un perfil de usuario.
+ * @param {string} userId - El ID del usuario cuyo historial se cargará.
+ */
+async function loadProfileHistory(userId) {
+    const modal = document.getElementById('tool-history-modal');
+    const titleEl = document.getElementById('tool-history-title');
+    const listContainer = document.getElementById('tool-history-body');
+
+    if (!modal || !titleEl || !listContainer) {
+        console.error("No se encontró el modal de historial (tool-history-modal).");
+        return;
+    }
+
+    const user = usersMap.get(userId);
+    const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario';
+
+    titleEl.textContent = `Historial de Cambios: ${userName}`;
+
+    // --- INICIO DE MODIFICACIÓN (Estilo y Helpers) ---
+    listContainer.innerHTML = '<p class="text-sm text-gray-400 italic text-center p-4">Cargando historial...</p>';
+    // Damos un fondo gris al contenedor para que las tarjetas blancas resalten
+    listContainer.className = "flex-grow overflow-y-auto pr-2 space-y-3 bg-gray-100 p-3 rounded-b-lg";
+    modal.style.display = 'flex';
+
+    // 1. Helper para traducir las llaves de la base de datos
+    const keyTranslator = {
+        firstName: 'Nombre',
+        lastName: 'Apellido',
+        idNumber: 'Cédula',
+        phone: 'Celular',
+        address: 'Dirección',
+        email: 'Correo',
+        profilePhotoURL: 'Foto de Perfil',
+        tallaCamiseta: 'Talla Camiseta',
+        tallaPantalón: 'Talla Pantalón',
+        tallaBotas: 'Talla Botas'
+    };
+
+    // 2. Helper para formatear los valores
+    const formatValue = (value) => {
+        if (!value || value.trim() === '' || value.trim() === 'vacío') {
+            // Si está vacío, mostrarlo en gris e itálica
+            return '<i class="text-gray-500">No asignado</i>';
+        }
+        if (value === 'nueva foto') {
+            // Caso especial para la foto
+            return '<span class="font-medium text-blue-600">Foto Actualizada</span>';
+        }
+        // Mostramos el valor entre comillas
+        return `"${value}"`;
+    };
+    // --- FIN DE MODIFICACIÓN (Helpers) ---
+
+    const q = query(
+        collection(db, "users", userId, "profileHistory"),
+        orderBy("timestamp", "desc"),
+        limit(10)
+    );
+
+    onSnapshot(q, (snapshot) => {
+        if (snapshot.empty) {
+            listContainer.innerHTML = '<p class="text-sm text-gray-400 italic text-center p-4">No hay historial de cambios.</p>';
+            return;
+        }
+
+        listContainer.innerHTML = '';
+        snapshot.forEach(doc => {
+            const entry = doc.data();
+            const timestamp = entry.timestamp ? entry.timestamp.toDate() : new Date();
+            const dateString = timestamp.toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+            const changedByUser = usersMap.get(entry.changedBy);
+            const changedByName = changedByUser ? (changedByUser.firstName || 'Usuario') : 'Desconocido';
+
+            // --- INICIO DE MODIFICACIÓN (Tabla de Cambios) ---
+            // Creamos una mini-tabla (dl) para los cambios
+            let changesHtml = '<dl class="mt-2 text-xs space-y-1 border-t pt-2">';
+            for (const [key, value] of Object.entries(entry.changes)) {
+                const translatedKey = keyTranslator[key] || key; // Traduce la llave
+
+                changesHtml += `
+                    <div class="grid grid-cols-3 gap-1">
+                        <dt class="font-semibold text-gray-600 col-span-1">${translatedKey}:</dt>
+                        <dd class="text-gray-800 col-span-2">
+                            <span class="text-red-600">Antes:</span> ${formatValue(value.old)}<br>
+                            <span class="text-green-600">Después:</span> ${formatValue(value.new)}
+                        </dd>
+                    </div>
+                `;
+            }
+            changesHtml += '</dl>';
+            // --- FIN DE MODIFICACIÓN (Tabla de Cambios) ---
+
+            const logEntry = document.createElement('div');
+
+            // --- INICIO DE MODIFICACIÓN (Card de Historial) ---
+            // Aplicamos el nuevo estilo de "Tarjeta"
+            logEntry.className = 'bg-white rounded-lg shadow-sm border border-gray-200 p-3';
+            logEntry.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <p class="text-sm font-semibold text-blue-700">Cambio por: ${changedByName}</p>
+                    <p class="text-xs text-gray-500">${dateString}</p>
+                </div>
+                ${changesHtml}
+            `;
+            // --- FIN DE MODIFICACIÓN (Card de Historial) ---
+            listContainer.appendChild(logEntry);
+        });
+
+    }, (error) => {
+        console.error("Error al cargar historial de perfil:", error);
+        listContainer.innerHTML = '<p class="text-sm text-red-500 text-center">Error al cargar historial.</p>';
+    });
+}
 
 let lastVisibleCatalogDoc = null; // Guarda el último documento visto del catálogo
 let isFetchingCatalog = false;    // Evita cargas múltiples simultáneas
@@ -5441,8 +5556,8 @@ async function openMainModal(type, data = {}) {
                     </div>
 
                     <div class="md:col-span-3 border-t pt-4">
-                        <h4 class="text-md font-semibold text-gray-700 mb-2">Historial de Cambios Recientes</h4>
-                        <div id="profile-history-list" class="max-h-40 overflow-y-auto space-y-2 text-sm pr-2 border rounded-md p-3 bg-gray-50">
+                        <h4 class="text-md font-semibold text-gray-700 mb-2">Tallas Preferidas</h4>
+                        <div class="grid grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-sm font-medium">Camiseta</label>
                                 <input type="text" name="tallaCamiseta" class="mt-1 w-full border rounded-md p-2" value="${data.tallaCamiseta || ''}" placeholder="Ej: L">
@@ -5457,15 +5572,15 @@ async function openMainModal(type, data = {}) {
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <fieldset>
-                        <legend class="text-lg font-semibold text-gray-800 pb-2">4. Historial de Cambios Recientes</legend>
-                        <div id="profile-history-list" class="max-h-40 overflow-y-auto space-y-2 text-sm pr-2 border rounded-md p-3 bg-gray-50">
-                            </div>
-                    </fieldset>
-                </div>
+                    <div class="md:col-span-3 border-t pt-4">
+                        
+                        <button type="button" data-action="view-profile-history" data-userid="${currentUser.uid}" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg">
+                            Ver Mi Historial de Cambios
+                        </button>
 
+                    </div>
+                    </div>
             `;
             // --- FIN DE MODIFICACIÓN ---
 
@@ -5494,11 +5609,11 @@ async function openMainModal(type, data = {}) {
                         }
                     });
                 }
+
             }, 100);
 
-            loadProfileHistory(data.id); // <-- ¡LÍNEA AÑADIDA!
-
             break;
+
 
 
         case 'add-purchase':
@@ -6029,12 +6144,23 @@ async function openMainModal(type, data = {}) {
                             </div>
                         </div>
                     </div>
-                </div>`;
+
+                    <div class="md:col-span-3 border-t pt-4">
+                        
+                        <button type="button" data-action="view-profile-history" data-userid="${currentUser.uid}" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg">
+                            Ver Mi Historial de Cambios
+                        </button>
+                    </div>
+                    </div>
+            `;
             // --- FIN DE MODIFICACIÓN ---
 
-            loadProfileHistory(currentUser.uid); // <-- ¡LÍNEA AÑADIDA!
 
-            // (El 'setTimeout' para los listeners del dropzone ya no es necesario aquí)
+
+            // Corregido (envuelto en un setTimeout):
+            setTimeout(() => {
+            }, 100);
+
             break;
     }
 
@@ -8867,6 +8993,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 break;
             }
+            case 'view-profile-history': {
+                const userId = elementWithAction.dataset.userid;
+                if (userId) {
+                    loadProfileHistory(userId); // Llamamos a nuestra función modificada
+                }
+                break;
+            }
             case 'open-otro-si-modal':
                 openOtroSiModal();
                 break;
@@ -9874,6 +10007,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         materialRequestForm.addEventListener('submit', handleMaterialRequestSubmit);
     }
+
+
 
     // Función auxiliar para añadir ítems al resumen
     function addMaterialToSummaryList(item) {
@@ -13014,61 +13149,4 @@ async function savePendingProfileUpdate() {
 }
 // --- FIN DE CÓDIGO AÑADIDO ---
 
-// --- INICIO DE NUEVA FUNCIÓN (Historial) ---
-/**
- * Carga y muestra el historial de cambios de un perfil de usuario.
- * @param {string} userId - El ID del usuario cuyo historial se cargará.
- */
-async function loadProfileHistory(userId) {
-    const listContainer = document.getElementById('profile-history-list');
-    if (!listContainer) return;
 
-    listContainer.innerHTML = '<p class="text-sm text-gray-400 italic text-center">Cargando historial...</p>';
-
-    const usersMap = getUsersMap(); // Obtenemos el mapa de usuarios para los nombres
-
-    const q = query(
-        collection(db, "users", userId, "profileHistory"),
-        orderBy("timestamp", "desc"),
-        limit(10) // Mostramos solo los 10 cambios más recientes
-    );
-
-    // Usamos onSnapshot para que se actualice si hay un cambio
-    onSnapshot(q, (snapshot) => {
-        if (snapshot.empty) {
-            listContainer.innerHTML = '<p class="text-sm text-gray-400 italic text-center">No hay historial de cambios.</p>';
-            return;
-        }
-
-        listContainer.innerHTML = ''; // Limpiamos la lista
-        snapshot.forEach(doc => {
-            const entry = doc.data();
-            const timestamp = entry.timestamp ? entry.timestamp.toDate() : new Date();
-            const dateString = timestamp.toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-            // Buscamos quién hizo el cambio
-            const changedByUser = usersMap.get(entry.changedBy);
-            const changedByName = changedByUser ? (changedByUser.firstName || 'Usuario') : 'Desconocido';
-
-            let changesHtml = '<ul class_name="list-disc pl-5 mt-1 text-xs">';
-            for (const [key, value] of Object.entries(entry.changes)) {
-                changesHtml += `<li><strong>${key}:</strong> de "${value.old || 'vacío'}" a "${value.new}"</li>`;
-            }
-            changesHtml += '</ul>';
-
-            const logEntry = document.createElement('div');
-            logEntry.className = 'py-2 border-b border-gray-200 last:border-b-0';
-            logEntry.innerHTML = `
-                <p class="text-sm font-semibold text-gray-700">Cambio realizado por: ${changedByName}</p>
-                <p class="text-xs text-gray-500 mb-1">${dateString}</p>
-                ${changesHtml}
-            `;
-            listContainer.appendChild(logEntry);
-        });
-
-    }, (error) => {
-        console.error("Error al cargar historial de perfil:", error);
-        listContainer.innerHTML = '<p class="text-sm text-red-500 text-center">Error al cargar historial.</p>';
-    });
-}
-// --- FIN DE NUEVA FUNCIÓN (Historial) ---
