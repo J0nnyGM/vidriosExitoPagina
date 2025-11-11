@@ -8495,12 +8495,30 @@ document.addEventListener('DOMContentLoaded', () => {
                         throw new Error("Modelos de IA aún cargando. Intenta de nuevo en 5 segundos.");
                     }
 
-                    // 1. Capturar la imagen (Sin cambios)
+                    // --- INICIO DE LA CORRECCIÓN ---
+
+                    // 1. Obtenemos las dimensiones REALES del stream de video
+                    const videoWidth = videoEl.videoWidth;
+                    const videoHeight = videoEl.videoHeight;
+
+                    // 2. Ajustamos el tamaño del canvas a las dimensiones del video
+                    canvasEl.width = videoWidth;
+                    canvasEl.height = videoHeight;
+
                     const ctx = canvasEl.getContext('2d');
-                    ctx.translate(canvasEl.width, 0);
+
+                    // 3. Usamos el ancho real del canvas para el espejo
+                    ctx.translate(videoWidth, 0);
                     ctx.scale(-1, 1);
-                    ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+
+                    // 4. Dibujamos la imagen usando las dimensiones correctas
+                    ctx.drawImage(videoEl, 0, 0, videoWidth, videoHeight);
+
+                    // 5. Reseteamos la transformación
                     ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+                    // --- FIN DE LA CORRECCIÓN ---
+
 
                     // 2. Detener la cámara (Sin cambios)
                     if (videoStream) videoStream.getTracks().forEach(track => track.stop());
