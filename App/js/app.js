@@ -60,6 +60,7 @@ let catalogSearchTerm = ''; // Guarda el término de búsqueda actual para el ca
 let onSafetyCheckInSuccess = () => { }; // Callback global
 let videoStream = null; // Variable global para el stream de la cámara
 let verifiedCanvas = null; // Variable global para guardar la selfie verificada
+let pendingProfileUpdateData = null; // Guarda los datos del formulario de perfil temporalmente
 
 
 let lastVisibleCatalogDoc = null; // Guarda el último documento visto del catálogo
@@ -1215,17 +1216,22 @@ function loadUsers(filter) {
             const userData = { id: doc.id, ...doc.data() };
             const isActiveOrPending = userData.status === 'active' || userData.status === 'pending';
 
-            if (userData.id !== currentUser.uid) {
-                if (filter === 'active' && isActiveOrPending) {
-                    usersTableBody.appendChild(createUserRow(userData));
-                } else if (filter === 'archived' && userData.status === 'archived') {
-                    usersTableBody.appendChild(createUserRow(userData));
-                }
+            // --- INICIO DE LA MODIFICACIÓN ---
+            // La siguiente condición 'if' fue eliminada para que el 
+            // administrador pueda verse a sí mismo en la lista.
+            // if (userData.id !== currentUser.uid) { 
+            // --- FIN DE LA MODIFICACIÓN ---
+
+            if (filter === 'active' && isActiveOrPending) {
+                usersTableBody.appendChild(createUserRow(userData));
+            } else if (filter === 'archived' && userData.status === 'archived') {
+                usersTableBody.appendChild(createUserRow(userData));
             }
+
+            // (La llave de cierre del 'if' eliminado también se quitó)
         });
     });
 }
-
 let unsubscribeSuppliers = null; // Variable global para el listener de proveedores
 
 function loadProveedoresView() {
@@ -5435,8 +5441,8 @@ async function openMainModal(type, data = {}) {
                     </div>
 
                     <div class="md:col-span-3 border-t pt-4">
-                        <h4 class="text-md font-semibold text-gray-700 mb-2">Tallas Preferidas</h4>
-                        <div class="grid grid-cols-3 gap-4">
+                        <h4 class="text-md font-semibold text-gray-700 mb-2">Historial de Cambios Recientes</h4>
+                        <div id="profile-history-list" class="max-h-40 overflow-y-auto space-y-2 text-sm pr-2 border rounded-md p-3 bg-gray-50">
                             <div>
                                 <label class="block text-sm font-medium">Camiseta</label>
                                 <input type="text" name="tallaCamiseta" class="mt-1 w-full border rounded-md p-2" value="${data.tallaCamiseta || ''}" placeholder="Ej: L">
@@ -5452,6 +5458,14 @@ async function openMainModal(type, data = {}) {
                         </div>
                     </div>
                 </div>
+
+                <fieldset>
+                        <legend class="text-lg font-semibold text-gray-800 pb-2">4. Historial de Cambios Recientes</legend>
+                        <div id="profile-history-list" class="max-h-40 overflow-y-auto space-y-2 text-sm pr-2 border rounded-md p-3 bg-gray-50">
+                            </div>
+                    </fieldset>
+                </div>
+
             `;
             // --- FIN DE MODIFICACIÓN ---
 
@@ -5481,6 +5495,8 @@ async function openMainModal(type, data = {}) {
                     });
                 }
             }, 100);
+
+            loadProfileHistory(data.id); // <-- ¡LÍNEA AÑADIDA!
 
             break;
 
@@ -6015,6 +6031,8 @@ async function openMainModal(type, data = {}) {
                     </div>
                 </div>`;
             // --- FIN DE MODIFICACIÓN ---
+
+            loadProfileHistory(currentUser.uid); // <-- ¡LÍNEA AÑADIDA!
 
             // (El 'setTimeout' para los listeners del dropzone ya no es necesario aquí)
             break;
@@ -6800,29 +6818,35 @@ modalForm.addEventListener('submit', async (e) => {
             break;
         }
         case 'editUser':
-            // --- INICIO DE MODIFICACIÓN (Añadir lógica de subida de foto) ---
+            // --- INICIO DE MODIFICACIÓN (Añadir lógica de historial) ---
             try {
                 modalConfirmBtn.disabled = true;
                 modalConfirmBtn.textContent = 'Guardando...';
 
-                // 1. Buscar el archivo subido por el admin
+                // 1. Obtenemos los datos antiguos para comparar
+                const userRef = doc(db, "users", id);
+                const oldUserData = usersMap.get(id) || {};
+                const changes = {}; // Objeto para guardar solo lo que cambió
+
+                // 2. Buscar el archivo subido por el admin
                 const photoFile = document.getElementById('editUser-photo-input')?.files[0];
                 let downloadURL = null;
 
-                // 2. Si el admin subió una foto nueva...
+                // 3. Si el admin subió una foto nueva...
                 if (photoFile && photoFile.size > 0) {
                     modalConfirmBtn.textContent = 'Redimensionando foto...';
                     const resizedBlob = await resizeImage(photoFile, 400);
 
                     modalConfirmBtn.textContent = 'Subiendo foto...';
-                    // Usamos 'id' (el ID del usuario editado), NO currentUser.uid
                     const photoPath = `profile_photos/${id}/profile.jpg`;
                     const photoStorageRef = ref(storage, photoPath);
                     await uploadBytes(photoStorageRef, resizedBlob);
                     downloadURL = await getDownloadURL(photoStorageRef);
+                    // Registramos el cambio de foto en el historial
+                    changes.profilePhotoURL = { old: oldUserData.profilePhotoURL || 'ninguna', new: 'nueva foto' };
                 }
 
-                // 3. Preparar los datos a guardar
+                // 4. Preparar los datos a actualizar y comparar
                 const dataToUpdate = {
                     firstName: data.firstName,
                     lastName: data.lastName,
@@ -6834,13 +6858,39 @@ modalForm.addEventListener('submit', async (e) => {
                     tallaBotas: data.tallaBotas || '',
                 };
 
-                // 4. Añadir la URL de la foto SOLO SI se subió una nueva
+                // 5. Comparamos los campos de texto
+                if (data.firstName !== oldUserData.firstName) changes.firstName = { old: oldUserData.firstName, new: data.firstName };
+                if (data.lastName !== oldUserData.lastName) changes.lastName = { old: oldUserData.lastName, new: data.lastName };
+                if (data.idNumber !== oldUserData.idNumber) changes.idNumber = { old: oldUserData.idNumber, new: data.idNumber };
+                if (data.phone !== oldUserData.phone) changes.phone = { old: oldUserData.phone, new: data.phone };
+                if (data.address !== oldUserData.address) changes.address = { old: oldUserData.address, new: data.address };
+                if ((data.tallaCamiseta || '') !== (oldUserData.tallaCamiseta || '')) changes.tallaCamiseta = { old: oldUserData.tallaCamiseta || '', new: data.tallaCamiseta };
+                if ((data.tallaPantalón || '') !== (oldUserData.tallaPantalón || '')) changes.tallaPantalón = { old: oldUserData.tallaPantalón || '', new: data.tallaPantalón };
+                if ((data.tallaBotas || '') !== (oldUserData.tallaBotas || '')) changes.tallaBotas = { old: oldUserData.tallaBotas || '', new: data.tallaBotas };
+
+                // 6. Añadir la URL de la foto SOLO SI se subió una nueva
                 if (downloadURL) {
                     dataToUpdate.profilePhotoURL = downloadURL;
                 }
 
-                // 5. Actualizar Firestore
-                await updateDoc(doc(db, "users", id), dataToUpdate);
+                // 7. Usar un BATCH para guardar la actualización Y el historial
+                const batch = writeBatch(db);
+
+                // 7a. Actualizar el documento principal del usuario
+                batch.update(userRef, dataToUpdate);
+
+                // 7b. Guardar el historial SOLO SI hubo cambios
+                if (Object.keys(changes).length > 0) {
+                    const historyRef = doc(collection(userRef, "profileHistory"));
+                    batch.set(historyRef, {
+                        changes: changes,
+                        changedBy: currentUser.uid, // ¡El ID del ADMIN!
+                        timestamp: serverTimestamp()
+                    });
+                }
+
+                // 8. Ejecutar el batch
+                await batch.commit();
 
             } catch (error) {
                 console.error("Error al actualizar perfil de usuario (admin):", error);
@@ -6852,48 +6902,42 @@ modalForm.addEventListener('submit', async (e) => {
             }
             // --- FIN DE MODIFICACIÓN ---
             break; // <-- Este break ya existía
+
         case 'editProfile':
-            // --- INICIO DE MODIFICACIÓN (Lógica simplificada sin fotos) ---
-            let validationSuccess = false;
-            try {
-                const user = auth.currentUser;
-                modalConfirmBtn.disabled = true;
-                modalConfirmBtn.textContent = 'Guardando...';
+            // --- INICIO DE MODIFICACIÓN (Verificar cambios antes de autenticar) ---
 
-                // 1. Preparar los datos (SIN FOTO)
-                const dataToUpdate = {
-                    email: data.email,
-                    phone: data.phone,
-                    address: data.address,
-                    tallaCamiseta: data.tallaCamiseta || '',
-                    tallaPantalón: data.tallaPantalón || '',
-                    tallaBotas: data.tallaBotas || '',
-                };
+            // 1. Obtenemos los datos actuales para comparar
+            const user = auth.currentUser;
+            const oldUserData = usersMap.get(user.uid) || {};
 
-                // 2. Verificar si el email cambió
-                if (data.email !== user.email) {
-                    modalConfirmBtn.textContent = 'Actualizando email...';
-                    await updateEmail(user, data.email);
-                }
+            // 2. Comparamos los campos (usamos || '' para evitar errores con null/undefined)
+            const hasChanges = (
+                data.email !== user.email ||
+                data.phone !== oldUserData.phone ||
+                data.address !== oldUserData.address ||
+                (data.tallaCamiseta || '') !== (oldUserData.tallaCamiseta || '') ||
+                (data.tallaPantalón || '') !== (oldUserData.tallaPantalón || '') ||
+                (data.tallaBotas || '') !== (oldUserData.tallaBotas || '')
+            );
 
-                // 3. Actualizar Firestore
-                modalConfirmBtn.textContent = 'Finalizando...';
-                await updateDoc(doc(db, "users", user.uid), dataToUpdate);
+            // 3. Decidimos el flujo
+            if (hasChanges) {
+                // SI HAY CAMBIOS: Iniciar flujo de autenticación facial
+                console.log("Cambios detectados en el perfil. Iniciando autenticación facial...");
 
-                // 4. Actualizar caché local
-                const updatedUser = { ...usersMap.get(user.uid), ...dataToUpdate };
-                usersMap.set(user.uid, updatedUser);
-                validationSuccess = true;
+                // 1. Guardamos los datos del formulario en la variable temporal
+                pendingProfileUpdateData = data;
 
-            } catch (error) {
-                console.error("Error al actualizar perfil:", error);
-                alert("Error al actualizar el perfil. Es posible que necesites volver a iniciar sesión.");
-            } finally {
-                modalConfirmBtn.disabled = false;
-                modalConfirmBtn.textContent = 'Guardar Cambios';
-                if (validationSuccess) {
-                    closeMainModal();
-                }
+                // 2. Cerramos el modal de perfil
+                closeMainModal();
+
+                // 3. Abrimos el modal de autenticación facial
+                openProfileAuthModal();
+
+            } else {
+                // NO HAY CAMBIOS: Solo cerrar el modal
+                console.log("No se detectaron cambios en el perfil. Cerrando modal.");
+                closeMainModal();
             }
             // --- FIN DE MODIFICACIÓN ---
             break;
@@ -8606,56 +8650,64 @@ document.addEventListener('DOMContentLoaded', () => {
             // Botón: Confirmar Check-in
             if (target.id === 'checkin-confirm-btn') {
                 const taskId = target.dataset.taskId; // Obtenemos el taskId
-                if (!taskId) {
-                    alert("Error crítico: No se pudo identificar la tarea. Cierra este modal e inténtalo de nuevo.");
-                    return;
-                }
 
+                // (La validación de EPP y 'verifiedCanvas' sigue igual...)
                 if (!verifiedCanvas) {
                     alert("Error: Aún no se ha verificado una foto.");
                     return;
                 }
 
-                const checkboxes = document.querySelectorAll('.epp-checkbox');
-                // Si hay checkboxes, deben estar todos marcados. Si no hay, saltamos.
-                if (checkboxes.length > 0) {
-                    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-                    if (!allChecked) {
-                        alert("Por favor, confirma que tienes todos tus equipos de protección (EPP) marcando las casillas.");
-                        return;
+                // --- INICIO DE MODIFICACIÓN ---
+                // Omitimos la validación de EPP si es un cambio de perfil (no hay taskId)
+                if (taskId) {
+                    const checkboxes = document.querySelectorAll('.epp-checkbox');
+                    if (checkboxes.length > 0) {
+                        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+                        if (!allChecked) {
+                            alert("Por favor, confirma que tienes todos tus equipos de protección (EPP) marcando las casillas.");
+                            return;
+                        }
                     }
                 }
+                // --- FIN DE MODIFICACIÓN ---
 
                 target.disabled = true;
-                target.textContent = 'Guardando evidencia...';
+                target.textContent = 'Guardando...';
 
                 try {
-                    // 1. Convertir el Canvas (selfie) a Blob
-                    const selfieBlob = await new Promise(resolve => verifiedCanvas.toBlob(resolve, 'image/jpeg', 0.85));
+                    // --- INICIO DE MODIFICACIÓN ---
+                    // Solo guardamos la foto si estamos haciendo un check-in de TAREA
+                    if (taskId) {
+                        target.textContent = 'Guardando evidencia...';
 
-                    // 2. Subir la selfie a Storage
-                    const selfiePath = `checkin_evidence/${taskId}/${currentUser.uid}_${Date.now()}.jpg`;
-                    const selfieStorageRef = ref(storage, selfiePath);
-                    await uploadBytes(selfieStorageRef, selfieBlob);
-                    const downloadURL = await getDownloadURL(selfieStorageRef);
+                        // 1. Convertir el Canvas (selfie) a Blob
+                        const selfieBlob = await new Promise(resolve => verifiedCanvas.toBlob(resolve, 'image/jpeg', 0.85));
 
-                    // 3. Guardar el log en la bitácora de la Tarea
-                    await addDoc(collection(db, "tasks", taskId, "comments"), {
-                        type: 'log', // Para que se vea diferente
-                        text: `<b>Check-in de seguridad verificado.</b>`,
-                        photoURL: downloadURL, // La selfie
-                        userId: currentUser.uid,
-                        userName: `${usersMap.get(currentUser.uid)?.firstName || 'Usuario'} ${usersMap.get(currentUser.uid)?.lastName || ''}`,
-                        createdAt: new Date()
-                    });
+                        // 2. Subir la selfie a Storage
+                        const selfiePath = `checkin_evidence/${taskId}/${currentUser.uid}_${Date.now()}.jpg`;
+                        const selfieStorageRef = ref(storage, selfiePath);
+                        await uploadBytes(selfieStorageRef, selfieBlob);
+                        const downloadURL = await getDownloadURL(selfieStorageRef);
 
-                    // 4. ELIMINAMOS el 'localStorage'
-                    // localStorage.setItem('lastSafetyCheckIn', new Date().toISOString());
+                        // 3. Guardar el log en la bitácora de la Tarea
+                        await addDoc(collection(db, "tasks", taskId, "comments"), {
+                            type: 'log',
+                            text: `<b>Check-in de seguridad verificado.</b>`,
+                            photoURL: downloadURL, // La selfie
+                            userId: currentUser.uid,
+                            userName: `${usersMap.get(currentUser.uid)?.firstName || 'Usuario'} ${usersMap.get(currentUser.uid)?.lastName || ''}`,
+                            createdAt: new Date()
+                        });
+                    }
+                    // --- FIN DE MODIFICACIÓN ---
 
-                    // 5. Cerramos el modal
+
+                    // 4. Cerramos el modal
                     document.getElementById('safety-checkin-modal').style.display = 'none';
 
-                    // 6. ¡Ejecutamos la acción original!
+                    // 5. ¡Ejecutamos la acción original!
+                    // (Si era un check-in, ejecuta 'handleRegisterTaskProgress')
+                    // (Si era un perfil, ejecuta 'savePendingProfileUpdate')
                     if (onSafetyCheckInSuccess) {
                         onSafetyCheckInSuccess();
                     }
@@ -12844,3 +12896,179 @@ async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
         eppList.innerHTML = '<p class="text-red-500">Error al cargar tu dotación.</p>';
     }
 }
+
+/**
+ * Abre el modal de autenticación facial para la edición del perfil.
+ * Reutiliza el modal de check-in pero oculta la parte de EPP.
+ */
+async function openProfileAuthModal() {
+    onSafetyCheckInSuccess = savePendingProfileUpdate; // ¡La función que se ejecutará si la cara es correcta!
+    verifiedCanvas = null;
+
+    const modal = document.getElementById('safety-checkin-modal');
+    const title = document.getElementById('safety-checkin-title');
+    const step1 = document.getElementById('checkin-step-1-face');
+    const step2 = document.getElementById('checkin-step-2-epp'); // Lo vamos a ocultar
+    const videoEl = document.getElementById('checkin-video-feed');
+    const takePhotoButton = document.getElementById('checkin-take-photo-btn');
+    const faceStatus = document.getElementById('checkin-face-status');
+    const confirmBtn = document.getElementById('checkin-confirm-btn');
+
+    modal.style.zIndex = "60";
+
+    // 1. Resetear el modal
+    step1.classList.remove('hidden');
+    step2.classList.add('hidden'); // Ocultamos el checklist de EPP
+    title.textContent = 'Verificar Identidad'; // Cambiamos el título
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Confirmar Identidad';
+    takePhotoButton.disabled = false;
+    takePhotoButton.textContent = 'Tomar Foto y Verificar Rostro';
+    faceStatus.textContent = '';
+    confirmBtn.dataset.taskId = ''; // Nos aseguramos de que no haya un ID de tarea
+
+    modal.style.display = 'flex';
+
+    // 2. Iniciar la cámara
+    try {
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+        }
+        videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        videoEl.srcObject = videoStream;
+    } catch (err) {
+        console.error("Error al acceder a la cámara:", err);
+        faceStatus.textContent = "Error al acceder a la cámara. Revisa los permisos.";
+    }
+}
+
+/**
+ * Guarda los cambios pendientes del perfil (después de la autenticación facial)
+ * Y crea un registro de auditoría (Historial de Cambios).
+ */
+async function savePendingProfileUpdate() {
+    const data = pendingProfileUpdateData;
+    const user = auth.currentUser;
+    if (!data || !user) {
+        alert("Error: No se encontraron datos para actualizar.");
+        return;
+    }
+
+    loadingOverlay.classList.remove('hidden');
+
+    try {
+        const userRef = doc(db, "users", user.uid);
+        const oldUserData = usersMap.get(user.uid) || {};
+
+        // 1. Preparar los datos a actualizar
+        const dataToUpdate = {
+            phone: data.phone,
+            address: data.address,
+            tallaCamiseta: data.tallaCamiseta || '',
+            tallaPantalón: data.tallaPantalón || '',
+            tallaBotas: data.tallaBotas || '',
+        };
+
+        // 2. Preparar el log de auditoría (Historial)
+        const changes = {};
+        if (data.phone !== oldUserData.phone) changes.phone = { old: oldUserData.phone, new: data.phone };
+        if (data.address !== oldUserData.address) changes.address = { old: oldUserData.address, new: data.address };
+        if (data.tallaCamiseta !== (oldUserData.tallaCamiseta || '')) changes.tallaCamiseta = { old: oldUserData.tallaCamiseta || '', new: data.tallaCamiseta };
+        if (data.tallaPantalón !== (oldUserData.tallaPantalón || '')) changes.tallaPantalón = { old: oldUserData.tallaPantalón || '', new: data.tallaPantalón };
+        if (data.tallaBotas !== (oldUserData.tallaBotas || '')) changes.tallaBotas = { old: oldUserData.tallaBotas || '', new: data.tallaBotas };
+        if (data.email !== user.email) changes.email = { old: user.email, new: data.email };
+
+        // 3. Usar un BATCH para guardar ambos (actualización + historial)
+        const batch = writeBatch(db);
+        const historyRef = doc(collection(userRef, "profileHistory")); // Nueva subcolección
+
+        batch.update(userRef, dataToUpdate);
+
+        // Solo guardamos el log si hubo cambios
+        if (Object.keys(changes).length > 0) {
+            batch.set(historyRef, {
+                changes: changes,
+                changedBy: user.uid,
+                timestamp: serverTimestamp()
+            });
+        }
+
+        await batch.commit();
+
+        // 4. Actualizar el email (si cambió)
+        if (data.email !== user.email) {
+            await updateEmail(user, data.email);
+        }
+
+        // 5. Actualizar la caché local
+        const updatedUserCache = { ...usersMap.get(user.uid), ...dataToUpdate, email: data.email };
+        usersMap.set(user.uid, updatedUserCache);
+
+    } catch (error) {
+        console.error("Error al guardar los cambios del perfil:", error);
+        alert("Error al guardar el perfil. Es posible que necesites volver a iniciar sesión.");
+    } finally {
+        loadingOverlay.classList.add('hidden');
+        pendingProfileUpdateData = null; // Limpiar los datos temporales
+    }
+}
+// --- FIN DE CÓDIGO AÑADIDO ---
+
+// --- INICIO DE NUEVA FUNCIÓN (Historial) ---
+/**
+ * Carga y muestra el historial de cambios de un perfil de usuario.
+ * @param {string} userId - El ID del usuario cuyo historial se cargará.
+ */
+async function loadProfileHistory(userId) {
+    const listContainer = document.getElementById('profile-history-list');
+    if (!listContainer) return;
+
+    listContainer.innerHTML = '<p class="text-sm text-gray-400 italic text-center">Cargando historial...</p>';
+
+    const usersMap = getUsersMap(); // Obtenemos el mapa de usuarios para los nombres
+
+    const q = query(
+        collection(db, "users", userId, "profileHistory"),
+        orderBy("timestamp", "desc"),
+        limit(10) // Mostramos solo los 10 cambios más recientes
+    );
+
+    // Usamos onSnapshot para que se actualice si hay un cambio
+    onSnapshot(q, (snapshot) => {
+        if (snapshot.empty) {
+            listContainer.innerHTML = '<p class="text-sm text-gray-400 italic text-center">No hay historial de cambios.</p>';
+            return;
+        }
+
+        listContainer.innerHTML = ''; // Limpiamos la lista
+        snapshot.forEach(doc => {
+            const entry = doc.data();
+            const timestamp = entry.timestamp ? entry.timestamp.toDate() : new Date();
+            const dateString = timestamp.toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+            // Buscamos quién hizo el cambio
+            const changedByUser = usersMap.get(entry.changedBy);
+            const changedByName = changedByUser ? (changedByUser.firstName || 'Usuario') : 'Desconocido';
+
+            let changesHtml = '<ul class_name="list-disc pl-5 mt-1 text-xs">';
+            for (const [key, value] of Object.entries(entry.changes)) {
+                changesHtml += `<li><strong>${key}:</strong> de "${value.old || 'vacío'}" a "${value.new}"</li>`;
+            }
+            changesHtml += '</ul>';
+
+            const logEntry = document.createElement('div');
+            logEntry.className = 'py-2 border-b border-gray-200 last:border-b-0';
+            logEntry.innerHTML = `
+                <p class="text-sm font-semibold text-gray-700">Cambio realizado por: ${changedByName}</p>
+                <p class="text-xs text-gray-500 mb-1">${dateString}</p>
+                ${changesHtml}
+            `;
+            listContainer.appendChild(logEntry);
+        });
+
+    }, (error) => {
+        console.error("Error al cargar historial de perfil:", error);
+        listContainer.innerHTML = '<p class="text-sm text-red-500 text-center">Error al cargar historial.</p>';
+    });
+}
+// --- FIN DE NUEVA FUNCIÓN (Historial) ---
