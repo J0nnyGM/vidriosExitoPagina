@@ -5382,38 +5382,109 @@ async function openMainModal(type, data = {}) {
         }
         case 'editUser':
             title = 'Editar Usuario'; btnText = 'Guardar Cambios'; btnClass = 'bg-yellow-500 hover:bg-yellow-600';
+            modalContentDiv.classList.add('max-w-2xl'); // Aseguramos el tamaño
 
-            // --- INICIO DE MODIFICACIÓN ---
-            bodyHtml = `<div class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div><label for="user-firstName" class="block text-sm font-medium text-gray-700">Nombre</label><input type="text" id="user-firstName" name="firstName" value="${data.firstName}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
-                    <div><label for="user-lastName" class="block text-sm font-medium text-gray-700">Apellido</label><input type="text" id="user-lastName" name="lastName" value="${data.lastName}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
-                </div>
-                <div><label for="user-idNumber" class="block text-sm font-medium text-gray-700">Cédula</label><input type="text" id="user-idNumber" name="idNumber" value="${data.idNumber}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
-                <div><label for="user-email" class="block text-sm font-medium text-gray-700">Correo</label><input type="email" id="user-email" name="email" value="${data.email}" required class="mt-1 block w-full px-3 py-2 border rounded-md bg-gray-100" readonly></div>
-                <div><label for="user-phone" class="block text-sm font-medium text-gray-700">Celular</label><input type="tel" id="user-phone" name="phone" value="${data.phone}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
-                <div><label for="user-address" class="block text-sm font-medium text-gray-700">Dirección</label><input type="text" id="user-address" name="address" value="${data.address}" required class="mt-1 block w-full px-3 py-2 border rounded-md"></div>
-            
-                <div class="border-t pt-4">
-                    <h4 class="text-md font-semibold text-gray-700 mb-2">Tallas Preferidas</h4>
-                    <div class="grid grid-cols-3 gap-4">
+            // --- INICIO DE LA MODIFICACIÓN (HTML con Uploader) ---
+            bodyHtml = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    
+                    <div class="md:col-span-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Selfie (Foto de Perfil)</label>
+                        
+                        <div id="editUser-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
+                            
+                            <div id="editUser-preview" class="absolute inset-0 ${data.profilePhotoURL ? '' : 'hidden'}">
+                                <img src="${data.profilePhotoURL || ''}" id="editUser-img-preview" class="w-full h-full object-cover">
+                            </div>
+                            
+                            <div id="editUser-prompt" class="text-center p-4 ${data.profilePhotoURL ? 'hidden' : ''} flex items-center justify-center h-full">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                            </div>
+                        </div>
+
+                        <input type="file" id="editUser-photo-input" name="photo" accept="image/*" class="hidden">
+
+                        <p class="text-xs text-center text-gray-500 mt-2">Toca la imagen para cambiar la foto del usuario.</p>
+                    </div>
+
+                    <div class="md:col-span-2 space-y-4">
                         <div>
-                            <label class="block text-sm font-medium">Camiseta</label>
-                            <input type="text" name="tallaCamiseta" class="mt-1 w-full border rounded-md p-2" value="${data.tallaCamiseta || ''}" placeholder="Ej: L">
+                            <label for="user-firstName" class="block text-sm font-medium text-gray-700">Nombre</label>
+                            <input type="text" id="user-firstName" name="firstName" value="${data.firstName}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
                         </div>
                         <div>
-                            <label class="block text-sm font-medium">Pantalón</label>
-                            <input type="text" name="tallaPantalón" class="mt-1 w-full border rounded-md p-2" value="${data.tallaPantalón || ''}" placeholder="Ej: 32">
+                            <label for="user-lastName" class="block text-sm font-medium text-gray-700">Apellido</label>
+                            <input type="text" id="user-lastName" name="lastName" value="${data.lastName}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
                         </div>
                         <div>
-                            <label class="block text-sm font-medium">Botas</label>
-                            <input type="text" name="tallaBotas" class="mt-1 w-full border rounded-md p-2" value="${data.tallaBotas || ''}" placeholder="Ej: 42">
+                            <label for="user-idNumber" class="block text-sm font-medium text-gray-700">Cédula</label>
+                            <input type="text" id="user-idNumber" name="idNumber" value="${data.idNumber}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        </div>
+                        <div>
+                            <label for="user-email" class="block text-sm font-medium text-gray-700">Correo (No editable)</label>
+                            <input type="email" id="user-email" name="email" value="${data.email}" required class="mt-1 block w-full px-3 py-2 border rounded-md bg-gray-100" readonly>
+                        </div>
+                        <div>
+                            <label for="user-phone" class="block text-sm font-medium text-gray-700">Celular</label>
+                            <input type="tel" id="user-phone" name="phone" value="${data.phone}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        </div>
+                        <div>
+                            <label for="user-address" class="block text-sm font-medium text-gray-700">Dirección</label>
+                            <input type="text" id="user-address" name="address" value="${data.address}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        </div>
+                    </div>
+
+                    <div class="md:col-span-3 border-t pt-4">
+                        <h4 class="text-md font-semibold text-gray-700 mb-2">Tallas Preferidas</h4>
+                        <div class="grid grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium">Camiseta</label>
+                                <input type="text" name="tallaCamiseta" class="mt-1 w-full border rounded-md p-2" value="${data.tallaCamiseta || ''}" placeholder="Ej: L">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium">Pantalón</label>
+                                <input type="text" name="tallaPantalón" class="mt-1 w-full border rounded-md p-2" value="${data.tallaPantalón || ''}" placeholder="Ej: 32">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium">Botas</label>
+                                <input type="text" name="tallaBotas" class="mt-1 w-full border rounded-md p-2" value="${data.tallaBotas || ''}" placeholder="Ej: 42">
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>`;
+            `;
             // --- FIN DE MODIFICACIÓN ---
+
+            // Lógica JS para el nuevo dropzone
+            setTimeout(() => {
+                const dropzone = document.getElementById('editUser-dropzone');
+                const fileInput = document.getElementById('editUser-photo-input');
+                const previewContainer = document.getElementById('editUser-preview');
+                const previewImg = document.getElementById('editUser-img-preview');
+                const promptEl = document.getElementById('editUser-prompt');
+
+                if (dropzone) {
+                    dropzone.addEventListener('click', () => fileInput.click());
+                }
+                if (fileInput) {
+                    fileInput.addEventListener('change', (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                previewImg.src = event.target.result;
+                                previewContainer.classList.remove('hidden');
+                                promptEl.classList.add('hidden');
+                            }
+                            reader.readAsDataURL(file);
+                        }
+                    });
+                }
+            }, 100);
+
             break;
+
+
         case 'add-purchase':
             title = 'Registrar Compra en Inventario';
             btnText = 'Añadir a Inventario';
@@ -5888,28 +5959,18 @@ async function openMainModal(type, data = {}) {
 
         case 'editProfile':
             title = 'Mi Perfil'; btnText = 'Guardar Cambios'; btnClass = 'bg-blue-500 hover:bg-blue-600';
+            modalContentDiv.classList.add('max-w-2xl'); // Aseguramos el tamaño
 
-            // --- INICIO DE MODIFICACIÓN (Layout Simplificado) ---
+            // --- INICIO DE MODIFICACIÓN (HTML Solo Vista) ---
             bodyHtml = `
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     
                     <div class="md:col-span-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Selfie (Foto de Perfil)</label>
-                        
-                        <div id="profile-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
-                            
-                            <div id="profile-preview" class="absolute inset-0 ${data.profilePhotoURL ? '' : 'hidden'}">
-                                <img src="${data.profilePhotoURL || ''}" id="profile-img-preview" class="w-full h-full object-cover">
-                            </div>
-                            
-                            <div id="profile-prompt" class="text-center p-4 ${data.profilePhotoURL ? 'hidden' : ''} flex items-center justify-center h-full">
-                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                            </div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Foto de Perfil</label>
+                        <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden border">
+                            <img src="${data.profilePhotoURL || 'https://via.placeholder.com/300'}" alt="Foto de perfil" class="w-full h-full object-cover">
                         </div>
-
-                        <input type="file" id="profile-photo-input" name="photo" accept="image/*" class="hidden">
-
-                        <p class="text-xs text-center text-gray-500 mt-2">Toca la imagen para cambiar tu foto.<br>Usa una foto clara con fondo blanco.</p>
+                        <p class="text-xs text-center text-gray-500 mt-2">La foto de perfil solo puede ser actualizada por un administrador.</p>
                     </div>
 
                     <div class="md:col-span-2 space-y-4">
@@ -5955,39 +6016,7 @@ async function openMainModal(type, data = {}) {
                 </div>`;
             // --- FIN DE MODIFICACIÓN ---
 
-            // Reemplaza el 'setTimeout' con esta lógica de listener simplificada
-            setTimeout(() => {
-                // --- INICIO DE MODIFICACIÓN (Lógica de Dropzone) ---
-
-                // 1. Referencias a los elementos
-                const dropzone = document.getElementById('profile-dropzone');
-                const fileInput = document.getElementById('profile-photo-input'); // El nuevo ID
-                const previewContainer = document.getElementById('profile-preview');
-                const previewImg = document.getElementById('profile-img-preview');
-                const promptEl = document.getElementById('profile-prompt');
-
-                // 2. Conectar el clic del 'dropzone' al 'input' único
-                if (dropzone) {
-                    dropzone.addEventListener('click', () => fileInput.click());
-                }
-
-                // 3. El listener de 'change' para la vista previa
-                if (fileInput) {
-                    fileInput.addEventListener('change', (e) => {
-                        const file = e.target.files[0];
-                        if (file) {
-                            const reader = new FileReader();
-                            reader.onload = (event) => {
-                                previewImg.src = event.target.result;
-                                previewContainer.classList.remove('hidden');
-                                promptEl.classList.add('hidden');
-                            }
-                            reader.readAsDataURL(file);
-                        }
-                    });
-                }
-                // --- FIN DE MODIFICACIÓN ---
-            }, 100);
+            // (El 'setTimeout' para los listeners del dropzone ya no es necesario aquí)
             break;
     }
 
@@ -6771,77 +6800,67 @@ modalForm.addEventListener('submit', async (e) => {
             break;
         }
         case 'editUser':
-            await updateDoc(doc(db, "users", id), {
-                firstName: data.firstName,
-                lastName: data.lastName,
-                idNumber: data.idNumber,
-                phone: data.phone,
-                address: data.address,
-                // --- INICIO DE MODIFICACIÓN ---
-                tallaCamiseta: data.tallaCamiseta || '',
-                tallaPantalón: data.tallaPantalón || '',
-                tallaBotas: data.tallaBotas || '',
-                // --- FIN DE MODIFICACIÓN ---
-            });
-            break;
+            // --- INICIO DE MODIFICACIÓN (Añadir lógica de subida de foto) ---
+            try {
+                modalConfirmBtn.disabled = true;
+                modalConfirmBtn.textContent = 'Guardando...';
+
+                // 1. Buscar el archivo subido por el admin
+                const photoFile = document.getElementById('editUser-photo-input')?.files[0];
+                let downloadURL = null;
+
+                // 2. Si el admin subió una foto nueva...
+                if (photoFile && photoFile.size > 0) {
+                    modalConfirmBtn.textContent = 'Redimensionando foto...';
+                    const resizedBlob = await resizeImage(photoFile, 400);
+
+                    modalConfirmBtn.textContent = 'Subiendo foto...';
+                    // Usamos 'id' (el ID del usuario editado), NO currentUser.uid
+                    const photoPath = `profile_photos/${id}/profile.jpg`;
+                    const photoStorageRef = ref(storage, photoPath);
+                    await uploadBytes(photoStorageRef, resizedBlob);
+                    downloadURL = await getDownloadURL(photoStorageRef);
+                }
+
+                // 3. Preparar los datos a guardar
+                const dataToUpdate = {
+                    firstName: data.firstName,
+                    lastName: data.lastName,
+                    idNumber: data.idNumber,
+                    phone: data.phone,
+                    address: data.address,
+                    tallaCamiseta: data.tallaCamiseta || '',
+                    tallaPantalón: data.tallaPantalón || '',
+                    tallaBotas: data.tallaBotas || '',
+                };
+
+                // 4. Añadir la URL de la foto SOLO SI se subió una nueva
+                if (downloadURL) {
+                    dataToUpdate.profilePhotoURL = downloadURL;
+                }
+
+                // 5. Actualizar Firestore
+                await updateDoc(doc(db, "users", id), dataToUpdate);
+
+            } catch (error) {
+                console.error("Error al actualizar perfil de usuario (admin):", error);
+                alert("Error al actualizar el perfil.");
+            } finally {
+                modalConfirmBtn.disabled = false;
+                modalConfirmBtn.textContent = 'Guardar Cambios';
+                closeMainModal(); // Cerramos el modal al finalizar
+            }
+            // --- FIN DE MODIFICACIÓN ---
+            break; // <-- Este break ya existía
         case 'editProfile':
+            // --- INICIO DE MODIFICACIÓN (Lógica simplificada sin fotos) ---
             let validationSuccess = false;
             try {
                 const user = auth.currentUser;
                 modalConfirmBtn.disabled = true;
                 modalConfirmBtn.textContent = 'Guardando...';
 
-
-
-                // --- INICIO DE MODIFICACIÓN ---
-                // 1. Encontrar cuál de los dos inputs tiene un archivo
-                const cameraFile = document.getElementById('profile-photo-camera').files[0];
-                const galleryFile = document.getElementById('profile-photo-gallery').files[0];
-                const photoFile = cameraFile || galleryFile; // Usamos el que tenga un archivo
-                // --- FIN DE MODIFICACIÓN ---
-
-                let downloadURL = null;
-
-                // 2. Si el usuario subió una foto nueva...
-                if (photoFile && photoFile.size > 0) {
-
-                    // ... (Toda tu lógica de validación de face-api.js) ...
-                    modalConfirmBtn.textContent = 'Validando rostro...';
-                    const imgPreview = document.getElementById('profile-img-preview');
-                    if (!imgPreview) throw new Error("Error interno: No se encontró la vista previa.");
-
-                    if (!modelsLoaded) {
-                        throw new Error("Modelos de IA aún cargando. Intenta de nuevo en 5 segundos.");
-                    }
-
-                    const detection = await faceapi.detectSingleFace(imgPreview)
-                        .withFaceLandmarks()
-                        .withFaceDescriptor();
-
-                    if (!detection) {
-                        throw new Error("No se detectó un rostro en la foto. Sube una selfie clara.");
-                    }
-
-                    if (currentUserFaceDescriptor) {
-                        const distance = faceapi.euclideanDistance(currentUserFaceDescriptor, detection.descriptor);
-                        const umbralDeCoincidencia = 0.5;
-                        if (distance > umbralDeCoincidencia) {
-                            throw new Error(`Rostro no coincide (Distancia: ${distance.toFixed(2)}). Intenta de nuevo.`);
-                        }
-                    }
-
-                    // ... (El resto de la lógica de subida de foto) ...
-                    modalConfirmBtn.textContent = 'Redimensionando foto...';
-                    const resizedBlob = await resizeImage(photoFile, 400);
-
-                    modalConfirmBtn.textContent = 'Subiendo foto...';
-                    const photoPath = `profile_photos/${user.uid}/profile.jpg`;
-                    const photoStorageRef = ref(storage, photoPath);
-                    await uploadBytes(photoStorageRef, resizedBlob);
-                    downloadURL = await getDownloadURL(photoStorageRef);
-                }
-
-                // 3. Preparar los datos a guardar (sin cambios)
+                // 1. Preparar los datos (SIN FOTO)
                 const dataToUpdate = {
                     email: data.email,
                     phone: data.phone,
@@ -6851,27 +6870,24 @@ modalForm.addEventListener('submit', async (e) => {
                     tallaBotas: data.tallaBotas || '',
                 };
 
-                // ... (El resto de tu lógica de guardado y 'finally' sigue igual)
-                if (downloadURL) {
-                    dataToUpdate.profilePhotoURL = downloadURL;
-                }
+                // 2. Verificar si el email cambió
                 if (data.email !== user.email) {
                     modalConfirmBtn.textContent = 'Actualizando email...';
                     await updateEmail(user, data.email);
                 }
+
+                // 3. Actualizar Firestore
                 modalConfirmBtn.textContent = 'Finalizando...';
                 await updateDoc(doc(db, "users", user.uid), dataToUpdate);
+
+                // 4. Actualizar caché local
                 const updatedUser = { ...usersMap.get(user.uid), ...dataToUpdate };
                 usersMap.set(user.uid, updatedUser);
                 validationSuccess = true;
 
             } catch (error) {
                 console.error("Error al actualizar perfil:", error);
-                if (error.message.includes("No se detectó un rostro") || error.message.includes("Rostro no coincide")) {
-                    alert(error.message);
-                } else {
-                    alert("Error al actualizar el perfil. Es posible que necesites volver a iniciar sesión.");
-                }
+                alert("Error al actualizar el perfil. Es posible que necesites volver a iniciar sesión.");
             } finally {
                 modalConfirmBtn.disabled = false;
                 modalConfirmBtn.textContent = 'Guardar Cambios';
@@ -6879,6 +6895,7 @@ modalForm.addEventListener('submit', async (e) => {
                     closeMainModal();
                 }
             }
+            // --- FIN DE MODIFICACIÓN ---
             break;
     }
     closeMainModal();
