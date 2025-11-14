@@ -158,7 +158,7 @@ const migrateLegacySubItems = async () => {
                 m2 = itemsCache.get(itemPath); // Usar caché
             } else {
                 const itemDoc = await db.doc(itemPath).get();
-                if (itemDoc.exists()) {
+                if (itemDoc.exists) {
                     const itemData = itemDoc.data();
                     m2 = (itemData.width || 0) * (itemData.height || 0);
                     itemsCache.set(itemPath, m2); // Guardar en caché
@@ -316,6 +316,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
         batch.set(taskRef, taskUpdate, { merge: true }); // <-- AÑADIDO: Actualiza la tarea
 
         await batch.commit();
+
 
         console.log(`Estadísticas de ${installerId} para ${statDocId} actualizadas: ${m2 * operationType}m², $${bonificacion} (A tiempo: ${onTime})`);
 

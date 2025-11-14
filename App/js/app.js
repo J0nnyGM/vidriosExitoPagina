@@ -11777,29 +11777,63 @@ function createTaskCard(task) {
                 <div class="flex justify-between mb-1"><span class="text-xs font-medium text-gray-500">Progreso Instalación</span><span id="${progressTextId}" class="text-xs font-medium text-blue-700">Calculando...</span></div>
                 <div class="task-progress-bar-bg"><div id="${progressBarId}" class="task-progress-bar-fg" style="width: 0%;"></div></div>
             </div>`;
-        const calculateProgress = async () => {
+const calculateProgress = async () => {
             try {
-                const subItemIds = task.specificSubItemIds;
-                // NOTA: Esta consulta a 'subItems' puede fallar si la colección está anidada.
-                // Si da error, tendríamos que cambiarla.
-                const subItemPromises = subItemIds.map(id => getDoc(doc(db, "subItems", id)));
-                const subItemDocs = await Promise.all(subItemPromises);
+                // --- INICIO DE CORRECCIÓN ---
+                const subItemIds = task.specificSubItemIds || [];
+                const selectedItems = task.selectedItems || [];
+                const projectId = task.projectId;
+
+                if (subItemIds.length === 0 || selectedItems.length === 0 || !projectId) {
+                    // Si no hay sub-ítems, mostramos 0% (0/0) en lugar de "Calculando..."
+                    const progressTextElement = document.getElementById(progressTextId);
+                    if (progressTextElement) progressTextElement.textContent = `0% (0/0)`;
+                    return; // No hay nada que calcular
+                }
+
                 let installedCount = 0;
-                let foundCount = 0;
-                subItemDocs.forEach(docSnap => {
-                    if (docSnap.exists()) {
-                        foundCount++;
-                        if (docSnap.data().status === 'Instalado') {
-                            installedCount++;
-                        }
+                let totalFoundInTask = 0;
+                const subItemIdsSet = new Set(subItemIds); // Para búsqueda rápida
+
+                // Iteramos sobre los items PADRE (V-01, V-02...)
+                for (const itemInfo of selectedItems) {
+                    const itemId = itemInfo.itemId;
+                    if (!itemId) continue;
+
+                    // Buscamos en lotes de 30 (límite 'in')
+                    for (let i = 0; i < subItemIds.length; i += 30) {
+                        const chunkIds = subItemIds.slice(i, i + 30);
+                        
+                        // Creamos la consulta con el PATH COMPLETO y ANIDADO
+                        const q = query(
+                            collection(db, "projects", projectId, "items", itemId, "subItems"),
+                            where(documentId(), "in", chunkIds) // Filtramos por los IDs en este chunk
+                        );
+
+                        const snapshot = await getDocs(q);
+                        
+                        snapshot.forEach(docSnap => {
+                            // Verificamos que el subItem encontrado SÍ pertenezca a esta tarea
+                            if (docSnap.exists() && subItemIdsSet.has(docSnap.id)) {
+                                totalFoundInTask++; // Lo encontramos
+                                if (docSnap.data().status === 'Instalado') {
+                                    installedCount++; // Está instalado
+                                }
+                            }
+                        });
                     }
-                });
-                const totalSubItemsEffective = Math.min(foundCount, subItemIds.length);
+                }
+                
+                const totalSubItemsEffective = subItemIds.length; // El total es la lista completa de la tarea
                 const percentage = totalSubItemsEffective > 0 ? (installedCount / totalSubItemsEffective) * 100 : 0;
+                // --- FIN DE CORRECCIÓN ---
+
                 const progressBarElement = document.getElementById(progressBarId);
                 const progressTextElement = document.getElementById(progressTextId);
+                
                 if (progressBarElement) progressBarElement.style.width = `${percentage.toFixed(0)}%`;
                 if (progressTextElement) progressTextElement.textContent = `${percentage.toFixed(0)}% (${installedCount}/${totalSubItemsEffective})`;
+
             } catch (error) {
                 console.error(`Error calculating progress for task ${task.id}:`, error);
                 const progressTextElement = document.getElementById(progressTextId);
