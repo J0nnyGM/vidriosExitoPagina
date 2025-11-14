@@ -3875,10 +3875,10 @@ function createSubItemRow(subItem) {
     return row;
 }
 
-async function updateSubItem(subItemId, data) {
+async function updateSubItem(itemId, subItemId, data) {
     // --- INICIO DE CAMBIO: Path de subcolección ---
-    // Necesitamos encontrar el path completo
-    const subItemRef = doc(db, "projects", currentProject.id, "items", currentItem.id, "subItems", subItemId);
+    // Ahora usa el itemId pasado como argumento
+    const subItemRef = doc(db, "projects", currentProject.id, "items", itemId, "subItems", subItemId);
     await updateDoc(subItemRef, data);
     // --- FIN DE CAMBIO ---
 }
@@ -7437,6 +7437,14 @@ progressForm.addEventListener('submit', async (e) => {
     const location = document.getElementById('sub-item-location').value;
     const installDate = document.getElementById('sub-item-date').value;
 
+    // 1. Obtenemos los datos actuales del subItem (para preservar m2 y taskId)
+    if (!currentProject || !currentProject.id || !itemId) {
+        throw new Error("Contexto de proyecto o ítem perdido. No se puede guardar.");
+    }
+    const subItemRef = doc(db, "projects", currentProject.id, "items", itemId, "subItems", subItemId);
+    const subItemSnap = await getDoc(subItemRef);
+    const subItemData = subItemSnap.exists() ? subItemSnap.data() : {};
+
     const data = {
         location: location,
         realWidth: (parseFloat(document.getElementById('sub-item-real-width').value) / 100) || 0, // <-- CAMBIO
@@ -7445,6 +7453,11 @@ progressForm.addEventListener('submit', async (e) => {
         manufacturer: document.getElementById('sub-item-manufacturer').value,
         installer: document.getElementById('sub-item-installer').value,
         installDate: installDate,
+
+        // --- INICIO DE LA MODIFICACIÓN ---
+        m2: subItemData.m2 || 0, // Preservamos los M2
+        assignedTaskId: subItemData.assignedTaskId || null // Preservamos el ID de la tarea
+        // --- FIN DE LA MODIFICACIÓN ---
     };
 
     if (data.installer) { data.status = 'Instalado'; }
@@ -7463,7 +7476,7 @@ progressForm.addEventListener('submit', async (e) => {
             feedbackP.textContent = 'Foto subida. Guardando datos...';
         }
 
-        await updateSubItem(subItemId, data);
+        await updateSubItem(itemId, subItemId, data);
         closeProgressModal();
 
     } catch (error) {
