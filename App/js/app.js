@@ -741,24 +741,30 @@ async function handlePhotoFile(file, fileInputId, previewImgId) {
         // 1. Lógica de Conversión HEIC
         const fileType = file.type.toLowerCase();
         const fileName = file.name.toLowerCase();
-
-        if (fileType === 'image/heic' || fileType === 'image/heif' || fileName.endsWith('.heic') || fileName.endsWith('.heif')) {
+        const isHEIC = fileType === 'image/heic' || fileType === 'image/heif' || fileName.endsWith('.heic') || fileName.endsWith('.heif');
+        
+if (isHEIC) {
+            
             statusEl.textContent = 'Convirtiendo formato HEIC...';
-
-            // Usamos la biblioteca heic2any
+            
+            // --- INICIO DE LA MODIFICACIÓN (COMPRESIÓN HEIC) ---
+            // Le pedimos a la biblioteca que reduzca la imagen a un ancho
+            // intermedio (1024px) DURANTE la conversión.
             const convertedBlob = await heic2any({
                 blob: file,
                 toType: "image/jpeg",
                 quality: 0.8, // 80% de calidad
+                width: 1024  // <-- ¡ESTA ES LA LÍNEA CLAVE!
             });
-
+            // --- FIN DE LA MODIFICACIÓN ---
+            
             fileToProcess = new File([convertedBlob], "converted.jpg", { type: "image/jpeg" });
         }
-
         // 2. Redimensionar la imagen (reutilizamos la lógica de 'resizeImage')
         statusEl.textContent = 'Redimensionando imagen...';
+        // Usamos la función resizeImage que ya existe en app.js
         const resizedBlob = await resizeImage(fileToProcess, 400); // 400px (para perfil)
-
+        
         // 3. Guardar el archivo final en nuestra variable global
         processedPhotoFile = new File([resizedBlob], "profile_photo.jpg", { type: "image/jpeg" });
 
@@ -775,7 +781,7 @@ async function handlePhotoFile(file, fileInputId, previewImgId) {
 
     } catch (err) {
         console.error("Error al procesar la foto:", err);
-        statusEl.textContent = 'Error al procesar la foto.';
+        statusEl.textContent = err.message.includes("Límite") ? err.message : 'Error al procesar la foto.'; // Muestra el error de tamaño
         statusEl.className = 'text-xs text-center text-red-600 h-4 mt-1';
         processedPhotoFile = null; // Resetea si falla
     }
