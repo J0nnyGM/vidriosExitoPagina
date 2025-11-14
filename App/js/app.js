@@ -716,7 +716,7 @@ function capturePhoto() {
 }
 
 /**
- * (NUEVA FUNCIÓN)
+ * (NUEVA FUNCIÓN - MODIFICADA PARA NO PROCESAR HEIC)
  * Procesa el archivo (convierte HEIC si es necesario) y actualiza la vista previa.
  * @param {File} file - El archivo (de la cámara o del input).
  * @param {string} fileInputId - El ID del input (para referencia).
@@ -732,61 +732,48 @@ async function handlePhotoFile(file, fileInputId, previewImgId) {
 
     // Reinicia el estado
     processedPhotoFile = null;
-    statusEl.textContent = 'Procesando foto...';
-    statusEl.className = 'text-xs text-center text-blue-600 h-4 mt-1';
+    statusEl.textContent = '';
+    statusEl.className = 'text-xs text-center h-4 mt-1';
 
     try {
-        let fileToProcess = file;
-
-        // 1. Lógica de Conversión HEIC
         const fileType = file.type.toLowerCase();
         const fileName = file.name.toLowerCase();
         const isHEIC = fileType === 'image/heic' || fileType === 'image/heif' || fileName.endsWith('.heic') || fileName.endsWith('.heif');
-        
-if (isHEIC) {
-            
-            statusEl.textContent = 'Convirtiendo formato HEIC...';
-            
-            // --- INICIO DE LA MODIFICACIÓN (COMPRESIÓN HEIC) ---
-            // Le pedimos a la biblioteca que reduzca la imagen a un ancho
-            // intermedio (1024px) DURANTE la conversión.
-            const convertedBlob = await heic2any({
-                blob: file,
-                toType: "image/jpeg",
-                quality: 0.8, // 80% de calidad
-                width: 1024  // <-- ¡ESTA ES LA LÍNEA CLAVE!
-            });
-            // --- FIN DE LA MODIFICACIÓN ---
-            
-            fileToProcess = new File([convertedBlob], "converted.jpg", { type: "image/jpeg" });
-        }
-        // 2. Redimensionar la imagen (reutilizamos la lógica de 'resizeImage')
-        statusEl.textContent = 'Redimensionando imagen...';
-        // Usamos la función resizeImage que ya existe en app.js
-        const resizedBlob = await resizeImage(fileToProcess, 400); // 400px (para perfil)
-        
-        // 3. Guardar el archivo final en nuestra variable global
-        processedPhotoFile = new File([resizedBlob], "profile_photo.jpg", { type: "image/jpeg" });
 
-        // 4. Mostrar la vista previa
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            previewImg.src = event.target.result;
-            previewContainer.classList.remove('hidden');
-            promptEl.classList.add('hidden');
-            statusEl.textContent = 'Foto lista para guardar.';
-            statusEl.className = 'text-xs text-center text-green-600 h-4 mt-1';
+        // Guardamos el archivo ORIGINAL (sea HEIC o JPG)
+        processedPhotoFile = file;
+
+        // 1. Lógica de Vista Previa
+        if (isHEIC) {
+            // Si es HEIC, no podemos mostrar vista previa. Mostramos un aviso.
+            previewImg.src = ''; // Limpiamos la imagen anterior
+            previewContainer.classList.add('hidden'); // Ocultamos el <img>
+            promptEl.classList.remove('hidden'); // Mostramos el ícono de "foto"
+
+            // Mostramos un estado de "pendiente"
+            statusEl.textContent = 'Archivo HEIC. Se convertirá al guardar.';
+            statusEl.className = 'text-xs text-center text-blue-600 h-4 mt-1';
+        } else {
+            // Si es JPG/PNG, usamos FileReader para mostrar la vista previa (rápido)
+            statusEl.textContent = 'Cargando vista previa...';
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                previewImg.src = event.target.result;
+                previewContainer.classList.remove('hidden');
+                promptEl.classList.add('hidden');
+                statusEl.textContent = 'Vista previa lista.';
+                statusEl.className = 'text-xs text-center text-green-600 h-4 mt-1';
+            }
+            reader.readAsDataURL(file); // Leemos el archivo
         }
-        reader.readAsDataURL(processedPhotoFile); // Leemos el archivo final
 
     } catch (err) {
         console.error("Error al procesar la foto:", err);
-        statusEl.textContent = err.message.includes("Límite") ? err.message : 'Error al procesar la foto.'; // Muestra el error de tamaño
+        statusEl.textContent = 'Error al leer el archivo.';
         statusEl.className = 'text-xs text-center text-red-600 h-4 mt-1';
         processedPhotoFile = null; // Resetea si falla
     }
 }
-
 
 // --- LÓGICA DE DATOS ---
 async function loadUsersMap() {
@@ -7226,19 +7213,42 @@ modalForm.addEventListener('submit', async (e) => {
                 // 2. LEEMOS DESDE LA VARIABLE GLOBAL (MODIFICADO)
                 const photoFile = processedPhotoFile; // ¡Usamos nuestra variable!
                 processedPhotoFile = null; // Limpiamos la variable global
-
                 let downloadURL = null;
 
-                // 3. Si el admin subió una foto nueva...
+                // 3. Si hay un archivo (HEIC o JPG) listo para subir...
                 if (photoFile && photoFile.size > 0) {
-                    modalConfirmBtn.textContent = 'Redimensionando foto...';
-                    const resizedBlob = await resizeImage(photoFile, 400);
 
+                    let fileToResize = photoFile; // Este será el archivo que redimensionaremos
+
+                    // 3a. Verificamos si es HEIC
+                    const fileType = photoFile.type.toLowerCase();
+                    const fileName = photoFile.name.toLowerCase();
+                    const isHEIC = fileType === 'image/heic' || fileType === 'image/heif' || fileName.endsWith('.heic') || fileName.endsWith('.heif');
+
+                    if (isHEIC) {
+                        // ¡Aquí ocurre la conversión LENTA, pero el usuario ya está esperando!
+                        modalConfirmBtn.textContent = 'Convirtiendo HEIC...';
+                        const convertedBlob = await heic2any({
+                            blob: photoFile,
+                            toType: "image/jpeg",
+                            quality: 0.8,
+                            width: 1024 // Lo bajamos a 1024px primero
+                        });
+                        fileToResize = new File([convertedBlob], "converted.jpg", { type: "image/jpeg" });
+                    }
+
+                    // 3b. Redimensionamos el archivo (sea el JPG original o el JPG convertido)
+                    modalConfirmBtn.textContent = 'Redimensionando foto...';
+                    // Usamos tu función 'resizeImage' que ya existe y es rápida
+                    const resizedBlob = await resizeImage(fileToResize, 400); // Compresión final a 400px
+
+                    // 3c. Subimos el archivo final
                     modalConfirmBtn.textContent = 'Subiendo foto...';
                     const photoPath = `profile_photos/${id}/profile.jpg`;
                     const photoStorageRef = ref(storage, photoPath);
                     await uploadBytes(photoStorageRef, resizedBlob);
                     downloadURL = await getDownloadURL(photoStorageRef);
+
                     // Registramos el cambio de foto en el historial
                     changes.profilePhotoURL = { old: oldUserData.profilePhotoURL || 'ninguna', new: 'nueva foto' };
                 }
@@ -7855,7 +7865,14 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
                 }
             }
 
-            const dataToUpdate = { ...commonData, ...individualData, status: finalStatus };
+            const dataToUpdate = {
+                ...commonData,
+                ...individualData,
+                status: finalStatus,
+                m2: subItemData.m2 || 0, // <-- AÑADIDO: Preservamos los M2
+                assignedTaskId: subItemData.assignedTaskId || null // <-- AÑADIDO: Preservamos el ID de la tarea
+            };
+
             if (!commonData.manufacturer) delete dataToUpdate.manufacturer;
             if (!commonData.installer) delete dataToUpdate.installer;
 
