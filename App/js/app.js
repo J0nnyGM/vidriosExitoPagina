@@ -6,8 +6,11 @@ import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-messaging.js";
-import { initDotacion, loadDotacionView, updateDotacionFilterOptions } from './dotacion.js'; // <-- LÍNEA MODIFICADA
+import { initDotacion, loadDotacionView, updateDotacionFilterOptions, loadDotacionAsignaciones } from './dotacion.js'; // <-- AÑADIDO 'loadDotacionAsignaciones'
 import { initHerramientas, resetToolViewAndLoad, updateToolFilterOptions, TOOL_CATEGORIES } from './herramientas.js';
+import { initDashboard, showGeneralDashboard } from './dashboard.js';
+import { initEmpleados, loadEmpleadosView, showEmpleadoDetails, loadPaymentHistoryView } from './empleados.js'; // <-- AÑADIDO
+import { initConfiguracion, loadConfiguracionView } from './configuracion.js';
 // --- CONFIGURACIÓN Y ESTADO ---
 
 const firebaseConfig = {
@@ -33,7 +36,8 @@ const storage = getStorage(app);
 const messaging = getMessaging(app);
 const functions = getFunctions(app, 'us-central1'); // ASEGÚRATE DE QUE ESTA LÍNEA EXISTA
 
-let unsubscribeTasks = null; // <-- AÑADE ESTA LÍNEAlet unsubscribeReports = null;
+let unsubscribeTasks = null; // <-- AÑADE ESTA LÍNEA
+let unsubscribeReports = null;
 let unsubscribePurchaseOrders = null;
 let unsubscribeInventory = null;
 let unsubscribeStock = null;
@@ -48,6 +52,8 @@ let activeListeners = [];
 let currentUser = null;
 let currentUserRole = null;
 let usersMap = new Map();
+let payrollConfig = null; // <-- ASEGÚRATE DE QUE ESTA LÍNEA ESTÉ
+let selectedProjectId = null;
 let currentProject = null;
 let currentItem = null;
 let unsubscribeProjects = null;
@@ -61,6 +67,10 @@ let onSafetyCheckInSuccess = () => { }; // Callback global
 let videoStream = null; // Variable global para el stream de la cámara
 let verifiedCanvas = null; // Variable global para guardar la selfie verificada
 let pendingProfileUpdateData = null; // Guarda los datos del formulario de perfil temporalmente
+let _storage; // <-- AÑADIDO
+let _openConfirmModal; // <-- AÑADIDO
+let activeEmpleadoChart = null;
+let unsubscribeEmpleadosTab = null;
 
 /**
  * Carga y muestra el historial de cambios de un perfil de usuario.
@@ -102,18 +112,24 @@ async function loadProfileHistory(userId) {
     };
 
     // 2. Helper para formatear los valores
-    const formatValue = (value) => {
-        if (!value || value.trim() === '' || value.trim() === 'vacío') {
-            // Si está vacío, mostrarlo en gris e itálica
-            return '<i class="text-gray-500">No asignado</i>';
+    /**
+     * Formatea un valor para mostrarlo (versión segura).
+     * Maneja strings, números, null y undefined.
+     */
+    function formatValue(value) {
+        // 1. Si el valor es null o undefined, retorna un string vacío
+        if (value === null || typeof value === 'undefined') {
+            return '';
         }
-        if (value === 'nueva foto') {
-            // Caso especial para la foto
-            return '<span class="font-medium text-blue-600">Foto Actualizada</span>';
+
+        // 2. Si es un string, límpialo
+        if (typeof value === 'string') {
+            return value.trim();
         }
-        // Mostramos el valor entre comillas
-        return `"${value}"`;
-    };
+
+        // 3. Si es cualquier otra cosa (número, booleano), conviértelo a string
+        return String(value);
+    }
     // --- FIN DE MODIFICACIÓN (Helpers) ---
 
     const q = query(
@@ -456,6 +472,32 @@ onAuthStateChanged(auth, async (user) => {
             authContainer.classList.add('hidden');
             appContainer.classList.remove('hidden');
 
+            // 2. Cargar datos globales (usuarios)
+            const qUsers = query(collection(db, 'users'));
+            const usersSnapshot = await getDocs(qUsers);
+            usersMap.clear();
+            usersSnapshot.forEach(doc => {
+                usersMap.set(doc.id, { id: doc.id, ...doc.data() });
+            });
+            console.log("Mapa de usuarios cargado:", usersMap.size);
+
+            // --- INICIO DE BLOQUE AÑADIDO (O VERIFICADO) ---
+            // 3. Cargar configuración global de nómina
+            try {
+                const payrollConfigRef = doc(db, "system", "payrollConfig");
+                const payrollConfigSnap = await getDoc(payrollConfigRef);
+                if (payrollConfigSnap.exists()) {
+                    payrollConfig = payrollConfigSnap.data();
+                    console.log("Configuración de nómina cargada:", payrollConfig);
+                } else {
+                    console.warn("¡CONFIGURACIÓN DE NÓMINA NO ENCONTRADA!");
+                    payrollConfig = {}; // Dejarlo vacío para evitar errores
+                }
+            } catch (error) {
+                console.error("Error al cargar configuración de nómina:", error);
+                payrollConfig = {};
+            }
+
             // 5. Configurar Visibilidad de Pestañas (Control de Acceso)
             const isAdmin = currentUserRole === 'admin';
             const isBodega = currentUserRole === 'bodega';
@@ -476,24 +518,9 @@ onAuthStateChanged(auth, async (user) => {
 
 
             // 6. Mostrar la Vista por Defecto (Redirección por Rol)
-            if (isAdmin) {
-                showDashboard(); // Admin ve "Mis Proyectos"
-            } else if (isOperario) {
-                showView('tareas'); // Operario ve "Mis Tareas"
-                loadTasksView();
-            } else if (isBodega) {
-                showView('catalog'); // Bodega ve "Inventario"
-                loadCatalogView();
-            } else if (isSST) {
-                showView('dotacion'); // SST ve "Dotación"
-                loadDotacionView();
-            } else {
-                // Un fallback por si acaso (ej. un rol no definido)
-                showView('tareas'); // Por defecto a Tareas
-                loadTasksView();
-            }
+            showGeneralDashboard();
 
-            // --- FIN DE MODIFICACIÓN ---
+
 
             requestNotificationPermission();
             loadNotifications(); // <-- ¡Esta es la línea que faltaba!
@@ -586,6 +613,7 @@ async function handleLogout() {
         console.error('Error al cerrar sesión: ', error);
     }
 }
+
 
 // --- LÓGICA DE DATOS ---
 async function loadUsersMap() {
@@ -1125,18 +1153,48 @@ async function openPurchaseOrderModal(poId) {
         // --- Tarjeta 2: Materiales Incluidos ---
         let materialsListHtml = '<p class="text-sm text-gray-500">No se especificaron materiales.</p>';
         if (po.items && po.items.length > 0) {
-            const materialPromises = po.items.map(item => getDoc(doc(db, "materialCatalog", item.materialId)));
-            const materialSnapshots = await Promise.all(materialPromises);
+
+            // 1. Crear un array de promesas de lectura
+            const itemPromises = po.items.map(item => {
+                let collectionPath = '';
+                // Determinamos en qué colección buscar
+                switch (item.itemType) {
+                    case 'dotacion':
+                        collectionPath = 'dotacionCatalog';
+                        break;
+                    case 'herramienta':
+                        collectionPath = 'tools';
+                        break;
+                    default: // 'material' y cualquier otro caso
+                        collectionPath = 'materialCatalog';
+                        break;
+                }
+                return getDoc(doc(db, collectionPath, item.materialId));
+            });
+
+            // 2. Esperar a que todas las lecturas se completen
+            const itemSnapshots = await Promise.all(itemPromises);
 
             materialsListHtml = '<ul class="space-y-2">';
             for (let i = 0; i < po.items.length; i++) {
                 const item = po.items[i];
-                const materialSnap = materialSnapshots[i];
-                const materialName = materialSnap.exists() ? materialSnap.data().name : 'Material no encontrado';
+                const itemSnap = itemSnapshots[i];
+                let itemName = 'Material no encontrado'; // Default
+
+                // 3. Obtener el nombre del campo correcto
+                if (itemSnap.exists()) {
+                    const data = itemSnap.data();
+                    if (item.itemType === 'dotacion') {
+                        itemName = data.itemName || 'Dotación s/n';
+                    } else {
+                        // 'materialCatalog' y 'tools' usan el campo 'name'
+                        itemName = data.name || 'Ítem s/n';
+                    }
+                }
 
                 materialsListHtml += `
                     <li class="p-3 bg-gray-50 rounded-md border text-sm">
-                        <p class="font-semibold text-gray-800">${materialName}</p>
+                        <p class="font-semibold text-gray-800">${itemName}</p>
                         <div class="flex justify-between items-center mt-1 text-xs">
                             <span class="text-gray-600">Cantidad: <span class="font-bold text-black">${item.quantity}</span></span>
                             <span class="text-gray-600">Costo Unit.: <span class="font-bold text-black">${currencyFormatter.format(item.unitCost || 0)}</span></span>
@@ -3685,7 +3743,7 @@ async function openMainModal(type, data = {}) {
         modalContentDiv.style.width = '';
         modalContentDiv.style.maxWidth = '';
     }
-    // --- FIN DE MODIFICACIÓN ---
+
 
     let title, bodyHtml, btnText, btnClass;
     modalForm.reset();
@@ -4156,7 +4214,7 @@ async function openMainModal(type, data = {}) {
                 modalContentDiv.style.width = '75vw';
                 modalContentDiv.style.maxWidth = '75vw';
             }
-            // --- FIN DE MODIFICACIÓN ---
+
 
             bodyHtml = `
                 <div id="material-request-loader" class="text-center py-8">
@@ -4658,7 +4716,7 @@ async function openMainModal(type, data = {}) {
             btnText = 'Añadir Stock';
             btnClass = 'bg-blue-500 hover:bg-blue-600';
 
-            // --- INICIO DE MODIFICACIÓN ---
+
             bodyHtml = `
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="md:col-span-1">
@@ -4682,7 +4740,7 @@ async function openMainModal(type, data = {}) {
                     </div>
                 </div>
             `;
-            // --- FIN DE MODIFICACIÓN ---
+
 
             setTimeout(() => {
                 setupCurrencyInput(document.getElementById('dotacion-purchase-cost'));
@@ -4703,7 +4761,7 @@ async function openMainModal(type, data = {}) {
                     label: `${user.firstName} ${user.lastName}`
                 }));
 
-            // --- INICIO DE MODIFICACIÓN ---
+
             bodyHtml = `
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="md:col-span-1">
@@ -5135,7 +5193,7 @@ async function openMainModal(type, data = {}) {
                     </div>
                 </div>
             `;
-            // --- FIN DE MODIFICACIÓN ---
+
 
             // --- INICIO DE LÓGICA JS AÑADIDA PARA EL PREVIEW ---
             setTimeout(() => {
@@ -5270,7 +5328,7 @@ async function openMainModal(type, data = {}) {
                 });
             }, 100); // Espera a que el modal se renderice
 
-            // --- FIN DE MODIFICACIÓN ---
+
             break;
         }
 
@@ -5573,16 +5631,42 @@ async function openMainModal(type, data = {}) {
                         </div>
                     </div>
 
-                    <div class="md:col-span-3 border-t pt-4">
-                        
-                        <button type="button" data-action="view-profile-history" data-userid="${currentUser.uid}" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg">
-                            Ver Mi Historial de Cambios
-                        </button>
+<div class="md:col-span-3 border-t pt-4">
+                        <h4 class="text-md font-semibold text-gray-700 mb-2">Compensación</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="user-commissionLevel" class="block text-sm font-medium text-gray-700">Nivel de Comisión</label>
+                                <select id="user-commissionLevel" name="commissionLevel" class="mt-1 block w-full px-3 py-2 border rounded-md bg-white">
+                                    <option value="principiante" ${data.commissionLevel === 'principiante' ? 'selected' : ''}>Principiante</option>
+                                    <option value="intermedio" ${data.commissionLevel === 'intermedio' ? 'selected' : ''}>Intermedio</option>
+                                    <option value="avanzado" ${data.commissionLevel === 'avanzado' ? 'selected' : ''}>Avanzado</option>
+                                    <option value="" ${!data.commissionLevel ? 'selected' : ''}>Ninguno (No comisiona)</option>
+                                </select>
+                                <p class="text-xs text-gray-500 mt-1">Define la tarifa por M².</p>
+                            </div>
+                            
+                            <div>
+                                <label for="user-salarioBasico" class="block text-sm font-medium text-gray-700">Salario Básico</label>
+                                <input type="text" id="user-salarioBasico" name="salarioBasico" class="currency-input mt-1 block w-full px-3 py-2 border rounded-md" value="${data.salarioBasico || 0}">
+                                <p class="text-xs text-gray-500 mt-1">Valor base mensual.</p>
+                            </div>
+                        </div>
 
-                    </div>
+                        <div class="mt-4 flex items-center">
+                            <input type="checkbox" id="user-deduccionSobreMinimo" name="deduccionSobreMinimo" class="h-4 w-4 text-blue-600 border-gray-300 rounded" ${data.deduccionSobreMinimo ? 'checked' : ''}>
+                            <label for="user-deduccionSobreMinimo" class="ml-2 block text-sm text-gray-900">
+                                Aplicar deducciones (Salud/Pensión) sobre el Salario Mínimo
+                            </label>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1 ml-6">Si no se marca, las deducciones se calculan sobre el total devengado (Básico + Bonos + Horas Extra).</p>
+                        </div>
+                    <div class="md:col-span-3 border-t pt-4">
+                        <button type="button" data-action="view-profile-history" data-userid="${data.id}" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg">
+                            Ver Historial de Cambios
+                        </button>
                     </div>
             `;
-            // --- FIN DE MODIFICACIÓN ---
+
 
             // Lógica JS para el nuevo dropzone
             setTimeout(() => {
@@ -6153,7 +6237,7 @@ async function openMainModal(type, data = {}) {
                     </div>
                     </div>
             `;
-            // --- FIN DE MODIFICACIÓN ---
+
 
 
 
@@ -6162,6 +6246,8 @@ async function openMainModal(type, data = {}) {
             }, 100);
 
             break;
+
+
     }
 
     document.getElementById('modal-title').textContent = title;
@@ -6565,6 +6651,8 @@ modalForm.addEventListener('submit', async (e) => {
             break;
         }
 
+
+
         case 'new-purchase-order': {
             modalConfirmBtn.disabled = true;
             modalConfirmBtn.textContent = 'Guardando...';
@@ -6597,7 +6685,7 @@ modalForm.addEventListener('submit', async (e) => {
                         totalCost += subtotal;
                     }
                 });
-                // --- FIN DE MODIFICACIÓN ---
+
 
                 if (items.length === 0) {
                     throw new Error("Debes añadir al menos un ítem válido a la orden.");
@@ -6982,6 +7070,9 @@ modalForm.addEventListener('submit', async (e) => {
                     tallaCamiseta: data.tallaCamiseta || '',
                     tallaPantalón: data.tallaPantalón || '',
                     tallaBotas: data.tallaBotas || '',
+                    commissionLevel: data.commissionLevel || '',
+                    salarioBasico: parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0,
+                    deduccionSobreMinimo: !!data.deduccionSobreMinimo // <-- AÑADIDO
                 };
 
                 // 5. Comparamos los campos de texto
@@ -6993,6 +7084,9 @@ modalForm.addEventListener('submit', async (e) => {
                 if ((data.tallaCamiseta || '') !== (oldUserData.tallaCamiseta || '')) changes.tallaCamiseta = { old: oldUserData.tallaCamiseta || '', new: data.tallaCamiseta };
                 if ((data.tallaPantalón || '') !== (oldUserData.tallaPantalón || '')) changes.tallaPantalón = { old: oldUserData.tallaPantalón || '', new: data.tallaPantalón };
                 if ((data.tallaBotas || '') !== (oldUserData.tallaBotas || '')) changes.tallaBotas = { old: oldUserData.tallaBotas || '', new: data.tallaBotas };
+                if ((data.commissionLevel || '') !== (oldUserData.commissionLevel || '')) changes.commissionLevel = { old: oldUserData.commissionLevel || '', new: data.commissionLevel };
+                if ((parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0) !== (oldUserData.salarioBasico || 0)) changes.salarioBasico = { old: oldUserData.salarioBasico || 0, new: parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0 };
+                if ((parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0) !== (oldUserData.salarioBasico || 0)) changes.salarioBasico = { old: oldUserData.salarioBasico || 0, new: parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0 };
 
                 // 6. Añadir la URL de la foto SOLO SI se subió una nueva
                 if (downloadURL) {
@@ -7026,8 +7120,9 @@ modalForm.addEventListener('submit', async (e) => {
                 modalConfirmBtn.textContent = 'Guardar Cambios';
                 closeMainModal(); // Cerramos el modal al finalizar
             }
-            // --- FIN DE MODIFICACIÓN ---
+
             break; // <-- Este break ya existía
+
 
         case 'editProfile':
             // --- INICIO DE MODIFICACIÓN (Verificar cambios antes de autenticar) ---
@@ -7065,7 +7160,7 @@ modalForm.addEventListener('submit', async (e) => {
                 console.log("No se detectaron cambios en el perfil. Cerrando modal.");
                 closeMainModal();
             }
-            // --- FIN DE MODIFICACIÓN ---
+
             break;
     }
     closeMainModal();
@@ -8409,7 +8504,7 @@ function loadNotifications() {
                 console.log("DEBUG: Condición 'Catálogo' cumplida.");
                 showView('catalog');
             }
-            // --- INICIO DE MODIFICACIÓN ---
+
             else if (link === '/herramienta') {
                 console.log("DEBUG: Condición 'Herramienta' cumplida.");
                 showView('herramienta');
@@ -8421,7 +8516,7 @@ function loadNotifications() {
                 showView('dotacion');
                 loadDotacionView(); // Carga la vista de dotación
             }
-            // --- FIN DE MODIFICACIÓN ---
+
             // Caso: Tarea (comentario o asignación)
             else if (projectId && taskId) {
                 console.log("DEBUG: Condición 'Tarea' cumplida.");
@@ -8480,13 +8575,17 @@ if ('serviceWorker' in navigator) {
 document.addEventListener('DOMContentLoaded', () => {
 
     views = {
+        'dashboard-general': document.getElementById('dashboard-general-view'), // <-- AÑADIR ESTA LÍNEA
         proyectos: document.getElementById('dashboard-view'),
-        tareas: document.getElementById('tareas-view'), // <-- ASEGÚRATE DE QUE ESTA LÍNEA ESTÉ        
+        tareas: document.getElementById('tareas-view'),
         herramienta: document.getElementById('herramienta-view'),
         dotacion: document.getElementById('dotacion-view'),
         cartera: document.getElementById('cartera-view'),
         solicitud: document.getElementById('solicitud-view'),
         empleados: document.getElementById('empleados-view'),
+        'empleado-details': document.getElementById('empleado-details-view'), // <-- AÑADIDO
+        'payment-history-view': document.getElementById('payment-history-view'), // <-- AÑADIDO
+        'configuracion-view': document.getElementById('configuracion-view'), // <-- AÑADIDO
         proveedores: document.getElementById('proveedores-view'),
         supplierDetails: document.getElementById('supplier-details-view'),
         adminPanel: document.getElementById('admin-panel-view'),
@@ -8531,6 +8630,33 @@ document.addEventListener('DOMContentLoaded', () => {
         () => currentUser,
         () => usersMap,
         () => currentUserRole
+    );
+
+    // Inicializamos el módulo de Dashboard
+    initDashboard(
+        db,
+        showView,
+        () => usersMap, // Pasamos una "función getter" para el mapa
+        () => currentUserRole, // Función getter para el rol
+        () => currentUser ? currentUser.uid : null // Función getter para el ID
+    );
+
+    initEmpleados(
+        db,
+        () => usersMap,
+        () => currentUserRole,
+        showView,
+        storage,
+        openConfirmModal,
+        (userId, containerId) => loadDotacionAsignaciones(userId, containerId),
+        () => payrollConfig,
+        () => currentUser ? currentUser.uid : null,
+        setupCurrencyInput // <-- AÑADIR ESTA LÍNEA
+    );
+
+    initConfiguracion(
+        db,
+        setupCurrencyInput // Pasamos la función global de formato de moneda
     );
 
     // --- INICIO DE NUEVO CÓDIGO ---
@@ -8726,7 +8852,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (detection.detection.score < 0.7) {
                         throw new Error(`Detección de baja calidad (${detection.detection.score.toFixed(2)}). Intenta con mejor luz.`);
                     }
-                    // --- FIN DE MODIFICACIÓN ---
+
 
                     // 5. Comparar rostros
                     faceStatus.textContent = "Rostro detectado. Comparando...";
@@ -8744,7 +8870,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             throw new Error(`Rostro no coincide (Distancia: ${distance.toFixed(2)}). Verifica que eres tú y no usas gafas de sol.`);
                         }
                         faceStatus.textContent = `Rostro Coincide (Distancia: ${distance.toFixed(2)})`;
-                        // --- FIN DE MODIFICACIÓN ---
+
                     }
 
                     // 6. ¡Éxito! (Sin cambios)
@@ -8783,7 +8909,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                // --- INICIO DE MODIFICACIÓN ---
+
                 // Omitimos la validación de EPP si es un cambio de perfil (no hay taskId)
                 if (taskId) {
                     const checkboxes = document.querySelectorAll('.epp-checkbox');
@@ -8795,13 +8921,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 }
-                // --- FIN DE MODIFICACIÓN ---
+
 
                 target.disabled = true;
                 target.textContent = 'Guardando...';
 
                 try {
-                    // --- INICIO DE MODIFICACIÓN ---
+
                     // Solo guardamos la foto si estamos haciendo un check-in de TAREA
                     if (taskId) {
                         target.textContent = 'Guardando evidencia...';
@@ -8825,7 +8951,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             createdAt: new Date()
                         });
                     }
-                    // --- FIN DE MODIFICACIÓN ---
+
 
 
                     // 4. Cerramos el modal
@@ -8888,7 +9014,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!elementWithAction) return;
 
         const action = elementWithAction.dataset.action;
-        // --- INICIO DE MODIFICACIÓN ---
+
         // Si es una acción de herramienta, la ignora (herramientas.js se encarga)
         const toolActions = [
             'new-tool', 'edit-tool', 'delete-tool', 'assign-tool', 'return-tool', 'view-tool-history',
@@ -8898,7 +9024,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (toolActions.includes(action)) {
             return;
         }
-        // --- FIN DE MODIFICACIÓN ---
+
         const elementId = elementWithAction.dataset.id || elementWithAction.dataset.corteId || elementWithAction.dataset.poId;
         const projectIdForTask = elementWithAction.dataset.projectId; // Para "Ver Proyecto" desde tarea
         const taskIdForProgress = elementWithAction.dataset.taskId; // Específico para "Registrar Avance"
@@ -8972,6 +9098,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // --- ACCIONES GENERALES Y DE MODALES (MANEJADAS POR UN SWITCH) ---
         switch (action) {
+
+            case 'go-to-tareas':
+                showView('tareas');
+                loadTasksView();
+                break;
+            case 'go-to-dotacion':
+                showView('dotacion');
+                loadDotacionView();
+                break;
+
+            case 'view-empleado-details':
+                const userId = elementWithAction.dataset.id;
+                if (userId) {
+                    showEmpleadoDetails(userId);
+                }
+                break;
+
+            case 'back-to-empleados':
+                loadEmpleadosView();
+                showView('empleados');
+                break;
+            case 'view-payment-history':
+                const empId = elementWithAction.dataset.id;
+                if (empId) {
+                    loadPaymentHistoryView(empId); // Llama a la nueva función de empleados.js
+                }
+                break;
+            case 'back-to-empleados-from-payment':
+                loadEmpleadosView(); // Recarga la vista de empleados (para que se actualice la pestaña)
+                showView('empleados');
+                break;
+
+            case 'delete-payment':
+                const userIdForDelete = elementWithAction.dataset.userId; // <-- RENOMBRADO
+                const docId = elementWithAction.dataset.docId;
+                openConfirmModal("¿Seguro que quieres eliminar este registro de pago?", async () => {
+                    try {
+                        // Usamos la nueva variable
+                        await deleteDoc(doc(db, "users", userIdForDelete, "paymentHistory", docId));
+                    } catch (error) {
+                        console.error("Error al eliminar el pago:", error);
+                        alert("Error al eliminar el pago.");
+                    }
+                });
+                break;
+
             // Navegación Global
             case 'logout': handleLogout(); break;
             case 'toggle-menu': document.getElementById('sidebar').classList.toggle('-translate-x-full'); break;
@@ -9047,14 +9219,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             case 'register-task-progress':
                 if (taskIdForProgress) {
-                    // --- INICIO DE MODIFICACIÓN ---
+
                     // Ya no hay 'if'. Siempre llamamos al modal
                     // y le pasamos el ID de la tarea y el callback.
                     openSafetyCheckInModal(taskIdForProgress, () => {
                         closeTaskDetailsModal();
                         handleRegisterTaskProgress(taskIdForProgress);
                     });
-                    // --- FIN DE MODIFICACIÓN ---
+
                 } else {
                     console.error("register-task-progress: data-task-id faltante.");
                 }
@@ -9304,27 +9476,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         // --- INICIO DE MODIFICACIÓN (Lógica de Recepción Unificada) ---
                         await runTransaction(db, async (transaction) => {
+
+                            // --- FASE 1: TODAS LAS LECTURAS ---
+
+                            // 1. Leer la Orden de Compra (PO)
                             const poDoc = await transaction.get(poRef);
                             if (!poDoc.exists()) throw new Error("La orden de compra no existe.");
-
                             const poData = poDoc.data();
                             if (poData.status !== "pendiente") throw new Error("Esta orden ya fue procesada.");
                             if (!Array.isArray(poData.items) || poData.items.length === 0) throw new Error("La orden no contiene ítems.");
 
-                            // Iteramos por los ítems de la PO
-                            for (const item of poData.items) {
-                                const itemType = item.itemType; // 'material', 'dotacion', 'herramienta'
-                                const materialId = item.materialId; // ID del ítem en su catálogo
+                            // 2. Preparar las lecturas de los catálogos (Dotación y Herramientas)
+                            const dotacionRefs = [];
+                            const herramientaRefs = [];
+                            const items = poData.items;
+
+                            items.forEach(item => {
+                                if (item.itemType === 'dotacion') {
+                                    dotacionRefs.push(doc(db, "dotacionCatalog", item.materialId));
+                                } else if (item.itemType === 'herramienta') {
+                                    herramientaRefs.push(doc(db, "tools", item.materialId));
+                                }
+                            });
+
+                            // 3. Ejecutar todas las lecturas restantes en paralelo
+                            const [dotacionSnapshots, herramientaSnapshots] = await Promise.all([
+                                Promise.all(dotacionRefs.map(ref => transaction.get(ref))),
+                                Promise.all(herramientaRefs.map(ref => transaction.get(ref)))
+                            ]);
+
+                            // 4. Mapear los resultados para usarlos en la fase de escritura
+                            const dotacionDataMap = new Map();
+                            dotacionSnapshots.forEach(snap => {
+                                if (snap.exists()) {
+                                    dotacionDataMap.set(snap.id, snap.data());
+                                }
+                            });
+                            const herramientaDataMap = new Map();
+                            herramientaSnapshots.forEach(snap => {
+                                if (snap.exists()) {
+                                    herramientaDataMap.set(snap.id, snap.data());
+                                }
+                            });
+
+                            // --- FASE 2: TODAS LAS ESCRITURAS ---
+                            // (Ahora que todas las lecturas terminaron, podemos escribir)
+
+                            for (const item of items) {
+                                const itemType = item.itemType;
+                                const materialId = item.materialId;
                                 const quantity = item.quantity;
                                 const unitCost = item.unitCost || 0;
 
-                                // Usamos un switch para dirigir el stock al inventario correcto
                                 switch (itemType) {
-
-                                    case 'material': { // Lógica existente para Materiales
+                                    case 'material': {
                                         const materialRef = doc(db, "materialCatalog", materialId);
                                         const batchRef = doc(collection(materialRef, "stockBatches"));
-
                                         transaction.set(batchRef, {
                                             purchaseDate: new Date(),
                                             quantityInitial: quantity,
@@ -9335,18 +9542,15 @@ document.addEventListener('DOMContentLoaded', () => {
                                         transaction.update(materialRef, { quantityInStock: increment(quantity) });
                                         break;
                                     }
-
-                                    case 'dotacion': { // NUEVA Lógica para Dotación
+                                    case 'dotacion': {
                                         const dotacionRef = doc(db, "dotacionCatalog", materialId);
-                                        const historyRef = doc(collection(db, "dotacionHistory")); // Log de auditoría
+                                        const historyRef = doc(collection(db, "dotacionHistory"));
 
-                                        // 1. Incrementar el stock
+                                        // Leemos el nombre del mapa (Fase 1) en lugar de transaction.get()
+                                        const dotacionData = dotacionDataMap.get(materialId);
+                                        const dotacionName = dotacionData ? dotacionData.itemName : 'Ítem de Dotación';
+
                                         transaction.update(dotacionRef, { quantityInStock: increment(quantity) });
-
-                                        // 2. Añadir al historial de dotación
-                                        const dotacionDoc = await transaction.get(dotacionRef);
-                                        const dotacionName = dotacionDoc.exists() ? dotacionDoc.data().itemName : 'Ítem de Dotación';
-
                                         transaction.set(historyRef, {
                                             action: 'stock_added',
                                             itemId: materialId,
@@ -9359,26 +9563,19 @@ document.addEventListener('DOMContentLoaded', () => {
                                         });
                                         break;
                                     }
+                                    case 'herramienta': {
+                                        // Leemos los datos de la plantilla del mapa (Fase 1)
+                                        const plantillaData = herramientaDataMap.get(materialId);
+                                        if (!plantillaData) continue; // Si la plantilla no existe, no clonar
 
-                                    case 'herramienta': { // NUEVA Lógica para Herramienta
-                                        // "Comprar" herramientas significa crear NUEVAS instancias de esa herramienta
-
-                                        // 1. Leer la "plantilla" de la herramienta que se compró
-                                        const plantillaRef = doc(db, "tools", materialId);
-                                        const plantillaDoc = await transaction.get(plantillaRef);
-                                        if (!plantillaDoc.exists()) continue; // Si la plantilla no existe, no podemos clonarla
-
-                                        const plantillaData = plantillaDoc.data();
-
-                                        // 2. Crear 'quantity' número de nuevas herramientas
                                         for (let i = 0; i < quantity; i++) {
                                             const newToolRef = doc(collection(db, "tools"));
                                             transaction.set(newToolRef, {
-                                                name: plantillaData.name, // Copia el nombre
+                                                name: plantillaData.name,
                                                 reference: plantillaData.reference || '',
                                                 category: plantillaData.category || 'Varios',
                                                 photoURL: plantillaData.photoURL || null,
-                                                status: 'disponible', // La nueva herramienta entra a Bodega
+                                                status: 'disponible',
                                                 assignedToId: null,
                                                 assignedToName: null,
                                                 lastUsedBy: null,
@@ -9392,18 +9589,19 @@ document.addEventListener('DOMContentLoaded', () => {
                                         break;
                                     }
                                 }
-                            } // Fin del bucle for
+                            }
 
-                            // Actualiza el estado de la orden (sin cambios)
+                            // Actualiza el estado de la orden (escritura final)
                             transaction.update(poRef, { status: "recibida", receivedAt: new Date(), receivedBy: currentUser.uid });
                         });
-                        // --- FIN DE MODIFICACIÓN ---
+                        // --- Fin de runTransaction ---
 
                         alert("¡Mercancía recibida! El stock se ha actualizado.");
                         closePurchaseOrderModal();
                     } catch (error) {
+                        // Esta es la línea 9558
                         console.error("Error al recibir la mercancía:", error);
-                        alert("Error: " + error.message);
+                        alert("No se pudo guardar la orden de compra: " + error.message);
                     } finally {
                         loadingOverlay.classList.add('hidden');
                     }
@@ -9669,35 +9867,63 @@ document.addEventListener('DOMContentLoaded', () => {
             if (link) {
                 e.preventDefault();
                 const viewName = link.dataset.view;
-                if (viewName === 'tareas') {
+
+                // --- INICIO DE CORRECCIÓN (Cadena 'if/else' completa) ---
+
+                if (viewName === 'dashboard-general') {
+                    showGeneralDashboard(); // (La que migramos a dashboard.js)
+
+                } else if (viewName === 'proyectos') {
+                    showDashboard(); // (Carga proyectos activos)
+
+                } else if (viewName === 'tareas') {
                     showView('tareas');
                     loadTasksView();
-                    // --- INICIO DE MODIFICACIÓN ---
+
                 } else if (viewName === 'herramienta') {
+                    // ESTA ES LA LÓGICA QUE FALTABA
                     showView('herramienta');
-                    resetToolViewAndLoad(); // <-- Llama a la nueva función de reseteo
-                    // --- FIN DE MODIFICACIÓN ---
-                } else if (viewName === 'dotacion') { // <-- AÑADE ESTE BLOQUE
+                    resetToolViewAndLoad();
+
+                } else if (viewName === 'dotacion') {
                     showView('dotacion');
                     loadDotacionView();
+
                 } else if (viewName === 'adminPanel') {
                     showView('adminPanel');
                     loadUsers('active');
+
                 } else if (viewName === 'proveedores') {
                     showView('proveedores');
                     loadProveedoresView();
+
                 } else if (viewName === 'catalog') {
                     showView('catalog');
                     loadCatalogView();
+
                 } else if (viewName === 'compras') {
                     showView('compras');
                     loadComprasView();
+
                 } else if (viewName === 'reports') {
                     showView('reports');
                     loadReportsView();
+
+                } else if (viewName === 'empleados') {
+                    // --- INICIO DE MODIFICACIÓN ---
+                    loadEmpleadosView();
+                    showView(viewName); // Mostramos la vista después de que la función empieza a cargar
+                    // --- FIN DE MODIFICACIÓN ---
+                } else if (viewName === 'configuracion') {
+                    loadConfiguracionView();
+                    showView('configuracion-view'); // <-- ¡CORREGIDO!
                 } else {
+                    // Fallback para vistas simples (ej. Cartera, Solicitud)
                     showView(viewName);
                 }
+
+                // --- FIN DE CORRECCIÓN ---
+
                 if (window.innerWidth < 768) {
                     sidebar.classList.add('-translate-x-full');
                 }
@@ -10726,26 +10952,6 @@ function closeRequestDetailsModal() {
 }
 
 /**
- * Actualiza la tarjeta de resumen financiero en la PESTAÑA DE INFORMACIÓN GENERAL.
- * @param {object} project - El objeto del proyecto actual.
- * @param {Array} allPayments - Un array con todos los pagos del proyecto.
- */
-function updateGeneralInfoSummary(project, allPayments) {
-    const totalEl = document.getElementById('info-anticipo-total');
-    const amortizadoEl = document.getElementById('info-anticipo-amortizado');
-    const porAmortizarEl = document.getElementById('info-anticipo-por-amortizar');
-
-    if (!totalEl || !amortizadoEl || !porAmortizarEl) return;
-
-    const totalAnticipo = project.advance || 0;
-    const anticipoPayments = allPayments.filter(p => p.type === 'abono_anticipo' || p.type === 'amortizacion_anticipo');
-    const totalAmortizado = anticipoPayments.reduce((sum, p) => sum + p.amount, 0);
-
-    totalEl.textContent = currencyFormatter.format(totalAnticipo);
-    amortizadoEl.textContent = currencyFormatter.format(totalAmortizado);
-    porAmortizarEl.textContent = currencyFormatter.format(totalAnticipo - totalAmortizado);
-}
-/**
  * Audita y sincroniza el stock total de todos los materiales en el catálogo.
  * Recalcula el stock total basándose en la suma de los lotes (stockBatches)
  * y actualiza el campo 'quantityInStock' del material.
@@ -10848,141 +11054,9 @@ async function syncAllInventoryStock() {
     }
 }
 
-function setupCutManagement(choicesInstance) {
-    const modalBody = document.getElementById('modal-body'); // Ajustado para el modal
-    const requestList = document.getElementById('request-items-list');
 
-    modalBody.addEventListener('click', e => {
-        const addCutBtn = e.target.closest('#add-cut-btn');
-        const removeCutBtn = e.target.closest('.remove-cut-btn');
-        const addCutToRequestBtn = e.target.closest('.add-cut-to-request-btn');
-        const addRemnantBtn = e.target.closest('.add-remnant-to-request-btn');
 
-        if (addCutBtn) {
-            const cutsContainer = document.getElementById('cuts-container');
-            const cutField = document.createElement('div');
-            cutField.className = 'cut-item grid grid-cols-3 gap-2 items-center';
-            cutField.innerHTML = `
-                <input type="number" step="0.01" class="cut-length-input border p-2 rounded-md text-sm" placeholder="Medida (m)">
-                <input type="number" class="cut-quantity-input border p-2 rounded-md text-sm" placeholder="Cantidad">
-                <div class="flex items-center gap-2">
-                    <button type="button" class="add-cut-to-request-btn bg-green-500 text-white text-xs font-bold py-2 px-3 rounded hover:bg-green-600">Añadir</button>
-                    <button type="button" class="remove-cut-btn text-red-500 hover:text-red-700 text-xs font-semibold">Quitar</button>
-                </div>
-            `;
-            cutsContainer.appendChild(cutField);
-        }
 
-        if (removeCutBtn) {
-            removeCutBtn.closest('.cut-item').remove();
-        }
-
-        if (addCutToRequestBtn) {
-            const cutItem = addCutToRequestBtn.closest('.cut-item');
-            const length = parseFloat(cutItem.querySelector('.cut-length-input').value);
-            const quantity = parseInt(cutItem.querySelector('.cut-quantity-input').value);
-            const selectedMaterial = choicesInstance.getValue();
-            if (!selectedMaterial || !length || !quantity) return;
-
-            addMaterialToSummaryList({
-                materialId: selectedMaterial.value,
-                materialName: selectedMaterial.customProperties.name,
-                quantity: quantity,
-                length: length,
-                type: 'cut'
-            });
-            cutItem.remove();
-        }
-
-        // --- INICIO DE LA CORRECCIÓN ---
-        if (addRemnantBtn) {
-            const remnantChoiceDiv = addRemnantBtn.closest('.remnant-item-choice');
-            const quantityInput = remnantChoiceDiv.querySelector('.remnant-quantity-input');
-            const quantity = parseInt(quantityInput.value);
-            const maxQuantity = parseInt(quantityInput.max);
-
-            if (!quantity || quantity <= 0 || quantity > maxQuantity) {
-                alert(`Por favor, introduce una cantidad válida (entre 1 y ${maxQuantity}).`);
-                return;
-            }
-
-            const { remnantId, materialId, materialName, remnantText } = addRemnantBtn.dataset;
-            addMaterialToSummaryList({
-                materialId: materialId,
-                materialName: materialName,
-                remnantId: remnantId,
-                remnantText: remnantText,
-                quantity: quantity,
-                type: 'remnant'
-            });
-
-            // Actualiza la interfaz para reflejar el stock restante
-            const availableQtySpan = remnantChoiceDiv.querySelector('.remnant-available-qty');
-            const newAvailableQty = maxQuantity - quantity;
-            if (newAvailableQty <= 0) {
-                remnantChoiceDiv.remove(); // Elimina el retazo si se agota
-            } else {
-                availableQtySpan.textContent = newAvailableQty;
-                quantityInput.max = newAvailableQty;
-                quantityInput.value = '';
-            }
-        }
-        // --- FIN DE LA CORRECCIÓN ---
-    });
-}
-
-function setupMaterialChoices(choicesInstance) {
-    const divisibleSection = document.getElementById('divisible-section');
-    const unitsSection = document.getElementById('units-section');
-    const remnantsContainer = document.getElementById('remnants-container');
-    const remnantsList = document.getElementById('remnants-list');
-
-    choicesInstance.passedElement.element.addEventListener('change', async () => {
-        const selectedMaterial = choicesInstance.getValue();
-
-        [divisibleSection, unitsSection, remnantsContainer].forEach(el => el.classList.add('hidden'));
-        document.getElementById('cuts-container').innerHTML = '';
-        document.getElementById('new-request-quantity').value = '';
-        remnantsList.innerHTML = '';
-
-        if (selectedMaterial) {
-            const materialId = selectedMaterial.value;
-            const isDivisible = selectedMaterial.customProperties.isDivisible;
-
-            unitsSection.classList.remove('hidden');
-
-            if (isDivisible) {
-                divisibleSection.classList.remove('hidden');
-
-                const remnantsSnapshot = await getDocs(query(collection(db, "materialCatalog", materialId, "remnantStock"), where("quantity", ">", 0)));
-                if (!remnantsSnapshot.empty) {
-                    remnantsContainer.classList.remove('hidden');
-                    remnantsSnapshot.forEach(doc => {
-                        const remnant = { id: doc.id, ...doc.data() };
-                        const remnantText = `${remnant.length} ${remnant.unit || 'm'}`;
-
-                        remnantsList.innerHTML += `
-                            <div class="remnant-item-choice flex items-center justify-between text-sm p-2 bg-gray-100 rounded-md">
-                                <span><span class="remnant-available-qty">${remnant.quantity}</span> und. de ${remnantText}</span>
-                                <div class="flex items-center gap-2">
-                                    <input type="number" class="remnant-quantity-input w-20 border p-1 rounded-md text-sm" placeholder="Cant." min="1" max="${remnant.quantity}">
-                                    <button type="button" 
-                                            data-remnant-id="${remnant.id}" 
-                                            data-remnant-length="${remnant.length}"
-                                            data-material-id="${materialId}" 
-                                            data-material-name="${selectedMaterial.customProperties.name}" 
-                                            data-remnant-text="${remnantText}" 
-                                            class="add-remnant-to-request-btn bg-green-500 text-white text-xs font-bold py-2 px-3 rounded hover:bg-green-600">
-                                        Añadir
-                                    </button>
-                                </div>
-                            </div>`;
-                    });
-                }
-            }
-        }
-    });
-}
 
 function setupAddMaterialButton(choicesInstance) {
     const addBtn = document.getElementById('add-material-to-request-btn');
@@ -11378,9 +11452,9 @@ function loadTasksView() {
     const newTaskBtn = document.getElementById('new-task-btn');
     const adminToggleContainer = document.getElementById('admin-task-toggle-container');
 
-    // --- INICIO DE MODIFICACIÓN ---
+
     const role = currentUserRole; // Usamos la variable global
-    // --- FIN DE MODIFICACIÓN ---
+
 
     if (newTaskBtn && adminToggleContainer) {
         const isAdmin = (role === 'admin');
@@ -11515,10 +11589,10 @@ function loadAndDisplayTasks(statusFilter = 'pendiente') { // <-- 'blockButtons'
         let previousCard = null; // Para insertar en el orden correcto
         sortedTasks.forEach((taskData) => {
 
-            // --- INICIO DE MODIFICACIÓN ---
+
             // Pasamos 'blockButtons' al crear la tarjeta
             const taskCard = createTaskCard(taskData); // <-- 'blockButtons' eliminado
-            //             // --- FIN DE MODIFICACIÓN ---
+            //             
 
             const existingCard = currentTasksContainer.querySelector(`.task-card[data-id="${taskData.id}"]`);
 
@@ -12021,6 +12095,8 @@ async function addCommentToTask(taskId) {
 /**
  * Guarda una nueva tarea en Firestore, incluyendo ítems seleccionados con cantidad
  * y envía notificaciones a los asignados.
+ * (VERSIÓN ACTUALIZADA: "Estampa" el ID de la tarea en los sub-ítems y
+ * calcula los M² asignados para las estadísticas del operario)
  * @param {object} taskData - Datos de la tarea obtenidos del formulario del modal.
  */
 async function createTask(taskData) {
@@ -12030,7 +12106,7 @@ async function createTask(taskData) {
         return;
     }
 
-    // --- Recolectar datos de ítems y encontrar subItemIds (Lógica existente sin cambios) ---
+    // --- Recolectar datos de ítems y encontrar subItemIds ---
     const itemCheckboxes = modalForm.querySelectorAll('input[name="selectedItemIds"]:checked');
     if (itemCheckboxes.length === 0) {
         alert("Debes seleccionar al menos un Ítem Relacionado e ingresar su cantidad.");
@@ -12045,10 +12121,12 @@ async function createTask(taskData) {
         const maxQuantity = parseInt(checkbox.dataset.itemQuantity) || 1;
 
         if (!quantity || quantity <= 0) {
-            throw new Error(`Por favor, ingresa una cantidad válida (mayor a 0) para el ítem "${checkbox.nextElementSibling.textContent}".`);
+            alert(`Por favor, ingresa una cantidad válida (mayor a 0) para el ítem "${checkbox.nextElementSibling.textContent}".`); // <-- CORRECCIÓN: throw new Error
+            return;
         }
         if (quantity > maxQuantity) {
-            throw new Error(`La cantidad para el ítem "${checkbox.nextElementSibling.textContent}" (${quantity}) excede el máximo permitido (${maxQuantity}).`);
+            alert(`La cantidad para el ítem "${checkbox.nextElementSibling.textContent}" (${quantity}) excede el máximo permitido (${maxQuantity}).`); // <-- CORRECCIÓN: throw new Error
+            return;
         }
 
         selectedItemsQueryData.push({
@@ -12058,31 +12136,51 @@ async function createTask(taskData) {
         });
     }
 
+    // --- INICIO DE MODIFICACIÓN: Fase 2 ---
     const specificSubItemIds = [];
     const selectedItemsForTask = [];
-    // (Bucle for...of para buscar los subItemIds y llenar specificSubItemIds y selectedItemsForTask)
+    let totalMetrosAsignados = 0; // 1. Inicializar contador de M²
+    const batchSubItemUpdates = writeBatch(db); // 2. Preparar batch para "estampar" sub-ítems
+    let subItemsToStamp = []; // 3. Array para guardar las referencias a actualizar
+
     for (const itemQuery of selectedItemsQueryData) {
+
+        // --- CORRECCIÓN DE BUG (Query Antigua) ---
+        // La consulta anterior usaba la colección raíz "subItems".
+        // Esta consulta usa la ruta de subcolección correcta.
         const subItemsQuery = query(
-            collection(db, "subItems"),
-            where("projectId", "==", taskData.projectId),
-            where("itemId", "==", itemQuery.itemId),
+            collection(db, "projects", taskData.projectId, "items", itemQuery.itemId, "subItems"),
             where("status", "!=", "Instalado"),
+            where("assignedTaskId", "==", null), // 4. SÓLO tomar sub-ítems que no estén ya en otra tarea
             orderBy("number", "asc"),
             limit(itemQuery.quantityNeeded)
         );
+        // --- FIN DE CORRECCIÓN DE BUG ---
+
         const subItemsSnapshot = await getDocs(subItemsQuery);
         if (subItemsSnapshot.size < itemQuery.quantityNeeded) {
-            throw new Error(`No se pudieron asignar ${itemQuery.quantityNeeded} unidades para "${itemQuery.itemName}". Solo se encontraron ${subItemsSnapshot.size} unidades pendientes.`);
+            alert(`No se pudieron asignar ${itemQuery.quantityNeeded} unidades para "${itemQuery.itemName}". Solo se encontraron ${subItemsSnapshot.size} unidades libres y pendientes.`); // <-- CORRECCIÓN: throw new Error
+            return;
         }
-        subItemsSnapshot.forEach(doc => {
-            specificSubItemIds.push(doc.id);
+
+        subItemsSnapshot.forEach(subItemDoc => {
+            const subItemData = subItemDoc.data();
+
+            specificSubItemIds.push(subItemDoc.id);
+
+            // 5. Sumar los M² del sub-ítem (estampados en Fase 1)
+            totalMetrosAsignados += (subItemData.m2 || 0);
+
+            // 6. Guardar la referencia del sub-ítem para actualizarla después
+            subItemsToStamp.push(subItemDoc.ref);
         });
+
         selectedItemsForTask.push({
             itemId: itemQuery.itemId,
             quantity: itemQuery.quantityNeeded
         });
     }
-    // --- Fin recolección y búsqueda ---
+    // --- FIN DE MODIFICACIÓN: Fase 2 ---
 
 
     // Recolectar asignados adicionales (sin cambios)
@@ -12091,8 +12189,8 @@ async function createTask(taskData) {
         : [];
 
     try {
-        // --- Guardar la Tarea (Lógica existente) ---
-        const newTaskRef = await addDoc(collection(db, "tasks"), { // Guardamos la referencia a la nueva tarea
+        // --- Guardar la Tarea ---
+        const newTaskRef = await addDoc(collection(db, "tasks"), {
             projectId: taskData.projectId,
             projectName: taskData.projectName,
             assigneeId: taskData.assigneeId,
@@ -12104,47 +12202,82 @@ async function createTask(taskData) {
             dueDate: taskData.dueDate || null,
             status: 'pendiente',
             createdAt: new Date(),
-            createdBy: currentUser.uid
+            createdBy: currentUser.uid,
+            totalMetrosAsignados: totalMetrosAsignados // 7. Guardar los M² totales en la tarea
         });
         console.log("Nueva tarea guardada en Firestore con ID:", newTaskRef.id);
 
-        // --- INICIO DE LA NUEVA LÓGICA DE NOTIFICACIONES ---
-        const projectName = taskData.projectName || "un proyecto"; // Obtenemos el nombre del proyecto
+        // --- INICIO DE MODIFICACIÓN: Fase 2 (Continuación) ---
+
+        // 8. "Estampar" los sub-ítems con el ID de la tarea recién creada
+        subItemsToStamp.forEach(subItemRef => {
+            batchSubItemUpdates.update(subItemRef, {
+                assignedTaskId: newTaskRef.id // <-- El "estampado"
+            });
+        });
+        await batchSubItemUpdates.commit();
+        console.log(`${subItemsToStamp.length} sub-items estampados con el ID de tarea: ${newTaskRef.id}`);
+
+        // 9. Actualizar las estadísticas mensuales del operario
+        if (totalMetrosAsignados > 0) {
+            const assigneeId = taskData.assigneeId;
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0'); // Formato "MM"
+            const statDocId = `${year}_${month}`; // Ej: "2025_11"
+
+            // Referencia al documento de estadísticas de ese mes para ese usuario
+            const statsRef = doc(db, "employeeStats", assigneeId, "monthlyStats", statDocId);
+
+            // Usamos setDoc con merge:true para crear el documento si no existe,
+            // e increment() para sumar los metros de forma segura.
+            await setDoc(statsRef, {
+                metrosAsignados: increment(totalMetrosAsignados),
+                // Inicializamos los otros campos si no existen
+                metrosCompletados: increment(0),
+                metrosEnTiempo: increment(0),
+                metrosFueraDeTiempo: increment(0)
+            }, { merge: true });
+
+            console.log(`Estadísticas mensuales del operario (${assigneeId} / ${statDocId}) actualizadas: +${totalMetrosAsignados}m² asignados.`);
+
+        }
+        // --- FIN DE MODIFICACIÓN ---
+
+
+        // --- Lógica de Notificaciones (sin cambios) ---
+        const projectName = taskData.projectName || "un proyecto";
         const notificationMessage = `Nueva tarea asignada: ${taskData.description.substring(0, 50)}${taskData.description.length > 50 ? '...' : ''}`;
         const notificationData = {
             message: notificationMessage,
-            projectName: projectName, // <-- CAMBIO AÑADIDO
-            taskId: newTaskRef.id, // ID de la tarea recién creada
+            projectName: projectName,
+            taskId: newTaskRef.id,
             read: false,
             createdAt: new Date(),
-            type: 'new_task_assignment' // Tipo de notificación
+            type: 'new_task_assignment'
         };
-
-        // 1. Notificación para el asignado principal
-        if (taskData.assigneeId && taskData.assigneeId !== currentUser.uid) { // No notificarse a sí mismo
+        // (Notificación a principal)
+        if (taskData.assigneeId && taskData.assigneeId !== currentUser.uid) {
             await addDoc(collection(db, "notifications"), {
                 ...notificationData,
                 userId: taskData.assigneeId
             });
-            console.log(`Notificación enviada a asignado principal: ${taskData.assigneeId}`);
         }
-
-        // 2. Notificaciones para asignados adicionales
+        // (Notificación a adicionales)
         for (const additionalId of additionalAssignees) {
-            if (additionalId && additionalId !== currentUser.uid) { // No notificarse a sí mismo
+            if (additionalId && additionalId !== currentUser.uid) {
                 await addDoc(collection(db, "notifications"), {
                     ...notificationData,
                     userId: additionalId
                 });
-                console.log(`Notificación enviada a asignado adicional: ${additionalId}`);
             }
         }
-        // --- FIN DE LA NUEVA LÓGICA DE NOTIFICACIONES ---
+        // --- Fin Lógica de Notificaciones ---
 
         closeMainModal();
 
     } catch (error) {
-        console.error("Error al guardar la nueva tarea o enviar notificaciones:", error);
+        console.error("Error al guardar la nueva tarea o actualizar sub-ítems:", error);
         alert(`No se pudo guardar la tarea: ${error.message}`);
     }
 }
@@ -12891,31 +13024,7 @@ async function sendNotification(userId, title, message, view) {
     }
 }
 
-/**
- * Revisa si el usuario ya hizo el check-in hoy.
- * @returns {boolean} - true si YA HIZO check-in, false si NECESITA hacerlo.
- */
-function checkIfSafetyCheckInNeeded() {
-    // ESTA FUNCIÓN YA NO LA USAMOS (la lógica se movió a 'register-task-progress')
-    // PERO LA DEJAMOS POR SI LA NECESITAMOS EN EL FUTURO
-    const lastCheckInString = localStorage.getItem('lastSafetyCheckIn');
-    if (!lastCheckInString) {
-        return true; // Nunca lo ha hecho
-    }
 
-    const lastCheckInDate = new Date(lastCheckInString);
-    const today = new Date();
-
-    // Comparamos si es el mismo día (ignorando la hora)
-    if (lastCheckInDate.getFullYear() === today.getFullYear() &&
-        lastCheckInDate.getMonth() === today.getMonth() &&
-        lastCheckInDate.getDate() === today.getDate()) {
-
-        return false; // Ya hizo check-in hoy
-    }
-
-    return true; // El check-in fue de un día anterior
-}
 
 /**
  * Abre el modal de Check-in de Seguridad.

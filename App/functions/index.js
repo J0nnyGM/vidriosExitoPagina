@@ -119,36 +119,612 @@ const recalculateProjectProgress = async (projectId) => {
     return projectRef.update({ progressSummary });
 };
 
-// --- Trigger de Firestore (v2 - ya corregido) ---
+/**
+ * Trigger que recalcula el Progreso del Proyecto Y
+ * ACTUALIZA LAS ESTADÍSTICAS DE M² COMPLETADOS Y BONIFICACIONES (Globales y de Empleado).
+ * (VERSIÓN CORREGIDA: 'onTime' declarado una sola vez)
+ */
 exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}/subItems/{subItemId}", async (event) => {
-    // --- FIN DE CAMBIO ---
-    const projectId = event.params.projectId; // Obtenemos el projectId desde los parámetros
-
+    
+    // --- Bloque 1: Recalcular Progreso del Proyecto (Lógica existente) ---
+    const projectId = event.params.projectId;
     if (projectId) {
         try {
             await recalculateProjectProgress(projectId);
         } catch (error) {
-            console.error(`Failed to update progress for project ${projectId}`, error);
+            console.error(`Error al actualizar progreso del proyecto ${projectId}:`, error);
         }
+    }
+
+    // --- Bloque 2: Calcular Estadísticas de Productividad (LÓGICA ACTUALIZADA) ---
+    const configDoc = await db.doc("system/bonificationConfig").get();
+    const config = configDoc.exists ? configDoc.data() : null;
+
+    if (!config) {
+        console.error("¡CRÍTICO! El documento 'system/bonificationConfig' no existe. No se pueden calcular bonificaciones.");
+    }
+
+    try {
+        if (!event.data.before.exists || !event.data.after.exists) return; // Solo actualizaciones
+
+        const beforeData = event.data.before.data();
+        const afterData = event.data.after.data();
+
+        let m2 = 0;
+        let installerId = null;
+        let installDateStr = null;
+        let taskId = null;
+        let onTime = true; // <-- ÚNICA DECLARACIÓN
+        let operationType = 0; 
+
+        if (beforeData.status !== "Instalado" && afterData.status === "Instalado") {
+            // --- INSTALACIÓN (Sumar) ---
+            operationType = 1;
+            m2 = afterData.m2 || 0;
+            installerId = afterData.installer;
+            installDateStr = afterData.installDate;
+            taskId = afterData.assignedTaskId;
+        } else if (beforeData.status === "Instalado" && afterData.status !== "Instalado") {
+            // --- REVERSIÓN (Restar) ---
+            operationType = -1;
+            m2 = beforeData.m2 || 0;
+            installerId = beforeData.installer;
+            installDateStr = beforeData.installDate;
+            taskId = beforeData.assignedTaskId;
+        }
+
+        if (operationType === 0 || !m2 || !installerId || !installDateStr || !taskId) {
+            return; // No hay cambio relevante o faltan datos
+        }
+
+        const taskRef = db.doc(`tasks/${taskId}`);
+        const userRef = db.doc(`users/${installerId}`); 
+
+        const [taskDoc, userDoc] = await Promise.all([taskRef.get(), userRef.get()]); 
+
+        if (!taskDoc.exists) {
+            console.error(`Estadísticas: No se encontró la Tarea ${taskId}.`);
+            return;
+        }
+        if (!userDoc.exists) {
+            console.error(`Estadísticas: No se encontró al Usuario ${installerId}.`);
+            return;
+        }
+
+        const taskData = taskDoc.data();
+        const userData = userDoc.data();
+        
+        const installDate = new Date(installDateStr + 'T12:00:00Z'); 
+        const year = installDate.getFullYear();
+        const month = String(installDate.getMonth() + 1).padStart(2, '0');
+        const statDocId = `${year}_${month}`;
+
+        // --- INICIO DE CORRECCIÓN ---
+        // Se eliminó la segunda declaración de 'let onTime = true;'
+        if (taskData.dueDate) {
+            const dueDate = new Date(taskData.dueDate + 'T23:59:59Z');
+            if (installDate > dueDate) onTime = false; // Solo reasignamos el valor
+        }
+        // --- FIN DE CORRECCIÓN ---
+
+        // --- Cálculo de Bonificación ---
+        let bonificacion = 0;
+        const level = userData.commissionLevel || "principiante"; 
+        
+        if (config && config[level]) { 
+            const rate = onTime ? config[level].valorM2EnTiempo : config[level].valorM2FueraDeTiempo;
+            bonificacion = (m2 * rate) * operationType;
+        }
+        
+        const statsRefEmployee = db.doc(`employeeStats/${installerId}/monthlyStats/${statDocId}`);
+        const statsRefGlobal = db.doc("system/dashboardStats");
+        
+        const statsUpdateEmployee = {
+            metrosCompletados: FieldValue.increment(m2 * operationType),
+            metrosEnTiempo: onTime ? FieldValue.increment(m2 * operationType) : FieldValue.increment(0),
+            metrosFueraDeTiempo: !onTime ? FieldValue.increment(m2 * operationType) : FieldValue.increment(0),
+            totalBonificacion: FieldValue.increment(bonificacion)
+        };
+        
+        const statsUpdateGlobal = {
+            productivity: {
+                metrosCompletados: FieldValue.increment(m2 * operationType),
+                metrosEnTiempo: onTime ? FieldValue.increment(m2 * operationType) : FieldValue.increment(0),
+                metrosFueraDeTiempo: !onTime ? FieldValue.increment(m2 * operationType) : FieldValue.increment(0),
+                totalBonificacion: FieldValue.increment(bonificacion)
+            }
+        };
+
+        const batch = db.batch();
+        batch.set(statsRefEmployee, statsUpdateEmployee, { merge: true });
+        batch.set(statsRefGlobal, statsUpdateGlobal, { merge: true });
+        await batch.commit();
+
+        console.log(`Estadísticas de ${installerId} para ${statDocId} actualizadas: ${m2 * operationType}m², $${bonificacion} (A tiempo: ${onTime})`);
+
+    } catch (statError) {
+        console.error(`Error al actualizar estadísticas de operario:`, statError);
     }
 });
 
-// --- Función Callable (v2 - CORREGIDA) ---
+/**
+ * Función auxiliar para recalcular el resumen de estadísticas de herramientas
+ * desde cero y escribirlo en 'system/dashboardStats'.
+ * (VERSIÓN ACTUALIZADA: Incluye Top 3 de daños)
+ */
+const recalculateToolStats = async () => {
+    console.log("Iniciando recálculo de estadísticas de Herramientas...");
+    const statsRef = db.doc("system/dashboardStats");
+
+    // Consultas en paralelo
+    const [toolsSnapshot, damagedReturnsSnapshot] = await Promise.all([
+        db.collection("tools").get(),
+        db.collectionGroup("history").where("returnStatus", "in", ["dañado", "con_defecto"]).get()
+    ]);
+
+    // 1. Contar estadísticas de estado
+    const stats = {
+        total: 0,
+        disponible: 0,
+        asignada: 0,
+        en_reparacion: 0,
+        dada_de_baja: 0
+    };
+    toolsSnapshot.forEach(doc => {
+        const tool = doc.data();
+        stats.total++;
+        const status = tool.status || 'disponible';
+        if (stats[status] !== undefined) {
+            stats[status]++;
+        } else {
+            stats.disponible++; // Fallback
+        }
+    });
+
+    // 2. Contar "Top 3 Daños"
+    const damageMap = new Map();
+    damagedReturnsSnapshot.forEach(doc => {
+        const historyEntry = doc.data();
+        const userId = historyEntry.returnedByUserId; // ID del operario que devolvió
+        if (userId) {
+            damageMap.set(userId, (damageMap.get(userId) || 0) + 1);
+        }
+    });
+    // Convertir el Map a un array, ordenar y tomar los 3 primeros
+    const topDamage = Array.from(damageMap.entries())
+        .sort((a, b) => b[1] - a[1]) // Ordenar de mayor a menor
+        .slice(0, 3) // Tomar solo los 3 primeros
+        .map(([userId, count]) => ({ userId, count })); // Formatear
+
+    stats.topDamage = topDamage; // Guardamos el array en las estadísticas
+
+    console.log("Estadísticas de herramientas calculadas:", stats);
+    return statsRef.set({ tools: stats }, { merge: true });
+};
+
+/**
+ * Función auxiliar para recalcular el resumen de estadísticas de Dotación
+ * desde cero y escribirlo en 'system/dashboardStats'.
+ * (VERSIÓN ACTUALIZADA: Incluye Top 3 de consumo)
+ */
+const recalculateDotacionStats = async () => {
+    console.log("Iniciando recálculo de estadísticas de Dotación...");
+    const statsRef = db.doc("system/dashboardStats");
+
+    // Consultas en paralelo
+    const [catalogSnapshot, historySnapshot] = await Promise.all([
+        db.collection("dotacionCatalog").get(),
+        db.collection("dotacionHistory").get() // Obtenemos TODO el historial
+    ]);
+
+    const stats = {
+        totalTipos: 0,
+        totalStock: 0,
+        totalAsignado: 0
+    };
+    const consumoMap = new Map();
+
+    // 1. Contar el catálogo (Stock)
+    catalogSnapshot.forEach(doc => {
+        stats.totalTipos++;
+        stats.totalStock += (doc.data().quantityInStock || 0);
+    });
+
+    // 2. Contar el historial (Asignado y Top Consumo)
+    historySnapshot.forEach(doc => {
+        const entry = doc.data();
+        const quantity = entry.quantity || 0;
+
+        // Contar total asignado (activo)
+        if (entry.action === 'asignada' && entry.status === 'activo') {
+            stats.totalAsignado += quantity;
+        }
+
+        // Contar consumo histórico (solo asignaciones)
+        if (entry.action === 'asignada' && entry.userId) {
+            consumoMap.set(entry.userId, (consumoMap.get(entry.userId) || 0) + quantity);
+        }
+    });
+
+    // 3. Convertir Map de consumo a Top 3
+    const topConsumo = Array.from(consumoMap.entries())
+        .sort((a, b) => b[1] - a[1]) // Ordenar
+        .slice(0, 3) // Top 3
+        .map(([userId, count]) => ({ userId, count })); // Formatear
+
+    stats.topConsumo = topConsumo; // Guardar el array
+
+    console.log("Estadísticas de dotación calculadas:", stats);
+    return statsRef.set({ dotacion: stats }, { merge: true });
+};
+
+/**
+ * Función auxiliar para recalcular el resumen de estadísticas de Proyectos
+ * desde cero y escribirlo en 'system/dashboardStats'.
+ */
+const recalculateProjectStats = async () => {
+    console.log("Iniciando recálculo de estadísticas de Proyectos...");
+    const statsRef = db.doc("system/dashboardStats");
+    const projectsSnapshot = await db.collection("projects").get();
+
+    const stats = {
+        total: 0,
+        active: 0,
+        archived: 0
+    };
+
+    projectsSnapshot.forEach(doc => {
+        const project = doc.data();
+        stats.total++;
+        if (project.status === 'active') {
+            stats.active++;
+        } else if (project.status === 'archived') {
+            stats.archived++;
+        }
+    });
+
+    console.log("Estadísticas de proyectos calculadas:", stats);
+    return statsRef.set({ projects: stats }, { merge: true });
+};
+
+/**
+ * Función auxiliar para recalcular el resumen de estadísticas de Tareas
+ * desde cero y escribirlo en 'system/dashboardStats'.
+ */
+const recalculateTaskStats = async () => {
+    console.log("Iniciando recálculo de estadísticas de Tareas...");
+    const statsRef = db.doc("system/dashboardStats");
+    const tasksSnapshot = await db.collection("tasks").get();
+
+    const stats = {
+        total: 0,
+        pendientes: 0,
+        completadas: 0
+    };
+
+    tasksSnapshot.forEach(doc => {
+        const task = doc.data();
+        stats.total++;
+        if (task.status === 'pendiente') {
+            stats.pendientes++;
+        } else if (task.status === 'completada') {
+            stats.completadas++;
+        }
+    });
+
+    console.log("Estadísticas de tareas calculadas:", stats);
+    return statsRef.set({ tasks: stats }, { merge: true });
+};
+
+/**
+ * Función auxiliar para recalcular el valor total del inventario en stock
+ * y escribirlo en 'system/dashboardStats'.
+ */
+const recalculateInventoryValueStats = async () => {
+    console.log("Iniciando recálculo de estadísticas de Inventario (Valor)...");
+    const statsRef = db.doc("system/dashboardStats");
+    const catalogSnapshot = await db.collection("materialCatalog").get();
+
+    let totalValue = 0;
+    let totalTypes = 0;
+
+    // Iteramos por cada TIPO de material (ej: Vidrio 3mm)
+    for (const materialDoc of catalogSnapshot.docs) {
+        totalTypes++;
+
+        // Consultamos sus lotes de stock (donde está el precio)
+        const batchesSnapshot = await materialDoc.ref.collection("stockBatches").get();
+
+        if (!batchesSnapshot.empty) {
+            let valueForItem = 0;
+            batchesSnapshot.forEach(batchDoc => {
+                const batchData = batchDoc.data();
+                const cost = batchData.unitCost || 0;
+                const remaining = batchData.quantityRemaining || 0;
+                // Sumamos el valor de este lote (Costo * Cantidad Restante)
+                valueForItem += (cost * remaining);
+            });
+            totalValue += valueForItem;
+        }
+    }
+
+    const stats = {
+        totalValue: totalValue, // Valor total en $
+        totalTypes: totalTypes  // Total de tipos de material
+    };
+
+    console.log("Estadísticas de inventario calculadas:", stats);
+    return statsRef.set({ inventory: stats }, { merge: true });
+};
+
+/**
+ * Función auxiliar para recalcular TODAS las estadísticas de productividad
+ * (Globales y de Empleado) desde cero, INCLUYENDO BONIFICACIONES.
+ */
+const recalculateProductivityStats = async () => {
+    console.log("Iniciando recálculo MASIVO de Estadísticas de Productividad...");
+    const statsRefGlobal = db.doc("system/dashboardStats");
+    
+   
+    // --- INICIO DE MODIFICACIÓN ---
+    // 2. Cargar la Configuración de Bonificación y el mapa de Usuarios UNA VEZ
+    const configDoc = await db.doc("system/bonificationConfig").get();
+    const config = configDoc.exists ? configDoc.data() : null;
+    if (!config) {
+        console.error("¡CRÍTICO! 'system/bonificationConfig' no existe. Las bonificaciones se calcularán como 0.");
+    }
+    
+    const usersSnapshot = await db.collection("users").get();
+    const usersLevelMap = new Map(); // Mapa para guardar solo el Nivel de Comisión
+    usersSnapshot.forEach(doc => {
+        usersLevelMap.set(doc.id, doc.data().commissionLevel || "principiante");
+    });
+    // --- FIN DE MODIFICACIÓN ---
+
+    // 3. Inicializar contadores globales
+    const globalStats = {
+        productivity: {
+            metrosAsignados: 0,
+            metrosCompletados: 0,
+            metrosEnTiempo: 0,
+            metrosFueraDeTiempo: 0,
+            totalBonificacion: 0 // <-- AÑADIDO
+        }
+    };
+    
+    // 4. Recalcular M² Asignados (Iterando Tareas)
+    const tasksSnapshot = await db.collection("tasks").get();
+    const employeeStatsMap = new Map();
+
+    for (const taskDoc of tasksSnapshot.docs) {
+        const task = taskDoc.data();
+        const m2Asignados = task.totalMetrosAsignados || 0;
+        
+        if (m2Asignados > 0 && task.assigneeId) {
+            globalStats.productivity.metrosAsignados += m2Asignados;
+
+            const assigneeId = task.assigneeId;
+            const createdAt = task.createdAt.toDate();
+            const year = createdAt.getFullYear();
+            const month = String(createdAt.getMonth() + 1).padStart(2, '0');
+            const statDocId = `${assigneeId}/monthlyStats/${year}_${month}`;
+
+            const stats = employeeStatsMap.get(statDocId) || { mAsignados: 0, mCompletados: 0, mEnTiempo: 0, mFueraTiempo: 0, bonificacion: 0 };
+            stats.mAsignados += m2Asignados;
+            employeeStatsMap.set(statDocId, stats);
+        }
+    }
+
+    // 5. Recalcular M² Completados y Bonificaciones (Iterando Sub-Ítems)
+    const installedSnapshot = await db.collectionGroup("subItems")
+                                      .where("status", "==", "Instalado")
+                                      .get();
+
+    for (const subItemDoc of installedSnapshot.docs) {
+        const subItem = subItemDoc.data();
+        const m2 = subItem.m2 || 0;
+        const installerId = subItem.installer;
+        const installDateStr = subItem.installDate;
+        const taskId = subItem.assignedTaskId;
+
+        if (!m2 || !installerId || !installDateStr || !taskId) continue;
+
+        const taskDoc = await db.doc(`tasks/${taskId}`).get();
+        if (!taskDoc.exists) continue;
+        const taskData = taskDoc.data();
+
+        const installDate = new Date(installDateStr + 'T12:00:00Z');
+        const year = installDate.getFullYear();
+        const month = String(installDate.getMonth() + 1).padStart(2, '0');
+        const statDocId = `${installerId}/monthlyStats/${year}_${month}`;
+        
+        let onTime = true;
+        if (taskData.dueDate) {
+            const dueDate = new Date(taskData.dueDate + 'T23:59:59Z');
+            if (installDate > dueDate) onTime = false;
+        }
+
+        // --- INICIO DE CÁLCULO DE BONIFICACIÓN ---
+        let bonificacion = 0;
+        const level = usersLevelMap.get(installerId) || "principiante"; // Obtenemos el nivel del mapa
+        if (config && config[level]) {
+            const rate = onTime ? config[level].valorM2EnTiempo : config[level].valorM2FueraDeTiempo;
+            bonificacion = m2 * rate;
+        }
+        // --- FIN DE CÁLCULO DE BONIFICACIÓN ---
+
+        // Sumar a Global
+        globalStats.productivity.metrosCompletados += m2;
+        globalStats.productivity.totalBonificacion += bonificacion; // <-- AÑADIDO
+        if (onTime) globalStats.productivity.metrosEnTiempo += m2;
+        else globalStats.productivity.metrosFueraDeTiempo += m2;
+
+        // Sumar a Empleado
+        const stats = employeeStatsMap.get(statDocId) || { mAsignados: 0, mCompletados: 0, mEnTiempo: 0, mFueraTiempo: 0, bonificacion: 0 };
+        stats.mCompletados += m2;
+        stats.bonificacion += bonificacion; // <-- AÑADIDO
+        if (onTime) stats.mEnTiempo += m2;
+        else stats.mFueraTiempo += m2;
+        employeeStatsMap.set(statDocId, stats);
+    }
+
+    // 6. Escribir todos los cálculos en Firestore
+    const finalBatch = db.batch();
+    
+    finalBatch.set(statsRefGlobal, globalStats, { merge: true });
+
+    employeeStatsMap.forEach((stats, statDocId) => {
+        const docRef = db.doc(`employeeStats/${statDocId}`);
+        finalBatch.set(docRef, {
+            metrosAsignados: stats.mAsignados,
+            metrosCompletados: stats.mCompletados,
+            metrosEnTiempo: stats.mEnTiempo,
+            metrosFueraDeTiempo: stats.mFueraTiempo,
+            totalBonificacion: stats.bonificacion // <-- AÑADIDO
+        }, { merge: true });
+    });
+
+    await finalBatch.commit();
+    console.log(`Estadísticas de Productividad recalculadas. ${employeeStatsMap.size} registros de empleados actualizados.`);
+};
+
+/**
+ * Trigger que actualiza las estadísticas de Proyectos
+ * cuando se crea, elimina o archiva un proyecto.
+ */
+exports.updateProjectStats = onDocumentWritten("projects/{projectId}", async (event) => {
+    const statsRef = db.doc("system/dashboardStats");
+
+    const beforeData = event.data.before.data();
+    const afterData = event.data.after.data();
+
+    const increments = {
+        total: FieldValue.increment(0),
+        active: FieldValue.increment(0),
+        archived: FieldValue.increment(0)
+    };
+    let hasChanges = false;
+
+    if (!event.data.before.exists && event.data.after.exists) {
+        // --- CREACIÓN ---
+        increments.total = FieldValue.increment(1);
+        increments.active = FieldValue.increment(1); // Nuevos proyectos siempre están activos
+        hasChanges = true;
+    } else if (event.data.before.exists && !event.data.after.exists) {
+        // --- ELIMINACIÓN ---
+        increments.total = FieldValue.increment(-1);
+        if (beforeData.status === 'active') {
+            increments.active = FieldValue.increment(-1);
+        } else if (beforeData.status === 'archived') {
+            increments.archived = FieldValue.increment(-1);
+        }
+        hasChanges = true;
+    } else if (beforeData.status !== afterData.status) {
+        // --- CAMBIO DE ESTADO (Archivar/Restaurar) ---
+        if (beforeData.status === 'active') increments.active = FieldValue.increment(-1);
+        if (beforeData.status === 'archived') increments.archived = FieldValue.increment(-1);
+
+        if (afterData.status === 'active') increments.active = FieldValue.increment(1);
+        if (afterData.status === 'archived') increments.archived = FieldValue.increment(1);
+        hasChanges = true;
+    }
+
+    if (!hasChanges) return null;
+
+    try {
+        console.log("Actualizando estadísticas de Proyectos:", increments);
+        return statsRef.set({ projects: increments }, { merge: true });
+    } catch (error) {
+        console.error("Error al actualizar estadísticas de Proyectos:", error.message);
+        return null;
+    }
+});
+
+/**
+ * Trigger que actualiza las estadísticas de Tareas
+ * cuando se crea, elimina o completa una tarea.
+ */
+exports.updateTaskStats = onDocumentWritten("tasks/{taskId}", async (event) => {
+    const statsRef = db.doc("system/dashboardStats");
+
+    const beforeData = event.data.before.data();
+    const afterData = event.data.after.data();
+
+    const increments = {
+        total: FieldValue.increment(0),
+        pendientes: FieldValue.increment(0),
+        completadas: FieldValue.increment(0)
+    };
+    let hasChanges = false;
+
+    if (!event.data.before.exists && event.data.after.exists) {
+        // --- CREACIÓN ---
+        increments.total = FieldValue.increment(1);
+        increments.pendientes = FieldValue.increment(1); // Nuevas tareas siempre están pendientes
+        hasChanges = true;
+    } else if (event.data.before.exists && !event.data.after.exists) {
+        // --- ELIMINACIÓN ---
+        increments.total = FieldValue.increment(-1);
+        if (beforeData.status === 'pendiente') {
+            increments.pendientes = FieldValue.increment(-1);
+        } else if (beforeData.status === 'completada') {
+            increments.completadas = FieldValue.increment(-1);
+        }
+        hasChanges = true;
+    } else if (beforeData.status !== afterData.status) {
+        // --- CAMBIO DE ESTADO (Completar/Reabrir) ---
+        if (beforeData.status === 'pendiente') increments.pendientes = FieldValue.increment(-1);
+        if (beforeData.status === 'completada') increments.completadas = FieldValue.increment(-1);
+
+        if (afterData.status === 'pendiente') increments.pendientes = FieldValue.increment(1);
+        if (afterData.status === 'completada') increments.completadas = FieldValue.increment(1);
+        hasChanges = true;
+    }
+
+    if (!hasChanges) return null;
+
+    try {
+        console.log("Actualizando estadísticas de Tareas:", increments);
+        return statsRef.set({ tasks: increments }, { merge: true });
+    } catch (error) {
+        console.error("Error al actualizar estadísticas de Tareas:", error.message);
+        return null;
+    }
+});
+
+// --- Función Callable (v2 - CORREGIDA Y AMPLIADA) ---
 exports.runFullRecalculation = onCall(async (request) => {
     if (!request.auth) {
         throw new HttpsError('unauthenticated', 'La función debe ser llamada por un usuario autenticado.');
     }
 
-    console.log("Starting full progress recalculation for all projects...");
+    console.log("Iniciando recálculo completo de TODOS los módulos...");
+
+    // 1. Recalcular Proyectos (lógica existente)
+    console.log("Recalculando progreso de proyectos...");
     const projectsSnapshot = await db.collection('projects').get();
-    const promises = [];
+    const projectPromises = [];
     projectsSnapshot.forEach(doc => {
-        promises.push(recalculateProjectProgress(doc.id));
+        projectPromises.push(recalculateProjectProgress(doc.id));
     });
 
-    await Promise.all(promises);
-    console.log("Full progress recalculation completed successfully.");
-    return { message: `Recálculo completado para ${promises.length} proyectos.` };
+    // 2. Preparamos las promesas de los módulos del Dashboard
+const dashboardPromises = [
+        recalculateToolStats(),
+        recalculateDotacionStats(),
+        recalculateProjectStats(),
+        recalculateTaskStats(),
+        recalculateInventoryValueStats(),
+        recalculateProductivityStats() // <-- AÑADIDO
+    ];
+    // 3. Ejecutamos todas las promesas en paralelo
+    await Promise.all([
+        ...projectPromises,
+        ...dashboardPromises
+    ]);
+
+    console.log("Recálculo completo finalizado exitosamente.");
+    return { message: `Recálculo completado para ${projectPromises.length} proyectos y todos los módulos del dashboard.` };
 });
 
 /**
@@ -291,10 +867,14 @@ exports.createProjectItem = onCall(async (request) => {
     }
 
     try {
-        // --- INICIO DE CAMBIO: Usar path de subcolección ---
         const projectRef = db.doc(`projects/${data.projectId}`);
         const itemRef = projectRef.collection('items').doc();
-        // --- FIN DE CAMBIO ---
+
+        // --- INICIO DE MODIFICACIÓN ---
+        // 1. Calculamos los m2 del ítem padre
+        // data.width y data.height ya vienen en metros (ej: 1.50)
+        const m2 = (data.width || 0) * (data.height || 0);
+        // --- FIN DE MODIFICACIÓN ---
 
         const batch = db.batch();
         batch.set(itemRef, {
@@ -304,24 +884,28 @@ exports.createProjectItem = onCall(async (request) => {
         });
 
         for (let i = 1; i <= data.quantity; i++) {
-            // --- INICIO DE CAMBIO: Usar path de subcolección anidada ---
             const subItemRef = itemRef.collection('subItems').doc();
-            // --- FIN DE CAMBIO ---
+
+            // --- INICIO DE MODIFICACIÓN ---
+            // 2. Añadimos el nuevo campo 'm2' al subItem
             batch.set(subItemRef, {
                 itemId: itemRef.id,
                 projectId: data.projectId,
                 number: i,
                 status: 'Pendiente de Fabricación',
+                m2: m2, // <-- AÑADIDO: Guardamos los m2
+                assignedTaskId: null, // <-- AÑADIDO: Inicializamos el campo de la tarea
                 location: '',
                 manufacturer: '',
                 installer: '',
                 installDate: '',
                 photoURL: ''
             });
+            // --- FIN DE MODIFICACIÓN ---
         }
         await batch.commit();
 
-        console.log(`Successfully created item ${itemRef.id} with ${data.quantity} sub-items.`);
+        console.log(`Successfully created item ${itemRef.id} with ${data.quantity} sub-items (each with ${m2} m2).`);
         return { success: true, itemId: itemRef.id };
 
     } catch (error) {
@@ -456,7 +1040,7 @@ exports.deliverMaterial = onCall(async (request) => {
     if (!request.auth) {
         throw new HttpsError('unauthenticated', 'La función debe ser llamada por un usuario autenticado.');
     }
-    
+
     // 1. OBTENEMOS EL NUEVO PAYLOAD
     const { projectId, requestId, itemsToDeliver } = request.data;
     const uid = request.auth.uid;
@@ -466,12 +1050,12 @@ exports.deliverMaterial = onCall(async (request) => {
     }
 
     const requestRef = db.doc(`projects/${projectId}/materialRequests/${requestId}`);
-    
+
     // --- INICIO DE CORRECCIÓN ---
     const deliveryLog = {
         deliveredBy: uid,
         deliveredAt: new Date(), // <-- CAMBIO: Usamos new Date() en lugar de FieldValue.serverTimestamp()
-        items: itemsToDeliver 
+        items: itemsToDeliver
     };
     // --- FIN DE CORRECCIÓN ---
 
@@ -479,7 +1063,7 @@ exports.deliverMaterial = onCall(async (request) => {
         await db.runTransaction(async (transaction) => {
             const requestDoc = await transaction.get(requestRef);
             if (!requestDoc.exists) throw new Error("La solicitud no existe.");
-            
+
             const requestData = requestDoc.data();
             const status = requestData.status;
             if (status !== 'aprobado' && status !== 'entregado_parcial') {
@@ -510,7 +1094,7 @@ exports.deliverMaterial = onCall(async (request) => {
                     throw new Error(`Intento de entregar ${item.quantity} de ${item.materialId} (tipo ${item.type}) pero solo quedan ${pendiente} pendientes.`);
                 }
             }
-            
+
             // 3. OBTENER DATOS DE MATERIALES (STOCK)
             const materialIds = [...new Set(itemsToDeliver.map(item => item.materialId))];
             const materialsData = new Map();
@@ -521,7 +1105,7 @@ exports.deliverMaterial = onCall(async (request) => {
                     transaction.get(materialRef.collection('stockBatches').where('quantityRemaining', '>', 0).orderBy('purchaseDate', 'asc')),
                     transaction.get(materialRef.collection('remnantStock').where('quantity', '>', 0).orderBy('length', 'asc'))
                 ]);
-                
+
                 if (!materialDoc.exists) throw new Error(`El material con ID ${id} no existe en el catálogo.`);
 
                 materialsData.set(id, {
@@ -542,7 +1126,7 @@ exports.deliverMaterial = onCall(async (request) => {
                 if (item.type === 'cut') {
                     const defaultLength = materialData.defaultSize?.length || 0;
                     if (defaultLength <= 0) throw new Error(`El material "${materialData.name}" no tiene una longitud estándar definida.`);
-                    
+
                     let cutsToMake = Array(requestedQty).fill(parseFloat(item.length));
                     const newRemnantsToCreate = new Map();
 
@@ -552,18 +1136,18 @@ exports.deliverMaterial = onCall(async (request) => {
 
                         if (suitableRemnant) {
                             transaction.update(suitableRemnant.ref, { quantity: FieldValue.increment(-1) });
-                            suitableRemnant.data.quantity--; 
+                            suitableRemnant.data.quantity--;
                             const newLength = parseFloat((suitableRemnant.data.length - nextCut).toFixed(2));
-                            if (newLength > 0.05) { 
+                            if (newLength > 0.05) {
                                 newRemnantsToCreate.set(newLength, (newRemnantsToCreate.get(newLength) || 0) + 1);
                             }
                         } else {
                             const suitableBatch = batches.find(b => b.data.quantityRemaining > 0);
                             if (!suitableBatch) throw new Error(`No hay stock (lotes) para realizar el corte de ${nextCut}m para "${materialData.name}".`);
-                            
+
                             transaction.update(suitableBatch.ref, { quantityRemaining: FieldValue.increment(-1) });
                             transaction.update(materialRef, { quantityInStock: FieldValue.increment(-1) });
-                            suitableBatch.data.quantityRemaining--; 
+                            suitableBatch.data.quantityRemaining--;
 
                             const newLength = parseFloat((defaultLength - nextCut).toFixed(2));
                             if (newLength > 0.05) {
@@ -603,7 +1187,7 @@ exports.deliverMaterial = onCall(async (request) => {
                     transaction.update(materialRef, { quantityInStock: FieldValue.increment(-requestedQty) });
                 }
             }
-            
+
             // 5. DETERMINAR EL NUEVO ESTADO DE LA SOLICITUD
             itemsToDeliver.forEach(item => {
                 const key = `${item.materialId}-${item.type}-${item.length || 0}`;
@@ -614,13 +1198,13 @@ exports.deliverMaterial = onCall(async (request) => {
             const newStatus = isFullyDelivered ? 'entregado' : 'entregado_parcial';
 
             // 6. ACTUALIZAR LA SOLICITUD
-            transaction.update(requestRef, { 
-                status: newStatus, 
-                responsibleId: uid, 
-                deliveryHistory: FieldValue.arrayUnion(deliveryLog) 
+            transaction.update(requestRef, {
+                status: newStatus,
+                responsibleId: uid,
+                deliveryHistory: FieldValue.arrayUnion(deliveryLog)
             });
         });
-        
+
         return { success: true, message: 'Entrega registrada y stock actualizado.' };
 
     } catch (error) {
@@ -1042,34 +1626,105 @@ exports.migrateDataToSubcollections = onCall(async (request) => {
     }
 });
 
-// --- INICIO DE NUEVA FUNCIÓN DE AUDITORÍA ---
 /**
- * Trigger que registra automáticamente la actividad (cambios de estado, asignación)
- * en la bitácora de comentarios de una tarea.
+ * Trigger que registra la actividad de la tarea Y
+ * ACTUALIZA LAS ESTADÍSTICAS DE M² ASIGNADOS (Globales y de Empleado).
  */
 exports.logTaskActivity = onDocumentWritten("tasks/{taskId}", async (event) => {
-    // Solo nos interesan las ACTUALIZACIONES
-    if (!event.data.before.exists || !event.data.after.exists) {
-        return null;
-    }
-
-    const beforeData = event.data.before.data();
-    const afterData = event.data.after.data();
     const taskRef = event.data.after.ref;
     const logsToWrite = [];
 
+    // --- Lógica de Estadísticas (NUEVO) ---
+    const statsRefGlobal = db.doc("system/dashboardStats");
+    let statsUpdateGlobal = {};
+    let statsUpdateEmployee = {};
+
     try {
-        // 1. Verificar cambio de Estado (ej. Completada)
+        if (!event.data.before.exists && event.data.after.exists) {
+            // --- TAREA CREADA ---
+            const afterData = event.data.after.data();
+            const metrosAsignados = afterData.totalMetrosAsignados || 0;
+            const assigneeId = afterData.assigneeId;
+
+            if (metrosAsignados > 0 && assigneeId) {
+                // 1. Preparar incremento Global
+                statsUpdateGlobal = {
+                    productivity: {
+                        metrosAsignados: FieldValue.increment(metrosAsignados)
+                    }
+                };
+
+                // 2. Preparar incremento de Empleado
+                const today = new Date();
+                const year = today.getFullYear();
+                const month = String(today.getMonth() + 1).padStart(2, '0');
+                const statDocId = `${year}_${month}`;
+                const statsRefEmployee = db.doc(`employeeStats/${assigneeId}/monthlyStats/${statDocId}`);
+
+                statsUpdateEmployee = {
+                    metrosAsignados: FieldValue.increment(metrosAsignados),
+                    // Aseguramos que los otros campos existan
+                    metrosCompletados: FieldValue.increment(0),
+                    metrosEnTiempo: FieldValue.increment(0),
+                    metrosFueraDeTiempo: FieldValue.increment(0)
+                };
+
+                // 3. Escribir en batch
+                const statsBatch = db.batch();
+                statsBatch.set(statsRefGlobal, statsUpdateGlobal, { merge: true });
+                statsBatch.set(statsRefEmployee, statsUpdateEmployee, { merge: true });
+                await statsBatch.commit();
+                console.log(`Estadísticas de M² Asignados actualizadas para Global y Empleado ${assigneeId}`);
+            }
+
+        } else if (event.data.before.exists && !event.data.after.exists) {
+            // --- TAREA ELIMINADA ---
+            const beforeData = event.data.before.data();
+            const metrosAsignados = beforeData.totalMetrosAsignados || 0;
+            const assigneeId = beforeData.assigneeId;
+
+            if (metrosAsignados > 0 && assigneeId) {
+                // 1. Preparar decremento Global
+                statsUpdateGlobal = {
+                    productivity: {
+                        metrosAsignados: FieldValue.increment(-metrosAsignados)
+                    }
+                };
+
+                // 2. Preparar decremento de Empleado (del mes en que se creó)
+                const createdAt = beforeData.createdAt.toDate(); // 'createdAt' es un Timestamp
+                const year = createdAt.getFullYear();
+                const month = String(createdAt.getMonth() + 1).padStart(2, '0');
+                const statDocId = `${year}_${month}`;
+                const statsRefEmployee = db.doc(`employeeStats/${assigneeId}/monthlyStats/${statDocId}`);
+
+                statsUpdateEmployee = {
+                    metrosAsignados: FieldValue.increment(-metrosAsignados)
+                };
+
+                // 3. Escribir en batch
+                const statsBatch = db.batch();
+                statsBatch.set(statsRefGlobal, statsUpdateGlobal, { merge: true });
+                statsBatch.set(statsRefEmployee, statsUpdateEmployee, { merge: true });
+                await statsBatch.commit();
+                console.log(`Estadísticas de M² Asignados revertidas para Global y Empleado ${assigneeId}`);
+            }
+        }
+
+        // --- Lógica de Bitácora (Existente, sin cambios) ---
+        const beforeData = event.data.before.data() || {};
+        const afterData = event.data.after.data() || {};
+
         if (beforeData.status !== afterData.status) {
             if (afterData.status === 'completada') {
-                const userName = await getUserName(afterData.completedBy); // 'completedBy' es seteado por app.js
+                const userName = await getUserName(afterData.completedBy);
                 logsToWrite.push({
                     text: `La tarea fue marcada como **Completada** por ${userName}.`,
                     type: 'log',
                     userId: 'system'
                 });
             } else if (afterData.status === 'pendiente' && beforeData.status === 'completada') {
-                 logsToWrite.push({
+                logsToWrite.push({
                     text: `La tarea fue **re-abierta** (marcada como pendiente).`,
                     type: 'log',
                     userId: 'system'
@@ -1096,7 +1751,7 @@ exports.logTaskActivity = onDocumentWritten("tasks/{taskId}", async (event) => {
                 userId: 'system'
             });
         }
-        
+
         // (Opcional: puedes añadir más 'if' aquí para 'description', 'additionalAssigneeIds', etc.)
 
         // 4. Escribir los logs si hay alguno
@@ -1104,9 +1759,9 @@ exports.logTaskActivity = onDocumentWritten("tasks/{taskId}", async (event) => {
             const batch = db.batch();
             for (const log of logsToWrite) {
                 const commentRef = taskRef.collection('comments').doc();
-                batch.set(commentRef, { 
-                    ...log, 
-                    createdAt: FieldValue.serverTimestamp() // Usamos la hora del servidor
+                batch.set(commentRef, {
+                    ...log,
+                    createdAt: FieldValue.serverTimestamp()
                 });
             }
             await batch.commit();
@@ -1119,3 +1774,184 @@ exports.logTaskActivity = onDocumentWritten("tasks/{taskId}", async (event) => {
     }
 });
 // --- FIN DE NUEVA FUNCIÓN DE AUDITORÍA ---
+
+
+
+
+/**
+ * Trigger que actualiza las estadísticas del dashboard (en system/dashboardStats)
+ * cada vez que una herramienta se crea, elimina o cambia de estado.
+ * (VERSIÓN CORREGIDA CON OBJETO ANIDADO Y LÓGICA DE TOTAL)
+ */
+exports.updateToolStats = onDocumentWritten("tools/{toolId}", async (event) => {
+    const statsRef = db.doc("system/dashboardStats");
+
+    const beforeData = event.data.before.data();
+    const afterData = event.data.after.data();
+
+    // 1. Objeto para los incrementos.
+    // Usamos FieldValue.increment() para operaciones atómicas.
+    const increments = {
+        total: FieldValue.increment(0),
+        disponible: FieldValue.increment(0),
+        asignada: FieldValue.increment(0),
+        en_reparacion: FieldValue.increment(0),
+        dada_de_baja: FieldValue.increment(0)
+    };
+
+    let hasChanges = false;
+
+    if (!event.data.before.exists && event.data.after.exists) {
+        // --- CREACIÓN ---
+        increments.total = FieldValue.increment(1); // Suma 1 al total
+        if (afterData.status) {
+            increments[afterData.status] = FieldValue.increment(1);
+        } else {
+            increments.disponible = FieldValue.increment(1); // Fallback
+        }
+        hasChanges = true;
+
+    } else if (event.data.before.exists && !event.data.after.exists) {
+        // --- ELIMINACIÓN ---
+        increments.total = FieldValue.increment(-1); // Resta 1 del total
+        if (beforeData.status) {
+            increments[beforeData.status] = FieldValue.increment(-1);
+        }
+        hasChanges = true;
+
+    } else if (beforeData.status !== afterData.status) {
+        // --- CAMBIO DE ESTADO ---
+        // El total NO cambia, solo los estados.
+        if (beforeData.status) {
+            increments[beforeData.status] = FieldValue.increment(-1);
+        }
+        if (afterData.status) {
+            increments[afterData.status] = FieldValue.increment(1);
+        }
+        hasChanges = true;
+    }
+
+    // Si no hubo cambios relevantes, no escribimos en la DB.
+    if (!hasChanges) {
+        return null;
+    }
+
+    // 2. Preparamos el objeto anidado (EL ARREGLO)
+    // Esto asegura que se escriba como un mapa: { tools: { ... } }
+    const updateData = {
+        tools: increments
+    };
+
+    try {
+        // Usamos JSON.stringify para que el log muestre la estructura
+        console.log("INTENTANDO escribir en Firestore con datos (estructura anidada):", JSON.stringify(updateData));
+
+        // 3. Usamos .set() con merge:true para crear/actualizar el objeto 'tools' anidado
+        await statsRef.set(updateData, { merge: true });
+
+        console.log("¡ÉXITO! Documento 'system/dashboardStats' actualizado (estructura anidada).");
+        return null;
+
+    } catch (error) {
+        console.error("¡ERROR CRÍTICO AL ESCRIBIR EN FIRESTORE (estructura anidada)!", error.message, error.code);
+        return null;
+    }
+});
+
+/**
+ * Trigger que actualiza las estadísticas de Dotación (Stock y Tipos)
+ * cuando se modifica el catálogo 'dotacionCatalog'.
+ */
+exports.updateDotacionCatalogStats = onDocumentWritten("dotacionCatalog/{itemId}", async (event) => {
+    const statsRef = db.doc("system/dashboardStats");
+
+    const beforeData = event.data.before.data();
+    const afterData = event.data.after.data();
+
+    // Objeto anidado para los incrementos
+    const increments = {
+        totalTipos: FieldValue.increment(0),
+        totalStock: FieldValue.increment(0)
+    };
+    let hasChanges = false;
+
+    if (!event.data.before.exists && event.data.after.exists) {
+        // --- CREACIÓN ---
+        increments.totalTipos = FieldValue.increment(1);
+        increments.totalStock = FieldValue.increment(afterData.quantityInStock || 0);
+        hasChanges = true;
+
+    } else if (event.data.before.exists && !event.data.after.exists) {
+        // --- ELIMINACIÓN ---
+        increments.totalTipos = FieldValue.increment(-1);
+        increments.totalStock = FieldValue.increment(-(beforeData.quantityInStock || 0));
+        hasChanges = true;
+
+    } else if (beforeData.quantityInStock !== afterData.quantityInStock) {
+        // --- ACTUALIZACIÓN DE STOCK ---
+        const diff = (afterData.quantityInStock || 0) - (beforeData.quantityInStock || 0);
+        if (diff !== 0) {
+            increments.totalStock = FieldValue.increment(diff);
+            hasChanges = true;
+        }
+    }
+
+    if (!hasChanges) return null;
+
+    try {
+        console.log("Actualizando estadísticas de Dotación (Catálogo):", increments);
+        // Usamos la estructura anidada { dotacion: ... }
+        return statsRef.set({ dotacion: increments }, { merge: true });
+    } catch (error) {
+        console.error("Error al actualizar estadísticas de Dotación (Catálogo):", error.message);
+        return null;
+    }
+});
+
+/**
+ * Trigger que actualiza las estadísticas de Dotación (Asignado)
+ * cuando se crea o modifica el historial 'dotacionHistory'.
+ */
+exports.updateDotacionHistoryStats = onDocumentWritten("dotacionHistory/{historyId}", async (event) => {
+    const statsRef = db.doc("system/dashboardStats");
+
+    const beforeData = event.data.before.data();
+    const afterData = event.data.after.data();
+    let increment = 0;
+
+    // Solo nos importa si la acción es 'asignada' y el estado es 'activo'
+    const isAsignadaBefore = beforeData && beforeData.action === 'asignada' && beforeData.status === 'activo';
+    const isAsignadaAfter = afterData && afterData.action === 'asignada' && afterData.status === 'activo';
+    
+    // Cantidad (asegurándonos que sea un número)
+    const qtyBefore = (beforeData && beforeData.quantity) ? parseInt(beforeData.quantity, 10) : 0;
+    const qtyAfter = (afterData && afterData.quantity) ? parseInt(afterData.quantity, 10) : 0;
+
+    if (!isAsignadaBefore && isAsignadaAfter) {
+        // --- CREACIÓN O ACTIVACIÓN ---
+        // Se asignó un nuevo ítem activo
+        increment = qtyAfter;
+    } else if (isAsignadaBefore && !isAsignadaAfter) {
+        // --- DEVOLUCIÓN O ELIMINACIÓN ---
+        // Un ítem que estaba activo se devolvió o eliminó
+        increment = -qtyBefore;
+    } else {
+        // No hubo cambio en el estado 'activo'
+        return null;
+    }
+
+    if (increment === 0) return null;
+
+    try {
+        const updateData = {
+            dotacion: {
+                totalAsignado: FieldValue.increment(increment)
+            }
+        };
+        console.log("Actualizando estadísticas de Dotación (Asignado):", updateData);
+        return statsRef.set(updateData, { merge: true });
+    } catch (error) {
+        console.error("Error al actualizar estadísticas de Dotación (Asignado):", error.message);
+        return null;
+    }
+});
