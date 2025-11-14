@@ -3875,13 +3875,14 @@ function createSubItemRow(subItem) {
     return row;
 }
 
-async function updateSubItem(itemId, subItemId, data) {
+async function updateSubItem(itemId, subItemId, data) { // <-- Parámetro añadido
     // --- INICIO DE CAMBIO: Path de subcolección ---
     // Ahora usa el itemId pasado como argumento
     const subItemRef = doc(db, "projects", currentProject.id, "items", itemId, "subItems", subItemId);
     await updateDoc(subItemRef, data);
     // --- FIN DE CAMBIO ---
 }
+
 // --- MANEJO DE MODALES ---
 const mainModal = document.getElementById('main-modal');
 const modalTitle = document.getElementById('modal-title');
@@ -7447,8 +7448,8 @@ progressForm.addEventListener('submit', async (e) => {
 
     const data = {
         location: location,
-        realWidth: (parseFloat(document.getElementById('sub-item-real-width').value) / 100) || 0, // <-- CAMBIO
-        realHeight: (parseFloat(document.getElementById('sub-item-real-height').value) / 100) || 0, // <-- CAMBIO
+        realWidth: (parseFloat(document.getElementById('sub-item-real-width').value) / 100) || 0,
+        realHeight: (parseFloat(document.getElementById('sub-item-real-height').value) / 100) || 0,
 
         manufacturer: document.getElementById('sub-item-manufacturer').value,
         installer: document.getElementById('sub-item-installer').value,

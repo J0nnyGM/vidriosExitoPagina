@@ -224,7 +224,6 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
         let installerId = null;
         let installDateStr = null;
         let taskId = null;
-        let onTime = true; // <-- ÚNICA DECLARACIÓN
         let operationType = 0;
 
         if (beforeData.status !== "Instalado" && afterData.status === "Instalado") {
@@ -243,39 +242,47 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
             taskId = beforeData.assignedTaskId;
         }
 
-        if (operationType === 0 || !installerId || !installDateStr || !taskId) {
+        // 1. La comprobación principal ahora solo requiere QUIÉN y CUÁNDO.
+        if (operationType === 0 || !installerId || !installDateStr) {
+            console.log("Cálculo omitido: Faltan datos (operationType, installerId, or installDateStr).");
             return; // No hay cambio relevante o faltan datos
         }
 
-        const taskRef = db.doc(`tasks/${taskId}`);
+        // 2. Obtenemos el usuario (requerido)
         const userRef = db.doc(`users/${installerId}`);
+        const userDoc = await userRef.get();
 
-        const [taskDoc, userDoc] = await Promise.all([taskRef.get(), userRef.get()]);
-
-        if (!taskDoc.exists) {
-            console.error(`Estadísticas: No se encontró la Tarea ${taskId}.`);
-            return;
-        }
         if (!userDoc.exists) {
             console.error(`Estadísticas: No se encontró al Usuario ${installerId}.`);
             return;
         }
-
-        const taskData = taskDoc.data();
         const userData = userDoc.data();
 
+        // 3. Obtenemos la fecha y preparamos el ID de estadísticas
         const installDate = new Date(installDateStr + 'T12:00:00Z');
         const year = installDate.getFullYear();
         const month = String(installDate.getMonth() + 1).padStart(2, '0');
         const statDocId = `${year}_${month}`;
 
-        // --- INICIO DE CORRECCIÓN ---
-        // Se eliminó la segunda declaración de 'let onTime = true;'
-        if (taskData.dueDate) {
-            const dueDate = new Date(taskData.dueDate + 'T23:59:59Z');
-            if (installDate > dueDate) onTime = false; // Solo reasignamos el valor
+        // 4. Verificamos la Tarea (opcional) solo para la bonificación "a tiempo"
+        let onTime = true; // Por defecto, el trabajo es "a tiempo"
+
+        if (taskId) { // taskId viene de afterData o beforeData (línea 154 o 159)
+            const taskRef = db.doc(`tasks/${taskId}`);
+            const taskDoc = await taskRef.get();
+
+            if (taskDoc.exists) {
+                const taskData = taskDoc.data();
+                if (taskData.dueDate) { // Solo si la tarea tiene fecha límite
+                    const dueDate = new Date(taskData.dueDate + 'T23:59:59Z');
+                    if (installDate > dueDate) {
+                        onTime = false; // Marcamos como "fuera de tiempo"
+                    }
+                }
+            } else {
+                console.warn(`Estadísticas: Se encontró un taskId (${taskId}) pero no la Tarea. Se calculará como 'a tiempo'.`);
+            }
         }
-        // --- FIN DE CORRECCIÓN ---
 
         // --- Cálculo de Bonificación ---
         let bonificacion = 0;
