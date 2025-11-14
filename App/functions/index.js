@@ -243,7 +243,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
             taskId = beforeData.assignedTaskId;
         }
 
-        if (operationType === 0 || !m2 || !installerId || !installDateStr || !taskId) {
+        if (operationType === 0 || !installerId || !installDateStr || !taskId) {
             return; // No hay cambio relevante o faltan datos
         }
 
