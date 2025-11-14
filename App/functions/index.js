@@ -120,12 +120,82 @@ const recalculateProjectProgress = async (projectId) => {
 };
 
 /**
+ * (NUEVA FUNCIÓN DE MIGRACIÓN)
+ * Recorre todos los sub-ítems de todos los proyectos y les añade
+ * los campos 'm2' y 'assignedTaskId' si no los tienen.
+ */
+const migrateLegacySubItems = async () => {
+    console.log("Iniciando migración de sub-ítems antiguos...");
+    const subItemsSnapshot = await db.collectionGroup("subItems").get();
+
+    if (subItemsSnapshot.empty) {
+        console.log("No se encontraron sub-ítems para migrar.");
+        return 0;
+    }
+
+    // Usaremos un mapa para cachear los M² de los ítems padres
+    const itemsCache = new Map();
+    let batch = db.batch(); // Iniciamos el primer batch
+    let updatedCount = 0;
+
+    for (const subItemDoc of subItemsSnapshot.docs) {
+        const subItemData = subItemDoc.data();
+
+        // Comprobar si este sub-ítem ya está migrado (si tiene el campo)
+        if (subItemData.assignedTaskId !== undefined) {
+            continue; // Ya tiene el campo, saltar
+        }
+
+        let m2 = 0;
+        const itemId = subItemData.itemId;
+        const projectId = subItemData.projectId;
+
+        // Buscar el M² del ítem padre
+        if (itemId && projectId) {
+            const itemPath = `projects/${projectId}/items/${itemId}`;
+
+            if (itemsCache.has(itemPath)) {
+                m2 = itemsCache.get(itemPath); // Usar caché
+            } else {
+                const itemDoc = await db.doc(itemPath).get();
+                if (itemDoc.exists()) {
+                    const itemData = itemDoc.data();
+                    m2 = (itemData.width || 0) * (itemData.height || 0);
+                    itemsCache.set(itemPath, m2); // Guardar en caché
+                }
+            }
+        }
+
+        // Añadir la actualización al batch
+        batch.update(subItemDoc.ref, {
+            assignedTaskId: null, // <-- Añade el campo para que 'createTask' lo encuentre
+            m2: m2 // <-- Añade el campo M²
+        });
+        updatedCount++;
+
+        // Los batches de Firestore tienen un límite de 500 operaciones
+        if (updatedCount % 499 === 0) {
+            await batch.commit();
+            batch = db.batch(); // Iniciar un nuevo batch
+        }
+    }
+
+    // Commit del último batch si queda algo pendiente
+    if (updatedCount % 499 !== 0) {
+        await batch.commit();
+    }
+
+    console.log(`Migración completada. ${updatedCount} sub-ítems actualizados.`);
+    return updatedCount;
+};
+
+/**
  * Trigger que recalcula el Progreso del Proyecto Y
  * ACTUALIZA LAS ESTADÍSTICAS DE M² COMPLETADOS Y BONIFICACIONES (Globales y de Empleado).
  * (VERSIÓN CORREGIDA: 'onTime' declarado una sola vez)
  */
 exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}/subItems/{subItemId}", async (event) => {
-    
+
     // --- Bloque 1: Recalcular Progreso del Proyecto (Lógica existente) ---
     const projectId = event.params.projectId;
     if (projectId) {
@@ -155,7 +225,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
         let installDateStr = null;
         let taskId = null;
         let onTime = true; // <-- ÚNICA DECLARACIÓN
-        let operationType = 0; 
+        let operationType = 0;
 
         if (beforeData.status !== "Instalado" && afterData.status === "Instalado") {
             // --- INSTALACIÓN (Sumar) ---
@@ -178,9 +248,9 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
         }
 
         const taskRef = db.doc(`tasks/${taskId}`);
-        const userRef = db.doc(`users/${installerId}`); 
+        const userRef = db.doc(`users/${installerId}`);
 
-        const [taskDoc, userDoc] = await Promise.all([taskRef.get(), userRef.get()]); 
+        const [taskDoc, userDoc] = await Promise.all([taskRef.get(), userRef.get()]);
 
         if (!taskDoc.exists) {
             console.error(`Estadísticas: No se encontró la Tarea ${taskId}.`);
@@ -193,8 +263,8 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
 
         const taskData = taskDoc.data();
         const userData = userDoc.data();
-        
-        const installDate = new Date(installDateStr + 'T12:00:00Z'); 
+
+        const installDate = new Date(installDateStr + 'T12:00:00Z');
         const year = installDate.getFullYear();
         const month = String(installDate.getMonth() + 1).padStart(2, '0');
         const statDocId = `${year}_${month}`;
@@ -209,23 +279,23 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
 
         // --- Cálculo de Bonificación ---
         let bonificacion = 0;
-        const level = userData.commissionLevel || "principiante"; 
-        
-        if (config && config[level]) { 
+        const level = userData.commissionLevel || "principiante";
+
+        if (config && config[level]) {
             const rate = onTime ? config[level].valorM2EnTiempo : config[level].valorM2FueraDeTiempo;
             bonificacion = (m2 * rate) * operationType;
         }
-        
+
         const statsRefEmployee = db.doc(`employeeStats/${installerId}/monthlyStats/${statDocId}`);
         const statsRefGlobal = db.doc("system/dashboardStats");
-        
+
         const statsUpdateEmployee = {
             metrosCompletados: FieldValue.increment(m2 * operationType),
             metrosEnTiempo: onTime ? FieldValue.increment(m2 * operationType) : FieldValue.increment(0),
             metrosFueraDeTiempo: !onTime ? FieldValue.increment(m2 * operationType) : FieldValue.increment(0),
             totalBonificacion: FieldValue.increment(bonificacion)
         };
-        
+
         const statsUpdateGlobal = {
             productivity: {
                 metrosCompletados: FieldValue.increment(m2 * operationType),
@@ -235,9 +305,16 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
             }
         };
 
+        const taskUpdate = {
+            // operationType es (1) para instalar, (-1) para revertir
+            completedSubItemsCount: FieldValue.increment(operationType)
+        };
+
         const batch = db.batch();
         batch.set(statsRefEmployee, statsUpdateEmployee, { merge: true });
         batch.set(statsRefGlobal, statsUpdateGlobal, { merge: true });
+        batch.set(taskRef, taskUpdate, { merge: true }); // <-- AÑADIDO: Actualiza la tarea
+
         await batch.commit();
 
         console.log(`Estadísticas de ${installerId} para ${statDocId} actualizadas: ${m2 * operationType}m², $${bonificacion} (A tiempo: ${onTime})`);
@@ -464,8 +541,8 @@ const recalculateInventoryValueStats = async () => {
 const recalculateProductivityStats = async () => {
     console.log("Iniciando recálculo MASIVO de Estadísticas de Productividad...");
     const statsRefGlobal = db.doc("system/dashboardStats");
-    
-   
+
+
     // --- INICIO DE MODIFICACIÓN ---
     // 2. Cargar la Configuración de Bonificación y el mapa de Usuarios UNA VEZ
     const configDoc = await db.doc("system/bonificationConfig").get();
@@ -473,7 +550,7 @@ const recalculateProductivityStats = async () => {
     if (!config) {
         console.error("¡CRÍTICO! 'system/bonificationConfig' no existe. Las bonificaciones se calcularán como 0.");
     }
-    
+
     const usersSnapshot = await db.collection("users").get();
     const usersLevelMap = new Map(); // Mapa para guardar solo el Nivel de Comisión
     usersSnapshot.forEach(doc => {
@@ -491,7 +568,7 @@ const recalculateProductivityStats = async () => {
             totalBonificacion: 0 // <-- AÑADIDO
         }
     };
-    
+
     // 4. Recalcular M² Asignados (Iterando Tareas)
     const tasksSnapshot = await db.collection("tasks").get();
     const employeeStatsMap = new Map();
@@ -499,7 +576,7 @@ const recalculateProductivityStats = async () => {
     for (const taskDoc of tasksSnapshot.docs) {
         const task = taskDoc.data();
         const m2Asignados = task.totalMetrosAsignados || 0;
-        
+
         if (m2Asignados > 0 && task.assigneeId) {
             globalStats.productivity.metrosAsignados += m2Asignados;
 
@@ -517,8 +594,8 @@ const recalculateProductivityStats = async () => {
 
     // 5. Recalcular M² Completados y Bonificaciones (Iterando Sub-Ítems)
     const installedSnapshot = await db.collectionGroup("subItems")
-                                      .where("status", "==", "Instalado")
-                                      .get();
+        .where("status", "==", "Instalado")
+        .get();
 
     for (const subItemDoc of installedSnapshot.docs) {
         const subItem = subItemDoc.data();
@@ -537,7 +614,7 @@ const recalculateProductivityStats = async () => {
         const year = installDate.getFullYear();
         const month = String(installDate.getMonth() + 1).padStart(2, '0');
         const statDocId = `${installerId}/monthlyStats/${year}_${month}`;
-        
+
         let onTime = true;
         if (taskData.dueDate) {
             const dueDate = new Date(taskData.dueDate + 'T23:59:59Z');
@@ -570,7 +647,7 @@ const recalculateProductivityStats = async () => {
 
     // 6. Escribir todos los cálculos en Firestore
     const finalBatch = db.batch();
-    
+
     finalBatch.set(statsRefGlobal, globalStats, { merge: true });
 
     employeeStatsMap.forEach((stats, statDocId) => {
@@ -709,13 +786,14 @@ exports.runFullRecalculation = onCall(async (request) => {
     });
 
     // 2. Preparamos las promesas de los módulos del Dashboard
-const dashboardPromises = [
+    const dashboardPromises = [
+        migrateLegacySubItems(), // <-- AÑADIDO: Migra ítems antiguos
         recalculateToolStats(),
         recalculateDotacionStats(),
         recalculateProjectStats(),
         recalculateTaskStats(),
         recalculateInventoryValueStats(),
-        recalculateProductivityStats() // <-- AÑADIDO
+        recalculateProductivityStats()
     ];
     // 3. Ejecutamos todas las promesas en paralelo
     await Promise.all([
@@ -1922,7 +2000,7 @@ exports.updateDotacionHistoryStats = onDocumentWritten("dotacionHistory/{history
     // Solo nos importa si la acción es 'asignada' y el estado es 'activo'
     const isAsignadaBefore = beforeData && beforeData.action === 'asignada' && beforeData.status === 'activo';
     const isAsignadaAfter = afterData && afterData.action === 'asignada' && afterData.status === 'activo';
-    
+
     // Cantidad (asegurándonos que sea un número)
     const qtyBefore = (beforeData && beforeData.quantity) ? parseInt(beforeData.quantity, 10) : 0;
     const qtyAfter = (afterData && afterData.quantity) ? parseInt(afterData.quantity, 10) : 0;

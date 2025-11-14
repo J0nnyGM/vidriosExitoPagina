@@ -13,7 +13,9 @@ import {
     onSnapshot,
     addDoc,
     serverTimestamp,
-    deleteDoc
+    deleteDoc,
+    setDoc, // <-- AÑADIDO
+    writeBatch // <-- LÍNEA CORREGIDA
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
 import {
@@ -897,13 +899,13 @@ function createProductivityChart(ctx, labels, dataBonificacion, dataEnTiempo, da
 }
 
 /**
- * (FUNCIÓN ACTUALIZADA)
- * Carga y muestra el historial de pagos y el formulario de registro.
- * (Ahora pasa la preferencia de deducción al formulario)
+ * (FUNCIÓN ACTUALIZADA - FASE 2)
+ * Carga el historial de pagos y controla el checkbox de liquidación.
+ * @param {string} userId - El ID del operario a mostrar.
  */
 export function loadPaymentHistoryView(userId) {
     _showView('payment-history-view');
-    
+
     if (unsubscribeEmpleadosTab) {
         unsubscribeEmpleadosTab();
         unsubscribeEmpleadosTab = null;
@@ -913,21 +915,24 @@ export function loadPaymentHistoryView(userId) {
     const user = usersMap.get(userId);
     const tableBody = document.getElementById('payment-history-table-body');
     const nameEl = document.getElementById('payment-history-name');
-    
+
     const form = document.getElementById('payment-register-form');
     const salarioEl = document.getElementById('payment-salario-basico');
     const bonificacionEl = document.getElementById('payment-bonificacion-mes');
+    const liquidarCheckbox = document.getElementById('payment-liquidar-bonificacion'); // <-- AÑADIDO
 
     if (!user) {
+        // ... (código de error - sin cambios)
         nameEl.textContent = 'Error: Usuario no encontrado';
         tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-10 text-red-500">Usuario no encontrado.</td></tr>`;
         return;
     }
-    
+
+    // 2. Llenar la cabecera
     nameEl.textContent = `${user.firstName} ${user.lastName}`;
     tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-10 text-gray-500">Cargando historial...</td></tr>`;
 
-    // 3. Llenar el formulario (Valores MENSUALES como referencia)
+    // 3. Llenar el formulario (Salario, Bonificación y ESTADO DEL CHECKBOX)
     (async () => {
         const config = _getPayrollConfig();
         const salario = user.salarioBasico || 0;
@@ -939,17 +944,14 @@ export function loadPaymentHistoryView(userId) {
                 auxTransporte = config.auxilioTransporte || 0;
             }
         }
-        
+
         salarioEl.textContent = currencyFormatter.format(salario) + " (Mensual)";
-        salarioEl.dataset.value = salario; 
-        salarioEl.dataset.auxTransporte = auxTransporte; // Auxilio mensual
-        
-        // --- INICIO DE MODIFICACIÓN ---
-        // Guardamos la preferencia de deducción del empleado en el formulario
+        salarioEl.dataset.value = salario;
+        salarioEl.dataset.auxTransporte = auxTransporte;
+
         const deduccionSobreMinimo = user.deduccionSobreMinimo || false;
-        form.dataset.deduccionSobreMinimo = deduccionSobreMinimo; 
-        // --- FIN DE MODIFICACIÓN ---
-        
+        form.dataset.deduccionSobreMinimo = deduccionSobreMinimo;
+
         // Obtener Bonificación (del mes actual)
         const today = new Date();
         const year = today.getFullYear();
@@ -959,19 +961,37 @@ export function loadPaymentHistoryView(userId) {
         const statSnap = await getDoc(statRef);
 
         let bonificacion = 0;
-        if (statSnap.exists()) {
-            bonificacion = statSnap.data().totalBonificacion || 0;
-        }
-        bonificacionEl.textContent = currencyFormatter.format(bonificacion) + " (Mes Actual)";
-        bonificacionEl.dataset.value = bonificacion; 
+        let bonificacionYaPagada = false; // <-- AÑADIDO
 
-        // Asegurarse de que el campo de días exista y tenga valor
+        if (statSnap.exists()) {
+            const stats = statSnap.data();
+            bonificacion = stats.totalBonificacion || 0;
+            bonificacionYaPagada = stats.bonificacionPagada || false; // <-- AÑADIDO
+        }
+
+        // --- INICIO DE MODIFICACIÓN (Control del Checkbox) ---
+        bonificacionEl.dataset.value = bonificacion; // Guardamos el valor numérico
+
+        if (bonificacionYaPagada) {
+            bonificacionEl.textContent = currencyFormatter.format(bonificacion) + " (Ya liquidada este mes)";
+            bonificacionEl.classList.add('text-gray-400');
+            bonificacionEl.classList.remove('text-lime-600');
+            liquidarCheckbox.checked = true;
+            liquidarCheckbox.disabled = true; // No se puede desmarcar
+        } else {
+            bonificacionEl.textContent = currencyFormatter.format(bonificacion) + " (Pendiente por liquidar)";
+            bonificacionEl.classList.remove('text-gray-400');
+            bonificacionEl.classList.add('text-lime-600');
+            liquidarCheckbox.checked = false; // Por defecto desmarcado
+            liquidarCheckbox.disabled = false; // Habilitado
+        }
+        // --- FIN DE MODIFICACIÓN ---
+
         const diasPagarInput = document.getElementById('payment-dias-pagar');
         if (diasPagarInput && !diasPagarInput.value) {
-            diasPagarInput.value = 15; // Default 15 días
+            diasPagarInput.value = 15;
         }
 
-        // Calcular el total inicial (basado en los 15 días)
         updatePaymentTotal();
     })();
 
@@ -1005,19 +1025,24 @@ export function loadPaymentHistoryView(userId) {
         console.error("Error al cargar historial de pagos:", error);
         tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-10 text-red-500">Error al cargar el historial.</td></tr>`;
     });
-    
+
     // 5. Configurar los listeners del formulario
-const newForm = form.cloneNode(true);
+    const newForm = form.cloneNode(true);
     form.parentNode.replaceChild(newForm, form);
+
     newForm.addEventListener('submit', (e) => handleRegisterPayment(e, userId));
-    newForm.querySelectorAll('.payment-horas-input, .currency-input, .payment-dias-input').forEach(input => {
+
+    // --- INICIO DE MODIFICACIÓN (Añadir listener al checkbox) ---
+    newForm.querySelectorAll('.payment-horas-input, .currency-input, .payment-dias-input, #payment-liquidar-bonificacion').forEach(input => {
         input.addEventListener('input', updatePaymentTotal);
     });
+    // --- FIN DE MODIFICACIÓN ---
+
     newForm.querySelectorAll('.currency-input').forEach(_setupCurrencyInput);
 }
 
 /**
- * (FUNCIÓN ACTUALIZADA - "LIQUIDADOR" CON LÓGICA DE DEDUCCIÓN)
+ * (FUNCIÓN ACTUALIZADA - FASE 3: LÓGICA DE LIQUIDACIÓN)
  * Calcula el total a pagar en el formulario de registro de pago en tiempo real.
  */
 function updatePaymentTotal() {
@@ -1032,41 +1057,53 @@ function updatePaymentTotal() {
     const bonificacionEl = document.getElementById('payment-bonificacion-mes');
     const diasPagar = parseFloat(document.getElementById('payment-dias-pagar').value) || 0;
 
-    // 1. Obtener valores MENSUALES
+    // --- INICIO DE MODIFICACIÓN (FASE 3) ---
+    // 1. Obtener el checkbox de liquidación
+    const liquidarCheckbox = document.getElementById('payment-liquidar-bonificacion');
+    const liquidarBonificacion = liquidarCheckbox.checked; // true si está marcado
+    // --- FIN DE MODIFICACIÓN ---
+
+    // 2. Obtener valores MENSUALES
     const salarioMensual = parseFloat(salarioEl.dataset.value || 0);
     const auxTransporteMensual = parseFloat(salarioEl.dataset.auxTransporte || 0);
-    
-    // 2. Calcular valores PRORRATEADOS
+
+    // 3. Calcular valores PRORRATEADOS
     const salarioProrrateado = (salarioMensual / 30) * diasPagar;
     const auxTransporteProrrateado = (auxTransporteMensual / 30) * diasPagar;
 
-    // 3. Obtener valores que NO se prorratean
-    const bonificacion = parseFloat(bonificacionEl.dataset.value || 0);
+    // 4. Obtener valores que NO se prorratean
     const otros = parseFloat(document.getElementById('payment-otros').value.replace(/[$. ]/g, '')) || 0;
-    
-    // 4. Calcular Horas Extra
+
+    // --- INICIO DE MODIFICACIÓN (FASE 3) ---
+    // 5. Determinar la bonificación a pagar
+    const bonificacionPotencial = parseFloat(bonificacionEl.dataset.value || 0);
+    let bonificacionAPagar = 0; // Por defecto es 0 (ej. primera quincena)
+
+    // Solo incluimos la bonificación si el checkbox está marcado
+    if (liquidarBonificacion) {
+        bonificacionAPagar = bonificacionPotencial;
+    }
+    // --- FIN DE MODIFICACIÓN ---
+
+    // 6. Calcular Horas Extra
     const horasExtra = parseFloat(document.getElementById('payment-horas-diurnas').value) || 0;
     const valorHora = (salarioMensual / 235);
     const multiplicador = config.multiplicadorHoraExtra || 1.25;
     const totalHorasExtra = (horasExtra * valorHora * multiplicador);
-    
+
     document.getElementById('payment-total-horas').textContent = currencyFormatter.format(totalHorasExtra);
 
-    // 5. Calcular Deducciones (CORREGIDO)
-    // --- INICIO DE LÓGICA DE DEDUCCIÓN ---
-    const deduccionSobreMinimo = form.dataset.deduccionSobreMinimo === 'true'; // Leer la preferencia
+    // 7. Calcular Deducciones (usando bonificacionAPagar)
+    const deduccionSobreMinimo = form.dataset.deduccionSobreMinimo === 'true';
     let baseDeduccion = 0;
 
     if (deduccionSobreMinimo) {
-        // Opción 1: Calcular sobre el Salario Mínimo (prorrateado a los días pagados)
         baseDeduccion = (config.salarioMinimo / 30) * diasPagar;
     } else {
-        // Opción 2: Calcular sobre el devengado (Básico + H.Extra + Bonificación)
-        // (Auxilio de transporte NO suma para base de deducción)
-        baseDeduccion = salarioProrrateado + totalHorasExtra + bonificacion;
+        // Base es: Básico + H.Extra + BONIFICACIÓN (solo si se paga)
+        baseDeduccion = salarioProrrateado + totalHorasExtra + bonificacionAPagar;
     }
-    
-    // Asegurarse de que la base no sea menor al mínimo (si devengó algo)
+
     if (baseDeduccion > 0 && baseDeduccion < (config.salarioMinimo / 30) * diasPagar) {
         baseDeduccion = (config.salarioMinimo / 30) * diasPagar;
     }
@@ -1074,72 +1111,79 @@ function updatePaymentTotal() {
     const deduccionSalud = baseDeduccion * (config.porcentajeSalud / 100);
     const deduccionPension = baseDeduccion * (config.porcentajePension / 100);
     const totalDeducciones = deduccionSalud + deduccionPension;
-    // --- FIN DE LÓGICA DE DEDUCCIÓN ---
-    
-    // 6. Calcular Total Final
-    const totalDevengado = salarioProrrateado + auxTransporteProrrateado + bonificacion + totalHorasExtra + otros;
+
+    // 8. Calcular Total Final (usando bonificacionAPagar)
+    const totalDevengado = salarioProrrateado + auxTransporteProrrateado + bonificacionAPagar + totalHorasExtra + otros;
     const totalPagar = totalDevengado - totalDeducciones;
-    
+
     document.getElementById('payment-total-pagar').textContent = currencyFormatter.format(totalPagar);
 }
 
 /**
- * (FUNCIÓN ACTUALIZADA)
- * Maneja el evento 'submit' del nuevo formulario de registro de pago (con lógica de deducción).
+ * (FUNCIÓN ACTUALIZADA - FASE 4: GUARDAR ESTADO DE LIQUIDACIÓN)
+ * Maneja el evento 'submit' del nuevo formulario de registro de pago.
  */
 async function handleRegisterPayment(e, userId) {
     e.preventDefault();
     const submitButton = document.getElementById('payment-submit-button');
     submitButton.disabled = true;
     submitButton.innerHTML = '<div class="loader-small mx-auto"></div>';
-    
+
     const config = _getPayrollConfig();
     const form = document.getElementById('payment-register-form');
 
     try {
-        // 1. Obtener valores
+        // 1. Obtener valores del formulario
         const diasPagar = parseFloat(document.getElementById('payment-dias-pagar').value) || 0;
         const salarioMensual = parseFloat(document.getElementById('payment-salario-basico').dataset.value || 0);
         const auxTransporteMensual = parseFloat(document.getElementById('payment-salario-basico').dataset.auxTransporte || 0);
-        
+
         const salarioProrrateado = (salarioMensual / 30) * diasPagar;
         const auxTransporteProrrateado = (auxTransporteMensual / 30) * diasPagar;
-        
-        const bonificacion = parseFloat(document.getElementById('payment-bonificacion-mes').dataset.value || 0);
+
         const otros = parseFloat(document.getElementById('payment-otros').value.replace(/[$. ]/g, '')) || 0;
         const totalHorasExtra = parseFloat(document.getElementById('payment-total-horas').textContent.replace(/[$. ]/g, '')) || 0;
         const totalPagar = parseFloat(document.getElementById('payment-total-pagar').textContent.replace(/[$. ]/g, '')) || 0;
         const concepto = document.getElementById('payment-concepto').value;
-        
+
+        // --- INICIO DE MODIFICACIÓN (FASE 4) ---
+        // 2. Leer el estado del checkbox de liquidación
+        const liquidarCheckbox = document.getElementById('payment-liquidar-bonificacion');
+        const liquidarBonificacion = liquidarCheckbox.checked;
+
+        // 3. Determinar la bonificación que se está pagando
+        const bonificacionPotencial = parseFloat(document.getElementById('payment-bonificacion-mes').dataset.value || 0);
+        const bonificacionPagada = liquidarBonificacion ? bonificacionPotencial : 0;
+        // --- FIN DE MODIFICACIÓN ---
+
         if (!concepto) throw new Error("Por favor, ingresa un concepto para el pago.");
         if (diasPagar <= 0) throw new Error("Por favor, ingresa un número de días válido.");
-        
-        // 2. Recalcular deducciones (para guardarlas)
-        // --- INICIO DE LÓGICA DE DEDUCCIÓN ---
+
+        // 4. Recalcular deducciones (basado en la bonificaciónPAGADA)
         const deduccionSobreMinimo = form.dataset.deduccionSobreMinimo === 'true';
         let baseDeduccion = 0;
 
         if (deduccionSobreMinimo) {
             baseDeduccion = (config.salarioMinimo / 30) * diasPagar;
         } else {
-            baseDeduccion = salarioProrrateado + totalHorasExtra + bonificacion;
+            // La base es Básico + H.Extra + Bonificación (solo si se está pagando)
+            baseDeduccion = salarioProrrateado + totalHorasExtra + bonificacionPagada;
         }
-        
+
         if (baseDeduccion > 0 && baseDeduccion < (config.salarioMinimo / 30) * diasPagar) {
             baseDeduccion = (config.salarioMinimo / 30) * diasPagar;
         }
 
         const deduccionSalud = baseDeduccion * (config.porcentajeSalud / 100);
         const deduccionPension = baseDeduccion * (config.porcentajePension / 100);
-        // --- FIN DE LÓGICA DE DEDUCCIÓN ---
 
-        // 3. Obtener el nombre de quien registra
+        // 5. Obtener el nombre de quien registra
         const currentUserId = _getCurrentUserId();
         const usersMap = _getUsersMap();
         const currentUser = usersMap.get(currentUserId);
         const registeredByName = currentUser ? `${currentUser.firstName} ${currentUser.lastName}` : 'Sistema';
 
-        // 4. Crear el objeto de historial de pago
+        // 6. Crear el objeto de historial de pago
         const paymentData = {
             userId: userId,
             paymentDate: new Date().toISOString().split('T')[0],
@@ -1149,13 +1193,13 @@ async function handleRegisterPayment(e, userId) {
             desglose: {
                 salarioProrrateado: salarioProrrateado,
                 auxilioTransporteProrrateado: auxTransporteProrrateado,
-                bonificacionM2: bonificacion,
+                bonificacionM2: bonificacionPagada, // <-- MODIFICADO (guarda solo lo pagado)
                 horasExtra: totalHorasExtra,
                 otros: otros,
                 deduccionSalud: -deduccionSalud,
                 deduccionPension: -deduccionPension,
-                baseDeduccion: baseDeduccion, // Guardamos la base calculada
-                deduccionSobreMinimo: deduccionSobreMinimo // Guardamos la preferencia
+                baseDeduccion: baseDeduccion,
+                deduccionSobreMinimo: deduccionSobreMinimo
             },
             horas: {
                 totalHorasExtra: parseFloat(document.getElementById('payment-horas-diurnas').value) || 0
@@ -1165,19 +1209,40 @@ async function handleRegisterPayment(e, userId) {
             registeredByName: registeredByName
         };
 
-        // 5. Guardar en Firestore
-        const paymentHistoryRef = collection(_db, "users", userId, "paymentHistory");
-        await addDoc(paymentHistoryRef, paymentData);
+        // 7. Guardar en Firestore (en un batch)
+        const batch = writeBatch(_db);
 
-        // 6. Resetear el formulario
+        const paymentHistoryRef = doc(collection(_db, "users", userId, "paymentHistory"));
+        batch.set(paymentHistoryRef, paymentData);
+
+        // --- INICIO DE MODIFICACIÓN (FASE 4) ---
+        // 8. Si se liquidó la bonificación, marcarla como pagada en employeeStats
+        if (liquidarBonificacion) {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const currentStatDocId = `${year}_${month}`;
+            const statRef = doc(_db, "employeeStats", userId, "monthlyStats", currentStatDocId);
+
+            // Usamos set con merge:true para crear el campo si no existe
+            batch.set(statRef, {
+                bonificacionPagada: true
+            }, { merge: true });
+        }
+        // --- FIN DE MODIFICACIÓN ---
+
+        await batch.commit(); // Ejecutamos ambas escrituras
+
+        // 9. Resetear el formulario
         document.getElementById('payment-concepto').value = '';
         document.getElementById('payment-horas-diurnas').value = '0';
         document.getElementById('payment-otros').value = '$ 0';
-        document.getElementById('payment-dias-pagar').value = '15'; 
-        
+        document.getElementById('payment-dias-pagar').value = '15';
+
         document.querySelectorAll('#payment-register-form .currency-input').forEach(_setupCurrencyInput);
-        
-        updatePaymentTotal(); 
+
+        // Recargar la vista (Fase 2) para reflejar el estado "Pagada"
+        loadPaymentHistoryView(userId);
 
     } catch (error) {
         console.error("Error al registrar el pago:", error);
