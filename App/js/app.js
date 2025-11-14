@@ -51,6 +51,9 @@ let unsubscribePayments = null;
 let activeListeners = [];
 let currentUser = null;
 let currentUserRole = null;
+
+let processedPhotoFile = null; // Almacenará el archivo convertido (HEIC) o capturado (Cámara)
+
 let usersMap = new Map();
 let payrollConfig = null; // <-- ASEGÚRATE DE QUE ESTA LÍNEA ESTÉ
 let selectedProjectId = null;
@@ -611,6 +614,170 @@ async function handleLogout() {
 
     } catch (error) {
         console.error('Error al cerrar sesión: ', error);
+    }
+}
+
+let cameraStream = null; // Variable global para el stream de la cámara
+
+/**
+ * (NUEVA FUNCIÓN)
+ * Abre el modal de la cámara y solicita acceso al dispositivo.
+ * @param {string} targetInputId - El ID del input (oculto) que recibirá el archivo.
+ * @param {string} targetPreviewId - El ID de la <img> que mostrará la vista previa.
+ */
+async function openCameraModal(targetInputId, targetPreviewId) {
+    const modal = document.getElementById('camera-modal');
+    const video = document.getElementById('camera-feed');
+    const captureBtn = document.getElementById('camera-capture-btn');
+    const cancelBtn = document.getElementById('camera-cancel-btn');
+
+    if (!modal || !video || !captureBtn || !cancelBtn) return;
+
+    try {
+        if (cameraStream) {
+            cameraStream.getTracks().forEach(track => track.stop());
+        }
+        // Pedimos la cámara trasera (environment)
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' }
+        });
+        video.srcObject = cameraStream;
+        modal.style.display = 'flex';
+
+        // Pasamos los IDs de destino a los botones
+        captureBtn.dataset.targetInputId = targetInputId;
+        captureBtn.dataset.targetPreviewId = targetPreviewId;
+
+        cancelBtn.onclick = closeCameraModal;
+        captureBtn.onclick = () => capturePhoto();
+
+    } catch (err) {
+        console.error("Error al acceder a la cámara:", err);
+        // Si falla (ej. no hay cámara trasera), intenta con cualquier cámara
+        try {
+            cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = cameraStream;
+            modal.style.display = 'flex';
+
+            captureBtn.dataset.targetInputId = targetInputId;
+            captureBtn.dataset.targetPreviewId = targetPreviewId;
+
+            cancelBtn.onclick = closeCameraModal;
+            captureBtn.onclick = () => capturePhoto();
+        } catch (err2) {
+            alert("No se pudo acceder a la cámara. Revisa los permisos.");
+        }
+    }
+}
+
+/**
+ * (NUEVA FUNCIÓN)
+ * Cierra el modal de la cámara y detiene el stream de video.
+ */
+function closeCameraModal() {
+    const modal = document.getElementById('camera-modal');
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+    }
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+/**
+ * (NUEVA FUNCIÓN)
+ * Captura la foto desde el stream de video y la procesa.
+ */
+function capturePhoto() {
+    const video = document.getElementById('camera-feed');
+    const canvas = document.getElementById('camera-canvas');
+    const captureBtn = document.getElementById('camera-capture-btn');
+    const targetInputId = captureBtn.dataset.targetInputId;
+    const targetPreviewId = captureBtn.dataset.targetPreviewId;
+
+    // Ajustamos el canvas al tamaño del video
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+
+    // Convertimos el canvas a un Blob (archivo)
+    canvas.toBlob(async (blob) => {
+        // Creamos un objeto File (como si fuera subido)
+        const photoFile = new File([blob], "camera_capture.jpg", { type: "image/jpeg" });
+
+        // Cerramos el modal
+        closeCameraModal();
+
+        // ¡Usamos la misma función que el convertidor HEIC!
+        await handlePhotoFile(photoFile, targetInputId, targetPreviewId);
+
+    }, 'image/jpeg', 0.9); // 90% de calidad
+}
+
+/**
+ * (NUEVA FUNCIÓN)
+ * Procesa el archivo (convierte HEIC si es necesario) y actualiza la vista previa.
+ * @param {File} file - El archivo (de la cámara o del input).
+ * @param {string} fileInputId - El ID del input (para referencia).
+ * @param {string} previewImgId - El ID de la <img> para la vista previa.
+ */
+async function handlePhotoFile(file, fileInputId, previewImgId) {
+    const previewImg = document.getElementById(previewImgId);
+    const promptEl = document.getElementById('editUser-prompt');
+    const previewContainer = document.getElementById('editUser-preview');
+    const statusEl = document.getElementById('editUser-photo-status'); // (ID del <p> que añadimos)
+
+    if (!previewImg || !promptEl || !previewContainer || !statusEl) return;
+
+    // Reinicia el estado
+    processedPhotoFile = null;
+    statusEl.textContent = 'Procesando foto...';
+    statusEl.className = 'text-xs text-center text-blue-600 h-4 mt-1';
+
+    try {
+        let fileToProcess = file;
+
+        // 1. Lógica de Conversión HEIC
+        const fileType = file.type.toLowerCase();
+        const fileName = file.name.toLowerCase();
+
+        if (fileType === 'image/heic' || fileType === 'image/heif' || fileName.endsWith('.heic') || fileName.endsWith('.heif')) {
+            statusEl.textContent = 'Convirtiendo formato HEIC...';
+
+            // Usamos la biblioteca heic2any
+            const convertedBlob = await heic2any({
+                blob: file,
+                toType: "image/jpeg",
+                quality: 0.8, // 80% de calidad
+            });
+
+            fileToProcess = new File([convertedBlob], "converted.jpg", { type: "image/jpeg" });
+        }
+
+        // 2. Redimensionar la imagen (reutilizamos la lógica de 'resizeImage')
+        statusEl.textContent = 'Redimensionando imagen...';
+        const resizedBlob = await resizeImage(fileToProcess, 400); // 400px (para perfil)
+
+        // 3. Guardar el archivo final en nuestra variable global
+        processedPhotoFile = new File([resizedBlob], "profile_photo.jpg", { type: "image/jpeg" });
+
+        // 4. Mostrar la vista previa
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            previewImg.src = event.target.result;
+            previewContainer.classList.remove('hidden');
+            promptEl.classList.add('hidden');
+            statusEl.textContent = 'Foto lista para guardar.';
+            statusEl.className = 'text-xs text-center text-green-600 h-4 mt-1';
+        }
+        reader.readAsDataURL(processedPhotoFile); // Leemos el archivo final
+
+    } catch (err) {
+        console.error("Error al procesar la foto:", err);
+        statusEl.textContent = 'Error al procesar la foto.';
+        statusEl.className = 'text-xs text-center text-red-600 h-4 mt-1';
+        processedPhotoFile = null; // Resetea si falla
     }
 }
 
@@ -5570,22 +5737,24 @@ async function openMainModal(type, data = {}) {
                     <div class="md:col-span-1">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Selfie (Foto de Perfil)</label>
                         
-                        <div id="editUser-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
-                            
+                        <div class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50 relative overflow-hidden">
                             <div id="editUser-preview" class="absolute inset-0 ${data.profilePhotoURL ? '' : 'hidden'}">
                                 <img src="${data.profilePhotoURL || ''}" id="editUser-img-preview" class="w-full h-full object-cover">
                             </div>
-                            
                             <div id="editUser-prompt" class="text-center p-4 ${data.profilePhotoURL ? 'hidden' : ''} flex items-center justify-center h-full">
                                 <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                             </div>
                         </div>
 
-                        <input type="file" id="editUser-photo-input" name="photo" accept="image/*" class="hidden">
+                        <input type="file" id="editUser-photo-input" name="photo" accept="image/*,.heic,.heif" class="hidden">
 
-                        <p class="text-xs text-center text-gray-500 mt-2">Toca la imagen para cambiar la foto del usuario.</p>
+                        <div class="mt-2 grid grid-cols-2 gap-2">
+                            <button type="button" id="editUser-upload-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-bold py-2 px-3 rounded-lg w-full">Subir Foto</button>
+                            <button type="button" id="editUser-camera-btn" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold py-2 px-3 rounded-lg w-full">Tomar Foto</button>
+                        </div>
+                        <p id="editUser-photo-status" class="text-xs text-center text-blue-600 h-4 mt-1"></p>
                     </div>
-
+                    
                     <div class="md:col-span-2 space-y-4">
                         <div>
                             <label for="user-firstName" class="block text-sm font-medium text-gray-700">Nombre</label>
@@ -5631,7 +5800,7 @@ async function openMainModal(type, data = {}) {
                         </div>
                     </div>
 
-<div class="md:col-span-3 border-t pt-4">
+                    <div class="md:col-span-3 border-t pt-4">
                         <h4 class="text-md font-semibold text-gray-700 mb-2">Compensación</h4>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
@@ -5670,27 +5839,33 @@ async function openMainModal(type, data = {}) {
 
             // Lógica JS para el nuevo dropzone
             setTimeout(() => {
-                const dropzone = document.getElementById('editUser-dropzone');
-                const fileInput = document.getElementById('editUser-photo-input');
-                const previewContainer = document.getElementById('editUser-preview');
-                const previewImg = document.getElementById('editUser-img-preview');
-                const promptEl = document.getElementById('editUser-prompt');
+                // Reseteamos el archivo procesado cada vez que se abre el modal
+                processedPhotoFile = null;
 
-                if (dropzone) {
-                    dropzone.addEventListener('click', () => fileInput.click());
+                const fileInput = document.getElementById('editUser-photo-input');
+                const uploadBtn = document.getElementById('editUser-upload-btn');
+                const cameraBtn = document.getElementById('editUser-camera-btn');
+
+                if (uploadBtn && fileInput) {
+                    // El botón "Subir Foto" abre el selector de archivos
+                    uploadBtn.addEventListener('click', () => fileInput.click());
                 }
+
                 if (fileInput) {
+                    // Cuando se selecciona un archivo (HEIC, JPG, etc.)
                     fileInput.addEventListener('change', (e) => {
                         const file = e.target.files[0];
                         if (file) {
-                            const reader = new FileReader();
-                            reader.onload = (event) => {
-                                previewImg.src = event.target.result;
-                                previewContainer.classList.remove('hidden');
-                                promptEl.classList.add('hidden');
-                            }
-                            reader.readAsDataURL(file);
+                            // Llamamos a la nueva función de procesamiento/conversión
+                            handlePhotoFile(file, 'editUser-photo-input', 'editUser-img-preview');
                         }
+                    });
+                }
+
+                if (cameraBtn) {
+                    // El botón "Tomar Foto" abre el modal de la cámara
+                    cameraBtn.addEventListener('click', () => {
+                        openCameraModal('editUser-photo-input', 'editUser-img-preview');
                     });
                 }
 
@@ -7042,8 +7217,10 @@ modalForm.addEventListener('submit', async (e) => {
                 const oldUserData = usersMap.get(id) || {};
                 const changes = {}; // Objeto para guardar solo lo que cambió
 
-                // 2. Buscar el archivo subido por el admin
-                const photoFile = document.getElementById('editUser-photo-input')?.files[0];
+                // 2. LEEMOS DESDE LA VARIABLE GLOBAL (MODIFICADO)
+                const photoFile = processedPhotoFile; // ¡Usamos nuestra variable!
+                processedPhotoFile = null; // Limpiamos la variable global
+
                 let downloadURL = null;
 
                 // 3. Si el admin subió una foto nueva...
@@ -11777,7 +11954,7 @@ function createTaskCard(task) {
                 <div class="flex justify-between mb-1"><span class="text-xs font-medium text-gray-500">Progreso Instalación</span><span id="${progressTextId}" class="text-xs font-medium text-blue-700">Calculando...</span></div>
                 <div class="task-progress-bar-bg"><div id="${progressBarId}" class="task-progress-bar-fg" style="width: 0%;"></div></div>
             </div>`;
-const calculateProgress = async () => {
+        const calculateProgress = async () => {
             try {
                 // --- INICIO DE CORRECCIÓN ---
                 const subItemIds = task.specificSubItemIds || [];
@@ -11803,7 +11980,7 @@ const calculateProgress = async () => {
                     // Buscamos en lotes de 30 (límite 'in')
                     for (let i = 0; i < subItemIds.length; i += 30) {
                         const chunkIds = subItemIds.slice(i, i + 30);
-                        
+
                         // Creamos la consulta con el PATH COMPLETO y ANIDADO
                         const q = query(
                             collection(db, "projects", projectId, "items", itemId, "subItems"),
@@ -11811,7 +11988,7 @@ const calculateProgress = async () => {
                         );
 
                         const snapshot = await getDocs(q);
-                        
+
                         snapshot.forEach(docSnap => {
                             // Verificamos que el subItem encontrado SÍ pertenezca a esta tarea
                             if (docSnap.exists() && subItemIdsSet.has(docSnap.id)) {
@@ -11823,14 +12000,14 @@ const calculateProgress = async () => {
                         });
                     }
                 }
-                
+
                 const totalSubItemsEffective = subItemIds.length; // El total es la lista completa de la tarea
                 const percentage = totalSubItemsEffective > 0 ? (installedCount / totalSubItemsEffective) * 100 : 0;
                 // --- FIN DE CORRECCIÓN ---
 
                 const progressBarElement = document.getElementById(progressBarId);
                 const progressTextElement = document.getElementById(progressTextId);
-                
+
                 if (progressBarElement) progressBarElement.style.width = `${percentage.toFixed(0)}%`;
                 if (progressTextElement) progressTextElement.textContent = `${percentage.toFixed(0)}% (${installedCount}/${totalSubItemsEffective})`;
 

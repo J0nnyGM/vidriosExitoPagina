@@ -238,7 +238,6 @@ async function loadProductividadTab(container) {
 
     // Función interna para cargar la tabla
     const loadTableData = async () => {
-        // ... (el resto de la función loadTableData no cambia en absoluto)
         // Lee el selector, consulta Firestore, y renderiza las filas.
         const selectedMonthYear = monthSelector.value;
         const currentStatDocId = selectedMonthYear.replace('-', '_');
@@ -247,22 +246,25 @@ async function loadProductividadTab(container) {
 
         try {
             const usersMap = _getUsersMap();
-            const operarios = [];
+            const activeUsers = []; // <-- Variable renombrada
             usersMap.forEach((user, id) => {
-                if (user.role === 'operario' && user.status === 'active') {
-                    operarios.push({ id, ...user });
+                // --- INICIO DE LA MODIFICACIÓN ---
+                // Ahora incluye a todos los usuarios activos
+                if (user.status === 'active') {
+                    // --- FIN DE LA MODIFICACIÓN ---
+                    activeUsers.push({ id, ...user }); // <-- Variable renombrada
                 }
             });
 
-            if (operarios.length === 0) {
+            if (activeUsers.length === 0) { // <-- Variable renombrada
                 tableBody.innerHTML = `<tr><td colspan="7" class="text-center py-10 text-gray-500">No se encontraron operarios activos.</td></tr>`;
                 return;
             }
 
-            const statPromises = operarios.map(op => getDoc(doc(_db, "employeeStats", op.id, "monthlyStats", currentStatDocId)));
+            const statPromises = activeUsers.map(op => getDoc(doc(_db, "employeeStats", op.id, "monthlyStats", currentStatDocId))); // <-- Variable renombrada
             const statSnapshots = await Promise.all(statPromises);
 
-            const empleadoData = operarios.map((operario, index) => {
+            const empleadoData = activeUsers.map((operario, index) => { // <-- Variable renombrada
                 const statDoc = statSnapshots[index];
                 const stats = statDoc.exists() ? statDoc.data() : {
                     metrosAsignados: 0, metrosCompletados: 0, metrosEnTiempo: 0, metrosFueraDeTiempo: 0, totalBonificacion: 0
@@ -441,26 +443,28 @@ async function loadNominaTab(container) {
     tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-10"><div class="loader mx-auto"></div><p class="mt-2 text-gray-500">Cargando reporte de nómina para ${selectedMonthYear}...</p></td></tr>`;
 
     try {
-        // 3. Obtener operarios (del usersMap)
+        // 3. Obtener usuarios activos (del usersMap)
         const usersMap = _getUsersMap();
-        const operarios = [];
+        const activeUsers = []; // <-- Variable renombrada
         usersMap.forEach((user, id) => {
-            if (user.role === 'operario' && user.status === 'active') {
-                operarios.push({ id, ...user });
+            // --- INICIO DE LA MODIFICACIÓN ---
+            if (user.status === 'active') {
+                // --- FIN DE LA MODIFICACIÓN ---
+                activeUsers.push({ id, ...user }); // <-- Variable renombrada
             }
         });
 
-        if (operarios.length === 0) {
+        if (activeUsers.length === 0) { // <-- Variable renombrada
             tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-10 text-gray-500">No se encontraron operarios activos.</td></tr>`;
             return;
         }
 
         // 4. Obtener sus estadísticas de ese mes
-        const statPromises = operarios.map(op => getDoc(doc(_db, "employeeStats", op.id, "monthlyStats", currentStatDocId)));
+        const statPromises = activeUsers.map(op => getDoc(doc(_db, "employeeStats", op.id, "monthlyStats", currentStatDocId))); // <-- Variable renombrada
         const statSnapshots = await Promise.all(statPromises);
 
         // 5. Combinar datos
-        const empleadoData = operarios.map((operario, index) => {
+        const empleadoData = activeUsers.map((operario, index) => { // <-- Variable renombrada
             const statDoc = statSnapshots[index];
             const stats = statDoc.exists() ? statDoc.data() : { totalBonificacion: 0 };
             return {
