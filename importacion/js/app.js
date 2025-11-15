@@ -4594,6 +4594,7 @@ async function showDashboardModal() {
             <div class="flex items-center gap-4 flex-wrap justify-end">
                 ${initialBalanceButtonHTML}
                 <button id="show-transfer-modal-btn" class="bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-700 whitespace-nowrap">Transferir Fondos</button>
+                <button id="export-pagos-btn" class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 whitespace-nowrap">Exportar Pagos</button>
                 <button id="download-report-btn" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 whitespace-nowrap">Descargar PDF</button>
                 <button id="close-dashboard-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
             </div>
@@ -4744,6 +4745,20 @@ async function showDashboardModal() {
     renderCartera();          // Carga cartera
     renderTopClientes();      // Carga clientes
     // renderConfirmedTransfers() se llama cuando se hace clic en su pestaña
+}
+
+document.addEventListener('click', function(event) {
+    // Verificamos si el elemento clickeado es nuestro botón
+    if (event.target && event.target.id === 'export-pagos-btn') {
+        event.preventDefault();
+        showExportPagosModal();
+    }
+});
+
+// Dentro de showDashboardModal, después de inyectar el HTML:
+const exportPagosBtn = document.getElementById('export-pagos-btn');
+if (exportPagosBtn) {
+    exportPagosBtn.addEventListener('click', showExportPagosModal);
 }
 
 /**
@@ -7553,6 +7568,77 @@ async function handleExportGastos(e) {
     }
 }
 
+
+
+/**
+ * Muestra el modal para exportar pagos.
+ */
+function showExportPagosModal() {
+    const modal = document.getElementById('export-pagos-modal');
+    if (modal) {
+        const endDateInput = document.getElementById('export-pagos-end-date');
+        if (endDateInput) {
+            endDateInput.valueAsDate = new Date(); // Poner fecha de hoy por defecto
+        }
+        modal.classList.remove('hidden');
+    }
+}
+
+/**
+ * Maneja el envío del formulario de exportación de pagos.
+ */
+async function handleExportPagos(e) {
+    e.preventDefault();
+    const startDate = document.getElementById('export-pagos-start-date').value;
+    const endDate = document.getElementById('export-pagos-end-date').value;
+
+    if (!startDate || !endDate) {
+        showModalMessage("Por favor, selecciona ambas fechas.");
+        return;
+    }
+
+    showModalMessage("Generando historial de pagos, por favor espera...", true);
+
+    try {
+        const exportFunction = httpsCallable(functions, 'exportPagosRemisionesToExcel');
+        const result = await exportFunction({ startDate, endDate });
+
+        if (result.data.success) {
+            // Decodificar y descargar el archivo (lógica idéntica a gastos)
+            const byteCharacters = atob(result.data.fileContent);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `Historial_Pagos_Remisiones_${startDate}_a_${endDate}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            hideModal(); // Cerrar modal de carga
+            document.getElementById('export-pagos-modal').classList.add('hidden'); // Cerrar modal de fechas
+            showTemporaryMessage("¡Historial descargado con éxito!", "success");
+        } else {
+            throw new Error(result.data.message || "No se encontraron datos.");
+        }
+    } catch (error) {
+        console.error("Error al exportar pagos:", error);
+        showModalMessage(`Error al generar el reporte: ${error.message}`);
+    }
+}
+
+document.addEventListener('submit', function (event) {
+    if (event.target && event.target.id === 'export-pagos-form') {
+        handleExportPagos(event);
+    }
+    // ... tus otros listeners existentes ...
+});
+
 // Se añade un solo event listener al documento que maneja los eventos
 // de los elementos que se crean dinámicamente.
 document.addEventListener('click', function (event) {
@@ -7568,12 +7654,14 @@ document.addEventListener('click', function (event) {
     }
 });
 
+
 // El listener para el formulario también usa delegación de eventos.
 document.addEventListener('submit', function (event) {
     if (event.target && event.target.id === 'export-gastos-form') {
         handleExportGastos(event);
     }
 });
+
 
 // Escucha el evento de envío del formulario para añadir un nuevo proveedor
 // Usamos 'body' y 'delegación de eventos' para asegurarnos de que el listener funcione

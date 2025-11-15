@@ -1728,3 +1728,122 @@ exports.confirmTransfer = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError("internal", `No se pudo confirmar la transferencia: ${error.message}`);
     }
 });
+
+
+/**
+ * Exporta el historial de pagos de remisiones a Excel.
+ * AHORA INCLUYE: Nombres reales de usuarios (no IDs) y columna "Confirmado Por".
+ */
+exports.exportPagosRemisionesToExcel = functions.https.onCall(async (data, context) => {
+    // 1. Verificación de permisos
+    const userRole = context.auth.token.role;
+    const allowedRoles = ['admin', 'contabilidad'];
+
+    if (!context.auth || !allowedRoles.includes(userRole)) {
+        throw new functions.https.HttpsError(
+            'permission-denied',
+            'Solo los administradores o contabilidad pueden exportar estos datos.'
+        );
+    }
+
+    const { startDate, endDate } = data;
+    if (!startDate || !endDate) {
+        throw new functions.https.HttpsError('invalid-argument', 'Se requieren fechas de inicio y fin.');
+    }
+
+    try {
+        // --- PASO NUEVO: Pre-cargar usuarios para obtener nombres ---
+        const usersRef = db.collection('users');
+        const usersSnapshot = await usersRef.get();
+        const userNames = {}; // Diccionario ID -> Nombre
+        
+        usersSnapshot.forEach(doc => {
+            const userData = doc.data();
+            // Guardamos el nombre o 'Desconocido' si no tiene
+            userNames[doc.id] = userData.nombre || 'Usuario Desconocido';
+        });
+        // ----------------------------------------------------------
+
+        // 2. Obtener todas las remisiones
+        const remisionesRef = db.collection('remisiones');
+        const snapshot = await remisionesRef.get();
+
+        if (snapshot.empty) {
+            return { success: false, message: 'No se encontraron remisiones.' };
+        }
+
+        const ExcelJS = require('exceljs');
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Historial Pagos');
+
+        // 3. Definir Columnas (AÑADIDA: Confirmado Por)
+        worksheet.columns = [
+            { header: 'Fecha Pago', key: 'fecha', width: 15 },
+            { header: 'N° Remisión', key: 'numeroRemision', width: 15 },
+            { header: 'Cliente', key: 'cliente', width: 30 },
+            { header: 'Método', key: 'metodo', width: 15 },
+            { header: 'Estado', key: 'estado', width: 15 },
+            { header: 'Valor', key: 'valor', width: 20, style: { numFmt: '"$"#,##0' } },
+            { header: 'Registrado Por', key: 'registradoPor', width: 25 }, // Mostrará nombre
+            { header: 'Confirmado Por', key: 'confirmadoPor', width: 25 }, // Nueva Columna
+            { header: 'Fecha Registro', key: 'fechaRegistro', width: 20 }
+        ];
+
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+
+        let pagosEncontrados = 0;
+
+        // 4. Procesar cada remisión y sus pagos
+        snapshot.forEach(doc => {
+            const remision = doc.data();
+            const pagos = Array.isArray(remision.payments) ? remision.payments : [];
+
+            pagos.forEach(pago => {
+                const fechaPago = new Date(pago.date + 'T12:00:00');
+
+                if (fechaPago >= start && fechaPago <= end) {
+                    
+                    // --- LÓGICA DE NOMBRES ---
+                    // Buscamos el ID en nuestro diccionario 'userNames'
+                    const nombreRegistrador = userNames[pago.registeredBy] || 'Sistema/Desconocido';
+                    
+                    let nombreConfirmador = 'Pendiente';
+                    if (pago.status === 'confirmado') {
+                        // Si está confirmado, buscamos quién lo hizo. Si no hay ID, mostramos 'N/A'
+                        nombreConfirmador = pago.confirmedBy ? (userNames[pago.confirmedBy] || 'Usuario Borrado') : 'N/A';
+                    }
+                    // -------------------------
+
+                    worksheet.addRow({
+                        fecha: pago.date,
+                        numeroRemision: remision.numeroRemision,
+                        cliente: remision.clienteNombre || 'Sin Nombre',
+                        metodo: pago.method,
+                        estado: pago.status === 'confirmado' ? 'Confirmado' : 'Pendiente',
+                        valor: pago.amount,
+                        registradoPor: nombreRegistrador, // Nombre real
+                        confirmadoPor: nombreConfirmador, // Nombre real o 'Pendiente'
+                        fechaRegistro: pago.registeredAt ? new Date(pago.registeredAt.seconds * 1000).toLocaleDateString() : 'N/A'
+                    });
+                    pagosEncontrados++;
+                }
+            });
+        });
+
+        if (pagosEncontrados === 0) {
+            return { success: false, message: 'No se encontraron pagos en el rango seleccionado.' };
+        }
+
+        // 5. Generar archivo
+        const buffer = await workbook.xlsx.writeBuffer();
+        const fileContent = Buffer.from(buffer).toString('base64');
+
+        return { success: true, fileContent: fileContent };
+
+    } catch (error) {
+        console.error("Error al exportar pagos:", error);
+        throw new functions.https.HttpsError('internal', 'No se pudo generar el archivo Excel: ' + error.message);
+    }
+});
