@@ -7928,15 +7928,18 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
                 }
             }
 
+            // Leemos los datos que ya teníamos del subItem (línea 6639)
             const dataToUpdate = {
                 ...commonData, // Contiene 'installers' (plural) y 'manufacturers' (plural)
                 ...individualData,
                 status: finalStatus,
-                m2: subItemData.m2 || 0, // ¡EL BUGFIX! Preservamos los M2
-                assignedTaskId: subItemData.assignedTaskId || null // ¡EL BUGFIX! Preservamos el ID de la tarea
+
+                // ¡AQUÍ ESTÁ EL BUGFIX!
+                m2: subItemData.m2 || 0, // Preservamos los M2
+                assignedTaskId: subItemData.assignedTaskId || null // Preservamos el ID de la tarea
             };
 
-            // Limpiamos los campos singulares antiguos por si acaso
+            // Limpiamos los campos singulares antiguos (que ya no usamos)
             delete dataToUpdate.manufacturer;
             delete dataToUpdate.installer;
             // --- FIN DE CORRECCIÓN ---

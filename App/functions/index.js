@@ -192,7 +192,7 @@ const migrateLegacySubItems = async () => {
 /**
  * Trigger que recalcula el Progreso del Proyecto Y
  * ACTUALIZA LAS ESTADÍSTICAS DE M² COMPLETADOS Y BONIFICACIONES (Globales y de Empleado).
- * (VERSIÓN ACTUALIZADA: Distribuye M² y Bonificación entre MÚLTIPLES instaladores)
+ * (VERSIÓN CORREGIDA: Duplica M² y Bonificación para MÚLTIPLES instaladores)
  */
 exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}/subItems/{subItemId}", async (event) => {
 
@@ -221,7 +221,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
         const afterData = event.data.after.data();
 
         let operationType = 0; // 1 para sumar, -1 para restar
-        let m2_total = 0;
+        let m2_total = 0; // Los M² totales de la pieza
         let installerIds = []; // Array de instaladores
         let installDateStr = null;
         let taskId = null;
@@ -256,9 +256,6 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
             return; 
         }
 
-        // --- DIVIDIR LOS M² ENTRE LOS INSTALADORES ---
-        const m2_por_instalador = m2_total / installerIds.length;
-
         // Verificamos la Tarea (opcional) solo para la bonificación "a tiempo"
         if (taskId) {
             const taskDoc = await db.doc(`tasks/${taskId}`).get();
@@ -284,6 +281,8 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
         const statsRefGlobal = db.doc("system/dashboardStats");
         const batch = db.batch();
 
+        let totalBonificacionGlobal = 0; // Acumulador para el dashboard global
+
         // --- BUCLE PARA ACTUALIZAR A CADA INSTALADOR ---
         for (const installerId of installerIds) {
             const userDoc = await db.doc(`users/${installerId}`).get();
@@ -295,40 +294,41 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
             const userData = userDoc.data();
             const level = userData.commissionLevel || "principiante";
             
-            // Cálculo de Bonificación (porción individual)
+            // Cálculo de Bonificación (individual)
             let bonificacion_individual = 0;
             if (config && config[level]) {
                 const rate = onTime ? config[level].valorM2EnTiempo : config[level].valorM2FueraDeTiempo;
-                // La bonificación es la porción de M² multiplicada por la tarifa
-                bonificacion_individual = (m2_por_instalador * rate) * operationType;
+                // CADA instalador recibe la bonificación por los M² TOTALES
+                bonificacion_individual = (m2_total * rate) * operationType;
+                totalBonificacionGlobal += bonificacion_individual; // Sumamos al total global
             }
 
             // Actualización para el Empleado
             const statsRefEmployee = db.doc(`employeeStats/${installerId}/monthlyStats/${statDocId}`);
             const statsUpdateEmployee = {
-                metrosCompletados: FieldValue.increment(m2_por_instalador * operationType),
-                metrosEnTiempo: onTime ? FieldValue.increment(m2_por_instalador * operationType) : FieldValue.increment(0),
-                metrosFueraDeTiempo: !onTime ? FieldValue.increment(m2_por_instalador * operationType) : FieldValue.increment(0),
+                // CADA instalador recibe los M² TOTALES en sus estadísticas
+                metrosCompletados: FieldValue.increment(m2_total * operationType),
+                metrosEnTiempo: onTime ? FieldValue.increment(m2_total * operationType) : FieldValue.increment(0),
+                metrosFueraDeTiempo: !onTime ? FieldValue.increment(m2_total * operationType) : FieldValue.increment(0),
                 totalBonificacion: FieldValue.increment(bonificacion_individual)
             };
             batch.set(statsRefEmployee, statsUpdateEmployee, { merge: true });
 
-            // Actualización Global (sumamos la porción de este empleado)
-            const statsUpdateGlobal = {
-                productivity: {
-                    metrosCompletados: FieldValue.increment(m2_por_instalador * operationType),
-                    metrosEnTiempo: onTime ? FieldValue.increment(m2_por_instalador * operationType) : FieldValue.increment(0),
-                    metrosFueraDeTiempo: !onTime ? FieldValue.increment(m2_por_instalador * operationType) : FieldValue.increment(0),
-                    totalBonificacion: FieldValue.increment(bonificacion_individual)
-                }
-            };
-            batch.set(statsRefGlobal, statsUpdateGlobal, { merge: true });
-
-            console.log(`Estadísticas de ${installerId} para ${statDocId} actualizadas: ${m2_por_instalador * operationType}m², $${bonificacion_individual} (A tiempo: ${onTime})`);
+            console.log(`Estadísticas de ${installerId} para ${statDocId} actualizadas: ${m2_total * operationType}m², $${bonificacion_individual} (A tiempo: ${onTime})`);
         }
         
-        // (La lógica de actualizar la tarea 'completedSubItemsCount' se omite por simplicidad,
-        // ya que solo la usa un gráfico que no funciona)
+        // Actualización Global (sumamos los M² UNA SOLA VEZ, pero la bonificación TOTAL)
+        const statsUpdateGlobal = {
+            productivity: {
+                metrosCompletados: FieldValue.increment(m2_total * operationType), // M² se suman solo una vez
+                metrosEnTiempo: onTime ? FieldValue.increment(m2_total * operationType) : FieldValue.increment(0),
+                metrosFueraDeTiempo: !onTime ? FieldValue.increment(m2_total * operationType) : FieldValue.increment(0),
+                totalBonificacion: FieldValue.increment(totalBonificacionGlobal) // Se suma el total pagado
+            }
+        };
+        batch.set(statsRefGlobal, statsUpdateGlobal, { merge: true });
+        
+        // (La lógica de actualizar la tarea 'completedSubItemsCount' se omite por simplicidad)
 
         await batch.commit();
 
