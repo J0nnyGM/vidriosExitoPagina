@@ -7779,34 +7779,6 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
 
         const tableRows = document.querySelectorAll('#multiple-progress-table-body tr.subitem-row');
 
-        // --- VALIDACIÓN DE USUARIO (Fabricante/Instalador) ---
-        let locationFilled = false;
-        for (const row of tableRows) {
-            if (row.querySelector('.location-input').value.trim()) {
-                locationFilled = true;
-                break;
-            }
-        }
-
-        if (locationFilled) {
-            if (!commonData.manufacturer) {
-                validationError = `Debes seleccionar un 'Fabricante (para todos)' si registras avance.`;
-            }
-            else if (!commonData.installer) {
-                validationError = `Debes seleccionar un 'Instalador (para todos)' si registras avance.`;
-            }
-        }
-
-        if (validationError) {
-            alert(validationError);
-            if (feedbackP) {
-                feedbackP.textContent = 'Revisa los campos obligatorios.';
-                feedbackP.className = 'text-sm mt-4 text-center text-red-600';
-            }
-            throw new Error("Error de validación de usuario (Fabricante/Instalador).");
-        }
-        // --- FIN VALIDACIÓN DE USUARIO ---
-
         const batch = writeBatch(db);
         const photoUploads = [];
         const updatedSubItemIds = [];
