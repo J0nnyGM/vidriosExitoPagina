@@ -141,9 +141,14 @@ const migrateLegacySubItems = async () => {
     for (const subItemDoc of subItemsSnapshot.docs) {
         const subItemData = subItemDoc.data();
 
-        // Comprobar si este sub-ítem ya está migrado (si tiene el campo)
-        if (subItemData.assignedTaskId !== undefined) {
-            continue; // Ya tiene el campo, saltar
+        // Comprobar si este sub-ítem ya está migrado
+        const needsMigration = (
+            subItemData.assignedTaskId === undefined || // Le falta el campo taskId
+            subItemData.m2 === undefined                // O le falta el campo m2
+        );
+
+        if (!needsMigration) {
+            continue; // Ya tiene ambos campos, saltar
         }
 
         let m2 = 0;
@@ -167,10 +172,15 @@ const migrateLegacySubItems = async () => {
         }
 
         // Añadir la actualización al batch
-        batch.update(subItemDoc.ref, {
-            assignedTaskId: null, // <-- Añade el campo para que 'createTask' lo encuentre
-            m2: m2 // <-- Añade el campo M²
-        });
+        const dataToUpdate = {
+            m2: m2 // Asegura que m2 esté presente
+        };
+
+        if (subItemData.assignedTaskId === undefined) {
+            dataToUpdate.assignedTaskId = null; // Solo añade assignedTaskId si no existía
+        }
+
+        batch.update(subItemDoc.ref, dataToUpdate);
         updatedCount++;
 
         // Los batches de Firestore tienen un límite de 500 operaciones
@@ -250,17 +260,17 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
             console.warn(`Estadísticas omitidas: El subItem ${event.params.subItemId} fue instalado sin un ID de Tarea (assignedTaskId).`);
             return; // No podemos asignar M² si no sabemos de qué tarea es.
         }
-        
+
         const taskDoc = await db.doc(`tasks/${taskId}`).get();
         if (!taskDoc.exists) {
             console.error(`Estadísticas omitidas: No se encontró la Tarea ${taskId} (asociada al subItem ${event.params.subItemId}).`);
             return;
         }
-        
+
         const taskData = taskDoc.data();
         // Construimos el array de instaladores desde la Tarea (como solicitaste)
         const installerIds = [taskData.assigneeId, ...(taskData.additionalAssigneeIds || [])].filter(Boolean);
-        
+
         if (installerIds.length === 0) {
             console.warn(`Estadísticas omitidas: La Tarea ${taskId} no tiene instaladores asignados.`);
             return;
@@ -275,12 +285,12 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
                 onTime = false; // Marcamos como "fuera de tiempo"
             }
         }
-        
+
         const installDate = new Date(installDateStr + 'T12:00:00Z');
         const year = installDate.getFullYear();
         const month = String(installDate.getMonth() + 1).padStart(2, '0');
         const statDocId = `${year}_${month}`;
-        
+
         const statsRefGlobal = db.doc("system/dashboardStats");
         const batch = db.batch();
 
@@ -293,10 +303,10 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
                 console.error(`Estadísticas: No se encontró al Usuario ${installerId}. Omitiendo.`);
                 continue; // Saltamos a la siguiente persona
             }
-            
+
             const userData = userDoc.data();
             const level = userData.commissionLevel || "principiante";
-            
+
             // Cálculo de Bonificación (individual)
             let bonificacion_individual = 0;
             if (config && config[level]) {
@@ -319,7 +329,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
 
             console.log(`Estadísticas de ${installerId} para ${statDocId} actualizadas: ${m2_total * operationType}m², $${bonificacion_individual} (A tiempo: ${onTime})`);
         }
-        
+
         // Actualización Global (sumamos los M² UNA SOLA VEZ, pero la bonificación TOTAL)
         const statsUpdateGlobal = {
             productivity: {
@@ -330,7 +340,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
             }
         };
         batch.set(statsRefGlobal, statsUpdateGlobal, { merge: true });
-        
+
         await batch.commit();
 
     } catch (statError) {
