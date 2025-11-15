@@ -74,6 +74,8 @@ let _storage; // <-- AÑADIDO
 let _openConfirmModal; // <-- AÑADIDO
 let activeEmpleadoChart = null;
 let unsubscribeEmpleadosTab = null;
+let multipleManufacturerChoices = null; // <-- AÑADIR ESTA LÍNEA
+let multipleInstallerChoices = null; // <-- AÑADIR ESTA LÍNEA
 
 /**
  * Carga y muestra el historial de cambios de un perfil de usuario.
@@ -7524,7 +7526,39 @@ async function openMultipleProgressModal(originatingTaskId) {
         // 2. Cargar los dropdowns (esto es rápido, usa caché 'usersMap')
         const manufacturerSelect = document.getElementById('multiple-sub-item-manufacturer');
         const installerSelect = document.getElementById('multiple-sub-item-installer');
+        // Primero, llenamos las opciones (como antes)
         await populateUserDropdowns(manufacturerSelect, installerSelect, {});
+
+        // Destruimos instancias anteriores si existen
+        if (multipleManufacturerChoices) multipleManufacturerChoices.destroy();
+        if (multipleInstallerChoices) multipleInstallerChoices.destroy();
+
+        // Inicializamos Choices.js para selección múltiple
+        multipleManufacturerChoices = new Choices(manufacturerSelect, {
+            removeItemButton: true,
+            searchPlaceholderValue: "Añadir fabricante...",
+            allowHTML: false,
+        });
+        multipleInstallerChoices = new Choices(installerSelect, {
+            removeItemButton: true,
+            searchPlaceholderValue: "Añadir instalador...",
+            allowHTML: false,
+        });
+
+        // Pre-seleccionamos los asignados de la tarea
+        try {
+            const taskDoc = await getDoc(doc(db, "tasks", originatingTaskId));
+            if (taskDoc.exists()) {
+                const taskData = taskDoc.data();
+                const allAssignees = [taskData.assigneeId, ...(taskData.additionalAssigneeIds || [])].filter(Boolean);
+                if (allAssignees.length > 0) {
+                    multipleInstallerChoices.setChoiceByValue(allAssignees);
+                    multipleManufacturerChoices.setChoiceByValue(allAssignees);
+                }
+            }
+        } catch (error) {
+            console.warn("No se pudieron pre-seleccionar los usuarios de la tarea.", error);
+        }
         document.getElementById('multiple-sub-item-date').value = new Date().toISOString().split('T')[0];
 
         // 3. Cargar TODO lo demás (la parte lenta)
@@ -7671,6 +7705,17 @@ function closeMultipleProgressModal() {
         multipleProgressModal.style.display = 'none';
     }
 
+    // --- INICIO DE MODIFICACIÓN ---
+    // Destruimos las instancias de Choices.js para liberar memoria
+    if (multipleManufacturerChoices) {
+        multipleManufacturerChoices.destroy();
+        multipleManufacturerChoices = null;
+    }
+    if (multipleInstallerChoices) {
+        multipleInstallerChoices.destroy();
+        multipleInstallerChoices = null;
+    }
+    // --- FIN DE MODIFICACIÓN ---
     // --- INICIO DE LA MODIFICACIÓN ---
     // Reseteamos el botón CADA VEZ que el modal se cierra
     const confirmBtn = document.getElementById('multiple-progress-modal-confirm-btn');
@@ -7775,9 +7820,13 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
     try {
         const originatingTaskId = confirmBtn.dataset.originatingTaskId;
 
+        // --- INICIO DE MODIFICACIÓN (Leer arrays de Choices.js) ---
+        const manufacturerIds = multipleManufacturerChoices ? multipleManufacturerChoices.getValue(true) : [];
+        const installerIds = multipleInstallerChoices ? multipleInstallerChoices.getValue(true) : [];
+
         const commonData = {
-            manufacturer: document.getElementById('multiple-sub-item-manufacturer').value,
-            installer: document.getElementById('multiple-sub-item-installer').value,
+            manufacturers: manufacturerIds, // Plural
+            installers: installerIds,       // Plural
             installDate: document.getElementById('multiple-sub-item-date').value,
         };
 
@@ -7880,15 +7929,17 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
             }
 
             const dataToUpdate = {
-                ...commonData,
+                ...commonData, // Contiene 'installers' (plural) y 'manufacturers' (plural)
                 ...individualData,
                 status: finalStatus,
-                m2: subItemData.m2 || 0, // <-- AÑADIDO: Preservamos los M2
-                assignedTaskId: subItemData.assignedTaskId || null // <-- AÑADIDO: Preservamos el ID de la tarea
+                m2: subItemData.m2 || 0, // ¡EL BUGFIX! Preservamos los M2
+                assignedTaskId: subItemData.assignedTaskId || null // ¡EL BUGFIX! Preservamos el ID de la tarea
             };
 
-            if (!commonData.manufacturer) delete dataToUpdate.manufacturer;
-            if (!commonData.installer) delete dataToUpdate.installer;
+            // Limpiamos los campos singulares antiguos por si acaso
+            delete dataToUpdate.manufacturer;
+            delete dataToUpdate.installer;
+            // --- FIN DE CORRECCIÓN ---
 
             const subItemRef = doc(db, "projects", currentProject.id, "items", itemId, "subItems", subItemId);
             batch.update(subItemRef, dataToUpdate);

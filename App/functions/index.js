@@ -192,11 +192,11 @@ const migrateLegacySubItems = async () => {
 /**
  * Trigger que recalcula el Progreso del Proyecto Y
  * ACTUALIZA LAS ESTADÍSTICAS DE M² COMPLETADOS Y BONIFICACIONES (Globales y de Empleado).
- * (VERSIÓN CORREGIDA: 'onTime' declarado una sola vez)
+ * (VERSIÓN ACTUALIZADA: Distribuye M² y Bonificación entre MÚLTIPLES instaladores)
  */
 exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}/subItems/{subItemId}", async (event) => {
 
-    // --- Bloque 1: Recalcular Progreso del Proyecto (Lógica existente) ---
+    // --- Bloque 1: Recalcular Progreso del Proyecto (Lógica existente, sin cambios) ---
     const projectId = event.params.projectId;
     if (projectId) {
         try {
@@ -206,7 +206,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
         }
     }
 
-    // --- Bloque 2: Calcular Estadísticas de Productividad (LÓGICA ACTUALIZADA) ---
+    // --- Bloque 2: Calcular Estadísticas de Productividad (LÓGICA NUEVA) ---
     const configDoc = await db.doc("system/bonificationConfig").get();
     const config = configDoc.exists ? configDoc.data() : null;
 
@@ -220,60 +220,52 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
         const beforeData = event.data.before.data();
         const afterData = event.data.after.data();
 
-        let m2 = 0;
-        let installerId = null;
+        let operationType = 0; // 1 para sumar, -1 para restar
+        let m2_total = 0;
+        let installerIds = []; // Array de instaladores
         let installDateStr = null;
         let taskId = null;
-        let operationType = 0;
+        let onTime = true; // Por defecto
 
         if (beforeData.status !== "Instalado" && afterData.status === "Instalado") {
             // --- INSTALACIÓN (Sumar) ---
             operationType = 1;
-            m2 = afterData.m2 || 0;
-            installerId = afterData.installer;
+            m2_total = afterData.m2 || 0;
+            // Leemos el nuevo array 'installers' o el antiguo 'installer' como fallback
+            installerIds = afterData.installers || (afterData.installer ? [afterData.installer] : []);
             installDateStr = afterData.installDate;
             taskId = afterData.assignedTaskId;
         } else if (beforeData.status === "Instalado" && afterData.status !== "Instalado") {
             // --- REVERSIÓN (Restar) ---
             operationType = -1;
-            m2 = beforeData.m2 || 0;
-            installerId = beforeData.installer;
+            m2_total = beforeData.m2 || 0;
+            // Leemos el array 'installers' o el antiguo 'installer'
+            installerIds = beforeData.installers || (beforeData.installer ? [beforeData.installer] : []);
             installDateStr = beforeData.installDate;
             taskId = beforeData.assignedTaskId;
         }
 
-        // 1. La comprobación principal ahora solo requiere QUIÉN y CUÁNDO.
-        if (operationType === 0 || !installerId || !installDateStr) {
-            console.log("Cálculo omitido: Faltan datos (operationType, installerId, or installDateStr).");
-            return; // No hay cambio relevante o faltan datos
-        }
-
-        // 2. Obtenemos el usuario (requerido)
-        const userRef = db.doc(`users/${installerId}`);
-        const userDoc = await userRef.get();
-
-        if (!userDoc.exists) {
-            console.error(`Estadísticas: No se encontró al Usuario ${installerId}.`);
+        // Si no hay cambio, no hay instaladores, o no hay fecha, no podemos calcular.
+        if (operationType === 0 || installerIds.length === 0 || !installDateStr) {
             return;
         }
-        const userData = userDoc.data();
 
-        // 3. Obtenemos la fecha y preparamos el ID de estadísticas
-        const installDate = new Date(installDateStr + 'T12:00:00Z');
-        const year = installDate.getFullYear();
-        const month = String(installDate.getMonth() + 1).padStart(2, '0');
-        const statDocId = `${year}_${month}`;
+        // Si los M² son 0, no calculamos (esto es correcto, no hay nada que sumar)
+        if (m2_total === 0) {
+            console.log("Cálculo omitido: M² es 0.");
+            return; 
+        }
 
-        // 4. Verificamos la Tarea (opcional) solo para la bonificación "a tiempo"
-        let onTime = true; // Por defecto, el trabajo es "a tiempo"
+        // --- DIVIDIR LOS M² ENTRE LOS INSTALADORES ---
+        const m2_por_instalador = m2_total / installerIds.length;
 
-        if (taskId) { // taskId viene de afterData o beforeData (línea 154 o 159)
-            const taskRef = db.doc(`tasks/${taskId}`);
-            const taskDoc = await taskRef.get();
-
+        // Verificamos la Tarea (opcional) solo para la bonificación "a tiempo"
+        if (taskId) {
+            const taskDoc = await db.doc(`tasks/${taskId}`).get();
             if (taskDoc.exists) {
                 const taskData = taskDoc.data();
-                if (taskData.dueDate) { // Solo si la tarea tiene fecha límite
+                if (taskData.dueDate) {
+                    const installDate = new Date(installDateStr + 'T12:00:00Z');
                     const dueDate = new Date(taskData.dueDate + 'T23:59:59Z');
                     if (installDate > dueDate) {
                         onTime = false; // Marcamos como "fuera de tiempo"
@@ -283,49 +275,62 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
                 console.warn(`Estadísticas: Se encontró un taskId (${taskId}) pero no la Tarea. Se calculará como 'a tiempo'.`);
             }
         }
-
-        // --- Cálculo de Bonificación ---
-        let bonificacion = 0;
-        const level = userData.commissionLevel || "principiante";
-
-        if (config && config[level]) {
-            const rate = onTime ? config[level].valorM2EnTiempo : config[level].valorM2FueraDeTiempo;
-            bonificacion = (m2 * rate) * operationType;
-        }
-
-        const statsRefEmployee = db.doc(`employeeStats/${installerId}/monthlyStats/${statDocId}`);
+        
+        const installDate = new Date(installDateStr + 'T12:00:00Z');
+        const year = installDate.getFullYear();
+        const month = String(installDate.getMonth() + 1).padStart(2, '0');
+        const statDocId = `${year}_${month}`;
+        
         const statsRefGlobal = db.doc("system/dashboardStats");
-
-        const statsUpdateEmployee = {
-            metrosCompletados: FieldValue.increment(m2 * operationType),
-            metrosEnTiempo: onTime ? FieldValue.increment(m2 * operationType) : FieldValue.increment(0),
-            metrosFueraDeTiempo: !onTime ? FieldValue.increment(m2 * operationType) : FieldValue.increment(0),
-            totalBonificacion: FieldValue.increment(bonificacion)
-        };
-
-        const statsUpdateGlobal = {
-            productivity: {
-                metrosCompletados: FieldValue.increment(m2 * operationType),
-                metrosEnTiempo: onTime ? FieldValue.increment(m2 * operationType) : FieldValue.increment(0),
-                metrosFueraDeTiempo: !onTime ? FieldValue.increment(m2 * operationType) : FieldValue.increment(0),
-                totalBonificacion: FieldValue.increment(bonificacion)
-            }
-        };
-
-        const taskUpdate = {
-            // operationType es (1) para instalar, (-1) para revertir
-            completedSubItemsCount: FieldValue.increment(operationType)
-        };
-
         const batch = db.batch();
-        batch.set(statsRefEmployee, statsUpdateEmployee, { merge: true });
-        batch.set(statsRefGlobal, statsUpdateGlobal, { merge: true });
-        batch.set(taskRef, taskUpdate, { merge: true }); // <-- AÑADIDO: Actualiza la tarea
+
+        // --- BUCLE PARA ACTUALIZAR A CADA INSTALADOR ---
+        for (const installerId of installerIds) {
+            const userDoc = await db.doc(`users/${installerId}`).get();
+            if (!userDoc.exists) {
+                console.error(`Estadísticas: No se encontró al Usuario ${installerId}. Omitiendo.`);
+                continue; // Saltamos a la siguiente persona
+            }
+            
+            const userData = userDoc.data();
+            const level = userData.commissionLevel || "principiante";
+            
+            // Cálculo de Bonificación (porción individual)
+            let bonificacion_individual = 0;
+            if (config && config[level]) {
+                const rate = onTime ? config[level].valorM2EnTiempo : config[level].valorM2FueraDeTiempo;
+                // La bonificación es la porción de M² multiplicada por la tarifa
+                bonificacion_individual = (m2_por_instalador * rate) * operationType;
+            }
+
+            // Actualización para el Empleado
+            const statsRefEmployee = db.doc(`employeeStats/${installerId}/monthlyStats/${statDocId}`);
+            const statsUpdateEmployee = {
+                metrosCompletados: FieldValue.increment(m2_por_instalador * operationType),
+                metrosEnTiempo: onTime ? FieldValue.increment(m2_por_instalador * operationType) : FieldValue.increment(0),
+                metrosFueraDeTiempo: !onTime ? FieldValue.increment(m2_por_instalador * operationType) : FieldValue.increment(0),
+                totalBonificacion: FieldValue.increment(bonificacion_individual)
+            };
+            batch.set(statsRefEmployee, statsUpdateEmployee, { merge: true });
+
+            // Actualización Global (sumamos la porción de este empleado)
+            const statsUpdateGlobal = {
+                productivity: {
+                    metrosCompletados: FieldValue.increment(m2_por_instalador * operationType),
+                    metrosEnTiempo: onTime ? FieldValue.increment(m2_por_instalador * operationType) : FieldValue.increment(0),
+                    metrosFueraDeTiempo: !onTime ? FieldValue.increment(m2_por_instalador * operationType) : FieldValue.increment(0),
+                    totalBonificacion: FieldValue.increment(bonificacion_individual)
+                }
+            };
+            batch.set(statsRefGlobal, statsUpdateGlobal, { merge: true });
+
+            console.log(`Estadísticas de ${installerId} para ${statDocId} actualizadas: ${m2_por_instalador * operationType}m², $${bonificacion_individual} (A tiempo: ${onTime})`);
+        }
+        
+        // (La lógica de actualizar la tarea 'completedSubItemsCount' se omite por simplicidad,
+        // ya que solo la usa un gráfico que no funciona)
 
         await batch.commit();
-
-
-        console.log(`Estadísticas de ${installerId} para ${statDocId} actualizadas: ${m2 * operationType}m², $${bonificacion} (A tiempo: ${onTime})`);
 
     } catch (statError) {
         console.error(`Error al actualizar estadísticas de operario:`, statError);

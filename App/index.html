@@ -1941,15 +1941,13 @@
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 border rounded-lg bg-gray-50">
                 <div>
                     <label for="multiple-sub-item-manufacturer"
-                        class="block text-sm font-medium text-gray-700">Fabricante (para todos)</label>
-                    <select id="multiple-sub-item-manufacturer"
-                        class="mt-1 block w-full px-3 py-2 border rounded-md bg-white"></select>
+                        class="block text-sm font-medium text-gray-700">Fabricante(s)</label>
+                    <select id="multiple-sub-item-manufacturer" class="mt-1 block w-full" multiple></select>
                 </div>
                 <div>
-                    <label for="multiple-sub-item-installer" class="block text-sm font-medium text-gray-700">Instalador
-                        (para todos)</label>
-                    <select id="multiple-sub-item-installer"
-                        class="mt-1 block w-full px-3 py-2 border rounded-md bg-white"></select>
+                    <label for="multiple-sub-item-installer"
+                        class="block text-sm font-medium text-gray-700">Instalador(es)</label>
+                    <select id="multiple-sub-item-installer" class="mt-1 block w-full" multiple></select>
                 </div>
                 <div>
                     <label for="multiple-sub-item-date" class="block text-sm font-medium text-gray-700">Fecha de
@@ -2264,10 +2262,13 @@
             <h3 class="text-xl font-bold mb-4">Tomar Foto</h3>
             <div class="aspect-video bg-gray-200 rounded overflow-hidden">
                 <video id="camera-feed" class="w-full h-full object-cover" autoplay playsinline></video>
-                <canvas id="camera-canvas" class="hidden"></canvas> </div>
+                <canvas id="camera-canvas" class="hidden"></canvas>
+            </div>
             <div class="mt-4 flex justify-end gap-3">
-                <button type="button" id="camera-cancel-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button>
-                <button type="button" id="camera-capture-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Tomar Foto</button>
+                <button type="button" id="camera-cancel-btn"
+                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button>
+                <button type="button" id="camera-capture-btn"
+                    class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Tomar Foto</button>
             </div>
         </div>
     </div>
