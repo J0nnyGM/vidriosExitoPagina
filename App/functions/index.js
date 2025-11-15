@@ -192,7 +192,7 @@ const migrateLegacySubItems = async () => {
 /**
  * Trigger que recalcula el Progreso del Proyecto Y
  * ACTUALIZA LAS ESTADÍSTICAS DE M² COMPLETADOS Y BONIFICACIONES (Globales y de Empleado).
- * (VERSIÓN CORREGIDA: Duplica M² y Bonificación para MÚLTIPLES instaladores)
+ * (VERSIÓN CORREGIDA: Obtiene instaladores desde el TaskId)
  */
 exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}/subItems/{subItemId}", async (event) => {
 
@@ -206,7 +206,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
         }
     }
 
-    // --- Bloque 2: Calcular Estadísticas de Productividad (LÓGICA NUEVA) ---
+    // --- Bloque 2: Calcular Estadísticas de Productividad (LÓGICA CORREGIDA) ---
     const configDoc = await db.doc("system/bonificationConfig").get();
     const config = configDoc.exists ? configDoc.data() : null;
 
@@ -221,8 +221,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
         const afterData = event.data.after.data();
 
         let operationType = 0; // 1 para sumar, -1 para restar
-        let m2_total = 0; // Los M² totales de la pieza
-        let installerIds = []; // Array de instaladores
+        let m2_total = 0;
         let installDateStr = null;
         let taskId = null;
         let onTime = true; // Por defecto
@@ -231,45 +230,49 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
             // --- INSTALACIÓN (Sumar) ---
             operationType = 1;
             m2_total = afterData.m2 || 0;
-            // Leemos el nuevo array 'installers' o el antiguo 'installer' como fallback
-            installerIds = afterData.installers || (afterData.installer ? [afterData.installer] : []);
             installDateStr = afterData.installDate;
-            taskId = afterData.assignedTaskId;
+            taskId = afterData.assignedTaskId; // <-- Leemos el TaskId que el frontend preservó
         } else if (beforeData.status === "Instalado" && afterData.status !== "Instalado") {
             // --- REVERSIÓN (Restar) ---
             operationType = -1;
             m2_total = beforeData.m2 || 0;
-            // Leemos el array 'installers' o el antiguo 'installer'
-            installerIds = beforeData.installers || (beforeData.installer ? [beforeData.installer] : []);
             installDateStr = beforeData.installDate;
             taskId = beforeData.assignedTaskId;
         }
 
-        // Si no hay cambio, no hay instaladores, o no hay fecha, no podemos calcular.
-        if (operationType === 0 || installerIds.length === 0 || !installDateStr) {
+        // Si no hay cambio, o no hay fecha, o no hay M², no podemos calcular.
+        if (operationType === 0 || !installDateStr || m2_total === 0) {
             return;
         }
 
-        // Si los M² son 0, no calculamos (esto es correcto, no hay nada que sumar)
-        if (m2_total === 0) {
-            console.log("Cálculo omitido: M² es 0.");
-            return; 
+        // --- LÓGICA CLAVE: Obtener Instaladores desde la Tarea ---
+        if (!taskId) {
+            console.warn(`Estadísticas omitidas: El subItem ${event.params.subItemId} fue instalado sin un ID de Tarea (assignedTaskId).`);
+            return; // No podemos asignar M² si no sabemos de qué tarea es.
         }
+        
+        const taskDoc = await db.doc(`tasks/${taskId}`).get();
+        if (!taskDoc.exists) {
+            console.error(`Estadísticas omitidas: No se encontró la Tarea ${taskId} (asociada al subItem ${event.params.subItemId}).`);
+            return;
+        }
+        
+        const taskData = taskDoc.data();
+        // Construimos el array de instaladores desde la Tarea (como solicitaste)
+        const installerIds = [taskData.assigneeId, ...(taskData.additionalAssigneeIds || [])].filter(Boolean);
+        
+        if (installerIds.length === 0) {
+            console.warn(`Estadísticas omitidas: La Tarea ${taskId} no tiene instaladores asignados.`);
+            return;
+        }
+        // --- FIN LÓGICA CLAVE ---
 
-        // Verificamos la Tarea (opcional) solo para la bonificación "a tiempo"
-        if (taskId) {
-            const taskDoc = await db.doc(`tasks/${taskId}`).get();
-            if (taskDoc.exists) {
-                const taskData = taskDoc.data();
-                if (taskData.dueDate) {
-                    const installDate = new Date(installDateStr + 'T12:00:00Z');
-                    const dueDate = new Date(taskData.dueDate + 'T23:59:59Z');
-                    if (installDate > dueDate) {
-                        onTime = false; // Marcamos como "fuera de tiempo"
-                    }
-                }
-            } else {
-                console.warn(`Estadísticas: Se encontró un taskId (${taskId}) pero no la Tarea. Se calculará como 'a tiempo'.`);
+        // Verificamos si fue "a tiempo"
+        if (taskData.dueDate) {
+            const installDate = new Date(installDateStr + 'T12:00:00Z');
+            const dueDate = new Date(taskData.dueDate + 'T23:59:59Z');
+            if (installDate > dueDate) {
+                onTime = false; // Marcamos como "fuera de tiempo"
             }
         }
         
@@ -283,7 +286,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
 
         let totalBonificacionGlobal = 0; // Acumulador para el dashboard global
 
-        // --- BUCLE PARA ACTUALIZAR A CADA INSTALADOR ---
+        // --- BUCLE PARA ACTUALIZAR A CADA INSTALADOR (Tu lógica de 100% M² para todos) ---
         for (const installerId of installerIds) {
             const userDoc = await db.doc(`users/${installerId}`).get();
             if (!userDoc.exists) {
@@ -328,8 +331,6 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
         };
         batch.set(statsRefGlobal, statsUpdateGlobal, { merge: true });
         
-        // (La lógica de actualizar la tarea 'completedSubItemsCount' se omite por simplicidad)
-
         await batch.commit();
 
     } catch (statError) {
