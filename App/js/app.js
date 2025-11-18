@@ -94,13 +94,10 @@ async function loadProfileHistory(userId) {
 
     titleEl.textContent = `Historial de Cambios: ${userName}`;
 
-    // --- INICIO DE MODIFICACIÓN (Estilo y Helpers) ---
     listContainer.innerHTML = '<p class="text-sm text-gray-400 italic text-center p-4">Cargando historial...</p>';
-    // Damos un fondo gris al contenedor para que las tarjetas blancas resalten
     listContainer.className = "flex-grow overflow-y-auto pr-2 space-y-3 bg-gray-100 p-3 rounded-b-lg";
     modal.style.display = 'flex';
 
-    // 1. Helper para traducir las llaves de la base de datos
     const keyTranslator = {
         firstName: 'Nombre',
         lastName: 'Apellido',
@@ -108,32 +105,17 @@ async function loadProfileHistory(userId) {
         phone: 'Celular',
         address: 'Dirección',
         email: 'Correo',
-        profilePhotoURL: 'Foto de Perfil',
+        // profilePhotoURL: 'Foto de Perfil', // Ya no se mostrará
         tallaCamiseta: 'Talla Camiseta',
         tallaPantalón: 'Talla Pantalón',
         tallaBotas: 'Talla Botas'
     };
 
-    // 2. Helper para formatear los valores
-    /**
-     * Formatea un valor para mostrarlo (versión segura).
-     * Maneja strings, números, null y undefined.
-     */
     function formatValue(value) {
-        // 1. Si el valor es null o undefined, retorna un string vacío
-        if (value === null || typeof value === 'undefined') {
-            return '';
-        }
-
-        // 2. Si es un string, límpialo
-        if (typeof value === 'string') {
-            return value.trim();
-        }
-
-        // 3. Si es cualquier otra cosa (número, booleano), conviértelo a string
+        if (value === null || typeof value === 'undefined') return '';
+        if (typeof value === 'string') return value.trim();
         return String(value);
     }
-    // --- FIN DE MODIFICACIÓN (Helpers) ---
 
     const q = query(
         collection(db, "users", userId, "profileHistory"),
@@ -156,11 +138,21 @@ async function loadProfileHistory(userId) {
             const changedByUser = usersMap.get(entry.changedBy);
             const changedByName = changedByUser ? (changedByUser.firstName || 'Usuario') : 'Desconocido';
 
-            // --- INICIO DE MODIFICACIÓN (Tabla de Cambios) ---
-            // Creamos una mini-tabla (dl) para los cambios
+            // --- INICIO DE MODIFICACIÓN: Filtrar campos ocultos ---
+            // Lista de campos que NO queremos mostrar en el historial
+            const hiddenFields = ['salarioBasico', 'profilePhotoURL', 'commissionLevel', 'deduccionSobreMinimo'];
+            
+            let hasVisibleChanges = false;
             let changesHtml = '<dl class="mt-2 text-xs space-y-1 border-t pt-2">';
+            
             for (const [key, value] of Object.entries(entry.changes)) {
-                const translatedKey = keyTranslator[key] || key; // Traduce la llave
+                // Si la llave está en la lista de ocultos, la saltamos
+                if (hiddenFields.includes(key)) {
+                    continue;
+                }
+
+                hasVisibleChanges = true;
+                const translatedKey = keyTranslator[key] || key;
 
                 changesHtml += `
                     <div class="grid grid-cols-3 gap-1">
@@ -173,23 +165,26 @@ async function loadProfileHistory(userId) {
                 `;
             }
             changesHtml += '</dl>';
-            // --- FIN DE MODIFICACIÓN (Tabla de Cambios) ---
+            // --- FIN DE MODIFICACIÓN ---
 
-            const logEntry = document.createElement('div');
-
-            // --- INICIO DE MODIFICACIÓN (Card de Historial) ---
-            // Aplicamos el nuevo estilo de "Tarjeta"
-            logEntry.className = 'bg-white rounded-lg shadow-sm border border-gray-200 p-3';
-            logEntry.innerHTML = `
-                <div class="flex justify-between items-center">
-                    <p class="text-sm font-semibold text-blue-700">Cambio por: ${changedByName}</p>
-                    <p class="text-xs text-gray-500">${dateString}</p>
-                </div>
-                ${changesHtml}
-            `;
-            // --- FIN DE MODIFICACIÓN (Card de Historial) ---
-            listContainer.appendChild(logEntry);
+            // Solo mostramos la tarjeta si hay cambios visibles
+            if (hasVisibleChanges) {
+                const logEntry = document.createElement('div');
+                logEntry.className = 'bg-white rounded-lg shadow-sm border border-gray-200 p-3';
+                logEntry.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <p class="text-sm font-semibold text-blue-700">Cambio por: ${changedByName}</p>
+                        <p class="text-xs text-gray-500">${dateString}</p>
+                    </div>
+                    ${changesHtml}
+                `;
+                listContainer.appendChild(logEntry);
+            }
         });
+        
+        if (listContainer.children.length === 0) {
+             listContainer.innerHTML = '<p class="text-sm text-gray-400 italic text-center p-4">No hay cambios visibles en el historial reciente.</p>';
+        }
 
     }, (error) => {
         console.error("Error al cargar historial de perfil:", error);
@@ -258,7 +253,7 @@ let modelsLoaded = false; // <-- AÑADE ESTA LÍNEA
 /**
  * Carga los modelos de IA para la detección Y RECONOCIMIENTO de rostros.
  * (VERSIÓN CORREGIDA: Carga SsdMobilenetv1)
- */
+ 
 async function loadFaceAPImodels() {
     console.log("Cargando modelos de reconocimiento facial...");
     try {
@@ -275,6 +270,19 @@ async function loadFaceAPImodels() {
     } catch (error) {
         console.error("Error crítico: No se pudieron cargar los modelos de face-api.js:", error);
     }
+}*/
+
+/**
+ * Carga los modelos de IA para la detección Y RECONOCIMIENTO de rostros.
+ * (VERSIÓN CORREGIDA: Carga SsdMobilenetv1)
+ */
+async function loadFaceAPImodels() {
+    console.log("RECONOCIMIENTO FACIAL DESHABILITADO. Saltando carga de modelos.");
+    // --- INICIO DE MODIFICACIÓN ---
+    // Simplemente establecemos 'modelsLoaded' en true para no bloquear el flujo de la app
+    // y para evitar intentos de detección.
+    modelsLoaded = true;
+    // --- FIN DE MODIFICACIÓN ---
 }
 
 /**
@@ -282,7 +290,7 @@ async function loadFaceAPImodels() {
  * Carga la foto de perfil y genera el descriptor facial para comparar.
  * @param {string} imageUrl - La URL de la foto de perfil del usuario.
  * @returns {Promise<Float32Array|null>} El descriptor facial o null.
- */
+ 
 async function generateProfileFaceDescriptor(imageUrl) {
     if (!modelsLoaded) {
         console.warn("Los modelos de IA aún no han cargado. Saltando generación de descriptor.");
@@ -307,8 +315,20 @@ async function generateProfileFaceDescriptor(imageUrl) {
         console.error("Error al generar el descriptor de perfil:", error);
         return null; // <-- CAMBIO CLAVE
     }
-}
+}*/
 
+/**
+ * (VERSIÓN CORREGIDA: Devuelve el descriptor)
+ * Carga la foto de perfil y genera el descriptor facial para comparar.
+ * @param {string} imageUrl - La URL de la foto de perfil del usuario.
+ * @returns {Promise<Float32Array|null>} El descriptor facial o null.
+ */
+async function generateProfileFaceDescriptor(imageUrl) {
+    // --- INICIO DE MODIFICACIÓN ---
+    console.warn("RECONOCIMIENTO FACIAL DESHABILITADO. Omitiendo generación de descriptor.");
+    return null;
+    // --- FIN DE MODIFICACIÓN ---
+}
 
 /**
  * Convierte un timestamp o fecha a un formato de tiempo relativo.
@@ -5720,11 +5740,12 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
         }
-        case 'editUser':
-            title = 'Editar Usuario'; btnText = 'Guardar Cambios'; btnClass = 'bg-yellow-500 hover:bg-yellow-600';
-            modalContentDiv.classList.add('max-w-2xl'); // Aseguramos el tamaño
+case 'editUser':
+            title = 'Editar Usuario'; 
+            btnText = 'Guardar Cambios'; 
+            btnClass = 'bg-yellow-500 hover:bg-yellow-600';
+            modalContentDiv.classList.add('max-w-2xl'); // Aseguramos el ancho
 
-            // --- INICIO DE LA MODIFICACIÓN (HTML con Uploader) ---
             bodyHtml = `
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     
@@ -5749,30 +5770,54 @@ async function openMainModal(type, data = {}) {
                         <p id="editUser-photo-status" class="text-xs text-center text-blue-600 h-4 mt-1"></p>
                     </div>
                     
-                    <div class="md:col-span-2 space-y-4">
-                        <div>
-                            <label for="user-firstName" class="block text-sm font-medium text-gray-700">Nombre</label>
-                            <input type="text" id="user-firstName" name="firstName" value="${data.firstName}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                    <div class="md:col-span-2 space-y-3">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700">Nombre</label>
+                                <input type="text" name="firstName" value="${data.firstName}" required class="mt-1 w-full border rounded-md p-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700">Apellido</label>
+                                <input type="text" name="lastName" value="${data.lastName}" required class="mt-1 w-full border rounded-md p-2 text-sm">
+                            </div>
                         </div>
                         <div>
-                            <label for="user-lastName" class="block text-sm font-medium text-gray-700">Apellido</label>
-                            <input type="text" id="user-lastName" name="lastName" value="${data.lastName}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                            <label class="block text-xs font-medium text-gray-700">Cédula</label>
+                            <input type="text" name="idNumber" value="${data.idNumber}" required class="mt-1 w-full border rounded-md p-2 text-sm">
                         </div>
                         <div>
-                            <label for="user-idNumber" class="block text-sm font-medium text-gray-700">Cédula</label>
-                            <input type="text" id="user-idNumber" name="idNumber" value="${data.idNumber}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                            <label class="block text-xs font-medium text-gray-700">Correo (No editable)</label>
+                            <input type="email" name="email" value="${data.email}" required class="mt-1 w-full border rounded-md p-2 text-sm bg-gray-100" readonly>
                         </div>
                         <div>
-                            <label for="user-email" class="block text-sm font-medium text-gray-700">Correo (No editable)</label>
-                            <input type="email" id="user-email" name="email" value="${data.email}" required class="mt-1 block w-full px-3 py-2 border rounded-md bg-gray-100" readonly>
+                            <label class="block text-xs font-medium text-gray-700">Celular</label>
+                            <input type="tel" name="phone" value="${data.phone}" required class="mt-1 w-full border rounded-md p-2 text-sm">
                         </div>
                         <div>
-                            <label for="user-phone" class="block text-sm font-medium text-gray-700">Celular</label>
-                            <input type="tel" id="user-phone" name="phone" value="${data.phone}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                            <label class="block text-xs font-medium text-gray-700">Dirección</label>
+                            <input type="text" name="address" value="${data.address}" required class="mt-1 w-full border rounded-md p-2 text-sm">
                         </div>
-                        <div>
-                            <label for="user-address" class="block text-sm font-medium text-gray-700">Dirección</label>
-                            <input type="text" id="user-address" name="address" value="${data.address}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+
+                        <div class="pt-3 border-t mt-3">
+                            <h4 class="text-sm font-bold text-gray-800 mb-2">Información Bancaria (Pago de Nómina)</h4>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700">Banco</label>
+                                    <input type="text" name="bankName" value="${data.bankName || ''}" class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="Ej: Bancolombia">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700">Tipo de Cuenta</label>
+                                    <select name="accountType" class="mt-1 w-full border rounded-md p-2 text-sm bg-white">
+                                        <option value="Ahorros" ${data.accountType === 'Ahorros' ? 'selected' : ''}>Ahorros</option>
+                                        <option value="Corriente" ${data.accountType === 'Corriente' ? 'selected' : ''}>Corriente</option>
+                                        <option value="Nequi/Daviplata" ${data.accountType === 'Nequi/Daviplata' ? 'selected' : ''}>Nequi / Daviplata</option>
+                                    </select>
+                                </div>
+                                <div class="col-span-2">
+                                    <label class="block text-xs font-medium text-gray-700">Número de Cuenta</label>
+                                    <input type="text" name="accountNumber" value="${data.accountNumber || ''}" class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="Ej: 031-123456-78">
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -5822,47 +5867,46 @@ async function openMainModal(type, data = {}) {
                             </label>
                         </div>
                         <p class="text-xs text-gray-500 mt-1 ml-6">Si no se marca, las deducciones se calculan sobre el total devengado (Básico + Bonos + Horas Extra).</p>
-                        </div>
+                    </div>
+
                     <div class="md:col-span-3 border-t pt-4">
                         <button type="button" data-action="view-profile-history" data-userid="${data.id}" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg">
                             Ver Historial de Cambios
                         </button>
                     </div>
+                </div>
             `;
 
-
-            // Lógica JS para el nuevo dropzone
+            // Lógica JS para inicializar el modal (Fotos y Moneda)
             setTimeout(() => {
-                // Reseteamos el archivo procesado cada vez que se abre el modal
-                processedPhotoFile = null;
+                // 1. Moneda
+                const salarioInput = document.getElementById('user-salarioBasico');
+                if (salarioInput) setupCurrencyInput(salarioInput);
 
+                // 2. Fotos (Cámara y Upload)
+                processedPhotoFile = null;
                 const fileInput = document.getElementById('editUser-photo-input');
                 const uploadBtn = document.getElementById('editUser-upload-btn');
                 const cameraBtn = document.getElementById('editUser-camera-btn');
 
                 if (uploadBtn && fileInput) {
-                    // El botón "Subir Foto" abre el selector de archivos
                     uploadBtn.addEventListener('click', () => fileInput.click());
                 }
 
                 if (fileInput) {
-                    // Cuando se selecciona un archivo (HEIC, JPG, etc.)
                     fileInput.addEventListener('change', (e) => {
                         const file = e.target.files[0];
                         if (file) {
-                            // Llamamos a la nueva función de procesamiento/conversión
                             handlePhotoFile(file, 'editUser-photo-input', 'editUser-img-preview');
                         }
                     });
                 }
 
                 if (cameraBtn) {
-                    // El botón "Tomar Foto" abre el modal de la cámara
                     cameraBtn.addEventListener('click', () => {
                         openCameraModal('editUser-photo-input', 'editUser-img-preview');
                     });
                 }
-
             }, 100);
 
             break;
@@ -7265,6 +7309,11 @@ modalForm.addEventListener('submit', async (e) => {
                     idNumber: data.idNumber,
                     phone: data.phone,
                     address: data.address,
+
+                    bankName: data.bankName || '',
+                    accountType: data.accountType || 'Ahorros',
+                    accountNumber: data.accountNumber || '',
+
                     tallaCamiseta: data.tallaCamiseta || '',
                     tallaPantalón: data.tallaPantalón || '',
                     tallaBotas: data.tallaBotas || '',
@@ -7285,6 +7334,8 @@ modalForm.addEventListener('submit', async (e) => {
                 if ((data.commissionLevel || '') !== (oldUserData.commissionLevel || '')) changes.commissionLevel = { old: oldUserData.commissionLevel || '', new: data.commissionLevel };
                 if ((parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0) !== (oldUserData.salarioBasico || 0)) changes.salarioBasico = { old: oldUserData.salarioBasico || 0, new: parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0 };
                 if ((parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0) !== (oldUserData.salarioBasico || 0)) changes.salarioBasico = { old: oldUserData.salarioBasico || 0, new: parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0 };
+                if (data.bankName !== oldUserData.bankName) changes.bankName = { old: oldUserData.bankName || '', new: data.bankName };
+                if (data.accountNumber !== oldUserData.accountNumber) changes.accountNumber = { old: oldUserData.accountNumber || '', new: data.accountNumber };
 
                 // 6. Añadir la URL de la foto SOLO SI se subió una nueva
                 if (downloadURL) {
@@ -7766,18 +7817,21 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
     // 1. Obtener la lista completa del equipo de la Tarea (solo una vez)
     const originatingTaskId = confirmBtn.dataset.originatingTaskId;
     if (originatingTaskId) {
-        const taskRef = doc(db, "tasks", originatingTaskId);
-        const taskSnap = await getDoc(taskRef);
-        if (taskSnap.exists()) {
-            taskData = taskSnap.data();
-            taskTeamUids.push(taskData.assigneeId);
-            if (Array.isArray(taskData.additionalAssigneeIds)) {
-                // Agregamos los IDs adicionales, asegurando que no se dupliquen
-                taskTeamUids.push(...taskData.additionalAssigneeIds.filter(uid => uid !== taskData.assigneeId));
+        try {
+            const taskRef = doc(db, "tasks", originatingTaskId);
+            const taskSnap = await getDoc(taskRef);
+            if (taskSnap.exists()) {
+                taskData = taskSnap.data();
+                if (taskData.assigneeId) taskTeamUids.push(taskData.assigneeId);
+                if (Array.isArray(taskData.additionalAssigneeIds)) {
+                    taskTeamUids.push(...taskData.additionalAssigneeIds.filter(uid => uid !== taskData.assigneeId));
+                }
             }
+        } catch (e) {
+            console.warn("No se pudo cargar el equipo de la tarea:", e);
         }
     }
-    taskTeamUids = taskTeamUids.filter(Boolean); // Limpiamos cualquier valor nulo
+    taskTeamUids = taskTeamUids.filter(Boolean); // Limpiamos nulos
 
     let success = false;
     let validationError = null;
@@ -7795,100 +7849,73 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
     currentItem = null;
 
     try {
-        const originatingTaskId = confirmBtn.dataset.originatingTaskId;
-
+        // 2. Definir quién instala (El usuario logueado)
         const commonData = {
             installDate: document.getElementById('multiple-sub-item-date').value,
             installer: currentUser.uid
         };
 
         const tableRows = document.querySelectorAll('#multiple-progress-table-body tr.subitem-row');
-
         const batch = writeBatch(db);
         const photoUploads = [];
         const updatedSubItemIds = [];
         let rowsProcessed = 0;
 
-        // 4. Obtener IDs y datos (¡CORREGIDO!)
-        const subItemPaths = Array.from(tableRows).map(row => {
-            return {
-                itemId: row.dataset.itemId,
-                subItemId: row.dataset.id
-            };
-        });
-
+        // (Mapeo de subItemsMap omitido por brevedad, se mantiene igual)
+        const subItemPaths = Array.from(tableRows).map(row => ({
+            itemId: row.dataset.itemId,
+            subItemId: row.dataset.id
+        }));
         const subItemsMap = new Map();
-
         if (subItemPaths.length > 0) {
             const subItemPromises = subItemPaths.map(path =>
                 getDoc(doc(db, "projects", currentProject.id, "items", path.itemId, "subItems", path.subItemId))
             );
             const subItemDocs = await Promise.all(subItemPromises);
             subItemDocs.forEach(docSnap => {
-                if (docSnap.exists()) {
-                    subItemsMap.set(docSnap.id, docSnap.data());
-                }
+                if (docSnap.exists()) subItemsMap.set(docSnap.id, docSnap.data());
             });
         }
 
-
         // 5. Iterar y validar
-for (const row of tableRows) {
+        for (const row of tableRows) {
             const subItemId = row.dataset.id;
             const itemId = row.dataset.itemId;
-
-            if (!itemId) {
-                console.warn(`Omitiendo fila: falta data-item-id.`, row);
-                continue;
-            }
+            if (!itemId) continue;
 
             const subItemData = subItemsMap.get(subItemId) || {};
 
             const individualData = {
                 location: row.querySelector('.location-input').value.trim(),
-                realWidth: (parseFloat(row.querySelector('.real-width-input').value) / 100) || 0, // cm a m
-                realHeight: (parseFloat(row.querySelector('.real-height-input').value) / 100) || 0, // cm a m
+                realWidth: (parseFloat(row.querySelector('.real-width-input').value) / 100) || 0,
+                realHeight: (parseFloat(row.querySelector('.real-height-input').value) / 100) || 0,
             };
             const photoFile = row.querySelector('.photo-input').files[0];
 
-            if (!individualData.location) {
-                continue;
-            }
+            if (!individualData.location) continue;
 
             rowsProcessed++;
             updatedSubItemIds.push(subItemId);
 
             let finalStatus = subItemData.status;
-            
-            // La presencia del instalador asegura el estado 'Instalado'
-            if (commonData.installer) {
-                finalStatus = 'Instalado';
-            } else if (commonData.manufacturer) {
-                finalStatus = 'Pendiente de Instalación';
-            }
+            if (commonData.installer) finalStatus = 'Instalado';
+            else if (commonData.manufacturer) finalStatus = 'Pendiente de Instalación';
 
             if (finalStatus === 'Instalado') {
                 if (!photoFile && !subItemData.photoURL) {
-                    validationError = `Falta la foto de evidencia para la Unidad N° ${subItemData.number || subItemId.substring(0, 5)}... (Lugar: ${individualData.location}).`;
+                    validationError = `Falta la foto de evidencia para la Unidad (Lugar: ${individualData.location}).`;
                     break;
                 }
             }
-            
+
             const dataToUpdate = {
-                ...commonData, 
-                ...individualData, 
+                ...commonData,
+                ...individualData,
                 status: finalStatus,
-                m2: subItemData.m2 || 0, 
-                
-                // Aseguramos que el fabricante exista, si no, usamos el usuario que sube el avance
-                manufacturer: subItemData.manufacturer || currentUser.uid, 
-                
-                // Preservar el assignedTaskId para compatibilidad, o setearlo si es la primera vez
-                assignedTaskId: subItemData.assignedTaskId || (taskData ? originatingTaskId : null), 
-                
-                // --- CAMBIO CLAVE PARA BONIFICACIÓN ---
-                installersTeam: taskTeamUids // Guardamos el array con TODOS los IDs de la tarea
-                // -------------------------------------
+                m2: subItemData.m2 || 0,
+                manufacturer: subItemData.manufacturer || currentUser.uid,
+                assignedTaskId: subItemData.assignedTaskId || (taskData ? originatingTaskId : null),
+                installersTeam: taskTeamUids // Array del equipo para bonificación
             };
 
             const subItemRef = doc(db, "projects", currentProject.id, "items", itemId, "subItems", subItemId);
@@ -7896,7 +7923,7 @@ for (const row of tableRows) {
 
             if (photoFile) {
                 if (subItemData && currentProject.id && subItemData.itemId) {
-                    const watermarkText = `Vidrios Exito - ${currentProject?.name || currentProject.id} - ${commonData.installDate} - ${individualData.location}`;
+                    const watermarkText = `Vidrios Exito - ${currentProject?.name} - ${commonData.installDate} - ${individualData.location}`;
                     photoUploads.push({
                         subItemId: subItemId,
                         photoFile: photoFile,
@@ -7904,85 +7931,65 @@ for (const row of tableRows) {
                         itemId: subItemData.itemId,
                         projectId: currentProject.id
                     });
-                } else {
-                    console.warn(`No se pudo obtener projectId o itemId para ${subItemId}, no se subirá foto.`);
                 }
             }
-        } 
+        }
 
-
-        // 6. Validaciones Pre-Commit
+        // 6. Validaciones
         if (validationError) {
             alert(validationError);
-            if (feedbackP) {
-                feedbackP.textContent = 'Revisa los campos obligatorios.';
-                feedbackP.className = 'text-sm mt-4 text-center text-red-600';
-            }
             throw new Error("Error de validación de usuario.");
         }
 
         if (rowsProcessed === 0) {
-            alert("No se registró ningún avance. Debes llenar el campo 'Lugar de Instalación' para al menos una unidad.");
-            if (feedbackP) {
-                feedbackP.textContent = 'Registro cancelado.';
-                feedbackP.className = 'text-sm mt-4 text-center text-red-600';
-            }
+            alert("No se registró ningún avance.");
             throw new Error("No se procesaron filas.");
         }
 
-        // 7. Guardar en Base de Datos
+        // 7. Guardar
         await batch.commit();
         if (feedbackP) feedbackP.textContent = `Datos guardados para ${rowsProcessed} unidad(es). Procesando fotos...`;
 
-
-        // 8. Lógica de fotos
+        // 8. Fotos
         for (const upload of photoUploads) {
             try {
                 const watermarkedBlob = await addWatermark(upload.photoFile, upload.watermarkText);
                 const storageRef = ref(storage, `evidence/${upload.projectId}/${upload.itemId}/${upload.subItemId}`);
                 const snapshot = await uploadBytes(storageRef, watermarkedBlob);
                 const downloadURL = await getDownloadURL(snapshot.ref);
-
                 const subItemRef_photo = doc(db, "projects", upload.projectId, "items", upload.itemId, "subItems", upload.subItemId);
                 await updateDoc(subItemRef_photo, { photoURL: downloadURL });
             } catch (photoError) {
-                console.error(`Error procesando/subiendo foto para ${upload.subItemId}:`, photoError);
+                console.error(`Error foto ${upload.subItemId}:`, photoError);
             }
         }
 
-// 9. Lógica de verificación de tarea
+        // 9. Lógica de verificación de tarea
         let feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)!`;
+
+        // --- CORRECCIÓN: DEFINICIÓN DE LA VARIABLE FALTANTE ---
+        let feedbackClass = 'text-sm mt-4 text-center text-green-600';
+        // -----------------------------------------------------
+
         let isTaskNowComplete = false;
-        
+
         if (originatingTaskId && commonData.installer) {
             if (feedbackP) feedbackP.textContent = 'Fotos subidas. Verificando estado de la tarea...';
-            
-            // Usamos taskData cargada arriba
-            if (!taskData) { // Manejo por si TaskData no se cargó correctamente antes del loop
-                const taskDoc = await getDoc(doc(db, "tasks", originatingTaskId));
-                if (taskDoc.exists()) {
-                    taskData = taskDoc.data();
-                } else {
-                    throw new Error("No se pudo encontrar la tarea original para verificarla.");
-                }
-            }
 
-            if (taskData.specificSubItemIds && taskData.specificSubItemIds.length > 0 && taskData.selectedItems) {
+            if (taskData && taskData.specificSubItemIds && taskData.specificSubItemIds.length > 0 && taskData.selectedItems) {
                 const allTaskSubItemIds = taskData.specificSubItemIds;
-
                 let totalPending = 0;
 
                 for (const item of taskData.selectedItems) {
                     const itemId = item.itemId;
                     const subItemDocs = [];
+                    // Lógica de chunks para verificar estado...
                     for (let i = 0; i < allTaskSubItemIds.length; i += 30) {
                         const chunkIds = allTaskSubItemIds.slice(i, i + 30);
-
                         const q = query(
                             collection(db, "projects", taskData.projectId, "items", itemId, "subItems"),
                             where(documentId(), "in", chunkIds)
                         );
-
                         const snapshot = await getDocs(q);
                         snapshot.forEach(doc => subItemDocs.push(doc));
                     }
@@ -8002,17 +8009,17 @@ for (const row of tableRows) {
                     feedbackMessage = '¡Avance registrado y tarea completada!';
                     isTaskNowComplete = true;
                 } else {
-                    feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)! Aún quedan ${totalPending} pendientes en esta tarea.`;
+                    feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)! Aún quedan ${totalPending} pendientes.`;
                 }
             }
         }
 
+        // Mostrar mensaje final
         if (feedbackP) {
             feedbackP.textContent = feedbackMessage;
-            feedbackP.className = feedbackClass;
+            feedbackP.className = feedbackClass; // Ahora sí existe la variable
         }
 
-        // 9. Éxito
         success = true;
 
         if (success) {
@@ -8029,7 +8036,7 @@ for (const row of tableRows) {
 
     } catch (error) {
         console.error("Error al guardar el avance múltiple:", error);
-        if (feedbackP && !validationError && error.message !== "No se procesaron filas." && error.message !== "Error de validación de usuario." && error.message !== "Error de validación de usuario (Fabricante/Instalador).") {
+        if (feedbackP && !validationError) {
             feedbackP.textContent = 'Error al guardar. Revisa la consola.';
             feedbackP.className = 'text-sm mt-4 text-center text-red-600';
         }
@@ -9024,7 +9031,37 @@ document.addEventListener('DOMContentLoaded', () => {
                         throw new Error("Modelos de IA aún cargando. Intenta de nuevo en 5 segundos.");
                     }
 
-                    // --- INICIO DE LA CORRECCIÓN ---
+                    // --- INICIO DE MODIFICACIÓN PARA DESHABILITAR RECONOCIMIENTO FACIAL ---
+
+                    // 1. Forzamos la captura de la imagen en el canvas (necesario para el paso final)
+                    // Este bloque asegura que verifiedCanvas tenga la imagen capturada.
+                    const videoWidth = videoEl.videoWidth;
+                    const videoHeight = videoEl.videoHeight;
+                    canvasEl.width = videoWidth;
+                    canvasEl.height = videoHeight;
+                    const ctx = canvasEl.getContext('2d');
+                    ctx.translate(videoWidth, 0);
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(videoEl, 0, 0, videoWidth, videoHeight);
+                    ctx.setTransform(1, 0, 0, 1, 0, 0);
+                    verifiedCanvas = canvasEl;
+
+                    if (videoStream) videoStream.getTracks().forEach(track => track.stop());
+
+                    // 2. Mostramos el mensaje de bypass y forzamos el éxito
+                    faceStatus.textContent = "VERIFICACIÓN MANUAL: Reconocimiento Deshabilitado.";
+                    faceStatus.className = "text-center text-sm font-medium text-green-600 mt-2 h-4";
+
+                    step2.classList.remove('hidden');
+                    document.getElementById('checkin-confirm-btn').disabled = false;
+                    target.disabled = true;
+                    target.textContent = 'Verificación Biométrica Deshabilitada';
+
+                    return; // SALIMOS DE LA FUNCIÓN AQUÍ.
+
+                    // --- FIN DE MODIFICACIÓN ---
+
+                    /* --- INICIO DE LA CORRECCIÓN ---
 
                     // 1. Obtenemos las dimensiones REALES del stream de video
                     const videoWidth = videoEl.videoWidth;
@@ -9095,7 +9132,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     step2.classList.remove('hidden');
                     verifiedCanvas = canvasEl;
                     document.getElementById('checkin-confirm-btn').disabled = false;
-                    target.disabled = true;
+                    target.disabled = true;*/
 
                 } catch (err) {
                     // (El 'catch' ahora recibe los mensajes de error mejorados)
