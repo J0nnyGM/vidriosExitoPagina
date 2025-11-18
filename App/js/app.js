@@ -7535,6 +7535,9 @@ async function openMultipleProgressModal(originatingTaskId) {
         if (!taskSnap.exists()) throw new Error(`La tarea ${originatingTaskId} no fue encontrada.`);
 
         let taskData = taskSnap.data();
+
+        confirmBtn.dataset.assigneeId = taskData.assigneeId;
+
         const projectId = taskData.projectId;
 
         // 4. Cargar el contexto del Proyecto
@@ -7776,10 +7779,11 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
     try {
         const originatingTaskId = confirmBtn.dataset.originatingTaskId;
 
-        // --- INICIO DE MODIFICACIÓN (Leer arrays de Choices.js) ---
+        const responsibleId = confirmBtn.dataset.assigneeId || currentUser.uid;
+
         const commonData = {
             installDate: document.getElementById('multiple-sub-item-date').value,
-            installer: currentUser.uid // <--- ¡ESTA ES LA LÍNEA QUE FALTABA!
+            installer: responsibleId // <--- ¡Aquí asignamos al responsable de la tarea!
         };
 
         const tableRows = document.querySelectorAll('#multiple-progress-table-body tr.subitem-row');
@@ -7839,6 +7843,7 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
             updatedSubItemIds.push(subItemId);
 
             let finalStatus = subItemData.status;
+
             if (commonData.installer) {
                 finalStatus = 'Instalado';
             } else if (commonData.manufacturer) {
@@ -7853,13 +7858,14 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
             }
 
             const dataToUpdate = {
-                ...commonData, // Contiene 'installDate'
-                ...individualData, // Contiene 'location', 'realWidth', 'realHeight'
+                ...commonData,
+                ...individualData,
                 status: finalStatus,
+                m2: subItemData.m2 || 0,
+                assignedTaskId: subItemData.assignedTaskId || null,
 
-                // ¡AQUÍ ESTÁ EL BUGFIX!
-                m2: subItemData.m2 || 0, // Preservamos los M2
-                assignedTaskId: subItemData.assignedTaskId || null // Preservamos el ID de la tarea
+                // --- AÑADIDO: Si no hay fabricante, asignamos al mismo responsable ---
+                manufacturer: subItemData.manufacturer || responsibleId
             };
 
             const subItemRef = doc(db, "projects", currentProject.id, "items", itemId, "subItems", subItemId);
