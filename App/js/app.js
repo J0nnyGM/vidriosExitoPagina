@@ -7756,12 +7756,30 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Guardando...';
     if (feedbackP) {
-        feedbackP.textContent = 'Validando y actualizando datos...';
+        feedbackP.textContent = 'Validando y obteniendo datos de equipo...';
         feedbackP.className = 'text-sm mt-4 text-center text-blue-600';
     }
 
+    let taskData = null;
+    let taskTeamUids = [];
+
+    // 1. Obtener la lista completa del equipo de la Tarea (solo una vez)
+    const originatingTaskId = confirmBtn.dataset.originatingTaskId;
+    if (originatingTaskId) {
+        const taskRef = doc(db, "tasks", originatingTaskId);
+        const taskSnap = await getDoc(taskRef);
+        if (taskSnap.exists()) {
+            taskData = taskSnap.data();
+            taskTeamUids.push(taskData.assigneeId);
+            if (Array.isArray(taskData.additionalAssigneeIds)) {
+                // Agregamos los IDs adicionales, asegurando que no se dupliquen
+                taskTeamUids.push(...taskData.additionalAssigneeIds.filter(uid => uid !== taskData.assigneeId));
+            }
+        }
+    }
+    taskTeamUids = taskTeamUids.filter(Boolean); // Limpiamos cualquier valor nulo
+
     let success = false;
-    let isTaskNowComplete = false;
     let validationError = null;
 
     if (!currentProject || !currentProject.id) {
@@ -7779,12 +7797,10 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
     try {
         const originatingTaskId = confirmBtn.dataset.originatingTaskId;
 
-        // --- CORRECCIÓN 1: Definir quién instala (El usuario actual) ---
         const commonData = {
             installDate: document.getElementById('multiple-sub-item-date').value,
-            installer: currentUser.uid // Establece el usuario actual como el instalador
+            installer: currentUser.uid
         };
-        // --- FIN DE CORRECCIÓN 1 ---
 
         const tableRows = document.querySelectorAll('#multiple-progress-table-body tr.subitem-row');
 
@@ -7817,7 +7833,7 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
 
 
         // 5. Iterar y validar
-        for (const row of tableRows) {
+for (const row of tableRows) {
             const subItemId = row.dataset.id;
             const itemId = row.dataset.itemId;
 
@@ -7844,7 +7860,7 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
 
             let finalStatus = subItemData.status;
             
-            // Si hay un instalador definido (que ahora es el currentUser), el estado es Instalado
+            // La presencia del instalador asegura el estado 'Instalado'
             if (commonData.installer) {
                 finalStatus = 'Instalado';
             } else if (commonData.manufacturer) {
@@ -7858,20 +7874,22 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
                 }
             }
             
-            // --- CORRECCIÓN 2: Asegurar Manufacturer y preservar datos de tarea ---
             const dataToUpdate = {
                 ...commonData, 
                 ...individualData, 
                 status: finalStatus,
-                
-                // Si Manufacturer no está seteado, usamos el instalador como valor por defecto
-                manufacturer: subItemData.manufacturer || currentUser.uid, 
-
-                // Preservar datos importantes que no están en el modal batch
                 m2: subItemData.m2 || 0, 
-                assignedTaskId: subItemData.assignedTaskId || null 
+                
+                // Aseguramos que el fabricante exista, si no, usamos el usuario que sube el avance
+                manufacturer: subItemData.manufacturer || currentUser.uid, 
+                
+                // Preservar el assignedTaskId para compatibilidad, o setearlo si es la primera vez
+                assignedTaskId: subItemData.assignedTaskId || (taskData ? originatingTaskId : null), 
+                
+                // --- CAMBIO CLAVE PARA BONIFICACIÓN ---
+                installersTeam: taskTeamUids // Guardamos el array con TODOS los IDs de la tarea
+                // -------------------------------------
             };
-            // --- FIN CORRECCIÓN 2 ---
 
             const subItemRef = doc(db, "projects", currentProject.id, "items", itemId, "subItems", subItemId);
             batch.update(subItemRef, dataToUpdate);
@@ -7916,6 +7934,7 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
         await batch.commit();
         if (feedbackP) feedbackP.textContent = `Datos guardados para ${rowsProcessed} unidad(es). Procesando fotos...`;
 
+
         // 8. Lógica de fotos
         for (const upload of photoUploads) {
             try {
@@ -7931,18 +7950,22 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
             }
         }
 
-        // 9. Lógica de verificación de tarea
+// 9. Lógica de verificación de tarea
         let feedbackMessage = `¡Avance registrado para ${rowsProcessed} unidad(es)!`;
-        let feedbackClass = 'text-sm mt-4 text-center text-green-600';
-
+        let isTaskNowComplete = false;
+        
         if (originatingTaskId && commonData.installer) {
             if (feedbackP) feedbackP.textContent = 'Fotos subidas. Verificando estado de la tarea...';
-
-            const taskDoc = await getDoc(doc(db, "tasks", originatingTaskId));
-            if (!taskDoc.exists()) {
-                throw new Error("No se pudo encontrar la tarea original para verificarla.");
+            
+            // Usamos taskData cargada arriba
+            if (!taskData) { // Manejo por si TaskData no se cargó correctamente antes del loop
+                const taskDoc = await getDoc(doc(db, "tasks", originatingTaskId));
+                if (taskDoc.exists()) {
+                    taskData = taskDoc.data();
+                } else {
+                    throw new Error("No se pudo encontrar la tarea original para verificarla.");
+                }
             }
-            const taskData = taskDoc.data();
 
             if (taskData.specificSubItemIds && taskData.specificSubItemIds.length > 0 && taskData.selectedItems) {
                 const allTaskSubItemIds = taskData.specificSubItemIds;
