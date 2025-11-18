@@ -7140,7 +7140,7 @@ modalForm.addEventListener('submit', async (e) => {
                 alert(`Error: Ya existe un ítem con el nombre "${data.name.trim()}" en este proyecto.`);
                 return; // Detiene la ejecución si el nombre ya existe
             }
-            
+
             // Convertimos cm (del modal) a m (para la DB)
             data.width = parseFloat(data.width) / 100;
             data.height = parseFloat(data.height) / 100;
@@ -7779,6 +7779,7 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
         // --- INICIO DE MODIFICACIÓN (Leer arrays de Choices.js) ---
         const commonData = {
             installDate: document.getElementById('multiple-sub-item-date').value,
+            installer: currentUser.uid // <--- ¡ESTA ES LA LÍNEA QUE FALTABA!
         };
 
         const tableRows = document.querySelectorAll('#multiple-progress-table-body tr.subitem-row');
