@@ -3067,8 +3067,8 @@ async function createItem(data) {
             name: data.name,
             description: data.description,
             quantity: parseInt(data.quantity),
-            width: parseFloat(data.width) / 100, // cm a m
-            height: parseFloat(data.height) / 100, // cm a m
+            width: parseFloat(data.width) || 0,
+            height: parseFloat(data.height) || 0,
             itemType: projectPricingModel === 'incluido' ? 'suministro_instalacion_incluido' : 'suministro_instalacion',
             projectId: currentProject.id, // Sigue enviando projectId
         };
@@ -3116,8 +3116,8 @@ async function updateItem(itemId, data) {
     const updatedData = {
         name: data.name,
         description: data.description,
-        width: parseFloat(data.width) / 100, // cm a m
-        height: parseFloat(data.height) / 100, // cm a m
+        width: parseFloat(data.width) || 0,
+        height: parseFloat(data.height) || 0,
         itemType: projectPricingModel === 'incluido' ? 'suministro_instalacion_incluido' : 'suministro_instalacion',
         projectId: currentProject.id, // <-- AÑADIDO: Importante para la función de backend
     };
@@ -7133,13 +7133,17 @@ modalForm.addEventListener('submit', async (e) => {
             }
 
             // Realiza una consulta para verificar si ya existe un ítem con ese nombre en el proyecto
-            const q = query(collection(db, "items"), where("projectId", "==", currentProject.id), where("name", "==", data.name.trim()));
+            const q = query(collection(db, "projects", currentProject.id, "items"), where("name", "==", data.name.trim()));
             const querySnapshot = await getDocs(q);
 
             if (!querySnapshot.empty) {
                 alert(`Error: Ya existe un ítem con el nombre "${data.name.trim()}" en este proyecto.`);
                 return; // Detiene la ejecución si el nombre ya existe
             }
+            
+            // Convertimos cm (del modal) a m (para la DB)
+            data.width = parseFloat(data.width) / 100;
+            data.height = parseFloat(data.height) / 100;
 
             await createItem(data);
             // ====================================================================
@@ -7166,7 +7170,7 @@ modalForm.addEventListener('submit', async (e) => {
             }
 
             // Busca otros ítems en el proyecto que tengan el nuevo nombre
-            const q = query(collection(db, "items"), where("projectId", "==", currentProject.id), where("name", "==", newItemName));
+            const q = query(collection(db, "projects", currentProject.id, "items"), where("name", "==", newItemName));
             const querySnapshot = await getDocs(q);
 
             let isDuplicate = false;

@@ -166,6 +166,15 @@ const migrateLegacySubItems = async () => {
                 if (itemDoc.exists) {
                     const itemData = itemDoc.data();
                     m2 = (itemData.width || 0) * (itemData.height || 0);
+
+                    if (m2 === 0 && (itemData.width > 0 || itemData.height > 0)) {
+                        // Esto no debería pasar, pero por si acaso.
+                        console.error(`ERROR CÁLCULO M2: ${itemPath} - W: ${itemData.width}, H: ${itemData.height}`);
+                    } else if (m2 === 0) {
+                        // ESTE ES EL LOG QUE PROBABLEMENTE VERÁS
+                        console.warn(`DEBUG: m2 es 0 para subItem ${subItemDoc.id} (Item Padre: ${itemPath}, Ancho: ${itemData.width}, Alto: ${itemData.height})`);
+                    }
+
                     itemsCache.set(itemPath, m2); // Guardar en caché
                 }
             }
@@ -251,8 +260,16 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
         }
 
         // Si no hay cambio, o no hay fecha, o no hay M², no podemos calcular.
-        if (operationType === 0 || !installDateStr || m2_total === 0) {
+        // ¡Este es el bug! Si m2 es 0, la función se detiene.
+        // La quitamos de la comprobación.
+        if (operationType === 0 || !installDateStr) {
             return;
+        }
+
+        // Si los M² son 0, no calculamos (esto es correcto, no hay nada que sumar)
+        if (m2_total === 0) {
+            console.log(`Cálculo omitido: M² es 0 para subItem ${event.params.subItemId}.`);
+            return; 
         }
 
         // --- LÓGICA CLAVE: Obtener Instaladores desde la Tarea ---
@@ -260,17 +277,17 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
             console.warn(`Estadísticas omitidas: El subItem ${event.params.subItemId} fue instalado sin un ID de Tarea (assignedTaskId).`);
             return; // No podemos asignar M² si no sabemos de qué tarea es.
         }
-
+        
         const taskDoc = await db.doc(`tasks/${taskId}`).get();
         if (!taskDoc.exists) {
             console.error(`Estadísticas omitidas: No se encontró la Tarea ${taskId} (asociada al subItem ${event.params.subItemId}).`);
             return;
         }
-
+        
         const taskData = taskDoc.data();
         // Construimos el array de instaladores desde la Tarea (como solicitaste)
         const installerIds = [taskData.assigneeId, ...(taskData.additionalAssigneeIds || [])].filter(Boolean);
-
+        
         if (installerIds.length === 0) {
             console.warn(`Estadísticas omitidas: La Tarea ${taskId} no tiene instaladores asignados.`);
             return;
@@ -285,12 +302,12 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
                 onTime = false; // Marcamos como "fuera de tiempo"
             }
         }
-
+        
         const installDate = new Date(installDateStr + 'T12:00:00Z');
         const year = installDate.getFullYear();
         const month = String(installDate.getMonth() + 1).padStart(2, '0');
         const statDocId = `${year}_${month}`;
-
+        
         const statsRefGlobal = db.doc("system/dashboardStats");
         const batch = db.batch();
 
@@ -303,10 +320,10 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
                 console.error(`Estadísticas: No se encontró al Usuario ${installerId}. Omitiendo.`);
                 continue; // Saltamos a la siguiente persona
             }
-
+            
             const userData = userDoc.data();
             const level = userData.commissionLevel || "principiante";
-
+            
             // Cálculo de Bonificación (individual)
             let bonificacion_individual = 0;
             if (config && config[level]) {
@@ -329,7 +346,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
 
             console.log(`Estadísticas de ${installerId} para ${statDocId} actualizadas: ${m2_total * operationType}m², $${bonificacion_individual} (A tiempo: ${onTime})`);
         }
-
+        
         // Actualización Global (sumamos los M² UNA SOLA VEZ, pero la bonificación TOTAL)
         const statsUpdateGlobal = {
             productivity: {
@@ -340,7 +357,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
             }
         };
         batch.set(statsRefGlobal, statsUpdateGlobal, { merge: true });
-
+        
         await batch.commit();
 
     } catch (statError) {
