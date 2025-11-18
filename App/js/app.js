@@ -7779,12 +7779,12 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
     try {
         const originatingTaskId = confirmBtn.dataset.originatingTaskId;
 
-        const responsibleId = confirmBtn.dataset.assigneeId || currentUser.uid;
-
+        // --- CORRECCIÓN 1: Definir quién instala (El usuario actual) ---
         const commonData = {
             installDate: document.getElementById('multiple-sub-item-date').value,
-            installer: responsibleId // <--- ¡Aquí asignamos al responsable de la tarea!
+            installer: currentUser.uid // Establece el usuario actual como el instalador
         };
+        // --- FIN DE CORRECCIÓN 1 ---
 
         const tableRows = document.querySelectorAll('#multiple-progress-table-body tr.subitem-row');
 
@@ -7843,7 +7843,8 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
             updatedSubItemIds.push(subItemId);
 
             let finalStatus = subItemData.status;
-
+            
+            // Si hay un instalador definido (que ahora es el currentUser), el estado es Instalado
             if (commonData.installer) {
                 finalStatus = 'Instalado';
             } else if (commonData.manufacturer) {
@@ -7856,24 +7857,26 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
                     break;
                 }
             }
-
+            
+            // --- CORRECCIÓN 2: Asegurar Manufacturer y preservar datos de tarea ---
             const dataToUpdate = {
-                ...commonData,
-                ...individualData,
+                ...commonData, 
+                ...individualData, 
                 status: finalStatus,
-                m2: subItemData.m2 || 0,
-                assignedTaskId: subItemData.assignedTaskId || null,
+                
+                // Si Manufacturer no está seteado, usamos el instalador como valor por defecto
+                manufacturer: subItemData.manufacturer || currentUser.uid, 
 
-                // --- AÑADIDO: Si no hay fabricante, asignamos al mismo responsable ---
-                manufacturer: subItemData.manufacturer || responsibleId
+                // Preservar datos importantes que no están en el modal batch
+                m2: subItemData.m2 || 0, 
+                assignedTaskId: subItemData.assignedTaskId || null 
             };
+            // --- FIN CORRECCIÓN 2 ---
 
             const subItemRef = doc(db, "projects", currentProject.id, "items", itemId, "subItems", subItemId);
             batch.update(subItemRef, dataToUpdate);
 
             if (photoFile) {
-                // --- INICIO DE CORRECCIÓN ---
-                // Usamos 'currentProject.id' (el correcto) en lugar de 'subItemData.projectId' (el incorrecto)
                 if (subItemData && currentProject.id && subItemData.itemId) {
                     const watermarkText = `Vidrios Exito - ${currentProject?.name || currentProject.id} - ${commonData.installDate} - ${individualData.location}`;
                     photoUploads.push({
@@ -7881,14 +7884,13 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
                         photoFile: photoFile,
                         watermarkText: watermarkText,
                         itemId: subItemData.itemId,
-                        projectId: currentProject.id // <-- ¡CORREGIDO!
+                        projectId: currentProject.id
                     });
                 } else {
                     console.warn(`No se pudo obtener projectId o itemId para ${subItemId}, no se subirá foto.`);
                 }
-                // --- FIN DE CORRECCIÓN ---
             }
-        } // Fin del bucle for...of
+        } 
 
 
         // 6. Validaciones Pre-Commit
@@ -7918,7 +7920,6 @@ document.getElementById('multiple-progress-modal-confirm-btn').addEventListener(
         for (const upload of photoUploads) {
             try {
                 const watermarkedBlob = await addWatermark(upload.photoFile, upload.watermarkText);
-                // La ruta de subida ahora usará el 'projectId' correcto
                 const storageRef = ref(storage, `evidence/${upload.projectId}/${upload.itemId}/${upload.subItemId}`);
                 const snapshot = await uploadBytes(storageRef, watermarkedBlob);
                 const downloadURL = await getDownloadURL(snapshot.ref);
