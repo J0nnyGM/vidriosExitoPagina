@@ -2780,22 +2780,18 @@ function setupModalEventListeners(modalBody, importacion) {
 }
 
 /**
- * --- VERSIÓN ROBUSTA CON BÚSQUEDA RELATIVA ---
- * Maneja el registro de un abono a Costos de Origen.
- * Ahora encuentra los campos de input relativo al botón presionado,
- * evitando errores de 'null'.
- * @param {string} importacionId - El ID de la importación.
- * @param {HTMLElement} buttonElement - El elemento del botón que fue presionado.
+ * --- VERSIÓN CORREGIDA: REGISTRA ABONO Y GASTO ---
+ * Ahora crea automáticamente el registro en la colección 'gastos' al abonar a China.
  */
 async function handleAbonoChinaSubmit(importacionId, buttonElement) {
-    // Encontrar el contenedor del formulario de abono, subiendo desde el botón
+    // Encontrar el contenedor del formulario de abono
     const formContainer = buttonElement.closest('.bg-gray-50');
     if (!formContainer) {
         showModalMessage("Error: No se pudo encontrar el formulario de abono.");
         return;
     }
 
-    // Buscar los inputs DENTRO de ese contenedor
+    // Buscar los inputs
     const valorCopInput = formContainer.querySelector('#abono-china-valor-cop');
     const valorUsdInput = formContainer.querySelector('#abono-china-valor-usd');
     const formaPagoSelect = formContainer.querySelector('#abono-china-forma-pago');
@@ -2836,25 +2832,58 @@ async function handleAbonoChinaSubmit(importacionId, buttonElement) {
         registradoPor: currentUser.uid
     };
 
-    showModalMessage("Registrando abono...", true);
+    // --- PREPARAR EL OBJETO DE GASTO ---
+    const nuevoGasto = {
+        fecha: nuevoAbono.fecha,
+        proveedorId: importacionId, // Usamos el ID de importación como referencia
+        proveedorNombre: `Imp. N° ${importacionActual.numeroImportacion} (Abono China)`,
+        numeroFactura: `Ref: BL ${importacionActual.numeroBl || 'N/A'}`,
+        valorTotal: valorCOP, // El gasto siempre es en COP
+        fuentePago: nuevoAbono.formaPago,
+        registradoPor: currentUser.uid,
+        timestamp: new Date(),
+        isImportacionAbono: true, // Marca para identificar que viene de importación
+        importacionId: importacionId
+    };
+
+    showModalMessage("Registrando abono y gasto...", true);
 
     try {
+        // --- USAR BATCH PARA GUARDAR AMBOS AL TIEMPO ---
+        const batch = writeBatch(db);
+        
         const importacionRef = doc(db, "importaciones", importacionId);
-        await updateDoc(importacionRef, { abonos: arrayUnion(nuevoAbono) });
+        batch.update(importacionRef, { abonos: arrayUnion(nuevoAbono) });
 
+        const gastoRef = doc(collection(db, "gastos")); // Crear referencia nueva para gasto
+        batch.set(gastoRef, nuevoGasto);
+
+        await batch.commit();
+        // -----------------------------------------------
+
+        // Actualizar estado local (Importación)
         const importacionIndex = allImportaciones.findIndex(i => i.id === importacionId);
         if (importacionIndex !== -1) {
             if (!allImportaciones[importacionIndex].abonos) allImportaciones[importacionIndex].abonos = [];
             allImportaciones[importacionIndex].abonos.push(nuevoAbono);
         }
 
+        // Actualizar estado local (Gastos) para que aparezca sin recargar
+        nuevoGasto.id = gastoRef.id;
+        allGastos.push(nuevoGasto);
+        // Ordenar gastos por fecha descendente para mantener consistencia visual
+        allGastos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+        renderGastos(); // Refrescar la lista de gastos de fondo
+
         hideModal();
-        showTemporaryMessage("Abono registrado con éxito.", "success");
+        showTemporaryMessage("Abono y gasto registrados con éxito.", "success");
+        
+        // Recargar el modal de importación para ver los cambios
         showImportacionModal(allImportaciones[importacionIndex]);
 
     } catch (error) {
         console.error("Error al registrar abono de China:", error);
-        showModalMessage("Error al guardar el abono.");
+        showModalMessage("Error al guardar el abono: " + error.message);
     }
 }
 
