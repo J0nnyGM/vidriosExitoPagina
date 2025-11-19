@@ -2669,11 +2669,7 @@ async function showImportacionModal(importacion = null) {
 }
 
 /**
- * --- VERSIÓN CON CONFIRMACIÓN DE BORRADO ---
- * Centraliza todos los event listeners del modal de importación.
- * AÑADIDO: Un diálogo de confirmación antes de eliminar una factura.
- * @param {HTMLElement} modalBody - El cuerpo del modal.
- * @param {object|null} importacion - El objeto de la importación si se está editando.
+ * --- VERSIÓN CORREGIDA: ELIMINA EL ERROR DE 'UNDEFINED' ---
  */
 function setupModalEventListeners(modalBody, importacion) {
     const importacionId = importacion ? importacion.id : null;
@@ -2681,12 +2677,15 @@ function setupModalEventListeners(modalBody, importacion) {
     modalBody.addEventListener('click', (event) => {
         const target = event.target;
 
+        // 1. ESTE ES EL BLOQUE CORRECTO (MANTENLO)
+        // Capturamos el botón y lo pasamos a la función
         const abonoChinaBtn = target.closest('#add-abono-china-btn');
         if (abonoChinaBtn) {
-            // Ahora pasamos el elemento del botón como segundo argumento
             handleAbonoChinaSubmit(importacionId, abonoChinaBtn);
+            return; // IMPORTANTE: Detiene la ejecución para no activar nada más
         }
 
+        // 2. Otros botones de estado
         if (target.closest('#set-en-puerto-btn')) {
             handleEstadoUpdate(importacionId, 'En Puerto');
         }
@@ -2694,8 +2693,11 @@ function setupModalEventListeners(modalBody, importacion) {
             handleEstadoUpdate(importacionId, 'En Bodega');
         }
 
+        // *** AQUÍ ESTABA EL ERROR: ELIMINAMOS EL 'ELSE IF' DUPLICADO ***
+        // (El bloque que llamaba a handleAbonoChinaSubmit sin el segundo argumento ya no existe)
 
-        if (target.id === 'add-importacion-item-btn') {
+        // 3. Gestión de Ítems
+        else if (target.id === 'add-importacion-item-btn') {
             const newRow = createImportacionItemElement();
             document.getElementById('importacion-items-container').appendChild(newRow);
             initializeItemRowSearch(newRow);
@@ -2704,6 +2706,8 @@ function setupModalEventListeners(modalBody, importacion) {
             target.closest('.import-item-row').remove();
             calcularTotalesImportacionCompleto();
         }
+        
+        // 4. Gestión de Facturas de Gastos
         else if (target.closest('.add-factura-btn')) {
             const gastoTipo = target.closest('.add-factura-btn').dataset.gastoTipo;
             document.getElementById(`facturas-container-${gastoTipo}`).appendChild(createGastoFacturaElement(gastoTipo));
@@ -2720,12 +2724,10 @@ function setupModalEventListeners(modalBody, importacion) {
                 deleteGasto({ importacionId: importacion.id, gastoTipo, facturaId })
                     .then(() => {
                         showTemporaryMessage("Gasto eliminado con éxito.", "success");
-                        // La vista se actualizará sola gracias a onSnapshot, pero cerramos el modal de carga.
                         hideModal();
                     })
                     .catch((error) => {
                         console.error("Error al eliminar:", error);
-                        // Muestra el error específico que viene del backend (ej: "No se puede eliminar...")
                         showModalMessage(`Error: ${error.message}`);
                     });
             }
@@ -2746,14 +2748,10 @@ function setupModalEventListeners(modalBody, importacion) {
             const btn = target.closest('.update-pdf-btn');
             handleUpdateFacturaPdf(importacionId, btn.dataset.gastoTipo, btn.dataset.facturaId);
         }
-        else if (target.closest('#add-abono-china-btn')) {
-            handleAbonoChinaSubmit(importacionId);
-        }
     });
 
-
+    // Listeners de Inputs (Focus/Blur/Input) - Se mantienen igual
     modalBody.addEventListener('focusin', (e) => {
-        // Añadido '#abono-china-valor-cop' al selector
         if (e.target.classList.contains('cost-input-usd') || e.target.classList.contains('cost-input-cop') || e.target.id === 'abono-china-valor-cop') {
             unformatCurrencyInput(e.target);
         }
