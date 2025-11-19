@@ -342,7 +342,39 @@ function loadViewTemplates() {
             </div>
             </div>`;
 
-    document.getElementById('view-facturacion').innerHTML = `<div class="bg-white p-6 rounded-xl shadow-md max-w-6xl mx-auto"><h2 class="text-2xl font-semibold mb-4">Gestión de Facturación</h2><div class="border-b border-gray-200 mb-6"><nav id="facturacion-nav" class="-mb-px flex space-x-6"><button id="tab-pendientes" class="dashboard-tab-btn active py-3 px-1 font-semibold">Pendientes</button><button id="tab-realizadas" class="dashboard-tab-btn py-3 px-1 font-semibold">Realizadas</button></nav></div><div id="view-pendientes"><h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Pendientes de Facturar</h3><div id="facturacion-pendientes-list" class="space-y-3"></div></div><div id="view-realizadas" class="hidden"><h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Facturadas</h3><div id="facturacion-realizadas-list" class="space-y-3"></div></div></div>`;
+    document.getElementById('view-facturacion').innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow-md max-w-7xl mx-auto">
+        <h2 class="text-2xl font-semibold mb-4">Gestión de Facturación</h2>
+        
+        <div class="border-b border-gray-200 mb-6 flex flex-col lg:flex-row justify-between items-end gap-4 pb-2">
+            
+            <nav id="facturacion-nav" class="-mb-px flex space-x-6">
+                <button id="tab-pendientes" class="dashboard-tab-btn active py-3 px-1 font-semibold text-gray-500 hover:text-gray-800 border-b-2 border-transparent hover:border-gray-300">Pendientes</button>
+                <button id="tab-realizadas" class="dashboard-tab-btn py-3 px-1 font-semibold text-gray-500 hover:text-gray-800 border-b-2 border-transparent hover:border-gray-300">Realizadas</button>
+            </nav>
+
+            <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+                <div class="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
+                    <span class="text-xs font-semibold text-gray-500 pl-2">Desde:</span>
+                    <input type="month" id="factura-filter-start" class="p-1 bg-white border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                    <span class="text-xs font-semibold text-gray-500">Hasta:</span>
+                    <input type="month" id="factura-filter-end" class="p-1 bg-white border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div class="relative flex-grow lg:flex-grow-0">
+                    <input type="search" id="search-facturacion" placeholder="Buscar cliente, N° remisión..." class="w-full lg:w-64 p-2 pl-3 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+            </div>
+        </div>
+
+        <div id="view-pendientes">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Pendientes de Facturar</h3>
+            <div id="facturacion-pendientes-list" class="space-y-3"></div>
+        </div>
+        <div id="view-realizadas" class="hidden">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Facturadas</h3>
+            <div id="facturacion-realizadas-list" class="space-y-3"></div>
+        </div>
+    </div>`;
     document.getElementById('view-clientes').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Cliente</h2><form id="add-cliente-form" class="space-y-4"><input type="text" id="nuevo-cliente-nombre-empresa" placeholder="Nombre Empresa" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="text" id="nuevo-cliente-contacto" placeholder="Nombre del Contacto" class="w-full p-3 border border-gray-300 rounded-lg"><input type="email" id="nuevo-cliente-email" placeholder="Correo Electrónico" class="w-full p-3 border border-gray-300 rounded-lg"><input type="tel" id="nuevo-cliente-telefono1" placeholder="Teléfono 1" class="w-full p-3 border border-gray-300 rounded-lg" required oninput="this.value = this.value.replace(/[^0-9]/g, '')"><input type="tel" id="nuevo-cliente-telefono2" placeholder="Teléfono 2 (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg" oninput="this.value = this.value.replace(/[^0-9]/g, '')"><input type="text" id="nuevo-cliente-nit" placeholder="NIT (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg"><div class="space-y-1"><label for="nuevo-cliente-rut" class="block text-sm font-medium text-gray-700">RUT (Opcional)</label><input type="file" id="nuevo-cliente-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/></div><button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Clientes</h2><input type="search" id="search-clientes" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="clientes-list" class="space-y-3"></div></div></div>`;
     document.getElementById('view-proveedores').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Proveedor</h2><form id="add-proveedor-form" class="space-y-4"><input type="text" id="nuevo-proveedor-nombre" placeholder="Nombre del Proveedor" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="text" id="nuevo-proveedor-contacto" placeholder="Nombre de Contacto" class="w-full p-3 border border-gray-300 rounded-lg"><input type="tel" id="nuevo-proveedor-telefono" placeholder="Teléfono" class="w-full p-3 border border-gray-300 rounded-lg"><input type="email" id="nuevo-proveedor-email" placeholder="Correo" class="w-full p-3 border border-gray-300 rounded-lg"><div><label for="nuevo-proveedor-rut" class="block text-sm font-medium text-gray-700">RUT</Opcional></label><input type="file" id="nuevo-proveedor-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"/></div><button type="submit" class="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Proveedores</h2><input type="search" id="search-proveedores" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="proveedores-list" class="space-y-3"></div></div></div>`;
 
@@ -936,6 +968,25 @@ function setupEventListeners() {
             }
         });
     }
+
+    // --- LÓGICA DE FILTROS DE FACTURACIÓN ---
+    const factStart = document.getElementById('factura-filter-start');
+    const factEnd = document.getElementById('factura-filter-end');
+    const factSearch = document.getElementById('search-facturacion');
+
+    if (factStart && factEnd && factSearch) {
+        // 1. Establecer mes actual por defecto
+        const now = new Date();
+        const currentMonthStr = now.toISOString().slice(0, 7); // Formato "YYYY-MM"
+        factStart.value = currentMonthStr;
+        factEnd.value = currentMonthStr;
+
+        // 2. Listeners para refrescar la lista al cambiar filtros
+        factStart.addEventListener('change', renderFacturacion);
+        factEnd.addEventListener('change', renderFacturacion);
+        factSearch.addEventListener('input', renderFacturacion);
+    }
+
 }
 
 function switchView(viewName, tabs, views) {
@@ -1497,25 +1548,65 @@ function renderGastos() {
     });
 }
 
+/**
+ * Renderiza la lista de facturación aplicando filtros de búsqueda y fecha.
+ * VERSIÓN ACTUALIZADA: Oculta el botón "Retenciones" si ya se aplicó una.
+ */
 function renderFacturacion() {
     const pendientesListEl = document.getElementById('facturacion-pendientes-list');
     const realizadasListEl = document.getElementById('facturacion-realizadas-list');
+    
+    // Obtener valores de los filtros
+    const searchInput = document.getElementById('search-facturacion');
+    const startDateInput = document.getElementById('factura-filter-start');
+    const endDateInput = document.getElementById('factura-filter-end');
+
     if (!pendientesListEl || !realizadasListEl) return;
 
-    const remisionesParaFacturar = allRemisiones.filter(r => r.incluyeIVA && r.estado !== 'Anulada');
-    const pendientes = remisionesParaFacturar.filter(r => !r.facturado);
-    const realizadas = remisionesParaFacturar.filter(r => r.facturado === true);
+    const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+    const startVal = startDateInput ? startDateInput.value : '';
+    const endVal = endDateInput ? endDateInput.value : '';
 
+    // Filtrado Base
+    let filtered = allRemisiones.filter(r => r.incluyeIVA && r.estado !== 'Anulada');
+
+    // 1. Filtro por Fechas
+    if (startVal && endVal) {
+        const startDate = new Date(startVal + '-01T00:00:00');
+        const [endYear, endMonth] = endVal.split('-').map(Number);
+        const endDate = new Date(endYear, endMonth, 0, 23, 59, 59);
+
+        filtered = filtered.filter(r => {
+            const rDate = new Date(r.fechaRecibido + 'T00:00:00');
+            return rDate >= startDate && rDate <= endDate;
+        });
+    }
+
+    // 2. Filtro por Búsqueda
+    if (searchTerm) {
+        filtered = filtered.filter(r => 
+            r.clienteNombre.toLowerCase().includes(searchTerm) || 
+            r.numeroRemision.toString().includes(searchTerm) ||
+            (r.numeroFactura && r.numeroFactura.toString().toLowerCase().includes(searchTerm))
+        );
+    }
+
+    const pendientes = filtered.filter(r => !r.facturado);
+    const realizadas = filtered.filter(r => r.facturado === true);
+
+    // --- RENDERIZAR PENDIENTES ---
     pendientesListEl.innerHTML = '';
     if (pendientes.length === 0) {
-        pendientesListEl.innerHTML = '<p class="text-center text-gray-500 py-8">No hay remisiones pendientes de facturar.</p>';
+        pendientesListEl.innerHTML = '<p class="text-center text-gray-500 py-8">No se encontraron remisiones pendientes.</p>';
     } else {
         pendientes.forEach(remision => {
             const el = document.createElement('div');
             el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4';
+            
             const clienteDeRemision = allClientes.find(c => c.id === remision.idCliente);
             let botonRUT = '';
             let infoClienteExtra = '';
+            
             if (clienteDeRemision) {
                 if (clienteDeRemision.rutUrl) {
                     let rutPath = '';
@@ -1526,48 +1617,99 @@ function renderFacturacion() {
                             const encodedPath = urlString.substring(pathStartIndex + 3);
                             rutPath = decodeURIComponent(encodedPath.split('?')[0]);
                         }
-                    } catch (e) { console.error("Error procesando URL de RUT:", e); }
+                    } catch (e) { console.error("Error URL RUT:", e); }
                     if (rutPath) {
                         botonRUT = `<button data-file-path="${rutPath}" data-file-title="RUT de ${clienteDeRemision.nombre}" class="bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-600">RUT</button>`;
                     }
                 }
                 infoClienteExtra = `<p class="text-sm text-gray-500 mt-1">${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}${clienteDeRemision.email || ''}</p>`;
             }
+
             const remisionPdfButton = remision.pdfPath ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-600">Ver Remisión</button>` : `<button class="bg-gray-400 text-white px-4 py-2 rounded-lg text-sm font-semibold cursor-not-allowed">Generando...</button>`;
-            el.innerHTML = `<div class="flex-grow"><div class="flex items-center gap-3 flex-wrap"><span class="remision-id">N° ${remision.numeroRemision}</span><p class="font-semibold text-lg">${remision.clienteNombre}</p></div>${infoClienteExtra}<p class="text-sm text-gray-600 mt-1">Fecha: ${remision.fechaRecibido} &bull; Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p></div><div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end">${botonRUT}${remisionPdfButton}<button data-remision-id="${remision.id}" class="facturar-btn bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Facturar</button></div>`;
+            
+            // --- CAMBIO AQUÍ: Solo mostrar botón si NO hay retención ---
+            let btnRetencion = '';
+            if (!remision.retention || !remision.retention.amount) {
+                btnRetencion = `<button data-remision-json='${JSON.stringify(remision)}' class="retention-btn bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-amber-700">Retenciones</button>`;
+            }
+
+            el.innerHTML = `
+                <div class="flex-grow">
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <span class="remision-id">N° ${remision.numeroRemision}</span>
+                        <p class="font-semibold text-lg">${remision.clienteNombre}</p>
+                    </div>
+                    ${infoClienteExtra}
+                    <p class="text-sm text-gray-600 mt-1">Fecha: ${remision.fechaRecibido} &bull; Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>
+                </div>
+                <div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end">
+                    ${botonRUT}
+                    ${remisionPdfButton}
+                    ${btnRetencion}
+                    <button data-remision-id="${remision.id}" class="facturar-btn bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Facturar</button>
+                </div>`;
+            
             pendientesListEl.appendChild(el);
         });
     }
 
+    // --- RENDERIZAR REALIZADAS ---
     realizadasListEl.innerHTML = '';
     if (realizadas.length === 0) {
-        realizadasListEl.innerHTML = '<p class="text-center text-gray-500 py-8">No hay remisiones facturadas.</p>';
+        realizadasListEl.innerHTML = '<p class="text-center text-gray-500 py-8">No se encontraron facturas.</p>';
     } else {
         realizadas.forEach(remision => {
             const el = document.createElement('div');
             el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4';
+            
             const clienteDeRemision = allClientes.find(c => c.id === remision.idCliente);
             let infoClienteExtra = '';
             if (clienteDeRemision) {
                 infoClienteExtra = `<p class="text-sm text-gray-500 mt-1">${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}${clienteDeRemision.email || ''}</p>`;
             }
 
-            // --- INICIO DE LA CORRECCIÓN CLAVE ---
-            // 1. Botón de Ver Remisión usa la ruta
             const remisionPdfButton = remision.pdfPath ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-600">Ver Remisión</button>` : '';
-
-            // 2. Lógica de Factura ahora busca 'facturaPdfPath'
+            
             let facturaButtons = remision.facturaPdfPath
                 ? `<button data-file-path="${remision.facturaPdfPath}" data-file-title="Factura N° ${remision.numeroFactura || remision.numeroRemision}" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700">Ver Factura</button>`
                 : `<button data-remision-id="${remision.id}" class="facturar-btn bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-orange-600">Adjuntar Factura</button>`;
-            // --- FIN DE LA CORRECCIÓN CLAVE ---
 
-            el.innerHTML = `<div class="flex-grow"><div class="flex items-center gap-3 flex-wrap"><span class="remision-id">N° ${remision.numeroRemision}</span><p class="font-semibold text-lg">${remision.clienteNombre}</p></div>${infoClienteExtra}<p class="text-sm text-gray-600 mt-1">Fecha: ${remision.fechaRecibido} &bull; Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p></div><div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end"><div class="text-right"><span class="status-badge status-entregado">Facturado</span>${remision.numeroFactura ? `<p class="text-sm text-gray-600 mt-1">Factura N°: <span class="font-semibold">${remision.numeroFactura}</span></p>` : ''}</div>${facturaButtons}${remisionPdfButton}</div>`;
+            // --- CAMBIO AQUÍ TAMBIÉN: Solo mostrar si NO hay retención ---
+            let btnRetencion = '';
+            if (!remision.retention || !remision.retention.amount) {
+                 btnRetencion = `<button data-remision-json='${JSON.stringify(remision)}' class="retention-btn bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-amber-700">Retenciones</button>`;
+            }
+
+            el.innerHTML = `
+                <div class="flex-grow">
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <span class="remision-id">N° ${remision.numeroRemision}</span>
+                        <p class="font-semibold text-lg">${remision.clienteNombre}</p>
+                    </div>
+                    ${infoClienteExtra}
+                    <p class="text-sm text-gray-600 mt-1">Fecha: ${remision.fechaRecibido} &bull; Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>
+                </div>
+                <div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end">
+                    <div class="text-right mr-2">
+                        <span class="status-badge status-entregado">Facturado</span>
+                        ${remision.numeroFactura ? `<p class="text-sm text-gray-600 mt-1">Factura N°: <span class="font-semibold">${remision.numeroFactura}</span></p>` : ''}
+                    </div>
+                    ${facturaButtons}
+                    ${btnRetencion}
+                    ${remisionPdfButton}
+                </div>`;
+            
             realizadasListEl.appendChild(el);
         });
     }
 
     document.querySelectorAll('.facturar-btn').forEach(btn => btn.addEventListener('click', (e) => showFacturaModal(e.currentTarget.dataset.remisionId)));
+    document.querySelectorAll('.retention-btn').forEach(btn => 
+        btn.addEventListener('click', (e) => {
+            const remisionData = JSON.parse(e.currentTarget.dataset.remisionJson);
+            showRetentionModal(remisionData);
+        })
+    );
 }
 
 // --- FUNCIONES DEL MÓDULO DE INVENTARIO ---
@@ -2551,9 +2693,7 @@ function setupModalEventListeners(modalBody, importacion) {
         else if (target.closest('#set-en-bodega-btn')) {
             handleEstadoUpdate(importacionId, 'En Bodega');
         }
-        else if (target.closest('#add-abono-china-btn')) { // Listener de abonos de China
-            handleAbonoChinaSubmit(importacionId);
-        }
+
 
         if (target.id === 'add-importacion-item-btn') {
             const newRow = createImportacionItemElement();
@@ -4495,6 +4635,14 @@ function showPaymentModal(remision) {
 
         secondaryModalContentWrapper.querySelector('#add-payment-form').addEventListener('submit', async (e) => {
             e.preventDefault();
+
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.disabled = true; // Deshabilita el botón
+                submitBtn.textContent = "Procesando..."; // Cambia el texto para feedback visual
+            }
+
+
             const amount = unformatCurrency(paymentAmountInput.value);
 
             // Recalcular saldo pendiente REAL justo antes de guardar (sin cambios)
@@ -4504,11 +4652,15 @@ function showPaymentModal(remision) {
             const currentTotalPorConfirmar = currentPaymentsArray.filter(p => p.status === 'por confirmar').reduce((sum, p) => sum + p.amount, 0);
             const currentSaldoRealPendiente = (currentRemision?.valorTotal || 0) - currentTotalConfirmado - currentTotalPorConfirmar;
 
-
             if (amount <= 0 || isNaN(amount)) {
-                showModalMessage("El monto debe ser mayor a cero."); // Usa modal primario
+                showModalMessage("El monto debe ser mayor a cero.");
+                if (submitBtn) {
+                    submitBtn.disabled = false; // Reactiva si hay error
+                    submitBtn.textContent = "Registrar Pago";
+                }
                 return;
             }
+
             if (amount > currentSaldoRealPendiente + 0.01) {
                 showModalMessage(`El monto no puede superar el saldo pendiente de ${formatCurrency(currentSaldoRealPendiente)}.`); // Usa modal primario
                 return;
@@ -4548,43 +4700,42 @@ function showPaymentModal(remision) {
 
             } catch (error) {
                 console.error("Error al registrar pago:", error);
-                hideModal(); // Asegúrate de cerrar el loader primario en caso de error
-                showModalMessage("Error al registrar el pago."); // Usa modal primario
+                hideModal();
+                showModalMessage("Error al registrar el pago.");
+
+                // Si falla, REACTIVA el botón para que puedan intentar de nuevo
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = "Registrar Pago";
+                }
             }
         });
     }
 }
 
 /**
- * Muestra el modal de Resumen Financiero con pestañas para Resumen, Cartera, Clientes y Transferencias.
- * Incluye lógica para filtros, listeners y gestión de listeners de Firestore.
+ * Muestra el modal de Resumen Financiero (Dashboard).
+ * AHORA INCLUYE: Sub-pestañas en Cartera (Detalle vs Total Cliente).
  */
 async function showDashboardModal() {
-    const modalContentWrapper = document.getElementById('modal-content-wrapper'); //
+    const modalContentWrapper = document.getElementById('modal-content-wrapper');
 
-    // Cargar/Verificar saldos iniciales (sin cambios)
-    const balanceDocRef = doc(db, "saldosIniciales", "current"); //
-    const balanceDoc = await getDoc(balanceDocRef); //
-    const balancesExist = balanceDoc.exists(); //
-    if (!balancesExist && Object.keys(initialBalances).length === 0) { //
-        // Si no existen en DB ni en memoria, intentar cargarlos una vez
+    // Cargar/Verificar saldos iniciales
+    const balanceDocRef = doc(db, "saldosIniciales", "current");
+    const balanceDoc = await getDoc(balanceDocRef);
+    const balancesExist = balanceDoc.exists();
+    if (!balancesExist && Object.keys(initialBalances).length === 0) {
         const balanceData = balanceDoc.data();
-        if (balanceData) {
-            initialBalances = balanceData; //
-        }
-    } //
-    let initialBalanceButtonHTML = ''; //
-    if (!balancesExist) { //
-        initialBalanceButtonHTML = `<button id="set-initial-balance-btn" class="bg-gray-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700">Saldos Iniciales</button>`; //
-    } //
+        if (balanceData) initialBalances = balanceData;
+    }
+    let initialBalanceButtonHTML = !balancesExist ? `<button id="set-initial-balance-btn" class="bg-gray-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700">Saldos Iniciales</button>` : '';
 
-    // Generar HTML para saldos (sin cambios)
     const saldosHTML = METODOS_DE_PAGO.map(metodo => `
         <div class="bg-gray-100 p-4 rounded-lg">
             <div class="text-sm font-semibold text-gray-800">${metodo.toUpperCase()}</div>
             <div id="summary-${metodo.toLowerCase()}" class="text-xl font-bold"></div>
         </div>
-    `).join(''); //
+    `).join('');
 
     // --- HTML Completo del Modal ---
     modalContentWrapper.innerHTML = `
@@ -4594,8 +4745,8 @@ async function showDashboardModal() {
             <div class="flex items-center gap-4 flex-wrap justify-end">
                 ${initialBalanceButtonHTML}
                 <button id="show-transfer-modal-btn" class="bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-700 whitespace-nowrap">Transferir Fondos</button>
-                <button id="export-pagos-btn" class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 whitespace-nowrap">Exportar Pagos</button>
                 <button id="download-report-btn" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 whitespace-nowrap">Descargar PDF</button>
+                <button id="export-pagos-btn" class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 whitespace-nowrap">Exportar Pagos</button>
                 <button id="close-dashboard-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
             </div>
         </div>
@@ -4607,13 +4758,55 @@ async function showDashboardModal() {
                 <button id="dashboard-tab-transferencias" class="dashboard-tab-btn py-4 px-1 font-semibold whitespace-nowrap">Transferencias</button>
             </nav>
         </div>
+        
         <div id="dashboard-summary-view" class="p-6 space-y-6 overflow-y-auto flex-grow">
              <div class="flex items-center gap-4"> <select id="summary-month" class="p-2 border rounded-lg"></select> <select id="summary-year" class="p-2 border rounded-lg"></select> </div>
-             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"> <div class="bg-green-100 p-4 rounded-lg"><div class="text-sm font-semibold text-green-800">VENTAS</div><div id="summary-sales" class="text-2xl font-bold"></div></div> <div class="bg-red-100 p-4 rounded-lg"><div class="text-sm font-semibold text-red-800">GASTOS</div><div id="summary-expenses" class="text-2xl font-bold"></div></div> <div class="bg-indigo-100 p-4 rounded-lg"><div class="text-sm font-semibold text-indigo-800">UTILIDAD/PÉRDIDA</div><div id="summary-profit" class="text-2xl font-bold"></div></div> <div class="bg-yellow-100 p-4 rounded-lg"><div class="text-sm font-semibold text-yellow-800">CARTERA PENDIENTE (MES)</div><div id="summary-cartera" class="text-2xl font-bold"></div></div> </div>
-             <div> <h3 class="font-semibold mb-2">Saldos Estimados (Total)</h3> <div class="grid grid-cols-1 sm:grid-cols-3 gap-4"> ${saldosHTML} </div> <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"> <div class="bg-gray-100 p-4 rounded-lg"> <div class="text-sm font-semibold text-gray-800">CARTERA TOTAL</div> <div id="summary-cartera-total" class="text-xl font-bold"></div> </div> <div class="bg-teal-100 p-4 rounded-lg border-l-4 border-teal-500"> <div class="text-sm font-semibold text-teal-800">VENTA DEL DÍA</div> <div id="summary-daily-sales" class="text-xl font-bold"></div> </div> </div> </div>
+             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"> 
+                <div class="bg-green-100 p-4 rounded-lg"><div class="text-sm font-semibold text-green-800">VENTAS (MES)</div><div id="summary-sales" class="text-2xl font-bold"></div></div> 
+                <div class="bg-red-100 p-4 rounded-lg"><div class="text-sm font-semibold text-red-800">GASTOS (MES)</div><div id="summary-expenses" class="text-2xl font-bold"></div></div> 
+                <div class="bg-indigo-100 p-4 rounded-lg"><div class="text-sm font-semibold text-indigo-800">UTILIDAD (MES)</div><div id="summary-profit" class="text-2xl font-bold"></div></div> 
+                <div class="bg-yellow-100 p-4 rounded-lg"><div class="text-sm font-semibold text-yellow-800">CARTERA PENDIENTE (MES)</div><div id="summary-cartera" class="text-2xl font-bold"></div></div> 
+             </div>
+             <div> 
+                <h3 class="font-semibold mb-2">Saldos Estimados (Total Cuentas)</h3> 
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4"> ${saldosHTML} </div> 
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"> 
+                    <div class="bg-gray-100 p-4 rounded-lg"> 
+                        <div class="text-sm font-semibold text-gray-800">CARTERA TOTAL ACUMULADA</div> 
+                        <div id="summary-cartera-total" class="text-xl font-bold"></div> 
+                    </div> 
+                    <div class="bg-teal-100 p-4 rounded-lg border-l-4 border-teal-500"> 
+                        <div class="text-sm font-semibold text-teal-800">INGRESO CONFIRMADO DEL DÍA</div> 
+                        <div id="summary-daily-sales" class="text-xl font-bold"></div> 
+                    </div> 
+                </div> 
+                <div class="mt-4">
+                    <h4 class="text-sm font-semibold text-gray-600 mb-2">Desglose Venta del Día (Ingresos vs Crédito)</h4>
+                    <div id="daily-sales-breakdown-cards" class="grid grid-cols-2 sm:grid-cols-4 gap-4"></div>
+                </div>
+             </div>
              <div> <h3 class="font-semibold mb-2">Utilidad/Pérdida (Últimos 6 Meses)</h3> <div class="bg-gray-50 p-4 rounded-lg"><canvas id="profitLossChart"></canvas></div> </div>
         </div>
-        <div id="dashboard-cartera-view" class="p-6 hidden flex-grow overflow-y-auto"><h3 class="font-semibold mb-2 text-xl">Cartera Pendiente de Cobro</h3><div id="cartera-list" class="space-y-4"></div><div id="cartera-total" class="text-right font-bold text-xl mt-4"></div></div>
+
+        <div id="dashboard-cartera-view" class="p-6 hidden flex-grow overflow-y-auto flex-col">
+            <h3 class="font-semibold mb-2 text-xl">Cartera Pendiente de Cobro</h3>
+            
+            <div class="flex space-x-1 bg-gray-100 p-1 rounded-lg mb-4 w-fit">
+                <button id="subtab-cartera-detalle" class="px-4 py-2 rounded-md text-sm font-semibold bg-white shadow text-gray-800 transition-all">Detalle por Remisión</button>
+                <button id="subtab-cartera-cliente" class="px-4 py-2 rounded-md text-sm font-semibold text-gray-500 hover:text-gray-800 transition-all">Total por Cliente</button>
+            </div>
+
+            <div id="view-cartera-detalle">
+                <div id="cartera-list" class="space-y-4"></div>
+                <div id="cartera-total" class="text-right font-bold text-xl mt-4"></div>
+            </div>
+
+            <div id="view-cartera-cliente" class="hidden">
+                <div id="cartera-clientes-list" class="space-y-4"></div>
+                <div id="cartera-clientes-total" class="text-right font-bold text-xl mt-4"></div>
+            </div>
+        </div>
+
         <div id="dashboard-clientes-view" class="p-6 hidden flex-grow overflow-y-auto">
             <h3 class="font-semibold mb-2 text-xl">Ranking de Clientes</h3>
             <div class="flex flex-wrap items-center gap-4 mb-4 p-2 bg-gray-50 rounded-lg border"> <div class="flex items-center gap-2"><label class="text-sm font-medium">Desde:</label><select id="rank-start-month" class="p-2 border rounded-lg"></select><select id="rank-start-year" class="p-2 border rounded-lg"></select></div> <div class="flex items-center gap-2"><label class="text-sm font-medium">Hasta:</label><select id="rank-end-month" class="p-2 border rounded-lg"></select><select id="rank-end-year" class="p-2 border rounded-lg"></select></div> <button id="rank-filter-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Filtrar</button> <button id="rank-show-all-btn" class="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-700">Mostrar Todos</button> </div>
@@ -4622,17 +4815,12 @@ async function showDashboardModal() {
         <div id="dashboard-transferencias-view" class="p-6 hidden flex-grow overflow-y-auto">
             <h3 class="font-semibold mb-2 text-xl">Historial de Transferencias Confirmadas</h3>
              <div class="flex flex-col sm:flex-row gap-4 my-4 p-4 bg-gray-50 rounded-lg border">
-                 <div class="flex-1">
-                     <label for="filter-transfer-month" class="text-sm font-medium text-gray-700">Mes</label>
-                     <select id="filter-transfer-month" class="p-2 border rounded-lg bg-white w-full mt-1"></select>
-                 </div>
-                 <div class="flex-1">
-                     <label for="filter-transfer-year" class="text-sm font-medium text-gray-700">Año</label>
-                     <select id="filter-transfer-year" class="p-2 border rounded-lg bg-white w-full mt-1"></select>
-                 </div>
+                 <div class="flex-1"> <label for="filter-transfer-month" class="text-sm font-medium text-gray-700">Mes</label> <select id="filter-transfer-month" class="p-2 border rounded-lg bg-white w-full mt-1"></select> </div>
+                 <div class="flex-1"> <label for="filter-transfer-year" class="text-sm font-medium text-gray-700">Año</label> <select id="filter-transfer-year" class="p-2 border rounded-lg bg-white w-full mt-1"></select> </div>
              </div>
             <div id="transferencias-list" class="space-y-3"></div>
         </div>
+
         <div id="pending-transfers-section" class="p-6 border-t mt-auto bg-yellow-50 hidden">
             <h3 class="font-semibold mb-2 text-lg text-yellow-800">Transferencias Pendientes de Confirmación</h3>
             <div id="pending-transfers-list" class="space-y-3 max-h-40 overflow-y-auto"></div>
@@ -4640,114 +4828,129 @@ async function showDashboardModal() {
     </div>
     `;
 
-    document.getElementById('modal').classList.remove('hidden'); //
+    document.getElementById('modal').classList.remove('hidden');
 
-    // --- Listener Botón Cerrar (CORREGIDO) ---
-    document.getElementById('close-dashboard-modal').addEventListener('click', () => { //
-        // Detener listener PENDIENTES
-        if (unsubscribePendingTransfers) { //
-            unsubscribePendingTransfers(); //
-            unsubscribePendingTransfers = null; //
-            console.log("Listener de transferencias pendientes detenido."); //
-        } //
-        // Detener listener CONFIRMADAS
-        if (unsubscribeConfirmedTransfers) { //
-            unsubscribeConfirmedTransfers(); //
-            unsubscribeConfirmedTransfers = null; //
-            console.log("Listener de transferencias confirmadas detenido."); //
-        } //
-        hideModal(); //
-    }); //
+    // --- Lógica de Sub-Pestañas de Cartera (NUEVO) ---
+    const subTabDetalle = document.getElementById('subtab-cartera-detalle');
+    const subTabCliente = document.getElementById('subtab-cartera-cliente');
+    const viewDetalle = document.getElementById('view-cartera-detalle');
+    const viewCliente = document.getElementById('view-cartera-cliente');
 
-    // Listener botón Saldos Iniciales (si existe)
-    const initialBalanceBtn = document.getElementById('set-initial-balance-btn'); //
-    if (initialBalanceBtn) initialBalanceBtn.addEventListener('click', showInitialBalanceModal); //
+    if (subTabDetalle && subTabCliente) {
+        subTabDetalle.addEventListener('click', () => {
+            // Estilos
+            subTabDetalle.classList.add('bg-white', 'shadow', 'text-gray-800');
+            subTabDetalle.classList.remove('text-gray-500');
+            subTabCliente.classList.remove('bg-white', 'shadow', 'text-gray-800');
+            subTabCliente.classList.add('text-gray-500');
 
-    // Poblar filtros de fecha para Resumen y Ranking
-    const monthSelect = document.getElementById('summary-month'); //
-    const yearSelect = document.getElementById('summary-year'); //
-    const rankStartMonth = document.getElementById('rank-start-month'); //
-    const rankStartYear = document.getElementById('rank-start-year'); //
-    const rankEndMonth = document.getElementById('rank-end-month'); //
-    const rankEndYear = document.getElementById('rank-end-year'); //
-    const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]; //
-    const now = new Date(); //
-    [monthSelect, rankStartMonth, rankEndMonth].forEach(sel => { //
-        if (!sel) return; //
-        sel.innerHTML = ''; // Limpiar opciones previas
-        for (let i = 0; i < 12; i++) { const option = document.createElement('option'); option.value = i; option.textContent = monthNames[i]; if (i === now.getMonth()) option.selected = true; sel.appendChild(option); } //
-    }); //
-    [yearSelect, rankStartYear, rankEndYear].forEach(sel => { //
-        if (!sel) return; //
-        sel.innerHTML = ''; // Limpiar opciones previas
-        for (let i = 0; i < 5; i++) { const year = now.getFullYear() - i; const option = document.createElement('option'); option.value = year; option.textContent = year; sel.appendChild(option); } //
-    }); //
+            // Vistas
+            viewDetalle.classList.remove('hidden');
+            viewCliente.classList.add('hidden');
+        });
 
-    // Listeners para filtros Resumen y Ranking (sin cambios)
-    const updateDashboardView = () => updateDashboard(parseInt(yearSelect.value), parseInt(monthSelect.value)); //
-    if (monthSelect) monthSelect.addEventListener('change', updateDashboardView); //
-    if (yearSelect) yearSelect.addEventListener('change', updateDashboardView); //
-    const rankFilterBtn = document.getElementById('rank-filter-btn'); //
-    if (rankFilterBtn) rankFilterBtn.addEventListener('click', () => { //
-        const startDate = new Date(rankStartYear.value, rankStartMonth.value, 1); //
-        const endDate = new Date(rankEndYear.value, parseInt(rankEndMonth.value) + 1, 0); //
-        renderTopClientes(startDate, endDate); //
-    }); //
-    const rankShowAllBtn = document.getElementById('rank-show-all-btn'); //
-    if (rankShowAllBtn) rankShowAllBtn.addEventListener('click', () => renderTopClientes()); //
+        subTabCliente.addEventListener('click', () => {
+            // Estilos
+            subTabCliente.classList.add('bg-white', 'shadow', 'text-gray-800');
+            subTabCliente.classList.remove('text-gray-500');
+            subTabDetalle.classList.remove('bg-white', 'shadow', 'text-gray-800');
+            subTabDetalle.classList.add('text-gray-500');
 
-    // --- Referencias y Listener Genérico para PESTAÑAS (ACTUALIZADO) ---
-    const tabs = { //
-        summary: document.getElementById('dashboard-tab-summary'), //
-        cartera: document.getElementById('dashboard-tab-cartera'), //
-        clientes: document.getElementById('dashboard-tab-clientes'), //
-        transferencias: document.getElementById('dashboard-tab-transferencias') // <-- Nueva
-    }; //
-    const views = { //
-        summary: document.getElementById('dashboard-summary-view'), //
-        cartera: document.getElementById('dashboard-cartera-view'), //
-        clientes: document.getElementById('dashboard-clientes-view'), //
-        transferencias: document.getElementById('dashboard-transferencias-view') // <-- Nueva
-    }; //
+            // Vistas
+            viewCliente.classList.remove('hidden');
+            viewDetalle.classList.add('hidden');
 
-    Object.keys(tabs).forEach(key => { //
-        if (tabs[key]) { //
-            tabs[key].addEventListener('click', () => { //
-                Object.values(tabs).forEach(t => t?.classList.remove('active')); //
-                Object.values(views).forEach(v => v?.classList.add('hidden')); //
-                tabs[key].classList.add('active'); //
-                if (views[key]) views[key].classList.remove('hidden'); //
+            // Llamar a la función de renderizado (que crearemos abajo)
+            renderCarteraClientes();
+        });
+    }
 
-                // Si se activa la pestaña de transferencias, llamar a render
-                if (key === 'transferencias') { //
-                    renderConfirmedTransfers(); //
-                } //
-            }); //
-        } //
-    }); //
+    // --- Listeners Generales ---
+    document.getElementById('close-dashboard-modal').addEventListener('click', () => {
+        if (unsubscribePendingTransfers) { unsubscribePendingTransfers(); unsubscribePendingTransfers = null; }
+        if (unsubscribeConfirmedTransfers) { unsubscribeConfirmedTransfers(); unsubscribeConfirmedTransfers = null; }
+        hideModal();
+    });
 
-    // --- Poblar y añadir Listeners para Filtros de TRANSFERENCIAS ---
-    populateDateFilters('filter-transfer'); // Llama a la función auxiliar
-    const transferMonthFilter = document.getElementById('filter-transfer-month'); //
-    const transferYearFilter = document.getElementById('filter-transfer-year'); //
-    if (transferMonthFilter) transferMonthFilter.addEventListener('change', renderConfirmedTransfers); //
-    if (transferYearFilter) transferYearFilter.addEventListener('change', renderConfirmedTransfers); //
+    const initialBalanceBtn = document.getElementById('set-initial-balance-btn');
+    if (initialBalanceBtn) initialBalanceBtn.addEventListener('click', showInitialBalanceModal);
 
-    // Listeners botones Descargar PDF y Transferir Fondos (sin cambios)
-    const downloadBtn = document.getElementById('download-report-btn'); //
-    if (downloadBtn) downloadBtn.addEventListener('click', showReportDateRangeModal); //
-    const transferBtn = document.getElementById('show-transfer-modal-btn'); //
-    if (transferBtn) transferBtn.addEventListener('click', showTransferModal); //
+    // Configuración de filtros (Mes/Año) - Sin cambios
+    const monthSelect = document.getElementById('summary-month');
+    const yearSelect = document.getElementById('summary-year');
+    const rankStartMonth = document.getElementById('rank-start-month');
+    const rankStartYear = document.getElementById('rank-start-year');
+    const rankEndMonth = document.getElementById('rank-end-month');
+    const rankEndYear = document.getElementById('rank-end-year');
+    const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+    const now = new Date();
+    [monthSelect, rankStartMonth, rankEndMonth].forEach(sel => {
+        if (!sel) return;
+        sel.innerHTML = '';
+        for (let i = 0; i < 12; i++) { const option = document.createElement('option'); option.value = i; option.textContent = monthNames[i]; if (i === now.getMonth()) option.selected = true; sel.appendChild(option); }
+    });
+    [yearSelect, rankStartYear, rankEndYear].forEach(sel => {
+        if (!sel) return;
+        sel.innerHTML = '';
+        for (let i = 0; i < 5; i++) { const year = now.getFullYear() - i; const option = document.createElement('option'); option.value = year; option.textContent = year; sel.appendChild(option); }
+    });
 
-    // --- Cargas Iniciales ---
-    renderPendingTransfers(); // Carga transferencias pendientes
-    updateDashboardView();    // Carga resumen
-    renderCartera();          // Carga cartera
-    renderTopClientes();      // Carga clientes
-    // renderConfirmedTransfers() se llama cuando se hace clic en su pestaña
+    const updateDashboardView = () => updateDashboard(parseInt(yearSelect.value), parseInt(monthSelect.value));
+    if (monthSelect) monthSelect.addEventListener('change', updateDashboardView);
+    if (yearSelect) yearSelect.addEventListener('change', updateDashboardView);
+
+    const rankFilterBtn = document.getElementById('rank-filter-btn');
+    if (rankFilterBtn) rankFilterBtn.addEventListener('click', () => {
+        const startDate = new Date(rankStartYear.value, rankStartMonth.value, 1);
+        const endDate = new Date(rankEndYear.value, parseInt(rankEndMonth.value) + 1, 0);
+        renderTopClientes(startDate, endDate);
+    });
+    const rankShowAllBtn = document.getElementById('rank-show-all-btn');
+    if (rankShowAllBtn) rankShowAllBtn.addEventListener('click', () => renderTopClientes());
+
+    const tabs = {
+        summary: document.getElementById('dashboard-tab-summary'),
+        cartera: document.getElementById('dashboard-tab-cartera'),
+        clientes: document.getElementById('dashboard-tab-clientes'),
+        transferencias: document.getElementById('dashboard-tab-transferencias')
+    };
+    const views = {
+        summary: document.getElementById('dashboard-summary-view'),
+        cartera: document.getElementById('dashboard-cartera-view'),
+        clientes: document.getElementById('dashboard-clientes-view'),
+        transferencias: document.getElementById('dashboard-transferencias-view')
+    };
+
+    Object.keys(tabs).forEach(key => {
+        if (tabs[key]) {
+            tabs[key].addEventListener('click', () => {
+                Object.values(tabs).forEach(t => t?.classList.remove('active'));
+                Object.values(views).forEach(v => v?.classList.add('hidden'));
+                tabs[key].classList.add('active');
+                if (views[key]) views[key].classList.remove('hidden');
+                if (key === 'transferencias') { renderConfirmedTransfers(); }
+            });
+        }
+    });
+
+    populateDateFilters('filter-transfer');
+    const transferMonthFilter = document.getElementById('filter-transfer-month');
+    const transferYearFilter = document.getElementById('filter-transfer-year');
+    if (transferMonthFilter) transferMonthFilter.addEventListener('change', renderConfirmedTransfers);
+    if (transferYearFilter) transferYearFilter.addEventListener('change', renderConfirmedTransfers);
+
+    const downloadBtn = document.getElementById('download-report-btn');
+    if (downloadBtn) downloadBtn.addEventListener('click', showReportDateRangeModal);
+    const transferBtn = document.getElementById('show-transfer-modal-btn');
+    if (transferBtn) transferBtn.addEventListener('click', showTransferModal);
+
+    renderPendingTransfers();
+    updateDashboardView();
+    renderCartera(); // Renderiza la vista por defecto (Detalle)
+    renderTopClientes();
 }
 
-document.addEventListener('click', function(event) {
+document.addEventListener('click', function (event) {
     // Verificamos si el elemento clickeado es nuestro botón
     if (event.target && event.target.id === 'export-pagos-btn') {
         event.preventDefault();
@@ -5078,11 +5281,11 @@ async function handleConfirmTransfer(e) {
 }
 
 /**
- * --- VERSIÓN CORREGIDA FINAL CON CÁLCULO DE REMISIONES DIARIAS ---
- * Calcula y muestra el resumen financiero. "Ventas del Día" ahora suma
- * el valor total de las remisiones creadas en el día.
+ * --- VERSIÓN FINAL MIXTA: FLUJO DE CAJA + CARTERA DEL DÍA ---
+ * Muestra los ingresos confirmados del día Y la cartera generada por las ventas del día.
  */
 async function updateDashboard(year, month) {
+    // --- 1. Carga de Saldos Iniciales (Sin cambios) ---
     if (Object.keys(initialBalances).length === 0) {
         const balanceDocRef = doc(db, "saldosIniciales", "current");
         const balanceDoc = await getDoc(balanceDocRef);
@@ -5091,57 +5294,48 @@ async function updateDashboard(year, month) {
         }
     }
 
-    // --- INICIO DE LA CORRECCIÓN (salesThisMonth) ---
-    // Asegurar que r.payments sea array antes de flatMap y filter/reduce
+    // --- 2. Cálculos Mensuales Generales (Sin cambios) ---
     const salesThisMonth = allRemisiones
-        .flatMap(r => Array.isArray(r.payments) ? r.payments : []) // Usar array vacío si no es array
+        .flatMap(r => Array.isArray(r.payments) ? r.payments : [])
         .filter(p => { const d = new Date(p.date + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year; })
         .reduce((sum, p) => sum + p.amount, 0);
-    // --- FIN DE LA CORRECCIÓN ---
 
     const expensesThisMonth = allGastos.filter(g => { const d = new Date(g.fecha + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year; }).reduce((sum, g) => sum + g.valorTotal, 0);
 
-    // --- INICIO DE LA CORRECCIÓN (carteraThisMonth) ---
     const carteraThisMonth = allRemisiones.filter(r => { const d = new Date(r.fechaRecibido + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year && r.estado !== 'Anulada'; })
         .reduce((sum, r) => {
-            const paymentsArray = Array.isArray(r.payments) ? r.payments : []; // Asegurar array
+            const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
             const totalPagado = paymentsArray.reduce((s, p) => s + p.amount, 0);
             const saldo = r.valorTotal - totalPagado;
             return sum + (saldo > 0 ? saldo : 0);
         }, 0);
-    // --- FIN DE LA CORRECCIÓN ---
 
     document.getElementById('summary-sales').textContent = formatCurrency(salesThisMonth);
     document.getElementById('summary-expenses').textContent = formatCurrency(expensesThisMonth);
     document.getElementById('summary-profit').textContent = formatCurrency(salesThisMonth - expensesThisMonth);
     document.getElementById('summary-cartera').textContent = formatCurrency(carteraThisMonth);
 
-    // --- INICIO DE LA CORRECCIÓN (totalCartera) ---
     const totalCartera = allRemisiones.filter(r => r.estado !== 'Anulada')
         .reduce((sum, r) => {
-            const paymentsArray = Array.isArray(r.payments) ? r.payments : []; // Asegurar array
+            const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
             const totalPagado = paymentsArray.reduce((s, p) => s + p.amount, 0);
             const saldo = r.valorTotal - totalPagado;
             return sum + (saldo > 0 ? saldo : 0);
         }, 0);
-    // --- FIN DE LA CORRECCIÓN ---
     document.getElementById('summary-cartera-total').textContent = formatCurrency(totalCartera);
 
+    // --- 3. Cálculo de Saldos Totales de Cuentas (Sin cambios) ---
     const accountBalances = {};
-    METODOS_DE_PAGO.forEach(metodo => {
-        accountBalances[metodo] = initialBalances[metodo] || 0;
-    });
+    METODOS_DE_PAGO.forEach(metodo => { accountBalances[metodo] = initialBalances[metodo] || 0; });
 
-    // --- INICIO DE LA CORRECCIÓN (accountBalances) ---
     allRemisiones.forEach(r => {
-        const paymentsArray = Array.isArray(r.payments) ? r.payments : []; // Asegurar array
+        const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
         paymentsArray.forEach(p => {
             if (accountBalances[p.method] !== undefined) {
                 accountBalances[p.method] += p.amount;
             }
         });
     });
-    // --- FIN DE LA CORRECCIÓN ---
 
     allGastos.forEach(g => {
         if (accountBalances[g.fuentePago] !== undefined) {
@@ -5152,22 +5346,86 @@ async function updateDashboard(year, month) {
     METODOS_DE_PAGO.forEach(metodo => {
         const elementId = `summary-${metodo.toLowerCase()}`;
         const element = document.getElementById(elementId);
-        if (element) {
-            element.textContent = formatCurrency(accountBalances[metodo]);
-        }
+        if (element) { element.textContent = formatCurrency(accountBalances[metodo]); }
     });
 
+    // --- 4. LÓGICA MIXTA: INGRESO CONFIRMADO + CARTERA DEL DÍA ---
     const now = new Date();
     const localYear = now.getFullYear();
     const localMonth = (now.getMonth() + 1).toString().padStart(2, '0');
     const localDay = now.getDate().toString().padStart(2, '0');
     const today = `${localYear}-${localMonth}-${localDay}`;
 
-    const salesToday = allRemisiones
-        .filter(r => r.fechaRecibido === today && r.estado !== 'Anulada')
-        .reduce((sum, r) => sum + r.valorTotal, 0);
-    document.getElementById('summary-daily-sales').textContent = formatCurrency(salesToday);
+    // A. Calcular Ingresos Reales Confirmados (De TODAS las remisiones, pagadas hoy)
+    const breakdown = {};
+    METODOS_DE_PAGO.forEach(m => breakdown[m] = 0);
+    let totalConfirmedToday = 0;
 
+    allRemisiones.forEach(r => {
+        if (r.estado === 'Anulada') return;
+        const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
+        paymentsArray.forEach(p => {
+            // CONDICIÓN: Fecha de hoy Y estado CONFIRMADO
+            if (p.date === today && p.status === 'confirmado') {
+                if (breakdown[p.method] !== undefined) {
+                    breakdown[p.method] += p.amount;
+                    totalConfirmedToday += p.amount;
+                }
+            }
+        });
+    });
+
+    // B. Calcular Cartera Generada HOY (Deuda nueva creada hoy)
+    // Solo miramos las remisiones creadas HOY
+    const todayRemisiones = allRemisiones.filter(r => r.fechaRecibido === today && r.estado !== 'Anulada');
+    let carteraToday = 0;
+
+    todayRemisiones.forEach(r => {
+        const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
+        // Cuánto se ha pagado (confirmado) de ESTA remisión hoy
+        const paidConfirmedToday = paymentsArray
+            .filter(p => p.date === today && p.status === 'confirmado')
+            .reduce((sum, p) => sum + p.amount, 0);
+
+        // El resto es crédito otorgado hoy
+        const saldo = r.valorTotal - paidConfirmedToday;
+        if (saldo > 0) carteraToday += saldo;
+    });
+
+    // C. Actualizar UI
+    document.getElementById('summary-daily-sales').textContent = formatCurrency(totalConfirmedToday);
+
+    const breakdownContainer = document.getElementById('daily-sales-breakdown-cards');
+    if (breakdownContainer) {
+        let cardsHTML = '';
+
+        // Tarjetas de Métodos de Pago (Ingreso Real)
+        METODOS_DE_PAGO.forEach(metodo => {
+            const valor = breakdown[metodo] || 0;
+            cardsHTML += `
+                <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                    <div class="text-xs font-semibold text-gray-500 uppercase">${metodo}</div>
+                    <div class="text-lg font-bold text-gray-800">${formatCurrency(valor)}</div>
+                </div>
+            `;
+        });
+
+        // Tarjeta de Cartera (Deuda generada hoy)
+        cardsHTML += `
+            <div class="bg-red-50 p-3 rounded-lg border border-red-200">
+                <div class="text-xs font-semibold text-red-800 uppercase">EN CARTERA (HOY)</div>
+                <div class="text-lg font-bold text-red-700">${formatCurrency(carteraToday)}</div>
+            </div>
+        `;
+
+        if (totalConfirmedToday === 0 && carteraToday === 0) {
+            cardsHTML = '<div class="col-span-full text-center text-sm text-gray-500 italic py-2">No hay movimientos hoy.</div>';
+        }
+
+        breakdownContainer.innerHTML = cardsHTML;
+    }
+
+    // --- 5. Gráfica (Sin cambios) ---
     const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
     const labels = [];
     const salesData = [];
@@ -5179,39 +5437,27 @@ async function updateDashboard(year, month) {
         const y = d.getFullYear();
         labels.push(monthNames[m]);
 
-        // --- INICIO DE LA CORRECCIÓN ---
         const monthlySales = allRemisiones
-            .flatMap(r => Array.isArray(r.payments) ? r.payments : []) // Asegurar array
+            .flatMap(r => Array.isArray(r.payments) ? r.payments : [])
             .filter(p => { const pDate = new Date(p.date + 'T00:00:00'); return pDate.getMonth() === m && pDate.getFullYear() === y; })
             .reduce((sum, p) => sum + p.amount, 0);
-        const monthlyExpenses = allGastos.filter(g => { const gDate = new Date(g.fecha + 'T00:00:00'); return gDate.getMonth() === m && gDate.getFullYear() === y; }).reduce((sum, g) => sum + g.valorTotal, 0);        // --- FIN DE LA CORRECCIÓN ---
+        const monthlyExpenses = allGastos.filter(g => { const gDate = new Date(g.fecha + 'T00:00:00'); return gDate.getMonth() === m && gDate.getFullYear() === y; }).reduce((sum, g) => sum + g.valorTotal, 0);
 
         salesData.push(monthlySales);
         expensesData.push(monthlyExpenses);
     }
     const ctx = document.getElementById('profitLossChart').getContext('2d');
-    if (profitLossChart) {
-        profitLossChart.destroy();
-    }
+    if (profitLossChart) { profitLossChart.destroy(); }
     profitLossChart = new Chart(ctx, {
         type: 'bar',
         data: {
             labels,
-            datasets: [{
-                label: 'Ventas',
-                data: salesData,
-                backgroundColor: 'rgba(75, 192, 192, 0.6)'
-            }, {
-                label: 'Gastos',
-                data: expensesData,
-                backgroundColor: 'rgba(255, 99, 132, 0.6)'
-            }]
+            datasets: [{ label: 'Ventas', data: salesData, backgroundColor: 'rgba(75, 192, 192, 0.6)' }, { label: 'Gastos', data: expensesData, backgroundColor: 'rgba(255, 99, 132, 0.6)' }]
         },
-        options: {
-            scales: { y: { beginAtZero: true } }
-        }
+        options: { scales: { y: { beginAtZero: true } } }
     });
 }
+
 function calculateOverdueDays(dateString) {
     const today = new Date();
     const receivedDate = new Date(dateString);
@@ -5315,6 +5561,83 @@ function renderCartera() {
     carteraListEl.addEventListener('click', newListener);
     carteraListEl._paymentClickListener = newListener; // Guardar referencia
     // --- FIN: Listener de eventos ---
+}
+
+/**
+ * Renderiza la lista de cartera agrupada por cliente.
+ * VERSIÓN AJUSTADA: Muestra cantidad de remisiones (sin números) y deuda total.
+ */
+function renderCarteraClientes() {
+    const container = document.getElementById('cartera-clientes-list');
+    const totalEl = document.getElementById('cartera-clientes-total');
+    if (!container || !totalEl) return;
+
+    // 1. Filtrar todas las remisiones con saldo pendiente
+    const pendingRemisiones = allRemisiones.filter(r => {
+        if (r.estado === 'Anulada') return false;
+        const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
+        const totalPagado = paymentsArray.reduce((sum, p) => sum + p.amount, 0);
+        return r.valorTotal - totalPagado > 0.01;
+    });
+
+    if (pendingRemisiones.length === 0) {
+        container.innerHTML = '<p class="text-center text-gray-500 py-8">¡No hay cartera pendiente!</p>';
+        totalEl.innerHTML = '';
+        return;
+    }
+
+    // 2. Agrupar la deuda por Cliente
+    const carteraPorCliente = {};
+    let granTotal = 0;
+
+    pendingRemisiones.forEach(r => {
+        const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
+        const totalPagado = paymentsArray.reduce((sum, p) => sum + p.amount, 0);
+        const saldo = r.valorTotal - totalPagado;
+
+        const clienteId = r.idCliente || 'DESCONOCIDO';
+
+        if (!carteraPorCliente[clienteId]) {
+            carteraPorCliente[clienteId] = {
+                nombre: r.clienteNombre || 'Cliente Desconocido',
+                telefono: r.clienteTelefono || '',
+                remisionesCount: 0, // Reiniciamos el contador
+                totalDeuda: 0
+            };
+        }
+
+        carteraPorCliente[clienteId].totalDeuda += saldo;
+        carteraPorCliente[clienteId].remisionesCount += 1; // Sumamos 1 por cada remisión pendiente
+        granTotal += saldo;
+    });
+
+    // 3. Convertir a array y ordenar por deuda descendente
+    const clientesOrdenados = Object.values(carteraPorCliente).sort((a, b) => b.totalDeuda - a.totalDeuda);
+
+    // 4. Renderizar
+    container.innerHTML = '';
+    clientesOrdenados.forEach(c => {
+        const card = document.createElement('div');
+        card.className = 'bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4';
+
+        // Ajuste gramatical simple (singular/plural)
+        const labelRemisiones = c.remisionesCount === 1 ? 'remisión pendiente' : 'remisiones pendientes';
+
+        card.innerHTML = `
+            <div>
+                <p class="font-bold text-lg text-gray-800">${c.nombre}</p>
+                <p class="text-sm text-gray-600 font-medium">${c.remisionesCount} ${labelRemisiones}</p>
+                ${c.telefono && c.telefono !== 'N/A' ? `<p class="text-xs text-gray-400 mt-1">Tel: ${c.telefono}</p>` : ''}
+            </div>
+            <div class="text-left sm:text-right w-full sm:w-auto border-t sm:border-t-0 pt-2 sm:pt-0 mt-2 sm:mt-0">
+                <p class="text-xs text-gray-500 uppercase tracking-wider">Deuda Total</p>
+                <p class="font-bold text-xl text-red-600">${formatCurrency(c.totalDeuda)}</p>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+
+    totalEl.innerHTML = `Total Cartera: <span class="text-red-600">${formatCurrency(granTotal)}</span>`;
 }
 
 /**
@@ -6687,6 +7010,64 @@ function showDiscountModal(remision) {
             }
         } catch (error) {
             console.error("Error al aplicar descuento:", error);
+            showModalMessage(`Error: ${error.message}`);
+        }
+    });
+}
+
+function showRetentionModal(remision) {
+    const modalContentWrapper = document.getElementById('modal-content-wrapper');
+    const currentRetention = remision.retention ? remision.retention.amount : 0;
+
+    modalContentWrapper.innerHTML = `
+        <div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-auto text-left">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Aplicar Retenciones</h2>
+                <button id="close-retention-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            </div>
+            <p class="text-sm text-gray-600 mb-2">Remisión N°: <span class="font-bold">${remision.numeroRemision}</span></p>
+            <p class="text-sm text-gray-600 mb-4">Total Actual: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>
+            
+            <form id="retention-form" class="space-y-4">
+                <div>
+                    <label for="retention-amount" class="block text-sm font-medium">Valor Retención (COP)</label>
+                    <input type="text" id="retention-amount" class="w-full p-2 border rounded-lg mt-1" inputmode="numeric" required placeholder="0" value="${currentRetention > 0 ? formatCurrency(currentRetention) : ''}">
+                    <p class="text-xs text-gray-500 mt-1">Este valor se restará del total a pagar.</p>
+                </div>
+                <button type="submit" class="w-full bg-amber-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-700">Aplicar Retención</button>
+            </form>
+        </div>
+    `;
+
+    document.getElementById('modal').classList.remove('hidden');
+    document.getElementById('close-retention-modal').addEventListener('click', hideModal);
+
+    const amountInput = document.getElementById('retention-amount');
+    amountInput.addEventListener('focus', (e) => unformatCurrencyInput(e.target));
+    amountInput.addEventListener('blur', (e) => formatCurrencyInput(e.target));
+
+    document.getElementById('retention-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const retentionAmount = unformatCurrency(amountInput.value);
+
+        if (isNaN(retentionAmount) || retentionAmount < 0) {
+            showModalMessage("Por favor, ingresa un valor válido.");
+            return;
+        }
+
+        showModalMessage("Aplicando retención y actualizando...", true);
+
+        try {
+            const applyRetentionFn = httpsCallable(functions, 'applyRetention');
+            const result = await applyRetentionFn({
+                remisionId: remision.id,
+                retentionAmount: retentionAmount
+            });
+
+            hideModal();
+            showTemporaryMessage("¡Retención aplicada con éxito!", "success");
+        } catch (error) {
+            console.error("Error al aplicar retención:", error);
             showModalMessage(`Error: ${error.message}`);
         }
     });

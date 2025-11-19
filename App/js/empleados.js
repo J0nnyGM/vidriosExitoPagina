@@ -15,7 +15,9 @@ import {
     serverTimestamp,
     deleteDoc,
     setDoc, // <-- AÑADIDO
-    writeBatch // <-- LÍNEA CORREGIDA
+    writeBatch, // <-- LÍNEA CORREGIDA
+    collectionGroup,
+    increment
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
 import {
@@ -408,11 +410,10 @@ function loadSSTTab(container) {
 }
 
 /**
- * (FUNCIÓN ACTUALIZADA: Con Exportación Bancaria a Excel)
- * Carga el contenido de la pestaña "Nómina".
+ * Carga el contenido de la pestaña "Nómina" con deducción de préstamos.
  */
 async function loadNominaTab(container) {
-    // 1. Renderizar el "Shell" con BARRA DE HERRAMIENTAS
+    // 1. Renderizar el "Shell" (Estructura HTML)
     container.innerHTML = `
         <div class="bg-white p-6 rounded-lg shadow-md">
             
@@ -437,7 +438,8 @@ async function loadNominaTab(container) {
                             <th class="px-6 py-3 text-center">Nivel Comisión</th>
                             <th class="px-6 py-3 text-right">Salario Básico</th>
                             <th class="px-6 py-3 text-right text-lime-600">Bonificación M² (Mes)</th>
-                            <th class="px-6 py-3 text-right text-blue-700">Total a Pagar (Mes)</th>
+                            <th class="px-6 py-3 text-right text-red-600">Desc. Préstamos (Est.)</th>
+                            <th class="px-6 py-3 text-right text-blue-700">Total a Pagar (Est.)</th>
                         </tr>
                     </thead>
                     <tbody id="empleados-nomina-table-body" class="divide-y divide-gray-100">
@@ -447,11 +449,13 @@ async function loadNominaTab(container) {
                             <td colspan="2" class="px-6 py-4 text-right uppercase text-xs tracking-wider">Totales del Mes:</td>
                             <td id="total-basico" class="px-6 py-4 text-right">---</td>
                             <td id="total-bonificacion" class="px-6 py-4 text-right text-lime-700">---</td>
+                            <td id="total-deducciones" class="px-6 py-4 text-right text-red-700">---</td>
                             <td id="total-pagar" class="px-6 py-4 text-right text-blue-800 text-base">---</td>
                         </tr>
                     </tfoot>
                 </table>
             </div>
+            <p class="text-xs text-gray-400 mt-2 text-right">* La deducción de préstamos es un estimado basado en (Saldo / Cuotas). El valor final se ajusta al registrar el pago.</p>
         </div>
     `;
 
@@ -466,7 +470,7 @@ async function loadNominaTab(container) {
     const selectedMonthYear = monthSelector.value;
     const currentStatDocId = selectedMonthYear.replace('-', '_');
 
-    tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-10"><div class="loader mx-auto"></div><p class="mt-2 text-gray-500">Cargando reporte para ${selectedMonthYear}...</p></td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10"><div class="loader mx-auto"></div><p class="mt-2 text-gray-500">Cargando reporte para ${selectedMonthYear}...</p></td></tr>`;
 
     try {
         // 3. Obtener usuarios activos
@@ -479,60 +483,89 @@ async function loadNominaTab(container) {
         });
 
         if (activeUsers.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-10 text-gray-500">No se encontraron operarios activos.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-gray-500">No se encontraron operarios activos.</td></tr>`;
             return;
         }
 
-        // 4. Obtener estadísticas
+        // 4. Obtener Préstamos Activos Globalmente (Optimización con collectionGroup)
+        const loansQuery = query(collectionGroup(_db, 'loans'), where('status', '==', 'active'));
+        const loansSnapshot = await getDocs(loansQuery);
+
+        const userLoansMap = new Map(); // userId -> { totalBalance, estimatedDeduction }
+
+        loansSnapshot.forEach(doc => {
+            const loan = doc.data();
+            // El abuelo del documento de préstamo es el usuario (users/{userId}/loans/{loanId})
+            const userId = doc.ref.parent.parent.id;
+
+            if (!userLoansMap.has(userId)) {
+                userLoansMap.set(userId, { totalBalance: 0, estimatedDeduction: 0 });
+            }
+
+            const userData = userLoansMap.get(userId);
+            userData.totalBalance += (loan.balance || 0);
+
+            // Cálculo de cuota sugerida: Si hay cuotas definidas, dividimos saldo / cuotas.
+            const installments = loan.installments && loan.installments > 0 ? loan.installments : 1;
+            const deduction = (loan.balance || 0) / installments;
+
+            userData.estimatedDeduction += deduction;
+        });
+
+        // 5. Obtener estadísticas del mes seleccionado
         const statPromises = activeUsers.map(op => getDoc(doc(_db, "employeeStats", op.id, "monthlyStats", currentStatDocId)));
         const statSnapshots = await Promise.all(statPromises);
 
-        // Variables para acumuladores
+        // Variables para acumuladores de totales
         let sumBasico = 0;
         let sumBonificacion = 0;
+        let sumDeducciones = 0;
         let sumTotal = 0;
 
-        // 5. Combinar y calcular
+        // 6. Combinar datos y realizar cálculos
         const empleadoData = activeUsers.map((operario, index) => {
             const statDoc = statSnapshots[index];
             const stats = statDoc.exists() ? statDoc.data() : { totalBonificacion: 0 };
+            const loanInfo = userLoansMap.get(operario.id) || { totalBalance: 0, estimatedDeduction: 0 };
 
-            const basico = operario.salarioBasico || 0;
+            const basico = parseFloat(operario.salarioBasico) || 0;
             const bono = stats.totalBonificacion || 0;
-            const total = basico + bono;
+
+            // La deducción estimada no puede ser mayor a la deuda total
+            const deduction = Math.min(loanInfo.estimatedDeduction, loanInfo.totalBalance);
+
+            // Neto estimado = Básico + Bono - Deducción
+            const total = basico + bono - deduction;
 
             sumBasico += basico;
             sumBonificacion += bono;
+            sumDeducciones += deduction;
             sumTotal += total;
 
             return {
                 id: operario.id,
-                firstName: operario.firstName,
-                lastName: operario.lastName,
                 fullName: `${operario.firstName} ${operario.lastName}`,
                 cedula: operario.idNumber || 'N/A',
-
-                // --- DATOS BANCARIOS PARA EL REPORTE ---
                 bankName: operario.bankName || 'N/A',
                 accountType: operario.accountType || 'N/A',
                 accountNumber: operario.accountNumber || 'N/A',
-                // ---------------------------------------
-
                 commissionLevel: operario.commissionLevel || 'principiante',
                 salarioBasico: basico,
                 bonificacion: bono,
+                deduccionPrestamos: deduction, // Valor a descontar
+                deudaTotal: loanInfo.totalBalance, // Deuda total activa
                 totalPagar: total
             };
         });
 
-        // 6. Ordenar
+        // 7. Ordenar por total a pagar descendente
         empleadoData.sort((a, b) => b.totalPagar - a.totalPagar);
 
-        // 7. Renderizar cuerpo
+        // 8. Función de renderizado de la tabla
         const renderTable = (dataToRender) => {
             tableBody.innerHTML = '';
             if (dataToRender.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-10 text-gray-500">No se encontraron resultados.</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-gray-500">No se encontraron resultados.</td></tr>`;
                 return;
             }
 
@@ -544,11 +577,20 @@ async function loadNominaTab(container) {
 
                 const levelText = data.commissionLevel.charAt(0).toUpperCase() + data.commissionLevel.slice(1);
 
+                // Estilo rojo si hay deducción
+                const dedHtml = data.deduccionPrestamos > 0
+                    ? `<span class="text-red-600 font-semibold">- ${currencyFormatter.format(data.deduccionPrestamos)}</span>`
+                    : `<span class="text-gray-400">-</span>`;
+
                 row.innerHTML = `
-                    <td class="px-6 py-4 font-medium text-gray-900">${data.fullName}</td>
+                    <td class="px-6 py-4 font-medium text-gray-900">
+                        ${data.fullName}
+                        ${data.deudaTotal > 0 ? `<div class="text-xs text-red-400">Deuda Total: ${currencyFormatter.format(data.deudaTotal)}</div>` : ''}
+                    </td>
                     <td class="px-6 py-4 text-center text-xs uppercase text-gray-500 font-semibold">${levelText}</td>
                     <td class="px-6 py-4 text-right font-medium text-gray-600">${currencyFormatter.format(data.salarioBasico)}</td>
                     <td class="px-6 py-4 text-right font-bold text-lime-600">${currencyFormatter.format(data.bonificacion)}</td>
+                    <td class="px-6 py-4 text-right">${dedHtml}</td>
                     <td class="px-6 py-4 text-right font-bold text-blue-700">${currencyFormatter.format(data.totalPagar)}</td>
                 `;
                 tableBody.appendChild(row);
@@ -557,12 +599,13 @@ async function loadNominaTab(container) {
 
         renderTable(empleadoData);
 
-        // 8. Renderizar Totales
+        // 9. Actualizar Footer con Totales
         document.getElementById('total-basico').textContent = currencyFormatter.format(sumBasico);
         document.getElementById('total-bonificacion').textContent = currencyFormatter.format(sumBonificacion);
+        document.getElementById('total-deducciones').textContent = "- " + currencyFormatter.format(sumDeducciones);
         document.getElementById('total-pagar').textContent = currencyFormatter.format(sumTotal);
 
-        // --- 9. LÓGICA DEL BUSCADOR ---
+        // 10. Lógica del Buscador
         searchInput.addEventListener('input', (e) => {
             const term = e.target.value.toLowerCase();
             const filteredData = empleadoData.filter(emp =>
@@ -572,26 +615,26 @@ async function loadNominaTab(container) {
             renderTable(filteredData);
         });
 
-        // --- 10. LÓGICA DE EXPORTACIÓN A EXCEL (ACTUALIZADA) ---
+        // 11. Lógica de Exportación a Excel
         exportBtn.addEventListener('click', () => {
             try {
-                // Preparar datos para Excel con COLUMNAS BANCARIAS
+                // Datos del reporte
                 const exportData = empleadoData.map(emp => ({
                     "Cédula": emp.cedula,
                     "Nombre Completo": emp.fullName,
-                    // --- COLUMNAS NUEVAS ---
                     "Banco": emp.bankName,
                     "Tipo Cuenta": emp.accountType,
                     "No. Cuenta": emp.accountNumber,
-                    // -----------------------
                     "Nivel": emp.commissionLevel,
                     "Salario Básico": emp.salarioBasico,
                     "Bonificación Mes": emp.bonificacion,
-                    "Total a Pagar": emp.totalPagar,
+                    "Deducción Préstamos (Est.)": emp.deduccionPrestamos,
+                    "Deuda Total Restante": emp.deudaTotal - emp.deduccionPrestamos, // Saldo proyectado
+                    "Total a Pagar (Est.)": emp.totalPagar,
                     "Mes": selectedMonthYear
                 }));
 
-                // Añadir fila de totales al excel (dejando espacios vacíos en las col. de texto)
+                // Fila de Totales
                 exportData.push({
                     "Cédula": "",
                     "Nombre Completo": "TOTALES",
@@ -601,7 +644,9 @@ async function loadNominaTab(container) {
                     "Nivel": "",
                     "Salario Básico": sumBasico,
                     "Bonificación Mes": sumBonificacion,
-                    "Total a Pagar": sumTotal,
+                    "Deducción Préstamos (Est.)": sumDeducciones,
+                    "Deuda Total Restante": "",
+                    "Total a Pagar (Est.)": sumTotal,
                     "Mes": ""
                 });
 
@@ -609,18 +654,10 @@ async function loadNominaTab(container) {
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, "Nomina " + selectedMonthYear);
 
-                // Ajustar ancho de columnas (Nuevas columnas añadidas)
+                // Ajustar ancho de columnas
                 const wscols = [
-                    { wch: 15 }, // Cedula
-                    { wch: 30 }, // Nombre
-                    { wch: 20 }, // Banco (Nuevo)
-                    { wch: 15 }, // Tipo (Nuevo)
-                    { wch: 20 }, // Cuenta (Nuevo)
-                    { wch: 15 }, // Nivel
-                    { wch: 15 }, // Basico
-                    { wch: 15 }, // Bono
-                    { wch: 15 }, // Total
-                    { wch: 10 }  // Mes
+                    { wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 15 },
+                    { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 10 }
                 ];
                 ws['!cols'] = wscols;
 
@@ -634,7 +671,7 @@ async function loadNominaTab(container) {
 
     } catch (error) {
         console.error("Error al cargar el reporte de nómina:", error);
-        tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-10 text-red-500">Error: ${error.message}</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-red-500">Error: ${error.message}</td></tr>`;
     }
 }
 
@@ -1252,9 +1289,10 @@ export async function loadPaymentHistoryView(userId) {
     const liquidarCheckbox = document.getElementById('payment-liquidar-bonificacion');
     const diasPagarInput = document.getElementById('payment-dias-pagar');
 
-    // Préstamos
+    // Préstamos (Elementos nuevos)
     const debtEl = document.getElementById('payment-total-debt');
-    const loanDeductionInput = document.getElementById('payment-loan-deduction');
+    // Nota: El contenedor de la lista se genera dinámicamente abajo, 
+    // asegurándonos de reemplazar el fieldset estático si aún existe.
 
     // Estado de carga inicial
     nameEl.textContent = 'Cargando datos...';
@@ -1331,31 +1369,125 @@ export async function loadPaymentHistoryView(userId) {
             } else { newBtnNext.disabled = true; }
         }
 
-        // --- 5. PRÉSTAMOS ACTIVOS ---
-        // Botón de Nuevo Préstamo
-        const debtLabelContainer = debtEl.parentElement;
-        if (!document.getElementById('btn-new-loan-trigger')) {
-            const btnNewLoan = document.createElement('button');
-            btnNewLoan.id = 'btn-new-loan-trigger';
-            btnNewLoan.type = 'button';
-            btnNewLoan.className = 'text-xs text-indigo-600 hover:text-indigo-800 font-bold underline ml-2';
-            btnNewLoan.textContent = '(+ Nuevo Préstamo)';
-            btnNewLoan.onclick = () => openLoanModal(userId); // Asegúrate de tener esta función definida
-            debtLabelContainer.appendChild(btnNewLoan);
-        } else {
-            document.getElementById('btn-new-loan-trigger').onclick = () => openLoanModal(userId);
+// --- 5. GESTIÓN DE PRÉSTAMOS (SOLO DEDUCCIÓN) ---
+        
+        // 1. Búsqueda robusta del contenedor
+        let loanFieldset = document.getElementById('loan-management-fieldset');
+        if (!loanFieldset) {
+            loanFieldset = form.querySelector('fieldset.bg-indigo-50');
+            if (!loanFieldset) {
+                 const legends = form.querySelectorAll('legend');
+                 for (const legend of legends) {
+                     if (legend.textContent.includes('Deducción') || legend.textContent.includes('Préstamos')) {
+                         loanFieldset = legend.parentElement;
+                         break;
+                     }
+                 }
+            }
         }
 
-        // Calcular Deuda
-        let totalActiveDebt = 0;
-        const loansQuery = query(collection(_db, "users", userId, "loans"), where("status", "==", "active"));
-        const loansSnap = await getDocs(loansQuery);
-        loansSnap.forEach(doc => { totalActiveDebt += (doc.data().balance || 0); });
+        if (loanFieldset) {
+            loanFieldset.id = 'loan-management-fieldset';
+            loanFieldset.className = "mt-6 space-y-3";
+            loanFieldset.style.border = "none";
+            loanFieldset.style.background = "transparent";
+            loanFieldset.style.padding = "0";
 
-        debtEl.textContent = currencyFormatter.format(totalActiveDebt);
-        loanDeductionInput.value = '';
-        loanDeductionInput.dataset.max = totalActiveDebt;
+            loanFieldset.innerHTML = `
+                <div class="px-1 border-b border-gray-200 pb-2 mb-2">
+                    <h4 class="text-sm font-bold text-gray-700 uppercase tracking-wide">Deducción de Préstamos</h4>
+                    <p class="text-xs text-gray-500 mt-0.5">Deuda Total Activa: <span id="payment-total-debt" class="font-bold text-red-600">$ 0</span></p>
+                </div>
 
+                <div class="bg-white border border-gray-300 rounded-lg overflow-hidden shadow-sm">
+                    <div class="max-h-48 overflow-y-auto custom-scrollbar">
+                        <table class="w-full text-xs text-left">
+                            <thead class="bg-gray-100 text-gray-600 font-semibold border-b border-gray-200 sticky top-0 z-10">
+                                <tr>
+                                    <th class="py-2 px-3 w-2/5">Concepto</th>
+                                    <th class="py-2 px-3 w-1/5 text-right">Fecha</th>
+                                    <th class="py-2 px-3 w-1/5 text-right">Saldo</th>
+                                    <th class="py-2 px-3 w-1/5 text-right">Abonar</th>
+                                </tr>
+                            </thead>
+                            <tbody id="active-loans-list" class="divide-y divide-gray-100 text-gray-700">
+                                <tr><td colspan="4" class="text-center py-4 text-gray-400 italic">Cargando préstamos...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="bg-gray-50 border-t border-gray-200 px-4 py-2 flex justify-between items-center">
+                        <span class="font-semibold text-gray-600">Total a Descontar:</span>
+                        <span id="payment-total-loan-deduction-display" class="font-bold text-base text-red-600">$ 0</span>
+                    </div>
+                </div>
+            `;
+
+            // (ELIMINADO EL LISTENER DEL BOTÓN 'btn-new-loan-trigger')
+
+            // 2. Consultar y Renderizar Préstamos
+            const activeLoansList = document.getElementById('active-loans-list');
+            const totalDebtElDisplay = document.getElementById('payment-total-debt');
+
+            const loansQuery = query(collection(_db, "users", userId, "loans"), where("status", "==", "active"), orderBy("date", "asc"));
+            const loansSnap = await getDocs(loansQuery);
+            
+            let totalActiveDebt = 0;
+            activeLoansList.innerHTML = '';
+
+            if (loansSnap.empty) {
+                activeLoansList.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center py-6 text-gray-400">
+                            <i class="fa-regular fa-circle-check mb-1 text-lg"></i><br>
+                            Sin deudas activas
+                        </td>
+                    </tr>`;
+            } else {
+                loansSnap.forEach(doc => {
+                    const loan = { id: doc.id, ...doc.data() };
+                    totalActiveDebt += (loan.balance || 0);
+                    
+                    const dateStr = new Date(loan.date).toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: '2-digit' });
+
+                    const row = document.createElement('tr');
+                    row.className = "hover:bg-blue-50 transition-colors group";
+                    
+                    row.innerHTML = `
+                        <td class="py-2 px-3 align-middle">
+                            <div class="truncate font-medium max-w-[120px] sm:max-w-[180px]" title="${loan.description}">
+                                ${loan.description}
+                            </div>
+                            ${loan.installments > 1 ? '<span class="text-[9px] text-blue-500 bg-blue-100 px-1 rounded">Diferido</span>' : ''}
+                        </td>
+                        <td class="py-2 px-3 text-right text-gray-500 align-middle whitespace-nowrap">
+                            ${dateStr}
+                        </td>
+                        <td class="py-2 px-3 text-right font-bold text-gray-800 align-middle whitespace-nowrap">
+                            ${currencyFormatter.format(loan.balance)}
+                        </td>
+                        <td class="py-1.5 px-3 text-right align-middle">
+                            <input type="text" 
+                                class="loan-deduction-input w-24 border border-gray-300 rounded px-2 py-1 text-right text-xs font-bold text-gray-900 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-300 outline-none" 
+                                placeholder="0"
+                                data-loan-id="${loan.id}"
+                                data-balance="${loan.balance}">
+                        </td>
+                    `;
+                    activeLoansList.appendChild(row);
+                });
+            }
+            
+            totalDebtElDisplay.textContent = currencyFormatter.format(totalActiveDebt);
+
+            // Activar eventos
+            activeLoansList.querySelectorAll('.loan-deduction-input').forEach(input => {
+                _setupCurrencyInput(input);
+                input.addEventListener('focus', function() { this.select(); });
+                input.addEventListener('input', () => updatePaymentTotal());
+            });
+        }
+        
     } catch (e) {
         console.error("Error al cargar datos:", e);
         nameEl.textContent = 'Error';
@@ -1404,9 +1536,10 @@ export async function loadPaymentHistoryView(userId) {
     }
 
     if (!diasPagarInput.value) diasPagarInput.value = 15;
+    // Llamamos al recálculo inicial
     if (typeof updatePaymentTotal === 'function') updatePaymentTotal();
 
-    // --- 7. TABLA HISTORIAL ---
+    // --- 7. TABLA HISTORIAL (Snapshot) ---
     const q = query(collection(_db, "users", userId, "paymentHistory"), orderBy("createdAt", "desc"));
     unsubscribeEmpleadosTab = onSnapshot(q, (snapshot) => {
         if (snapshot.empty) {
@@ -1438,8 +1571,11 @@ export async function loadPaymentHistoryView(userId) {
 
             const viewBtn = row.querySelector('.view-voucher-btn');
             if (viewBtn) {
+                // Aseguramos que openPaymentVoucherModal esté disponible
                 viewBtn.addEventListener('click', () => {
-                    if (typeof openPaymentVoucherModal === 'function') openPaymentVoucherModal(payment, user);
+                    // Suponiendo que esta función existe en el mismo archivo o es global
+                    // Si es interna, la llamamos directo.
+                    openPaymentVoucherModal(payment, user);
                 });
             }
             tableBody.appendChild(row);
@@ -1452,8 +1588,7 @@ export async function loadPaymentHistoryView(userId) {
 
     newForm.addEventListener('submit', (e) => handleRegisterPayment(e, userId));
 
-    // Incluimos el nuevo input de préstamos en el listener de recálculo
-    newForm.querySelectorAll('.payment-horas-input, .currency-input, .payment-dias-input, #payment-liquidar-bonificacion, #payment-loan-deduction').forEach(input => {
+    newForm.querySelectorAll('.payment-horas-input, .currency-input, .payment-dias-input, #payment-liquidar-bonificacion').forEach(input => {
         input.addEventListener('input', () => {
             if (typeof updatePaymentTotal === 'function') updatePaymentTotal();
         });
@@ -1494,7 +1629,16 @@ function updatePaymentTotal() {
 
     // 4. Obtener valores que NO se prorratean
     const otros = parseFloat(document.getElementById('payment-otros').value.replace(/[$. ]/g, '')) || 0;
-    const loanDeduction = parseFloat(document.getElementById('payment-loan-deduction').value.replace(/[$. ]/g, '')) || 0;
+
+    let loanDeduction = 0;
+    document.querySelectorAll('.loan-deduction-input').forEach(input => {
+        const val = parseFloat(input.value.replace(/[$. ]/g, '')) || 0;
+        loanDeduction += val;
+    });
+
+    // Actualizar el display del total a descontar en el fieldset
+    const loanTotalDisplay = document.getElementById('payment-total-loan-deduction-display');
+    if (loanTotalDisplay) loanTotalDisplay.textContent = currencyFormatter.format(loanDeduction);
 
     // --- INICIO DE MODIFICACIÓN (FASE 3) ---
     // 5. Determinar la bonificación a pagar
@@ -1536,13 +1680,13 @@ function updatePaymentTotal() {
 
     // 8. Calcular Total Final (usando bonificacionAPagar)
     const totalDevengado = salarioProrrateado + auxTransporteProrrateado + bonificacionAPagar + totalHorasExtra + otros;
-    const totalPagar = totalDevengado - totalDeducciones - loanDeduction; // <-- AQUI
+    const totalPagar = totalDevengado - totalDeducciones - loanDeduction; // Se usa la suma calculada
 
     document.getElementById('payment-total-pagar').textContent = currencyFormatter.format(totalPagar);
 }
 
 /**
- * (FUNCIÓN COMPLETA) Registra el pago, aplica deducciones y AMORTIZA PRÉSTAMOS.
+ * (FUNCIÓN COMPLETA) Registra el pago, aplica deducciones y AMORTIZA PRÉSTAMOS ESPECÍFICOS.
  */
 async function handleRegisterPayment(e, userId) {
     e.preventDefault();
@@ -1554,7 +1698,7 @@ async function handleRegisterPayment(e, userId) {
     const form = document.getElementById('payment-register-form');
 
     try {
-        // 1. Obtener valores
+        // 1. Obtener valores generales
         const diasPagar = parseFloat(document.getElementById('payment-dias-pagar').value) || 0;
         const salarioMensual = parseFloat(document.getElementById('payment-salario-basico').dataset.value || 0);
         const auxTransporteMensual = parseFloat(document.getElementById('payment-salario-basico').dataset.auxTransporte || 0);
@@ -1566,9 +1710,29 @@ async function handleRegisterPayment(e, userId) {
         const totalHorasExtra = parseFloat(document.getElementById('payment-total-horas').textContent.replace(/[$. ]/g, '')) || 0;
         const concepto = document.getElementById('payment-concepto').value;
 
-        // 2. Datos de Préstamos
-        const loanDeduction = parseFloat(document.getElementById('payment-loan-deduction').value.replace(/[$. ]/g, '')) || 0;
-        const totalDebt = parseFloat(document.getElementById('payment-total-debt').textContent.replace(/[$. ]/g, '')) || 0;
+        // 2. PROCESAR DEDUCCIÓN DE PRÉSTAMOS (Lógica Individual)
+        let totalLoanDeduction = 0;
+        const loanPayments = []; // Array para guardar qué préstamos se pagaron
+
+        const loanInputs = document.querySelectorAll('.loan-deduction-input');
+        for (const input of loanInputs) {
+            const val = parseFloat(input.value.replace(/[$. ]/g, '')) || 0;
+            const loanId = input.dataset.loanId;
+            const currentBalance = parseFloat(input.dataset.balance);
+
+            if (val > 0) {
+                if (val > currentBalance) {
+                    throw new Error(`El abono a uno de los préstamos supera su saldo pendiente (${currencyFormatter.format(currentBalance)}).`);
+                }
+
+                totalLoanDeduction += val;
+                loanPayments.push({
+                    loanId: loanId,
+                    amount: val,
+                    previousBalance: currentBalance
+                });
+            }
+        }
 
         // 3. Checkbox Liquidación
         const liquidarBonificacion = document.getElementById('payment-liquidar-bonificacion').checked;
@@ -1576,9 +1740,8 @@ async function handleRegisterPayment(e, userId) {
         const bonificacionPagada = liquidarBonificacion ? bonificacionPotencial : 0;
 
         // 4. Validaciones
-        if (!concepto) throw new Error("Ingresa un concepto.");
-        if (diasPagar <= 0) throw new Error("Días inválidos.");
-        if (loanDeduction > totalDebt) throw new Error("El abono supera la deuda total.");
+        if (!concepto) throw new Error("Ingresa un concepto para el pago.");
+        if (diasPagar <= 0) throw new Error("Días a pagar inválidos.");
 
         // 5. Calcular Deducciones de Ley
         const deduccionSobreMinimo = form.dataset.deduccionSobreMinimo === 'true';
@@ -1596,22 +1759,22 @@ async function handleRegisterPayment(e, userId) {
 
         const deduccionSalud = baseDeduccion * (config.porcentajeSalud / 100);
         const deduccionPension = baseDeduccion * (config.porcentajePension / 100);
-
-        // 6. CALCULAR NETO A PAGAR
-        // (Ingresos) - (Salud + Pension) - (Préstamos)
-        const totalDevengado = salarioProrrateado + auxTransporteProrrateado + bonificacionPagada + totalHorasExtra + otros;
         const totalDeduccionesLey = deduccionSalud + deduccionPension;
-        const totalPagar = totalDevengado - totalDeduccionesLey - loanDeduction;
 
-        if (totalPagar < 0) throw new Error("El total a pagar no puede ser negativo.");
+        // 6. CALCULAR NETO A PAGAR FINAL
+        // (Ingresos) - (Salud + Pension) - (Total Préstamos)
+        const totalDevengado = salarioProrrateado + auxTransporteProrrateado + bonificacionPagada + totalHorasExtra + otros;
+        const totalPagar = totalDevengado - totalDeduccionesLey - totalLoanDeduction;
 
-        // 7. Obtener nombre de quien registra
+        if (totalPagar < 0) throw new Error("El total a pagar no puede ser negativo. Revisa las deducciones.");
+
+        // 7. Obtener datos de registro
         const currentUserId = _getCurrentUserId();
         const usersMap = _getUsersMap();
         const currentUser = usersMap.get(currentUserId);
         const registeredByName = currentUser ? `${currentUser.firstName} ${currentUser.lastName}` : 'Sistema';
 
-        // 8. Objeto Payment
+        // 8. Construir Objeto Payment
         const paymentData = {
             userId: userId,
             paymentDate: new Date().toISOString().split('T')[0],
@@ -1624,8 +1787,8 @@ async function handleRegisterPayment(e, userId) {
                 bonificacionM2: bonificacionPagada,
                 horasExtra: totalHorasExtra,
                 otros: otros,
-                abonoPrestamos: loanDeduction, // <-- NUEVO CAMPO
-                saldoPrestamosRestante: totalDebt - loanDeduction, // Informativo
+                abonoPrestamos: totalLoanDeduction, // Total descontado
+                detallesPrestamos: loanPayments,    // Detalle específico (NUEVO)
                 deduccionSalud: -deduccionSalud,
                 deduccionPension: -deduccionPension,
                 baseDeduccion: baseDeduccion,
@@ -1641,7 +1804,7 @@ async function handleRegisterPayment(e, userId) {
 
         const batch = writeBatch(_db);
 
-        // A. Guardar Pago
+        // A. Guardar el documento de Pago
         const paymentHistoryRef = doc(collection(_db, "users", userId, "paymentHistory"));
         batch.set(paymentHistoryRef, paymentData);
 
@@ -1653,46 +1816,32 @@ async function handleRegisterPayment(e, userId) {
             batch.set(statRef, { bonificacionPagada: true }, { merge: true });
         }
 
-        // C. AMORTIZAR PRÉSTAMOS (Lógica FIFO)
-        if (loanDeduction > 0) {
-            const loansQuery = query(collection(_db, "users", userId, "loans"), where("status", "==", "active"), orderBy("date", "asc"));
-            const loansSnap = await getDocs(loansQuery);
+        // C. AMORTIZAR PRÉSTAMOS ESPECÍFICOS
+        loanPayments.forEach(pago => {
+            const loanRef = doc(_db, "users", userId, "loans", pago.loanId);
+            const newBalance = pago.previousBalance - pago.amount;
 
-            let remainingDeduction = loanDeduction;
+            const updateData = { balance: newBalance };
+            if (newBalance <= 0) {
+                updateData.status = 'paid';
+                updateData.paidAt = serverTimestamp();
+            }
+            batch.update(loanRef, updateData);
+        });
 
-            loansSnap.forEach(docSnap => {
-                if (remainingDeduction <= 0) return;
-
-                const loan = docSnap.data();
-                const loanRef = doc(_db, "users", userId, "loans", docSnap.id);
-
-                // Cuánto cubrir de este préstamo
-                const amountToPay = Math.min(loan.balance, remainingDeduction);
-                const newBalance = loan.balance - amountToPay;
-
-                const updateData = { balance: newBalance };
-                if (newBalance <= 0) {
-                    updateData.status = 'paid';
-                    updateData.paidAt = serverTimestamp();
-                }
-
-                batch.update(loanRef, updateData);
-                remainingDeduction -= amountToPay;
-            });
-        }
-
+        // Ejecutar todas las escrituras
         await batch.commit();
 
         // 9. Resetear y Recargar
         document.getElementById('payment-concepto').value = '';
         document.getElementById('payment-horas-diurnas').value = '0';
         document.getElementById('payment-otros').value = '$ 0';
-        document.getElementById('payment-loan-deduction').value = ''; // Limpiar préstamo
+        // Los inputs de préstamos se limpiarán al recargar la vista
         document.getElementById('payment-dias-pagar').value = '15';
 
         document.querySelectorAll('#payment-register-form .currency-input').forEach(_setupCurrencyInput);
 
-        // Recargar vista para ver el pago y la deuda actualizada
+        // Recargar vista para ver el pago en la tabla y actualizar las deudas
         loadPaymentHistoryView(userId);
 
     } catch (error) {

@@ -821,17 +821,20 @@
                             <fieldset class="space-y-2 rounded-lg border p-4 bg-indigo-50 border-indigo-100">
                                 <legend class="px-2 font-semibold text-indigo-800 text-sm">Deducción de Préstamos
                                 </legend>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-xs text-gray-600">Deuda Total:</span>
+
+                                <div class="flex justify-between items-center mb-2 border-b border-indigo-200 pb-2">
+                                    <span class="text-xs text-gray-600">Deuda Total Activa:</span>
                                     <span id="payment-total-debt" class="font-bold text-red-600">$ 0</span>
                                 </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700">Abonar a Deuda en este
-                                        Pago</label>
-                                    <input type="text" id="payment-loan-deduction"
-                                        class="currency-input mt-1 w-full border border-indigo-300 rounded-md p-2 text-right font-semibold text-red-700"
-                                        placeholder="$ 0">
-                                    <p class="text-xs text-gray-500 mt-1">Este valor se descontará del neto a pagar.</p>
+
+                                <div id="active-loans-list" class="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                    <p class="text-xs text-gray-400 italic text-center">Cargando préstamos...</p>
+                                </div>
+
+                                <div class="border-t border-indigo-200 pt-2 flex justify-between items-center mt-2">
+                                    <span class="text-sm font-medium text-indigo-900">Total a Descontar:</span>
+                                    <span id="payment-total-loan-deduction-display" class="font-bold text-red-700">$
+                                        0</span>
                                 </div>
                             </fieldset>
 

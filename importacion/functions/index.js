@@ -265,6 +265,11 @@ function generarPDFCliente(remision) {
         doc.setFont("helvetica", "normal").text(`-${formatCurrency(remision.discount.amount)}`, 190, yPos, { align: "right" });
         yPos += 7;
     }
+    if (remision.retention && remision.retention.amount > 0) {
+        doc.setFont("helvetica", "bold").text("Retenciones:", 130, yPos);
+        doc.setFont("helvetica", "normal").text(`-${formatCurrency(remision.retention.amount)}`, 190, yPos, { align: "right" });
+        yPos += 7;
+    }
     if (remision.incluyeIVA) {
         doc.setFont("helvetica", "bold").text("IVA (19%):", 130, yPos);
         doc.setFont("helvetica", "normal").text(formatCurrency(remision.valorIVA), 190, yPos, { align: "right" });
@@ -425,6 +430,11 @@ async function generarPDF(remision, isForPlanta = false) {
         if (remision.discount && remision.discount.amount > 0) {
             paginaResumen.setFont("helvetica", "bold").text("Descuento:", 130, yPos);
             paginaResumen.setFont("helvetica", "normal").text(`-${formatCurrency(remision.discount.amount)}`, 190, yPos, { align: "right" });
+            yPos += 7;
+        }
+        if (remision.retention && remision.retention.amount > 0) {
+            paginaResumen.setFont("helvetica", "bold").text("Retenciones:", 130, yPos);
+            paginaResumen.setFont("helvetica", "normal").text(`-${formatCurrency(remision.retention.amount)}`, 190, yPos, { align: "right" });
             yPos += 7;
         }
         if (remision.incluyeIVA) {
@@ -1845,5 +1855,89 @@ exports.exportPagosRemisionesToExcel = functions.https.onCall(async (data, conte
     } catch (error) {
         console.error("Error al exportar pagos:", error);
         throw new functions.https.HttpsError('internal', 'No se pudo generar el archivo Excel: ' + error.message);
+    }
+});
+
+/**
+ * Aplica una retención a una remisión y recalcula el total.
+ */
+exports.applyRetention = functions.https.onCall(async (data, context) => {
+    // 1. Verificación de permisos (Admin o Contabilidad)
+    const userRole = context.auth.token.role;
+    const allowedRoles = ['admin', 'contabilidad'];
+    
+    if (!context.auth || !allowedRoles.includes(userRole)) {
+        throw new functions.https.HttpsError("permission-denied", "No tienes permisos para aplicar retenciones.");
+    }
+
+    const { remisionId, retentionAmount } = data;
+    if (!remisionId || retentionAmount === undefined || retentionAmount < 0) {
+        throw new functions.https.HttpsError("invalid-argument", "Valor de retención inválido.");
+    }
+
+    const remisionRef = admin.firestore().collection("remisiones").doc(remisionId);
+    const log = functions.logger;
+
+    try {
+        const remisionDoc = await remisionRef.get();
+        if (!remisionDoc.exists) throw new functions.https.HttpsError("not-found", "Remisión no encontrada.");
+
+        const remisionData = remisionDoc.data();
+
+        // 2. Recalcular Total
+        // Fórmula: Subtotal - Descuento + IVA - Retención = Total a Pagar
+        const subtotal = remisionData.subtotal || 0;
+        const discountAmount = remisionData.discount ? remisionData.discount.amount : 0;
+        const ivaAmount = remisionData.valorIVA || 0; // El IVA ya está calculado sobre el subtotal base
+
+        // Validar que la retención no sea mayor al total previo
+        const totalAntesDeRetencion = subtotal - discountAmount + ivaAmount;
+        if (retentionAmount > totalAntesDeRetencion) {
+             throw new functions.https.HttpsError("failed-precondition", "La retención no puede ser mayor al total de la factura.");
+        }
+
+        const newTotal = totalAntesDeRetencion - retentionAmount;
+
+        const updatedData = {
+            valorTotal: newTotal,
+            retention: {
+                amount: retentionAmount,
+                appliedBy: context.auth.uid,
+                appliedAt: new Date()
+            }
+        };
+
+        // 3. Regenerar PDFs
+        const finalRemisionData = { ...remisionData, ...updatedData };
+        
+        // Reutilizamos tus funciones de generación de PDF existentes en el mismo archivo
+        // Nota: Asegúrate de que generarPDFCliente y generarPDF estén accesibles en este ámbito
+        const pdfBufferCliente = await generarPDFCliente(finalRemisionData);
+        const pdfBufferAdmin = await generarPDF(finalRemisionData, false);
+        const pdfBufferPlanta = await generarPDF(finalRemisionData, true);
+
+        const bucket = admin.storage().bucket();
+        const filePathAdmin = `remisiones/${finalRemisionData.numeroRemision}.pdf`;
+        const fileAdmin = bucket.file(filePathAdmin);
+        await fileAdmin.save(pdfBufferAdmin);
+
+        const filePathPlanta = `remisiones/planta-${finalRemisionData.numeroRemision}.pdf`;
+        await bucket.file(filePathPlanta).save(pdfBufferPlanta);
+
+        // 4. Guardar en Firestore
+        await remisionRef.update({
+            ...updatedData,
+            pdfPath: filePathAdmin,
+            pdfPlantaPath: filePathPlanta,
+            // Forzamos actualización de URLs antiguas por si acaso
+            pdfUrl: admin.firestore.FieldValue.delete(),
+            pdfPlantaUrl: admin.firestore.FieldValue.delete()
+        });
+
+        return { success: true, message: "Retención aplicada y total actualizado." };
+
+    } catch (error) {
+        log.error("Error aplicando retención:", error);
+        throw new functions.https.HttpsError("internal", error.message);
     }
 });

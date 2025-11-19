@@ -141,10 +141,10 @@ async function loadProfileHistory(userId) {
             // --- INICIO DE MODIFICACIÓN: Filtrar campos ocultos ---
             // Lista de campos que NO queremos mostrar en el historial
             const hiddenFields = ['salarioBasico', 'profilePhotoURL', 'commissionLevel', 'deduccionSobreMinimo'];
-            
+
             let hasVisibleChanges = false;
             let changesHtml = '<dl class="mt-2 text-xs space-y-1 border-t pt-2">';
-            
+
             for (const [key, value] of Object.entries(entry.changes)) {
                 // Si la llave está en la lista de ocultos, la saltamos
                 if (hiddenFields.includes(key)) {
@@ -181,9 +181,9 @@ async function loadProfileHistory(userId) {
                 listContainer.appendChild(logEntry);
             }
         });
-        
+
         if (listContainer.children.length === 0) {
-             listContainer.innerHTML = '<p class="text-sm text-gray-400 italic text-center p-4">No hay cambios visibles en el historial reciente.</p>';
+            listContainer.innerHTML = '<p class="text-sm text-gray-400 italic text-center p-4">No hay cambios visibles en el historial reciente.</p>';
         }
 
     }, (error) => {
@@ -4684,6 +4684,190 @@ async function openMainModal(type, data = {}) {
             break;
         }
 
+        case 'request-loan':
+            title = 'Solicitar Préstamo / Adelanto';
+            btnText = 'Enviar Solicitud';
+            btnClass = 'bg-indigo-600 hover:bg-indigo-700';
+            bodyHtml = `
+                <div class="space-y-4">
+                    <div class="p-3 bg-blue-50 text-blue-800 rounded-lg text-sm mb-4">
+                        <i class="fa-solid fa-circle-info mr-2"></i>
+                        La solicitud será revisada por administración. Si se aprueba, se descontará de tus próximos pagos.
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Monto Solicitado</label>
+                        <input type="text" name="amount" required class="currency-input mt-1 w-full border rounded-md p-3 text-lg font-bold text-gray-800" placeholder="$ 0">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Fecha Deseada</label>
+                        <input type="date" name="date" required class="mt-1 w-full border rounded-md p-2" value="${new Date().toISOString().split('T')[0]}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Motivo / Descripción</label>
+                        <textarea name="description" rows="3" required class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Calamidad doméstica, arreglo moto..."></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Cuotas Sugeridas (Opcional)</label>
+                        <input type="number" name="installments" min="1" max="12" value="1" class="mt-1 w-full border rounded-md p-2">
+                        <p class="text-xs text-gray-500 mt-1">Número de pagos en los que te gustaría diferirlo.</p>
+                    </div>
+                </div>
+            `;
+            setTimeout(() => {
+                const amountInput = modalForm.querySelector('.currency-input');
+                setupCurrencyInput(amountInput);
+            }, 100);
+            break;
+
+        // --- NUEVO CASO: VER PRÉSTAMOS PENDIENTES (ADMIN) ---
+        case 'view-pending-loans':
+            title = 'Solicitudes de Préstamo Pendientes';
+            btnText = 'Cerrar';
+            btnClass = 'bg-gray-500 hover:bg-gray-600 hidden'; // Ocultamos el botón de submit
+
+            bodyHtml = `
+                <div id="pending-loans-list" class="space-y-4 min-h-[200px]">
+                    <div class="flex justify-center items-center h-32">
+                        <div class="loader"></div>
+                    </div>
+                </div>
+            `;
+
+            setTimeout(async () => {
+                const listContainer = document.getElementById('pending-loans-list');
+                try {
+                    // Buscamos en TODAS las subcolecciones 'loans' donde status sea 'pending'
+                    const q = query(collectionGroup(db, 'loans'), where('status', '==', 'pending'));
+                    const snapshot = await getDocs(q);
+
+                    if (snapshot.empty) {
+                        listContainer.innerHTML = `
+                            <div class="text-center py-8 text-gray-500">
+                                <i class="fa-solid fa-check-circle text-4xl text-green-200 mb-3"></i>
+                                <p>No hay solicitudes pendientes.</p>
+                            </div>`;
+                        return;
+                    }
+
+                    listContainer.innerHTML = '';
+
+                    for (const loanDoc of snapshot.docs) {
+                        const loan = loanDoc.data();
+                        const userRef = loanDoc.ref.parent.parent;
+                        const userSnap = await getDoc(userRef);
+                        const userData = userSnap.exists() ? userSnap.data() : { firstName: 'Usuario', lastName: 'Desconocido' };
+                        const userName = `${userData.firstName} ${userData.lastName}`;
+
+                        const dateStr = loan.date ? new Date(loan.date).toLocaleDateString('es-CO') : 'N/A';
+                        const amountStr = currencyFormatter.format(loan.amount || 0);
+
+                        const card = document.createElement('div');
+                        card.className = "bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow";
+                        card.innerHTML = `
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h4 class="font-bold text-gray-800 text-lg">${userName}</h4>
+                                    <p class="text-sm text-gray-500 mb-1"><i class="fa-regular fa-calendar mr-1"></i> ${dateStr}</p>
+                                    <p class="text-indigo-600 font-bold text-xl my-1">${amountStr}</p>
+                                    <p class="text-gray-600 text-sm italic">"${loan.description || 'Sin descripción'}"</p>
+                                    <p class="text-xs text-gray-400 mt-1">Cuotas sugeridas: ${loan.installments || 1}</p>
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <button data-action="approve-loan" data-uid="${userRef.id}" data-loan-id="${loanDoc.id}" class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-bold shadow flex items-center">
+                                        <i class="fa-solid fa-check mr-1"></i> Aprobar
+                                    </button>
+                                    <button data-action="reject-loan" data-uid="${userRef.id}" data-loan-id="${loanDoc.id}" class="bg-red-100 hover:bg-red-200 text-red-600 px-3 py-2 rounded-lg text-sm font-bold flex items-center">
+                                        <i class="fa-solid fa-xmark mr-1"></i> Rechazar
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                        listContainer.appendChild(card);
+                    }
+
+                } catch (error) {
+                    console.error("Error cargando préstamos:", error);
+                    listContainer.innerHTML = `<p class="text-red-500 text-center">Error al cargar la lista: ${error.message}</p>`;
+                }
+            }, 100);
+            break;
+
+        // --- NUEVO CASO: VER PRÉSTAMOS PENDIENTES (ADMIN) ---
+        case 'view-pending-loans':
+            title = 'Solicitudes de Préstamo Pendientes';
+            btnText = 'Cerrar';
+            btnClass = 'bg-gray-500 hover:bg-gray-600 hidden'; // Ocultamos el botón de submit, gestionaremos acciones individualmente
+
+            // Usamos un contenedor para la lista que cargaremos dinámicamente
+            bodyHtml = `
+                <div id="pending-loans-list" class="space-y-4 min-h-[200px]">
+                    <div class="flex justify-center items-center h-32">
+                        <div class="loader"></div>
+                    </div>
+                </div>
+            `;
+
+            // Lógica de carga asíncrona
+            setTimeout(async () => {
+                const listContainer = document.getElementById('pending-loans-list');
+                try {
+                    // Buscamos en TODAS las subcolecciones 'loans' donde status sea 'pending'
+                    const q = query(collectionGroup(db, 'loans'), where('status', '==', 'pending'));
+                    const snapshot = await getDocs(q);
+
+                    if (snapshot.empty) {
+                        listContainer.innerHTML = `
+                            <div class="text-center py-8 text-gray-500">
+                                <i class="fa-solid fa-check-circle text-4xl text-green-200 mb-3"></i>
+                                <p>No hay solicitudes pendientes.</p>
+                            </div>`;
+                        return;
+                    }
+
+                    listContainer.innerHTML = ''; // Limpiar loader
+
+                    // Necesitamos iterar y obtener los datos del usuario padre para mostrar el nombre
+                    for (const loanDoc of snapshot.docs) {
+                        const loan = loanDoc.data();
+                        const userRef = loanDoc.ref.parent.parent; // Referencia al documento del usuario
+                        const userSnap = await getDoc(userRef);
+                        const userData = userSnap.exists() ? userSnap.data() : { firstName: 'Usuario', lastName: 'Desconocido' };
+                        const userName = `${userData.firstName} ${userData.lastName}`;
+
+                        const dateStr = loan.date ? new Date(loan.date).toLocaleDateString('es-CO') : 'N/A';
+                        const amountStr = currencyFormatter.format(loan.amount || 0);
+
+                        const card = document.createElement('div');
+                        card.className = "bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow";
+                        card.innerHTML = `
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h4 class="font-bold text-gray-800 text-lg">${userName}</h4>
+                                    <p class="text-sm text-gray-500 mb-1"><i class="fa-regular fa-calendar mr-1"></i> ${dateStr}</p>
+                                    <p class="text-indigo-600 font-bold text-xl my-1">${amountStr}</p>
+                                    <p class="text-gray-600 text-sm italic">"${loan.description || 'Sin descripción'}"</p>
+                                    <p class="text-xs text-gray-400 mt-1">Cuotas sugeridas: ${loan.installments || 1}</p>
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <button data-action="approve-loan" data-uid="${userRef.id}" data-loan-id="${loanDoc.id}" class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-bold shadow flex items-center">
+                                        <i class="fa-solid fa-check mr-1"></i> Aprobar
+                                    </button>
+                                    <button data-action="reject-loan" data-uid="${userRef.id}" data-loan-id="${loanDoc.id}" class="bg-red-100 hover:bg-red-200 text-red-600 px-3 py-2 rounded-lg text-sm font-bold flex items-center">
+                                        <i class="fa-solid fa-xmark mr-1"></i> Rechazar
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                        listContainer.appendChild(card);
+                    }
+
+                } catch (error) {
+                    console.error("Error cargando préstamos:", error);
+                    listContainer.innerHTML = `<p class="text-red-500 text-center">Error al cargar la lista: ${error.message}</p>`;
+                }
+            }, 100);
+            break;
+
         case 'add-other-payment':
             title = 'Registrar Otro Movimiento';
             btnText = 'Guardar Movimiento';
@@ -5740,9 +5924,9 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
         }
-case 'editUser':
-            title = 'Editar Usuario'; 
-            btnText = 'Guardar Cambios'; 
+        case 'editUser':
+            title = 'Editar Usuario';
+            btnText = 'Guardar Cambios';
             btnClass = 'bg-yellow-500 hover:bg-yellow-600';
             modalContentDiv.classList.add('max-w-2xl'); // Aseguramos el ancho
 
@@ -6864,7 +7048,37 @@ modalForm.addEventListener('submit', async (e) => {
             break;
         }
 
+        case 'request-loan':
+            const loanAmount = parseFloat(data.amount.replace(/[$. ]/g, '')) || 0;
+            if (loanAmount <= 0) {
+                alert("Por favor ingresa un monto válido.");
+                return;
+            }
 
+            modalConfirmBtn.disabled = true;
+            modalConfirmBtn.textContent = 'Enviando...';
+
+            try {
+                await addDoc(collection(db, "users", currentUser.uid, "loans"), {
+                    amount: loanAmount,
+                    balance: loanAmount,
+                    description: data.description,
+                    date: data.date,
+                    installments: parseInt(data.installments) || 1,
+                    status: 'pending',
+                    createdAt: serverTimestamp(),
+                    createdBy: currentUser.uid
+                });
+
+                alert("Solicitud enviada correctamente. Te notificaremos cuando sea aprobada.");
+                closeMainModal();
+            } catch (error) {
+                console.error("Error solicitando préstamo:", error);
+                alert("Error al enviar solicitud.");
+            } finally {
+                modalConfirmBtn.disabled = false;
+            }
+            break;
 
         case 'new-purchase-order': {
             modalConfirmBtn.disabled = true;
@@ -9397,6 +9611,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 break;
 
+            case 'approve-loan':
+                const uidApprove = elementWithAction.dataset.uid;
+                const loanIdApprove = elementWithAction.dataset.loanId;
+                openConfirmModal("¿Aprobar este préstamo?", async () => {
+                    try {
+                        await updateDoc(doc(db, "users", uidApprove, "loans", loanIdApprove), {
+                            status: 'active',
+                            approvedAt: serverTimestamp(),
+                            approvedBy: currentUser.uid
+                        });
+                        const card = elementWithAction.closest('div.bg-white');
+                        if (card) card.remove();
+                    } catch (e) { console.error(e); alert("Error al aprobar."); }
+                });
+                break;
+
+            case 'reject-loan':
+                const uidReject = elementWithAction.dataset.uid;
+                const loanIdReject = elementWithAction.dataset.loanId;
+                openConfirmModal("¿Rechazar esta solicitud?", async () => {
+                    try {
+                        await updateDoc(doc(db, "users", uidReject, "loans", loanIdReject), {
+                            status: 'rejected',
+                            rejectedAt: serverTimestamp(),
+                            rejectedBy: currentUser.uid
+                        });
+                        const card = elementWithAction.closest('div.bg-white');
+                        if (card) card.remove();
+                    } catch (e) { console.error(e); alert("Error al rechazar."); }
+                });
+                break;
+
             // Navegación Global
             case 'logout': handleLogout(); break;
             case 'toggle-menu': document.getElementById('sidebar').classList.toggle('-translate-x-full'); break;
@@ -9406,6 +9652,8 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'new-task':
                 openMainModal('new-task');
                 break;
+
+
 
             // Acciones de Documentos
             case 'view-documents': {
@@ -9873,6 +10121,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             case 'new-supplier':
                 openMainModal('new-supplier');
+                break;
+
+            case 'request-loan':
+                openMainModal('request-loan');
+                break;
+
+            case 'view-pending-loans':
+                openMainModal('view-pending-loans');
                 break;
 
             case 'edit-supplier': {
