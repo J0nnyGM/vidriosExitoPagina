@@ -113,6 +113,7 @@ function loadAdminDashboard(container) {
 
 /**
  * Carga los datos y listeners para el dashboard del Operario.
+ * (ACTUALIZADO: Tarjetas KPIs ahora son botones interactivos)
  */
 async function loadOperarioDashboard(container, userId) {
     const today = new Date();
@@ -124,29 +125,41 @@ async function loadOperarioDashboard(container, userId) {
         style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0
     });
 
-    // --- HTML COMPLETO DEL OPERARIO (Restaurado "Próximas Tareas" y agregado Botón Préstamo) ---
     container.innerHTML = `
         <div class="lg:col-span-2 space-y-6">
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="p-4 bg-white rounded-lg shadow border flex items-center space-x-4">
-                    <div class="flex-shrink-0 bg-yellow-500 rounded-lg w-14 h-14 flex items-center justify-center">
-                         <i class="fa-solid fa-list-check text-2xl text-white"></i>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                <div data-action="go-to-tareas" class="p-4 bg-white rounded-lg shadow border border-gray-200 flex items-center space-x-4 cursor-pointer hover:shadow-md hover:border-yellow-300 transition-all group">
+                    <div class="flex-shrink-0 bg-yellow-100 rounded-lg w-14 h-14 flex items-center justify-center group-hover:bg-yellow-200 transition-colors">
+                         <i class="fa-solid fa-list-check text-2xl text-yellow-600"></i>
                     </div>
                     <div>
-                        <p class="text-sm font-medium text-gray-500">Mis Tareas Pendientes</p>
+                        <p class="text-xs font-medium text-gray-500 uppercase group-hover:text-yellow-700 transition-colors">Tareas Pendientes</p>
                         <p id="operario-tasks-kpi" class="text-2xl font-bold text-gray-900">...</p>
                     </div>
                 </div>
-                <div class="p-4 bg-white rounded-lg shadow border flex items-center space-x-4">
-                    <div class="flex-shrink-0 bg-blue-500 rounded-lg w-14 h-14 flex items-center justify-center">
-                         <i class="fa-solid fa-hard-hat text-2xl text-white"></i>
+
+                <div data-action="go-to-dotacion" class="p-4 bg-white rounded-lg shadow border border-gray-200 flex items-center space-x-4 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all group">
+                    <div class="flex-shrink-0 bg-blue-100 rounded-lg w-14 h-14 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
+                         <i class="fa-solid fa-hard-hat text-2xl text-blue-600"></i>
                     </div>
                     <div>
-                        <p class="text-sm font-medium text-gray-500">Mi Dotación Activa</p>
+                        <p class="text-xs font-medium text-gray-500 uppercase group-hover:text-blue-700 transition-colors">Dotación Activa</p>
                         <p id="operario-dotacion-kpi" class="text-2xl font-bold text-gray-900">...</p>
                     </div>
                 </div>
+
+                <div data-action="view-my-loans" class="p-4 bg-white rounded-lg shadow border border-gray-200 flex items-center space-x-4 cursor-pointer hover:shadow-md hover:border-indigo-300 transition-all group">
+                    <div class="flex-shrink-0 bg-indigo-100 rounded-lg w-14 h-14 flex items-center justify-center group-hover:bg-indigo-200 transition-colors">
+                         <i class="fa-solid fa-hand-holding-dollar text-2xl text-indigo-600"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 uppercase group-hover:text-indigo-700 transition-colors">Préstamos Activos</p>
+                        <p id="operario-loans-kpi" class="text-2xl font-bold text-indigo-600">...</p>
+                    </div>
+                </div>
+
             </div>
 
             <div class="p-4 bg-white rounded-lg shadow border">
@@ -205,19 +218,26 @@ async function loadOperarioDashboard(container, userId) {
                         <span><i class="fa-solid fa-hand-holding-dollar mr-2"></i> Solicitar Préstamo</span>
                         <i class="fa-solid fa-chevron-right text-indigo-200"></i>
                     </button>
+
+                    <button data-action="view-my-loans" class="w-full text-left p-3 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold rounded-lg shadow-sm transition-all flex items-center justify-between mt-2">
+                        <span><i class="fa-solid fa-clock-rotate-left mr-2 text-gray-400"></i> Historial de Préstamos</span>
+                        <i class="fa-solid fa-chevron-right text-gray-300"></i>
+                    </button>
                 </div>
             </div>
         </div>
     `;
 
-    // Configuración de Listeners del Operario (Sin cambios, usando tu lógica original)
+    // --- Configuración de Listeners (SIN CAMBIOS) ---
     const taskKpiEl = document.getElementById('operario-tasks-kpi');
     const dotacionKpiEl = document.getElementById('operario-dotacion-kpi');
+    const loansKpiEl = document.getElementById('operario-loans-kpi');
+    
     const upcomingTasksEl = document.getElementById('operario-upcoming-tasks');
     const overdueTasksEl = document.getElementById('operario-overdue-tasks');
     let listeners = [];
 
-    // Listener Stats
+    // 1. Stats
     const kpiM2Asignados = document.getElementById('kpi-m2-asignados');
     const kpiM2Completados = document.getElementById('kpi-m2-completados');
     const kpiM2EnTiempo = document.getElementById('kpi-m2-en-tiempo');
@@ -236,14 +256,12 @@ async function loadOperarioDashboard(container, userId) {
         } else {
             kpiM2Asignados.textContent = "0.00";
             kpiM2Completados.textContent = "0.00";
-            kpiM2EnTiempo.textContent = "0.00";
-            kpiM2FueraTiempo.textContent = "0.00";
             kpiBonificacion.textContent = "$0";
         }
     });
     listeners.push(unsubStats);
     
-    // Listener Tareas
+    // 2. Tareas
     const qTasks = query(collection(_db, "tasks"), where("assigneeId", "==", userId), where("status", "==", "pendiente"));
     const qTasksAlt = query(collection(_db, "tasks"), where("additionalAssigneeIds", "array-contains", userId), where("status", "==", "pendiente"));
     
@@ -261,53 +279,24 @@ async function loadOperarioDashboard(container, userId) {
         allTasks.forEach(task => {
             if (task.dueDate) {
                 const dueDate = new Date(task.dueDate + 'T12:00:00');
-                if (dueDate < todayDate) {
-                    overdueTasks.push(task);
-                } else {
-                    upcomingTasks.push(task);
-                }
+                if (dueDate < todayDate) overdueTasks.push(task);
+                else upcomingTasks.push(task);
             }
         });
         overdueTasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
         upcomingTasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
         
-        // Render Vencidas
-        if (overdueTasks.length === 0) {
-            overdueTasksEl.innerHTML = '<p class="text-sm text-green-700 font-medium">¡Estás al día! No tienes tareas vencidas.</p>';
-        } else {
-            overdueTasksEl.innerHTML = overdueTasks.map(task => {
-                 const dueDate = new Date(task.dueDate + 'T00:00:00');
-                 const diffTime = new Date().getTime() - dueDate.getTime();
-                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                 return `
-                    <div data-action="view-task-details" data-id="${task.id}" class="p-3 border border-red-200 bg-white rounded-lg hover:bg-gray-50 cursor-pointer">
-                        <div class="flex justify-between items-center">
-                            <span class="text-sm font-semibold text-gray-800">${task.description}</span>
-                            <span class="text-xs font-bold text-red-700">Vencida hace ${diffDays} días</span>
-                        </div>
-                        <p class="text-xs text-gray-500">${task.projectName}</p>
-                    </div>`;
-            }).join('');
-        }
+        if (overdueTasks.length === 0) overdueTasksEl.innerHTML = '<p class="text-sm text-green-700 font-medium">¡Estás al día! No tienes tareas vencidas.</p>';
+        else overdueTasksEl.innerHTML = overdueTasks.map(task => {
+            const diffDays = Math.ceil((new Date().getTime() - new Date(task.dueDate + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24));
+            return `<div data-action="view-task-details" data-id="${task.id}" class="p-3 border border-red-200 bg-white rounded-lg hover:bg-gray-50 cursor-pointer flex justify-between items-center"><span class="text-sm font-semibold text-gray-800 truncate">${task.description}</span><span class="text-xs font-bold text-red-700 whitespace-nowrap">Hace ${diffDays}d</span></div>`;
+        }).join('');
 
-        // Render Próximas (RESTAURADO)
-        if (upcomingTasks.length === 0) {
-            upcomingTasksEl.innerHTML = '<p class="text-sm text-gray-500 italic">No tienes tareas próximas con fecha límite.</p>';
-        } else {
-            upcomingTasksEl.innerHTML = upcomingTasks.slice(0, 2).map(task => {
-                const dueDate = new Date(task.dueDate + 'T00:00:00');
-                const diffTime = dueDate.getTime() - new Date().getTime();
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                return `
-                    <div data-action="view-task-details" data-id="${task.id}" class="p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                        <div class="flex justify-between items-center">
-                            <span class="text-sm font-semibold text-gray-800">${task.description}</span>
-                            <span class="text-xs font-bold text-blue-600">Vence en ${diffDays} días</span>
-                        </div>
-                        <p class="text-xs text-gray-500">${task.projectName}</p>
-                    </div>`;
-            }).join('');
-        }
+        if (upcomingTasks.length === 0) upcomingTasksEl.innerHTML = '<p class="text-sm text-gray-500 italic">No tienes tareas próximas con fecha límite.</p>';
+        else upcomingTasksEl.innerHTML = upcomingTasks.slice(0, 2).map(task => {
+             const diffDays = Math.ceil((new Date(task.dueDate + 'T00:00:00').getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+             return `<div data-action="view-task-details" data-id="${task.id}" class="p-3 border rounded-lg hover:bg-gray-50 cursor-pointer flex justify-between items-center"><span class="text-sm font-semibold text-gray-800 truncate">${task.description}</span><span class="text-xs font-bold text-blue-600 whitespace-nowrap">${diffDays} días</span></div>`;
+        }).join('');
     };
 
     const unsubTasks = onSnapshot(qTasks, (snapshot) => {
@@ -327,7 +316,7 @@ async function loadOperarioDashboard(container, userId) {
     });
     listeners.push(unsubTasks, unsubTasksAlt);
 
-    // Listener Dotacion
+    // 3. Dotacion
     const qDotacion = query(collection(_db, "dotacionHistory"), where("userId", "==", userId), where("status", "==", "activo"));
     const unsubDotacion = onSnapshot(qDotacion, (snapshot) => {
         let totalItems = 0;
@@ -336,6 +325,21 @@ async function loadOperarioDashboard(container, userId) {
     });
     listeners.push(unsubDotacion);
 
+    // 4. Préstamos Activos
+    const qLoans = query(collection(_db, "users", userId, "loans"), where("status", "==", "active"));
+    const unsubLoans = onSnapshot(qLoans, (snapshot) => {
+        let totalBalance = 0;
+        snapshot.forEach(doc => {
+            totalBalance += (doc.data().balance || 0);
+        });
+        if (loansKpiEl) {
+            loansKpiEl.textContent = currencyFormatter.format(totalBalance);
+            if (totalBalance === 0) loansKpiEl.classList.replace('text-indigo-600', 'text-gray-400');
+            else loansKpiEl.classList.replace('text-gray-400', 'text-indigo-600');
+        }
+    });
+    listeners.push(unsubLoans);
+
     unsubscribeDashboard = () => {
         listeners.forEach(unsub => unsub());
     };
@@ -343,7 +347,7 @@ async function loadOperarioDashboard(container, userId) {
 
 /**
  * Renderiza el HTML de los widgets para Admin/Bodega.
- * (VERSIÓN COMPLETA: Restauradas listas Top 3 y Productividad Global)
+ * (ACTUALIZADO: Redirección en Proyectos y Inventario)
  */
 function renderAdminDashboard(stats) {
     const container = document.getElementById('dashboard-widgets-container');
@@ -360,19 +364,16 @@ function renderAdminDashboard(stats) {
         style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0
     });
 
-    // Lógica restaurada para las listas Top 3
+    // ... (Lógica de renderTopList se mantiene igual) ...
     const usersMap = _getUsersMap();
     const renderTopList = (listData, type) => {
         if (!usersMap || usersMap.size === 0) return `<p class="text-sm text-gray-500 italic px-3">Cargando usuarios...</p>`;
-        if (!listData || listData.length === 0) {
-            return `<p class="text-sm text-gray-500 italic px-3">No hay datos de ${type} aún.</p>`;
-        }
+        if (!listData || listData.length === 0) return `<p class="text-sm text-gray-500 italic px-3">No hay datos de ${type} aún.</p>`;
         return listData.map((item, index) => {
             const user = usersMap.get(item.userId);
             const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido';
             const colors = ['text-red-600', 'text-orange-500', 'text-yellow-500'];
             const bgColor = ['bg-red-100', 'bg-orange-100', 'bg-yellow-100'];
-
             return `
                 <li class="flex items-center justify-between py-2 px-3 rounded-lg ${index < 3 ? bgColor[index] : 'bg-gray-50'}">
                     <span class="text-sm font-medium ${index < 3 ? colors[index] : 'text-gray-700'}">${index + 1}. ${userName}</span>
@@ -383,35 +384,38 @@ function renderAdminDashboard(stats) {
     const topDamageHtml = renderTopList(toolStats.topDamage, 'reportes');
     const topConsumoHtml = renderTopList(dotacionStats.topConsumo, 'entregas');
 
-    // --- HTML COMPLETO DEL ADMIN ---
+    // --- HTML ACTUALIZADO ---
     container.innerHTML = `
         <div class="lg:col-span-2 space-y-6">
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="p-4 bg-white rounded-lg shadow border flex items-center space-x-4">
-                    <div class="flex-shrink-0 bg-blue-500 rounded-lg w-14 h-14 flex items-center justify-center">
-                        <i class="fa-solid fa-house text-2xl text-white"></i>
+                
+                <div data-action="go-to-proyectos" class="p-4 bg-white rounded-lg shadow border border-gray-200 flex items-center space-x-4 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all group">
+                    <div class="flex-shrink-0 bg-blue-100 rounded-lg w-14 h-14 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
+                        <i class="fa-solid fa-house text-2xl text-blue-600"></i>
                     </div>
                     <div>
-                        <p class="text-sm font-medium text-gray-500">Proyectos Activos</p>
+                        <p class="text-sm font-medium text-gray-500 group-hover:text-blue-700 transition-colors">Proyectos Activos</p>
                         <p class="text-2xl font-bold text-gray-900">${projectStats.active}</p>
                     </div>
                 </div>
-                <div class="p-4 bg-white rounded-lg shadow border flex items-center space-x-4">
-                    <div class="flex-shrink-0 bg-yellow-500 rounded-lg w-14 h-14 flex items-center justify-center">
-                         <i class="fa-solid fa-list-check text-2xl text-white"></i>
+
+                <div data-action="go-to-tareas" class="p-4 bg-white rounded-lg shadow border border-gray-200 flex items-center space-x-4 cursor-pointer hover:shadow-md hover:border-yellow-300 transition-all group">
+                    <div class="flex-shrink-0 bg-yellow-100 rounded-lg w-14 h-14 flex items-center justify-center group-hover:bg-yellow-200 transition-colors">
+                         <i class="fa-solid fa-list-check text-2xl text-yellow-600"></i>
                     </div>
                     <div>
-                        <p class="text-sm font-medium text-gray-500">Tareas Pendientes</p>
+                        <p class="text-sm font-medium text-gray-500 group-hover:text-yellow-700 transition-colors">Tareas Pendientes</p>
                         <p class="text-2xl font-bold text-gray-900">${taskStats.pendientes}</p>
                     </div>
                 </div>
-                <div class="p-4 bg-white rounded-lg shadow border flex items-center space-x-4">
-                    <div class="flex-shrink-0 bg-indigo-500 rounded-lg w-14 h-14 flex items-center justify-center">
-                        <i class="fa-solid fa-dollar-sign text-2xl text-white"></i>
+
+                <div data-action="go-to-catalog" class="p-4 bg-white rounded-lg shadow border border-gray-200 flex items-center space-x-4 cursor-pointer hover:shadow-md hover:border-indigo-300 transition-all group">
+                    <div class="flex-shrink-0 bg-indigo-100 rounded-lg w-14 h-14 flex items-center justify-center group-hover:bg-indigo-200 transition-colors">
+                        <i class="fa-solid fa-dollar-sign text-2xl text-indigo-600"></i>
                     </div>
                     <div>
-                        <p class="text-sm font-medium text-gray-500">Valor Inventario</p>
+                        <p class="text-sm font-medium text-gray-500 group-hover:text-indigo-700 transition-colors">Valor Inventario</p>
                         <p class="text-2xl font-bold text-gray-900">${currencyFormatter.format(inventoryStats.totalValue)}</p>
                     </div>
                 </div>
@@ -436,12 +440,18 @@ function renderAdminDashboard(stats) {
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="p-4 bg-white rounded-lg shadow border">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Estado de Herramientas</h3>
+                <div data-action="go-to-herramientas" class="p-4 bg-white rounded-lg shadow border border-gray-200 cursor-pointer hover:shadow-md hover:border-emerald-300 transition-all">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold text-gray-800">Estado de Herramientas</h3>
+                        <i class="fa-solid fa-arrow-up-right-from-square text-gray-400"></i>
+                    </div>
                     <div class="h-64"><canvas id="tools-chart-canvas"></canvas></div>
                 </div>
-                <div class="p-4 bg-white rounded-lg shadow border">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Estado de Dotación</h3>
+                <div data-action="go-to-dotacion" class="p-4 bg-white rounded-lg shadow border border-gray-200 cursor-pointer hover:shadow-md hover:border-cyan-300 transition-all">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold text-gray-800">Estado de Dotación</h3>
+                        <i class="fa-solid fa-arrow-up-right-from-square text-gray-400"></i>
+                    </div>
                     <div class="h-64"><canvas id="dotacion-chart-canvas"></canvas></div>
                 </div>
             </div>
@@ -449,15 +459,11 @@ function renderAdminDashboard(stats) {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="p-4 bg-white rounded-lg shadow border">
                     <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-4">Top 3 Consumo Dotación</h3>
-                    <ul class="space-y-2">
-                        ${topConsumoHtml}
-                    </ul>
+                    <ul class="space-y-2">${topConsumoHtml}</ul>
                 </div>
                 <div class="p-4 bg-white rounded-lg shadow border">
                     <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-4">Top 3 Reportes de Daño</h3>
-                    <ul class="space-y-2">
-                        ${topDamageHtml}
-                    </ul>
+                    <ul class="space-y-2">${topDamageHtml}</ul>
                 </div>
             </div>
         </div>
@@ -472,15 +478,11 @@ function renderAdminDashboard(stats) {
                     <button data-action="new-purchase-order" class="w-full text-left p-3 bg-gray-700 hover:bg-gray-800 text-white font-semibold rounded-lg shadow">
                         + Nueva Orden de Compra
                     </button>
-                    
                     <button data-action="view-pending-loans" class="relative w-full text-left p-3 bg-white border-2 border-indigo-100 hover:border-indigo-300 text-indigo-700 font-semibold rounded-lg shadow-sm transition-all flex items-center justify-between group">
                         <span class="flex items-center"><i class="fa-solid fa-file-invoice-dollar mr-3 text-indigo-500 group-hover:text-indigo-700"></i> Préstamos Pendientes</span>
-                        
                         <span id="pending-loans-badge" class="hidden bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full animate-pulse">0</span>
                     </button>
-
                     <div class="border-t pt-2 mt-2"></div>
-
                     <button data-action="new-tool" class="w-full text-left p-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold rounded-lg border">
                         + Nueva Herramienta
                     </button>

@@ -11,6 +11,7 @@ import { initHerramientas, resetToolViewAndLoad, updateToolFilterOptions, TOOL_C
 import { initDashboard, showGeneralDashboard } from './dashboard.js';
 import { initEmpleados, loadEmpleadosView, showEmpleadoDetails, loadPaymentHistoryView } from './empleados.js'; // <-- AÑADIDO
 import { initConfiguracion, loadConfiguracionView } from './configuracion.js';
+import { initCartera, loadCarteraView } from "./cartera.js";
 // --- CONFIGURACIÓN Y ESTADO ---
 
 const firebaseConfig = {
@@ -4148,6 +4149,202 @@ async function openMainModal(type, data = {}) {
             }, 100);
 
             break;
+
+
+        // --- CASO: REVISAR Y APROBAR/RECHAZAR PRÉSTAMO ---
+        case 'review-loan':
+            title = 'Revisión y Aprobación';
+            btnText = 'Aprobar y Activar Deuda';
+            btnClass = 'bg-green-600 hover:bg-green-700 w-full md:w-auto';
+
+            const fmtMoney = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+
+            bodyHtml = `
+                <input type="hidden" name="loanId" value="${data.id}">
+                <input type="hidden" name="userId" value="${data.uid}">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    
+                    <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                        <div class="flex items-center gap-4 mb-4 border-b border-gray-100 pb-3">
+                            
+                            <img src="${data.userPhoto}" alt="Perfil" class="w-14 h-14 rounded-full object-cover border-2 border-indigo-100 shadow-sm">
+                            
+                            <div>
+                                <p class="text-xs text-gray-400 uppercase font-bold">Solicitante</p>
+                                <p class="font-bold text-gray-800 text-lg leading-tight">${data.userName}</p>
+                            </div>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-400 uppercase font-bold mb-1">Motivo</p>
+                            <p class="text-sm text-gray-600 italic bg-gray-50 p-3 rounded border border-gray-100">"${data.description}"</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100 shadow-sm relative overflow-hidden">
+                        <div class="absolute top-0 right-0 -mt-2 -mr-2 w-16 h-16 bg-indigo-100 rounded-full opacity-50"></div>
+                        
+                        <h4 class="text-indigo-800 font-bold text-sm mb-3 flex items-center">
+                            <i class="fa-solid fa-money-bill-transfer mr-2"></i> Datos para Transferencia
+                        </h4>
+                        
+                        <div class="space-y-2">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-indigo-400">Banco:</span>
+                                <span class="font-bold text-indigo-900 text-right">${data.bankName}</span>
+                            </div>
+                             <div class="flex justify-between text-sm">
+                                <span class="text-indigo-400">Tipo:</span>
+                                <span class="font-bold text-indigo-900 text-right">${data.accountType}</span>
+                            </div>
+                            <div class="mt-2 pt-2 border-t border-indigo-200">
+                                <p class="text-xs text-indigo-500 mb-1">Número de Cuenta:</p>
+                                <div class="flex items-center justify-between bg-white rounded px-2 py-1 border border-indigo-200">
+                                    <span class="font-mono font-bold text-lg text-gray-800 select-all tracking-wide">${data.accountNumber}</span>
+                                    <button type="button" class="text-gray-400 hover:text-indigo-600 transition-colors" onclick="navigator.clipboard.writeText('${data.accountNumber}'); window.showToast('Cuenta copiada', 'success')" title="Copiar">
+                                        <i class="fa-regular fa-copy"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 p-5 rounded-xl border border-gray-200">
+                    <h4 class="text-sm font-bold text-gray-700 border-b border-gray-200 pb-2 mb-4 flex items-center">
+                        <i class="fa-solid fa-gavel mr-2 text-gray-400"></i> Decisión Administrativa
+                    </h4>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Monto Aprobado</label>
+                            <div class="relative">
+                                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</span>
+                                <input type="text" name="approvedAmount" required 
+                                    class="currency-input pl-7 w-full border border-gray-300 rounded-lg p-2.5 text-xl font-bold text-green-700 focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none bg-white shadow-sm" 
+                                    value="${data.amount}">
+                            </div>
+                            <p class="text-[10px] text-gray-400 mt-1">Solicitado: ${fmtMoney.format(data.amount)}</p>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cuotas</label>
+                            <input type="number" name="approvedInstallments" min="1" max="24" required 
+                                class="w-full border border-gray-300 rounded-lg p-2.5 text-gray-800 font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white shadow-sm" 
+                                value="${data.installments}">
+                            <p class="text-[10px] text-gray-400 mt-1">Solicitado: ${data.installments}</p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nota Interna (Opcional)</label>
+                        <textarea name="adminNotes" rows="2" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-blue-500 outline-none" placeholder="Ej: Aprobado parcial por capacidad de endeudamiento..."></textarea>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-between items-center">
+                    <button type="button" id="btn-reject-loan-modal" class="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded-lg text-sm font-bold transition-colors flex items-center">
+                        <i class="fa-solid fa-ban mr-2"></i> Rechazar Solicitud
+                    </button>
+                </div>
+            `;
+
+            setTimeout(() => {
+                const amountInput = modalForm.querySelector('.currency-input');
+                setupCurrencyInput(amountInput);
+
+                document.getElementById('btn-reject-loan-modal').addEventListener('click', () => {
+                    const loanId = modalForm.querySelector('input[name="loanId"]').value;
+                    const userId = modalForm.querySelector('input[name="userId"]').value;
+                    const notes = modalForm.querySelector('textarea[name="adminNotes"]').value;
+
+                    openConfirmModal("¿Rechazar solicitud? No se generará deuda.", async () => {
+                        try {
+                            await updateDoc(doc(db, "users", userId, "loans", loanId), {
+                                status: 'rejected',
+                                rejectedAt: serverTimestamp(),
+                                rejectedBy: currentUser.uid,
+                                adminNotes: notes || 'Rechazado por administrador'
+                            });
+                            window.showToast("Solicitud rechazada correctamente.", "success");
+                            closeMainModal();
+                            setTimeout(() => openMainModal('view-pending-loans'), 500);
+                        } catch (e) {
+                            console.error(e);
+                            window.showToast("Error al rechazar.", "error");
+                        }
+                    });
+                });
+            }, 100);
+            break;
+
+        // --- NUEVO CASO: VER HISTORIAL DE AUDITORÍA ---
+        case 'view-audit-logs':
+            title = 'Historial de Cambios y Auditoría';
+            btnText = 'Cerrar';
+            btnClass = 'bg-gray-500 hover:bg-gray-600';
+
+            bodyHtml = `
+                <div id="audit-log-list" class="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar p-1">
+                    <div class="flex justify-center py-10"><div class="loader"></div></div>
+                </div>
+            `;
+
+            setTimeout(async () => {
+                const listContainer = document.getElementById('audit-log-list');
+                try {
+                    // Consultar logs filtrados por este empleado (targetId)
+                    // data.userId viene pasado al abrir el modal
+                    const q = query(
+                        collection(db, "audit_logs"),
+                        where("targetId", "==", data.userId),
+                        orderBy("timestamp", "desc"),
+                        limit(20)
+                    );
+                    const snapshot = await getDocs(q);
+
+                    listContainer.innerHTML = '';
+
+                    if (snapshot.empty) {
+                        listContainer.innerHTML = `<p class="text-gray-400 text-center py-4">No hay registros de cambios recientes.</p>`;
+                        return;
+                    }
+
+                    snapshot.forEach(doc => {
+                        const log = doc.data();
+                        const date = log.timestamp ? log.timestamp.toDate().toLocaleString('es-CO') : 'N/A';
+
+                        // Icono según acción
+                        let iconColor = 'text-gray-500';
+                        let icon = 'fa-info-circle';
+                        if (log.action.includes('Eliminar')) { icon = 'fa-trash-can'; iconColor = 'text-red-500'; }
+                        if (log.action.includes('Editar') || log.action.includes('Cambio')) { icon = 'fa-pen-to-square'; iconColor = 'text-yellow-600'; }
+                        if (log.action.includes('Pago')) { icon = 'fa-money-bill'; iconColor = 'text-green-600'; }
+
+                        const item = document.createElement('div');
+                        item.className = "bg-white p-3 rounded border border-gray-200 shadow-sm text-sm";
+                        item.innerHTML = `
+                            <div class="flex justify-between items-start">
+                                <div class="flex items-center gap-2 font-bold text-gray-700">
+                                    <i class="fa-solid ${icon} ${iconColor}"></i>
+                                    <span>${log.action}</span>
+                                </div>
+                                <span class="text-xs text-gray-400">${date}</span>
+                            </div>
+                            <p class="text-gray-600 mt-1">${log.description}</p>
+                            <div class="mt-2 pt-2 border-t border-gray-100 flex justify-between items-center text-xs">
+                                <span class="text-gray-400">Por: <span class="font-semibold text-gray-600">${log.performedByName || 'Admin'}</span></span>
+                                ${log.previousData ? `<button class="text-blue-500 hover:underline" onclick="alert('Detalle técnico: ' + '${log.previousData.replace(/'/g, "")}')">Ver Detalle</button>` : ''}
+                            </div>
+                        `;
+                        listContainer.appendChild(item);
+                    });
+                } catch (error) {
+                    console.error(error);
+                    listContainer.innerHTML = `<p class="text-red-500 text-center">Error cargando logs. (Asegúrate de crear el índice compuesto en Firebase si la consola lo pide).</p>`;
+                }
+            }, 100);
+            break;
+
         case 'return-material': {
             title = 'Registrar Devolución de Material';
             btnText = 'Confirmar Devolución';
@@ -4361,6 +4558,132 @@ async function openMainModal(type, data = {}) {
             setTimeout(() => {
                 setupCurrencyInput(modalForm.querySelector('input[name="amount"]'));
                 modalForm.querySelector('input[name="date"]').value = new Date().toISOString().split('T')[0];
+            }, 100);
+            break;
+
+        // --- NUEVO CASO: HISTORIAL DE PRÉSTAMOS (USUARIO) ---
+        case 'view-my-loans':
+            title = 'Historial de Mis Préstamos';
+            btnText = 'Cerrar';
+            btnClass = 'bg-gray-500 hover:bg-gray-600';
+            // Ocultamos el botón de submit porque es solo lectura, el usuario cierra con la X o Cancelar
+
+            bodyHtml = `
+                <div id="my-loans-list" class="space-y-4 min-h-[200px]">
+                    <div class="flex justify-center items-center h-32">
+                        <div class="loader"></div>
+                    </div>
+                </div>
+            `;
+
+            setTimeout(async () => {
+                const listContainer = document.getElementById('my-loans-list');
+                const fmtMoney = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+
+                try {
+                    // 1. Consultar SOLO los préstamos del usuario actual
+                    const q = query(
+                        collection(db, "users", currentUser.uid, "loans"),
+                        orderBy("date", "desc") // De más nuevo a más viejo
+                    );
+                    const snapshot = await getDocs(q);
+
+                    if (snapshot.empty) {
+                        listContainer.innerHTML = `
+                            <div class="text-center py-10 text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
+                                <i class="fa-solid fa-folder-open text-3xl mb-2"></i>
+                                <p>No tienes historial de préstamos.</p>
+                            </div>`;
+                        return;
+                    }
+
+                    listContainer.innerHTML = '';
+
+                    snapshot.forEach(doc => {
+                        const loan = doc.data();
+                        const dateStr = loan.date ? new Date(loan.date).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Fecha desconocida';
+
+                        // Lógica de Estado
+                        let statusBadge = '';
+                        let cardBorder = 'border-gray-200';
+                        let icon = '';
+                        let footerInfo = '';
+
+                        if (loan.status === 'paid') {
+                            // ESTADO: PAGADO
+                            cardBorder = 'border-green-200 bg-green-50';
+                            statusBadge = '<span class="bg-green-100 text-green-800 text-xs font-bold px-2 py-0.5 rounded">PAGADO</span>';
+                            icon = '<i class="fa-solid fa-circle-check text-green-500 text-xl"></i>';
+
+                            // Obtenemos fecha de pago (paidAt)
+                            let paidDateStr = 'Fecha desconocida';
+                            if (loan.paidAt) {
+                                paidDateStr = loan.paidAt.toDate().toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
+                            }
+
+                            footerInfo = `
+                                <div class="mt-3 pt-2 border-t border-green-200 text-sm text-green-800 flex items-start">
+                                    <i class="fa-solid fa-money-bill-transfer mt-1 mr-2"></i>
+                                    <div>
+                                        <p class="font-bold">Cancelado en Nómina</p>
+                                        <p class="text-xs">Descontado el: ${paidDateStr}</p>
+                                    </div>
+                                </div>`;
+
+                        } else if (loan.status === 'active') {
+                            // ESTADO: ACTIVO (Debiendo)
+                            cardBorder = 'border-indigo-200 bg-white';
+                            statusBadge = '<span class="bg-indigo-100 text-indigo-800 text-xs font-bold px-2 py-0.5 rounded">ACTIVO</span>';
+                            icon = '<i class="fa-solid fa-circle-play text-indigo-500 text-xl"></i>';
+
+                            footerInfo = `
+                                <div class="mt-2 flex justify-between items-center text-sm">
+                                    <span class="text-gray-500">Saldo Pendiente:</span>
+                                    <span class="font-bold text-red-600">${fmtMoney.format(loan.balance)}</span>
+                                </div>`;
+
+                        } else if (loan.status === 'rejected') {
+                            // ESTADO: RECHAZADO
+                            cardBorder = 'border-red-100 bg-gray-50 opacity-75';
+                            statusBadge = '<span class="bg-red-100 text-red-800 text-xs font-bold px-2 py-0.5 rounded">RECHAZADO</span>';
+                            icon = '<i class="fa-solid fa-circle-xmark text-red-400 text-xl"></i>';
+
+                            if (loan.adminNotes) {
+                                footerInfo = `<p class="mt-2 text-xs text-red-600 italic bg-red-50 p-1 rounded">Nota Admin: "${loan.adminNotes}"</p>`;
+                            }
+
+                        } else {
+                            // ESTADO: PENDIENTE (Revisión)
+                            cardBorder = 'border-yellow-200 bg-yellow-50';
+                            statusBadge = '<span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-0.5 rounded">EN REVISIÓN</span>';
+                            icon = '<i class="fa-solid fa-clock text-yellow-500 text-xl"></i>';
+                            footerInfo = `<p class="mt-2 text-xs text-yellow-700 italic">Esperando aprobación del administrador.</p>`;
+                        }
+
+                        const card = document.createElement('div');
+                        card.className = `rounded-lg border p-4 shadow-sm transition-all ${cardBorder}`;
+
+                        card.innerHTML = `
+                            <div class="flex justify-between items-start">
+                                <div class="flex-1 pr-4">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        ${statusBadge}
+                                        <span class="text-xs text-gray-500">${dateStr}</span>
+                                    </div>
+                                    <h4 class="font-bold text-gray-800 text-lg">${fmtMoney.format(loan.amount)}</h4>
+                                    <p class="text-sm text-gray-600 mt-1">"${loan.description}"</p>
+                                </div>
+                                <div>${icon}</div>
+                            </div>
+                            ${footerInfo}
+                        `;
+                        listContainer.appendChild(card);
+                    });
+
+                } catch (error) {
+                    console.error("Error cargando historial:", error);
+                    listContainer.innerHTML = `<p class="text-red-500 text-center">Error al cargar tus datos.</p>`;
+                }
             }, 100);
             break;
 
@@ -4719,12 +5042,13 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
 
-        // --- NUEVO CASO: VER PRÉSTAMOS PENDIENTES (ADMIN) ---
+        // --- CASO: VER PRÉSTAMOS PENDIENTES (ADMIN) ---
         case 'view-pending-loans':
             title = 'Solicitudes de Préstamo Pendientes';
             btnText = 'Cerrar';
-            btnClass = 'bg-gray-500 hover:bg-gray-600 hidden'; // Ocultamos el botón de submit
+            btnClass = 'bg-gray-500 hover:bg-gray-600 hidden'; // Ocultamos el botón principal del modal
 
+            // Estructura del contenedor de la lista con loader inicial
             bodyHtml = `
                 <div id="pending-loans-list" class="space-y-4 min-h-[200px]">
                     <div class="flex justify-center items-center h-32">
@@ -4733,18 +5057,23 @@ async function openMainModal(type, data = {}) {
                 </div>
             `;
 
+            // Lógica de carga asíncrona para Préstamos Pendientes
             setTimeout(async () => {
                 const listContainer = document.getElementById('pending-loans-list');
+                const fmtMoney = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+
                 try {
-                    // Buscamos en TODAS las subcolecciones 'loans' donde status sea 'pending'
                     const q = query(collectionGroup(db, 'loans'), where('status', '==', 'pending'));
                     const snapshot = await getDocs(q);
 
                     if (snapshot.empty) {
                         listContainer.innerHTML = `
-                            <div class="text-center py-8 text-gray-500">
-                                <i class="fa-solid fa-check-circle text-4xl text-green-200 mb-3"></i>
-                                <p>No hay solicitudes pendientes.</p>
+                            <div class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50">
+                                <div class="bg-white p-4 rounded-full shadow-sm mb-3">
+                                    <i class="fa-solid fa-check text-3xl text-green-500"></i>
+                                </div>
+                                <p class="font-medium text-lg">¡Todo al día!</p>
+                                <p class="text-sm">No hay solicitudes pendientes.</p>
                             </div>`;
                         return;
                     }
@@ -4755,115 +5084,85 @@ async function openMainModal(type, data = {}) {
                         const loan = loanDoc.data();
                         const userRef = loanDoc.ref.parent.parent;
                         const userSnap = await getDoc(userRef);
-                        const userData = userSnap.exists() ? userSnap.data() : { firstName: 'Usuario', lastName: 'Desconocido' };
+
+                        let userData = {
+                            firstName: 'Usuario', lastName: 'Desconocido',
+                            bankName: '---', accountType: '', accountNumber: '---',
+                            photoURL: null
+                        };
+                        if (userSnap.exists()) userData = userSnap.data();
+
                         const userName = `${userData.firstName} ${userData.lastName}`;
+                        const dateObj = loan.date ? new Date(loan.date) : new Date();
+                        const dateStr = dateObj.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+                        const initials = (userData.firstName.charAt(0) + userData.lastName.charAt(0)).toUpperCase();
 
-                        const dateStr = loan.date ? new Date(loan.date).toLocaleDateString('es-CO') : 'N/A';
-                        const amountStr = currencyFormatter.format(loan.amount || 0);
+                        // Lógica de Foto: Si tiene URL úsala, si no, usa un generador de avatares
+                        const userPhoto = userData.photoURL || `https://ui-avatars.com/api/?name=${userData.firstName}+${userData.lastName}&background=random&color=fff`;
 
+                        // --- AGREGAMOS userPhoto AL JSON ---
+                        const loanDataJson = JSON.stringify({
+                            id: loanDoc.id, uid: userRef.id, userName: userName,
+                            amount: loan.amount, date: loan.date,
+                            description: loan.description, installments: loan.installments,
+                            bankName: userData.bankName || 'No registrado',
+                            accountType: userData.accountType || '',
+                            accountNumber: userData.accountNumber || '---',
+                            userPhoto: userPhoto // <--- NUEVO CAMPO
+                        }).replace(/"/g, '&quot;');
+
+                        // Tarjeta de listado
                         const card = document.createElement('div');
-                        card.className = "bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow";
+                        card.className = "bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all overflow-hidden group";
+
                         card.innerHTML = `
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <h4 class="font-bold text-gray-800 text-lg">${userName}</h4>
-                                    <p class="text-sm text-gray-500 mb-1"><i class="fa-regular fa-calendar mr-1"></i> ${dateStr}</p>
-                                    <p class="text-indigo-600 font-bold text-xl my-1">${amountStr}</p>
-                                    <p class="text-gray-600 text-sm italic">"${loan.description || 'Sin descripción'}"</p>
-                                    <p class="text-xs text-gray-400 mt-1">Cuotas sugeridas: ${loan.installments || 1}</p>
+                            <div class="px-4 py-3 border-b border-gray-100 bg-slate-50 flex justify-between items-center">
+                                <div class="flex items-center gap-3">
+                                    <img src="${userPhoto}" alt="${userName}" class="w-8 h-8 rounded-full object-cover border border-indigo-200">
+                                    <div>
+                                        <h4 class="text-sm font-bold text-gray-800 leading-tight">${userName}</h4>
+                                        <p class="text-[10px] text-gray-500">Solicitado el ${dateStr}</p>
+                                    </div>
                                 </div>
-                                <div class="flex flex-col gap-2">
-                                    <button data-action="approve-loan" data-uid="${userRef.id}" data-loan-id="${loanDoc.id}" class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-bold shadow flex items-center">
-                                        <i class="fa-solid fa-check mr-1"></i> Aprobar
-                                    </button>
-                                    <button data-action="reject-loan" data-uid="${userRef.id}" data-loan-id="${loanDoc.id}" class="bg-red-100 hover:bg-red-200 text-red-600 px-3 py-2 rounded-lg text-sm font-bold flex items-center">
-                                        <i class="fa-solid fa-xmark mr-1"></i> Rechazar
-                                    </button>
+                                <span class="px-2 py-1 bg-yellow-100 text-yellow-700 text-[10px] font-bold uppercase tracking-wider rounded-md border border-yellow-200">Pendiente</span>
+                            </div>
+
+                            <div class="p-0 grid grid-cols-1 md:grid-cols-2">
+                                <div class="p-4 flex flex-col justify-between">
+                                    <div>
+                                        <p class="text-xs text-gray-400 uppercase font-bold tracking-wide mb-1">Monto Solicitado</p>
+                                        <p class="text-2xl font-bold text-gray-800 mb-3">${fmtMoney.format(loan.amount || 0)} <span class="text-xs font-normal text-gray-400">(${loan.installments || 1} cuotas)</span></p>
+                                        <div class="bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                            <p class="text-xs text-gray-500 italic leading-relaxed"><i class="fa-solid fa-quote-left text-gray-300 mr-1"></i> ${loan.description || 'Sin descripción'}</p>
+                                        </div>
+                                    </div>
                                 </div>
+                                <div class="bg-indigo-50 p-4 border-t md:border-t-0 md:border-l border-indigo-100 flex flex-col justify-center">
+                                    <div class="flex items-start gap-3">
+                                        <div class="p-2 bg-white rounded-lg text-indigo-600 shadow-sm"><i class="fa-solid fa-building-columns text-lg"></i></div>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-[10px] text-indigo-400 uppercase font-bold">Cuenta de Destino</p>
+                                            <p class="text-sm font-bold text-indigo-900 truncate">${userData.bankName}</p>
+                                            <p class="text-xs text-indigo-700 mb-1">${userData.accountType}</p>
+                                            <div class="flex items-center gap-2 bg-white px-2 py-1 rounded border border-indigo-100 w-fit">
+                                                <span class="font-mono text-sm font-bold text-gray-700 select-all">${userData.accountNumber}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="px-4 py-3 bg-gray-50 border-t border-gray-200 flex justify-end">
+                                <button data-action="open-loan-review" data-loan='${loanDataJson}' class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-sm hover:shadow transition-all flex items-center">
+                                    Revisar y Aprobar <i class="fa-solid fa-arrow-right ml-2"></i>
+                                </button>
                             </div>
                         `;
                         listContainer.appendChild(card);
                     }
-
                 } catch (error) {
                     console.error("Error cargando préstamos:", error);
-                    listContainer.innerHTML = `<p class="text-red-500 text-center">Error al cargar la lista: ${error.message}</p>`;
-                }
-            }, 100);
-            break;
-
-        // --- NUEVO CASO: VER PRÉSTAMOS PENDIENTES (ADMIN) ---
-        case 'view-pending-loans':
-            title = 'Solicitudes de Préstamo Pendientes';
-            btnText = 'Cerrar';
-            btnClass = 'bg-gray-500 hover:bg-gray-600 hidden'; // Ocultamos el botón de submit, gestionaremos acciones individualmente
-
-            // Usamos un contenedor para la lista que cargaremos dinámicamente
-            bodyHtml = `
-                <div id="pending-loans-list" class="space-y-4 min-h-[200px]">
-                    <div class="flex justify-center items-center h-32">
-                        <div class="loader"></div>
-                    </div>
-                </div>
-            `;
-
-            // Lógica de carga asíncrona
-            setTimeout(async () => {
-                const listContainer = document.getElementById('pending-loans-list');
-                try {
-                    // Buscamos en TODAS las subcolecciones 'loans' donde status sea 'pending'
-                    const q = query(collectionGroup(db, 'loans'), where('status', '==', 'pending'));
-                    const snapshot = await getDocs(q);
-
-                    if (snapshot.empty) {
-                        listContainer.innerHTML = `
-                            <div class="text-center py-8 text-gray-500">
-                                <i class="fa-solid fa-check-circle text-4xl text-green-200 mb-3"></i>
-                                <p>No hay solicitudes pendientes.</p>
-                            </div>`;
-                        return;
-                    }
-
-                    listContainer.innerHTML = ''; // Limpiar loader
-
-                    // Necesitamos iterar y obtener los datos del usuario padre para mostrar el nombre
-                    for (const loanDoc of snapshot.docs) {
-                        const loan = loanDoc.data();
-                        const userRef = loanDoc.ref.parent.parent; // Referencia al documento del usuario
-                        const userSnap = await getDoc(userRef);
-                        const userData = userSnap.exists() ? userSnap.data() : { firstName: 'Usuario', lastName: 'Desconocido' };
-                        const userName = `${userData.firstName} ${userData.lastName}`;
-
-                        const dateStr = loan.date ? new Date(loan.date).toLocaleDateString('es-CO') : 'N/A';
-                        const amountStr = currencyFormatter.format(loan.amount || 0);
-
-                        const card = document.createElement('div');
-                        card.className = "bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow";
-                        card.innerHTML = `
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <h4 class="font-bold text-gray-800 text-lg">${userName}</h4>
-                                    <p class="text-sm text-gray-500 mb-1"><i class="fa-regular fa-calendar mr-1"></i> ${dateStr}</p>
-                                    <p class="text-indigo-600 font-bold text-xl my-1">${amountStr}</p>
-                                    <p class="text-gray-600 text-sm italic">"${loan.description || 'Sin descripción'}"</p>
-                                    <p class="text-xs text-gray-400 mt-1">Cuotas sugeridas: ${loan.installments || 1}</p>
-                                </div>
-                                <div class="flex flex-col gap-2">
-                                    <button data-action="approve-loan" data-uid="${userRef.id}" data-loan-id="${loanDoc.id}" class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-bold shadow flex items-center">
-                                        <i class="fa-solid fa-check mr-1"></i> Aprobar
-                                    </button>
-                                    <button data-action="reject-loan" data-uid="${userRef.id}" data-loan-id="${loanDoc.id}" class="bg-red-100 hover:bg-red-200 text-red-600 px-3 py-2 rounded-lg text-sm font-bold flex items-center">
-                                        <i class="fa-solid fa-xmark mr-1"></i> Rechazar
-                                    </button>
-                                </div>
-                            </div>
-                        `;
-                        listContainer.appendChild(card);
-                    }
-
-                } catch (error) {
-                    console.error("Error cargando préstamos:", error);
-                    listContainer.innerHTML = `<p class="text-red-500 text-center">Error al cargar la lista: ${error.message}</p>`;
+                    listContainer.innerHTML = `<div class="p-4 text-center text-red-500">Error al cargar datos.</div>`;
                 }
             }, 100);
             break;
@@ -9017,7 +9316,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tareas: document.getElementById('tareas-view'),
         herramienta: document.getElementById('herramienta-view'),
         dotacion: document.getElementById('dotacion-view'),
-        cartera: document.getElementById('cartera-view'),
+        'cartera-view': document.getElementById('cartera-view'),
         solicitud: document.getElementById('solicitud-view'),
         empleados: document.getElementById('empleados-view'),
         'empleado-details': document.getElementById('empleado-details-view'), // <-- AÑADIDO
@@ -9090,6 +9389,8 @@ document.addEventListener('DOMContentLoaded', () => {
         () => currentUser ? currentUser.uid : null,
         setupCurrencyInput // <-- AÑADIR ESTA LÍNEA
     );
+
+    initCartera(db, showView);
 
     initConfiguracion(
         db,
@@ -9597,18 +9898,86 @@ document.addEventListener('DOMContentLoaded', () => {
                 showView('empleados');
                 break;
 
-            case 'delete-payment':
-                const userIdForDelete = elementWithAction.dataset.userId; // <-- RENOMBRADO
-                const docId = elementWithAction.dataset.docId;
-                openConfirmModal("¿Seguro que quieres eliminar este registro de pago?", async () => {
+            case 'delete-payment': {
+                const userId = elementWithAction.dataset.userId;
+                const paymentId = elementWithAction.dataset.docId;
+
+                openConfirmModal("¿Eliminar este registro de pago? Si tenía abonos a préstamos, estos NO se revertirán automáticamente (debes ajustar la deuda manualmente).", async () => {
                     try {
-                        // Usamos la nueva variable
-                        await deleteDoc(doc(db, "users", userIdForDelete, "paymentHistory", docId));
+                        // 1. Obtener datos del pago antes de borrar para el log
+                        const paymentRef = doc(_db, "users", userId, "paymentHistory", paymentId);
+                        const paymentSnap = await getDoc(paymentRef);
+                        const paymentData = paymentSnap.exists() ? paymentSnap.data() : null;
+
+                        // 2. Borrar
+                        await deleteDoc(paymentRef);
+
+                        // 3. AUDITORÍA
+                        if (paymentData) {
+                            window.logAuditAction(
+                                "Eliminar Pago",
+                                `Se eliminó un pago por valor de ${currencyFormatter.format(paymentData.monto)} con concepto: ${paymentData.concepto}`,
+                                userId,
+                                paymentData, // Guardamos qué se borró
+                                null
+                            );
+                        }
+
+                        // 4. TOAST (Éxito)
+                        window.showToast("El pago ha sido eliminado correctamente.", "success");
+
                     } catch (error) {
-                        console.error("Error al eliminar el pago:", error);
-                        alert("Error al eliminar el pago.");
+                        console.error("Error:", error);
+                        // 5. TOAST (Error)
+                        window.showToast("Error al eliminar el pago.", "error");
                     }
                 });
+                break;
+            }
+
+            case 'renew-dotacion': {
+                const userId = elementWithAction.dataset.userId;
+                const itemId = elementWithAction.dataset.itemId; // ID del ítem a renovar
+
+                if (!userId || !itemId) return;
+
+                loadingOverlay.classList.remove('hidden');
+
+                try {
+                    // 1. Obtener datos del ítem del catálogo para pre-llenar el modal
+                    const itemDoc = await getDoc(doc(db, "dotacionCatalog", itemId));
+                    if (!itemDoc.exists()) throw new Error("El ítem de dotación ya no existe en el catálogo.");
+
+                    const itemData = { id: itemDoc.id, ...itemDoc.data() };
+
+                    // 2. Abrir el modal de entrega existente, pero pre-configurado
+                    openMainModal('register-dotacion-delivery', itemData);
+
+                    // 3. (Truco de UX) Pre-seleccionar al usuario en el dropdown del modal
+                    // Como el modal se construye asíncronamente, esperamos un poco
+                    setTimeout(() => {
+                        const userSelect = document.getElementById('dotacion-assignedTo');
+                        if (userSelect && userSelect.choices) {
+                            userSelect.choices.setChoiceByValue(userId);
+                        }
+                    }, 300); // Esperamos a que Choices.js inicialice
+
+                } catch (error) {
+                    console.error("Error al iniciar renovación:", error);
+                    alert("No se pudo abrir la renovación: " + error.message);
+                } finally {
+                    loadingOverlay.classList.add('hidden');
+                }
+                break;
+            }
+
+            case 'open-loan-review':
+                // El botón tiene los datos en JSON en data-loan
+                const loanData = JSON.parse(elementWithAction.dataset.loan);
+                // Cerramos el modal de lista primero (opcional, pero limpio)
+                // closeMainModal(); 
+                // Abrimos el de revisión pasando los datos
+                openMainModal('review-loan', loanData);
                 break;
 
             case 'approve-loan':
@@ -10127,6 +10496,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 openMainModal('request-loan');
                 break;
 
+            case 'view-my-loans':
+                openMainModal('view-my-loans');
+                break;
+
+            case 'go-to-proyectos':
+                // Redirecciona a la vista principal de proyectos
+                showDashboard();
+                break;
+
+            case 'go-to-catalog':
+                // Redirecciona al Catálogo de Materiales
+                showView('catalog');
+                loadCatalogView();
+                break;
+
+            case 'go-to-tareas':
+                showView('tareas');
+                loadTasksView();
+                break;
+
+            case 'go-to-herramientas':
+                showView('herramienta');
+                if (typeof resetToolViewAndLoad === 'function') {
+                    resetToolViewAndLoad();
+                }
+                break;
+
+            case 'go-to-dotacion':
+                showView('dotacion');
+                loadDotacionView();
+                break;
+
             case 'view-pending-loans':
                 openMainModal('view-pending-loans');
                 break;
@@ -10375,22 +10776,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const link = e.target.closest('.nav-link');
             if (link) {
                 e.preventDefault();
-                const viewName = link.dataset.view;
-
-                // --- INICIO DE CORRECCIÓN (Cadena 'if/else' completa) ---
+                const viewName = link.dataset.view; // <--- AQUÍ DEFINISTE viewName
 
                 if (viewName === 'dashboard-general') {
-                    showGeneralDashboard(); // (La que migramos a dashboard.js)
+                    showGeneralDashboard();
 
                 } else if (viewName === 'proyectos') {
-                    showDashboard(); // (Carga proyectos activos)
+                    showDashboard();
 
                 } else if (viewName === 'tareas') {
                     showView('tareas');
                     loadTasksView();
 
                 } else if (viewName === 'herramienta') {
-                    // ESTA ES LA LÓGICA QUE FALTABA
                     showView('herramienta');
                     resetToolViewAndLoad();
 
@@ -10419,19 +10817,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     loadReportsView();
 
                 } else if (viewName === 'empleados') {
-                    // --- INICIO DE MODIFICACIÓN ---
                     loadEmpleadosView();
-                    showView(viewName); // Mostramos la vista después de que la función empieza a cargar
-                    // --- FIN DE MODIFICACIÓN ---
+                    showView(viewName);
+
                 } else if (viewName === 'configuracion') {
                     loadConfiguracionView();
-                    showView('configuracion-view'); // <-- ¡CORREGIDO!
+                    showView('configuracion-view');
+
+                    // --- CORRECCIÓN AQUÍ ---
+                } else if (viewName === 'cartera') { // Usar viewName, no viewId
+                    loadCarteraView();
+
                 } else {
-                    // Fallback para vistas simples (ej. Cartera, Solicitud)
                     showView(viewName);
                 }
-
-                // --- FIN DE CORRECCIÓN ---
 
                 if (window.innerWidth < 768) {
                     sidebar.classList.add('-translate-x-full');
@@ -13800,5 +14199,64 @@ async function savePendingProfileUpdate() {
     }
 }
 // --- FIN DE CÓDIGO AÑADIDO ---
+// --- SISTEMA DE NOTIFICACIONES (TOASTS) ---
+window.showToast = function (message, type = 'success') {
+    const container = document.getElementById('toast-container');
 
+    // Colores según tipo
+    const colors = type === 'error'
+        ? 'bg-red-100 border-l-4 border-red-500 text-red-700'
+        : 'bg-green-100 border-l-4 border-green-500 text-green-700';
+
+    const icon = type === 'error'
+        ? '<i class="fa-solid fa-circle-exclamation mr-2"></i>'
+        : '<i class="fa-solid fa-circle-check mr-2"></i>';
+
+    // Crear elemento
+    const toast = document.createElement('div');
+    toast.className = `${colors} p-4 rounded shadow-lg flex items-center transform transition-all duration-300 translate-x-10 opacity-0 pointer-events-auto min-w-[300px]`;
+    toast.innerHTML = `
+        ${icon}
+        <p class="font-bold text-sm">${message}</p>
+    `;
+
+    container.appendChild(toast);
+
+    // Animación de entrada
+    requestAnimationFrame(() => {
+        toast.classList.remove('translate-x-10', 'opacity-0');
+    });
+
+    // Eliminar después de 3 segundos
+    setTimeout(() => {
+        toast.classList.add('translate-x-10', 'opacity-0');
+        setTimeout(() => toast.remove(), 300); // Esperar a que termine la transición
+    }, 3500);
+};
+
+// --- SISTEMA DE AUDITORÍA (LOGS) ---
+window.logAuditAction = async function (action, description, targetId, previousData = null, newData = null) {
+    try {
+        const user = auth.currentUser; // Asumiendo que 'auth' está disponible globalmente o importado
+        if (!user) return;
+
+        // Consultar datos del admin actual para guardar su nombre
+        const adminSnap = await getDoc(doc(db, "users", user.uid));
+        const adminName = adminSnap.exists() ? `${adminSnap.data().firstName} ${adminSnap.data().lastName}` : user.email;
+
+        await addDoc(collection(db, "audit_logs"), {
+            action: action,           // Ej: "Eliminar Pago"
+            description: description, // Ej: "Se eliminó el pago de $500.000"
+            targetId: targetId,       // ID del empleado afectado
+            performedBy: user.uid,
+            performedByName: adminName,
+            previousData: previousData ? JSON.stringify(previousData) : null, // Qué había antes
+            newData: newData ? JSON.stringify(newData) : null,           // Qué hay ahora
+            timestamp: serverTimestamp()
+        });
+        console.log("Auditoría registrada:", action);
+    } catch (e) {
+        console.error("Error guardando log de auditoría:", e);
+    }
+};
 
