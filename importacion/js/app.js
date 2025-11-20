@@ -4500,52 +4500,54 @@ function showPdfModal(pdfUrl, title) {
 
 /**
  * Muestra el modal SECUNDARIO para gestionar los pagos de una remisión.
- * Incluye validación robusta para el array 'payments' y lógica de confirmación segura.
- * @param {object} remision - El objeto completo de la remisión.
+ * BLINDADO: Incluye validación visual y LÓGICA para impedir auto-confirmación.
  */
 function showPaymentModal(remision) {
-    // --- OBTENER REFERENCIAS AL MODAL SECUNDARIO ---
     const secondaryModal = document.getElementById('modal-secondary');
     const secondaryModalContentWrapper = document.getElementById('modal-secondary-content-wrapper');
     if (!secondaryModal || !secondaryModalContentWrapper) {
         console.error("Error: Contenedor de modal secundario no encontrado.");
-        // Podrías mostrar un error al usuario aquí si lo prefieres
-        showModalMessage("Error al abrir la gestión de pagos."); // Usa el modal primario para este error
-        return; // Salir si los elementos no existen
+        showModalMessage("Error al abrir la gestión de pagos.");
+        return;
     }
 
-    // --- Verificación robusta: Asegura que remision.payments sea un array ---
     const paymentsArray = Array.isArray(remision.payments) ? remision.payments : [];
 
-    // --- Lógica existente para calcular datos (SIN CAMBIOS) ---
+    // Cálculos de saldos
     const totalConfirmado = paymentsArray.filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
     const totalPorConfirmar = paymentsArray.filter(p => p.status === 'por confirmar').reduce((sum, p) => sum + p.amount, 0);
     const saldoPendiente = remision.valorTotal - totalConfirmado;
     const saldoRealPendiente = remision.valorTotal - totalConfirmado - totalPorConfirmar;
     const metodosDePagoHTML = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
 
-    // --- Usa paymentsArray para generar el HTML del historial (SIN CAMBIOS) ---
+    // Generar HTML de la tabla
     const paymentsHTML = paymentsArray
-        .sort((a, b) => new Date(b.date) - new Date(a.date)) // Ordenar por fecha descendente
-        .map((p, index) => {
+        .map((p, i) => ({ ...p, originalIndex: i })) // Mapear índice original
+        .sort((a, b) => new Date(b.date) - new Date(a.date)) // Ordenar visualmente
+        .map((p) => {
             let statusBadge = '';
             let confirmButton = '';
+            const indexParaBoton = p.originalIndex; 
+
             if (p.status === 'por confirmar') {
                 statusBadge = `<span class="text-xs font-semibold bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">Por Confirmar</span>`;
+                
                 if (currentUserData.role === 'admin') {
+                    // VALIDACIÓN VISUAL:
                     if (p.registeredBy !== currentUser.uid) {
-                        confirmButton = `<button data-remision-id="${remision.id}" data-payment-index="${index}" class="confirm-payment-btn bg-green-500 text-white text-xs px-2 py-1 rounded hover:bg-green-600">Confirmar</button>`;
+                        confirmButton = `<button data-remision-id="${remision.id}" data-payment-index="${indexParaBoton}" class="confirm-payment-btn bg-green-500 text-white text-xs px-2 py-1 rounded hover:bg-green-600">Confirmar</button>`;
                     } else {
-                        confirmButton = `<button class="bg-gray-400 text-white text-xs px-2 py-1 rounded cursor-not-allowed" title="Otro administrador debe confirmar este pago.">Confirmar</button>`;
+                        // Botón deshabilitado si es el mismo usuario
+                        confirmButton = `<button class="bg-gray-400 text-white text-xs px-2 py-1 rounded cursor-not-allowed" disabled title="No puedes confirmar tu propio registro.">Confirmar</button>`;
                     }
                 }
-            } else { // 'confirmado'
+            } else { 
                 statusBadge = `<span class="text-xs font-semibold bg-green-200 text-green-800 px-2 py-1 rounded-full">Confirmado</span>`;
             }
             return `<tr class="border-b"> <td class="p-2">${p.date}</td> <td class="p-2">${p.method}</td> <td class="p-2 text-right">${formatCurrency(p.amount)}</td> <td class="p-2">${statusBadge}</td> <td class="p-2">${confirmButton}</td> </tr>`;
         }).join('');
 
-    // --- INYECTAR HTML EN EL CONTENEDOR SECUNDARIO ---
+    // Inyectar HTML
     secondaryModalContentWrapper.innerHTML = `
         <div class="bg-white rounded-lg p-6 shadow-xl max-w-3xl w-full mx-auto text-left">
             <div class="flex justify-between items-center mb-4">
@@ -4578,42 +4580,30 @@ function showPaymentModal(remision) {
                              <button type="submit" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700">Registrar Pago</button>
                          </form>
                      ` : `
-                         <div class="bg-green-100 text-green-800 p-4 rounded-lg text-center font-semibold">Esta remisión ya ha sido pagada en su totalidad (considerando pagos por confirmar).</div>
+                         <div class="bg-green-100 text-green-800 p-4 rounded-lg text-center font-semibold">Esta remisión ya ha sido pagada en su totalidad.</div>
                      `}
                  </div>
              </div>
         </div>
     `;
 
-    // --- MOSTRAR EL MODAL SECUNDARIO ---
     secondaryModal.classList.remove('hidden');
 
-    // --- AJUSTAR EL BOTÓN DE CERRAR ---
     secondaryModalContentWrapper.querySelector('#close-secondary-payment-modal').addEventListener('click', () => {
         secondaryModal.classList.add('hidden');
-        secondaryModalContentWrapper.innerHTML = ''; // Limpiar contenido al cerrar
+        secondaryModalContentWrapper.innerHTML = '';
     });
 
-    // --- ASIGNAR LISTENERS (BUSCANDO DENTRO DEL MODAL SECUNDARIO) ---
-
-    // Listener para botones de confirmación (usando transacción)
+    // --- LISTENER DE CONFIRMACIÓN (CON VALIDACIÓN LÓGICA) ---
     secondaryModalContentWrapper.querySelectorAll('.confirm-payment-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const remisionId = e.currentTarget.dataset.remisionId;
             const paymentIndex = parseInt(e.currentTarget.dataset.paymentIndex);
             const remisionRef = doc(db, "remisiones", remisionId);
 
-            // Verificar índice básico antes de la transacción
-            // Usa 'paymentsArray' que ya está validado
-            if (paymentIndex < 0 || paymentIndex >= paymentsArray.length || !paymentsArray[paymentIndex]) {
-                console.error("Error: Índice de pago inválido.", paymentIndex, paymentsArray);
-                showModalMessage("Error interno al intentar confirmar el pago (índice inválido).");
-                return;
-            }
+            if (paymentIndex < 0 || isNaN(paymentIndex)) return;
 
-            console.log("Datos del pago ANTES de confirmar (dentro del listener):", JSON.stringify(paymentsArray[paymentIndex])); // Usa paymentsArray
-
-            showModalMessage("Confirmando pago...", true); // Usa modal primario para loader
+            showModalMessage("Confirmando pago...", true);
             try {
                 await runTransaction(db, async (transaction) => {
                     const remisionDoc = await transaction.get(remisionRef);
@@ -4622,39 +4612,42 @@ function showPaymentModal(remision) {
                     const data = remisionDoc.data();
                     const currentPaymentsArray = Array.isArray(data.payments) ? data.payments : [];
 
-                    if (paymentIndex >= currentPaymentsArray.length || !currentPaymentsArray[paymentIndex]) {
-                        throw `Índice de pago (${paymentIndex}) fuera de rango en los datos actuales.`;
-                    }
+                    if (paymentIndex >= currentPaymentsArray.length) throw `El pago ya no existe.`;
+                    const pago = currentPaymentsArray[paymentIndex];
 
-                    // Modificar el objeto específico EN MEMORIA
+                    // --- VALIDACIÓN DE SEGURIDAD CRÍTICA ---
+                    // Si el usuario intenta confirmar su propio pago (incluso hackeando el botón),
+                    // la transacción fallará aquí.
+                    if (pago.registeredBy === currentUser.uid) {
+                        throw "Error de Seguridad: No puedes confirmar un pago registrado por ti mismo.";
+                    }
+                    // ---------------------------------------
+
                     currentPaymentsArray[paymentIndex].status = 'confirmado';
                     currentPaymentsArray[paymentIndex].confirmedBy = currentUser.uid;
                     currentPaymentsArray[paymentIndex].confirmedAt = new Date();
 
-                    // Actualizar el documento completo CON EL ARRAY MODIFICADO
                     transaction.update(remisionRef, { payments: currentPaymentsArray });
                 });
 
-                // --- Actualización local (UI) - Se ejecuta DESPUÉS de que la transacción tuvo éxito ---
-                // Modificamos la variable 'remision' que tiene este modal
+                // Actualización local
                 remision.payments[paymentIndex].status = 'confirmado';
                 remision.payments[paymentIndex].confirmedBy = currentUser.uid;
                 remision.payments[paymentIndex].confirmedAt = new Date();
 
-                hideModal(); // Cierra el modal primario de carga
-                showTemporaryMessage("¡Pago confirmado!", "success"); // Notificación no invasiva
-                // Vuelve a renderizar ESTE modal secundario con la 'remision' actualizada
+                hideModal();
+                showTemporaryMessage("¡Pago confirmado!", "success");
                 showPaymentModal(remision);
 
             } catch (error) {
-                console.error("Error durante la transacción de confirmación:", error);
-                const errorMessage = typeof error === 'string' ? error : "Error al confirmar el pago.";
-                showModalMessage(errorMessage); // Muestra error en modal primario
+                console.error("Error confirmando pago:", error);
+                hideModal(); // Asegurar que se cierra el loader
+                showModalMessage(typeof error === 'string' ? error : "Error al confirmar el pago.");
             }
         });
     });
 
-    // Listener para el formulario de añadir nuevo pago
+    // Listener para añadir nuevo pago (Mantenemos el bloqueo de botón para evitar duplicados)
     if (saldoRealPendiente > 0.01) {
         const paymentAmountInput = secondaryModalContentWrapper.querySelector('#new-payment-amount');
         paymentAmountInput.addEventListener('focus', (e) => unformatCurrencyInput(e.target));
@@ -4662,34 +4655,26 @@ function showPaymentModal(remision) {
 
         secondaryModalContentWrapper.querySelector('#add-payment-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-
             const submitBtn = e.target.querySelector('button[type="submit"]');
-            if (submitBtn) {
-                submitBtn.disabled = true; // Deshabilita el botón
-                submitBtn.textContent = "Procesando..."; // Cambia el texto para feedback visual
-            }
-
+            if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Procesando..."; }
 
             const amount = unformatCurrency(paymentAmountInput.value);
-
-            // Recalcular saldo pendiente REAL justo antes de guardar (sin cambios)
-            const currentRemision = allRemisiones.find(r => r.id === remision.id);
-            const currentPaymentsArray = Array.isArray(currentRemision?.payments) ? currentRemision.payments : [];
-            const currentTotalConfirmado = currentPaymentsArray.filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
-            const currentTotalPorConfirmar = currentPaymentsArray.filter(p => p.status === 'por confirmar').reduce((sum, p) => sum + p.amount, 0);
-            const currentSaldoRealPendiente = (currentRemision?.valorTotal || 0) - currentTotalConfirmado - currentTotalPorConfirmar;
-
+            
             if (amount <= 0 || isNaN(amount)) {
                 showModalMessage("El monto debe ser mayor a cero.");
-                if (submitBtn) {
-                    submitBtn.disabled = false; // Reactiva si hay error
-                    submitBtn.textContent = "Registrar Pago";
-                }
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Registrar Pago"; }
                 return;
             }
 
-            if (amount > currentSaldoRealPendiente + 0.01) {
-                showModalMessage(`El monto no puede superar el saldo pendiente de ${formatCurrency(currentSaldoRealPendiente)}.`); // Usa modal primario
+            const currentRemision = allRemisiones.find(r => r.id === remision.id);
+            const currentPayments = Array.isArray(currentRemision?.payments) ? currentRemision.payments : [];
+            const confirmed = currentPayments.filter(p => p.status === 'confirmado').reduce((s, p) => s + p.amount, 0);
+            const pending = currentPayments.filter(p => p.status === 'por confirmar').reduce((s, p) => s + p.amount, 0);
+            const realPending = (currentRemision?.valorTotal || 0) - confirmed - pending;
+
+            if (amount > realPending + 0.01) {
+                showModalMessage(`El monto no puede superar el saldo pendiente de ${formatCurrency(realPending)}.`);
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Registrar Pago"; }
                 return;
             }
 
@@ -4702,39 +4687,24 @@ function showPaymentModal(remision) {
                 status: 'por confirmar'
             };
 
-            showModalMessage("Registrando pago...", true); // Usa modal primario
+            showModalMessage("Registrando pago...", true);
             try {
-                // Escribir en Firestore
                 await updateDoc(doc(db, "remisiones", remision.id), {
                     payments: arrayUnion(newPayment)
                 });
 
-                hideModal(); // Cierra modal primario de carga
-                showTemporaryMessage("¡Pago registrado! Pendiente de confirmación.", "success"); // Notificación
+                hideModal();
+                showTemporaryMessage("¡Pago registrado! Pendiente de confirmación.", "success");
 
-                // --- INICIO DE LA MODIFICACIÓN ---
-                // 1. Actualizar la variable 'remision' local añadiendo el nuevo pago
-                //    (Aseguramos que 'remision.payments' sea un array si no lo era)
-                if (!Array.isArray(remision.payments)) {
-                    remision.payments = [];
-                }
+                if (!Array.isArray(remision.payments)) remision.payments = [];
                 remision.payments.push(newPayment);
-
-                // 2. Volver a llamar a showPaymentModal con la remisión actualizada
-                //    para refrescar la vista del modal secundario
                 showPaymentModal(remision);
-                // --- FIN DE LA MODIFICACIÓN ---
 
             } catch (error) {
                 console.error("Error al registrar pago:", error);
                 hideModal();
                 showModalMessage("Error al registrar el pago.");
-
-                // Si falla, REACTIVA el botón para que puedan intentar de nuevo
-                if (submitBtn) {
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = "Registrar Pago";
-                }
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Registrar Pago"; }
             }
         });
     }
