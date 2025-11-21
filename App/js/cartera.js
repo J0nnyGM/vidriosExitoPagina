@@ -1,5 +1,5 @@
 import {
-    collection, query, where, getDocs, orderBy, limit, onSnapshot, doc, getDoc, 
+    collection, query, where, getDocs, orderBy, limit, onSnapshot, doc, getDoc,
     addDoc, serverTimestamp, updateDoc, increment, collectionGroup // <-- AÑADIR ESTA
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 // Variables del Módulo
@@ -19,8 +19,8 @@ export function initCartera(db, showView) {
 
 // Carga la Vista Principal (DISEÑO UNIFICADO)
 export function loadCarteraView() {
-    _showView('cartera-view'); 
-    
+    _showView('cartera-view');
+
     const container = document.getElementById('cartera-content');
     if (!container) return;
 
@@ -66,17 +66,17 @@ export function loadCarteraView() {
             btn.classList.remove('bg-white', 'shadow-sm', 'text-gray-800', 'text-indigo-600', 'text-red-600');
             btn.classList.add('text-gray-500');
         });
-        
+
         const activeBtn = document.getElementById(`tab-cartera-${tab}`);
-        if(activeBtn) {
+        if (activeBtn) {
             activeBtn.classList.add('bg-white', 'shadow-sm');
             activeBtn.classList.remove('text-gray-500');
-            if(tab === 'pagar') activeBtn.classList.add('text-red-600');
+            if (tab === 'pagar') activeBtn.classList.add('text-red-600');
             else activeBtn.classList.add('text-indigo-600');
         }
 
         const area = document.getElementById('cartera-dynamic-area');
-        switch(tab) {
+        switch (tab) {
             case 'resumen': renderResumenTab(area); break;
             case 'cobrar': renderCuentasPorCobrarTab(area); break; // Aquí está la lógica corregida abajo
             case 'pagar': renderCuentasPorPagarTab(area); break;
@@ -91,7 +91,7 @@ export function loadCarteraView() {
 
 function renderResumenTab(container) {
     // Simulación de datos para diseño
-    const totalCobrar = 150000000; 
+    const totalCobrar = 150000000;
     const totalPagar = 45000000;
     const balance = totalCobrar - totalPagar;
 
@@ -144,32 +144,32 @@ function renderResumenTab(container) {
 // FASE 3: CUENTAS POR PAGAR (PROVEEDORES)
 // ----------------------------------------------------------
 async function renderCuentasPorPagarTab(container) {
-    // 1. Estructura HTML (Consistente con Clientes)
+    // Estructura base (modificada para mostrar Proveedores en lugar de Facturas en el título)
     container.innerHTML = `
         <div class="space-y-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="bg-white p-5 rounded-xl shadow border border-gray-200 flex items-center gap-4">
                     <div class="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 text-xl">
-                        <i class="fa-solid fa-file-invoice-dollar"></i>
+                        <i class="fa-solid fa-users-rectangle"></i>
                     </div>
                     <div>
-                        <p class="text-xs font-bold text-gray-500 uppercase">Cuentas por Pagar</p>
+                        <p class="text-xs font-bold text-gray-500 uppercase">Total Deuda Proveedores</p>
                         <h3 id="total-payable-display" class="text-2xl font-bold text-gray-800">$ 0</h3>
                     </div>
                 </div>
                 <div class="bg-white p-5 rounded-xl shadow border border-gray-200 flex flex-col justify-center">
                     <label class="text-xs font-bold text-gray-400 uppercase mb-1">Buscar Proveedor</label>
-                    <input type="text" id="payable-search" class="w-full border-b border-gray-300 focus:border-red-500 outline-none py-1 text-sm" placeholder="Nombre del proveedor...">
+                    <input type="text" id="payable-search" class="w-full border-b border-gray-300 focus:border-orange-500 outline-none py-1 text-sm" placeholder="Nombre o NIT...">
                 </div>
             </div>
 
             <div class="bg-white rounded-xl shadow border border-gray-200 overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                    <h3 class="font-bold text-gray-700">Facturas Pendientes de Pago</h3>
+                    <h3 class="font-bold text-gray-700">Proveedores con Saldo Pendiente</h3>
                     <span class="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded font-bold" id="payable-count-badge">Cargando...</span>
                 </div>
                 <div id="payable-list" class="divide-y divide-gray-100 max-h-[600px] overflow-y-auto">
-                    <div class="text-center py-12"><div class="loader mx-auto"></div><p class="text-gray-400 mt-2">Revisando órdenes de compra...</p></div>
+                    <div class="text-center py-12"><div class="loader mx-auto"></div><p class="text-gray-400 mt-2">Agrupando deudas...</p></div>
                 </div>
             </div>
         </div>
@@ -183,165 +183,170 @@ async function renderCuentasPorPagarTab(container) {
     const parseMoney = (val) => {
         if (typeof val === 'number') return val;
         if (!val) return 0;
-        const clean = String(val).replace(/[^0-9.-]+/g, ""); 
+        const clean = String(val).replace(/[^0-9.-]+/g, "");
         return parseFloat(clean) || 0;
     };
 
     try {
-        // 2. Consultar Órdenes de Compra (purchase_orders)
-        // Traemos las recientes primero.
-        const q = query(collection(_db, "purchase_orders"), orderBy("createdAt", "desc"));
+        const q = query(collection(_db, "purchaseOrders"), orderBy("createdAt", "desc"));
         const snapshot = await getDocs(q);
 
-        if (snapshot.empty) {
-            listContainer.innerHTML = `<div class="p-8 text-center text-gray-500">No hay órdenes de compra registradas.</div>`;
-            countBadge.textContent = "0";
-            return;
-        }
-
+        const suppliersMap = {}; // Objeto para agrupar: { supplierId: { ...datos, orders: [] } }
         let totalGlobalDebt = 0;
-        const billsData = [];
 
-        // 3. Procesar Datos
         snapshot.forEach(doc => {
             const po = doc.data();
-            
-            // Calculamos Total vs Pagado
-            const total = parseMoney(po.total || po.totalEstimated || 0);
-            const paid = parseMoney(po.paidAmount || po.totalPaid || 0); // Asegúrate de guardar esto al pagar
+            const total = parseMoney(po.totalCost || 0);
+            const paid = parseMoney(po.paidAmount || 0);
             const debt = total - paid;
-            
-            // ESTADOS: Solo mostramos si debe dinero Y no está anulada/rechazada
-            const isValidStatus = !['rejected', 'cancelled'].includes(po.status);
+            const isValidStatus = !['rechazada', 'cancelada', 'anulada'].includes(po.status);
 
             if (debt > 100 && isValidStatus) {
-                const progress = total > 0 ? (paid / total) * 100 : 0;
-                
-                billsData.push({
+                const supplierId = po.supplierId || 'unknown';
+                const supplierName = po.provider || po.supplierName || "Proveedor General";
+                const poInfo = {
                     id: doc.id,
-                    supplier: po.supplierName || "Proveedor General",
-                    poNumber: po.orderNumber || doc.id.substr(0,6).toUpperCase(), // Número de orden
-                    date: po.createdAt ? po.createdAt.toDate().toLocaleDateString() : 'N/A',
+                    poNumber: po.poNumber || doc.id.substr(0, 6).toUpperCase(),
+                    date: po.createdAt ? po.createdAt.toDate().toLocaleDateString('es-CO') : 'N/A',
                     total: total,
                     paid: paid,
-                    debt: debt,
-                    progress: progress,
-                    status: po.status
-                });
+                    debt: debt
+                };
+
+                if (!suppliersMap[supplierId]) {
+                    suppliersMap[supplierId] = {
+                        id: supplierId,
+                        name: supplierName,
+                        totalDebt: 0,
+                        count: 0,
+                        orders: []
+                    };
+                }
+
+                suppliersMap[supplierId].totalDebt += debt;
+                suppliersMap[supplierId].count += 1;
+                suppliersMap[supplierId].orders.push(poInfo);
                 totalGlobalDebt += debt;
             }
         });
 
-        // Ordenar: Deuda mayor primero
-        billsData.sort((a, b) => b.debt - a.debt);
-        
-        totalDisplay.textContent = _currencyFormatter.format(totalGlobalDebt);
-        countBadge.textContent = `${billsData.length} Facturas`;
+        // Convertir a array y ordenar por deuda mayor
+        const suppliersList = Object.values(suppliersMap).sort((a, b) => b.totalDebt - a.totalDebt);
 
-        // 4. Renderizar
+        totalDisplay.textContent = _currencyFormatter.format(totalGlobalDebt);
+        countBadge.textContent = `${suppliersList.length} Proveedores`;
+
         const renderRows = (items) => {
             listContainer.innerHTML = '';
             if (items.length === 0) {
-                listContainer.innerHTML = `
-                    <div class="p-10 text-center flex flex-col items-center">
-                        <i class="fa-solid fa-thumbs-up text-4xl text-gray-300 mb-3"></i>
-                        <p class="text-gray-500">Estás al día con los proveedores.</p>
-                    </div>`;
+                listContainer.innerHTML = `<div class="p-10 text-center flex flex-col items-center"><i class="fa-solid fa-check-circle text-4xl text-green-200 mb-3"></i><p class="text-gray-500">No hay deudas pendientes.</p></div>`;
                 return;
             }
 
-            items.forEach(item => {
+            items.forEach(supplier => {
                 const row = document.createElement('div');
-                row.className = "p-4 hover:bg-orange-50 transition-colors group flex flex-col md:flex-row justify-between items-center gap-4";
-                
-                const progressColor = item.progress > 50 ? 'bg-yellow-500' : 'bg-gray-300';
+                row.className = "p-4 hover:bg-orange-50 transition-colors group flex flex-col sm:flex-row justify-between items-center gap-4";
+
+                // Convertimos el array de órdenes a string JSON para pasar al modal de detalles
+                // (Usamos encodeURIComponent para evitar problemas con comillas en el HTML)
+                const ordersJson = encodeURIComponent(JSON.stringify(supplier.orders));
 
                 row.innerHTML = `
-                    <div class="flex-1 w-full">
+                    <div class="flex-1 w-full cursor-pointer" onclick="window.openSupplierOrdersModal('${supplier.name}', '${ordersJson}')">
                         <div class="flex justify-between mb-1">
                             <div>
-                                <h4 class="font-bold text-gray-800 text-sm flex items-center">
-                                    <i class="fa-solid fa-truck-field mr-2 text-gray-400"></i> ${item.supplier}
+                                <h4 class="font-bold text-gray-800 text-base flex items-center">
+                                    <i class="fa-solid fa-building mr-2 text-gray-400"></i> ${supplier.name}
                                 </h4>
-                                <p class="text-xs text-gray-500">Orden #${item.poNumber} • ${item.date}</p>
+                                <p class="text-xs text-blue-600 hover:underline mt-1">
+                                    Ver ${supplier.count} órdenes pendientes <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                                </p>
                             </div>
                             <div class="text-right">
-                                <p class="text-[10px] text-gray-400 uppercase font-bold">Por Pagar</p>
-                                <p class="text-lg font-bold text-orange-600">${_currencyFormatter.format(item.debt)}</p>
+                                <p class="text-[10px] text-gray-400 uppercase font-bold">Total a Pagar</p>
+                                <p class="text-xl font-bold text-orange-600">${_currencyFormatter.format(supplier.totalDebt)}</p>
                             </div>
-                        </div>
-                        
-                        <div class="flex items-center gap-3 mt-2">
-                            <div class="flex-1 bg-gray-100 rounded-full h-1.5 relative overflow-hidden">
-                                <div class="${progressColor} h-full rounded-full" style="width: ${Math.min(item.progress, 100)}%"></div>
-                            </div>
-                            <span class="text-[10px] font-bold text-gray-400 w-10 text-right">${item.progress.toFixed(0)}%</span>
                         </div>
                     </div>
 
-                    <button class="btn-pay-bill bg-white border border-gray-300 text-gray-600 hover:border-orange-500 hover:text-orange-600 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center whitespace-nowrap"
-                        data-id="${item.id}" data-supplier="${item.supplier}" data-debt="${item.debt}">
-                        <i class="fa-solid fa-money-bill-transfer mr-2"></i> Pagar
+                    <button class="btn-pay-supplier bg-orange-600 text-white hover:bg-orange-700 px-5 py-2 rounded-lg text-sm font-bold transition-all shadow-md flex items-center whitespace-nowrap"
+                        data-supplier-id="${supplier.id}" data-supplier="${supplier.name}" data-debt="${supplier.totalDebt}">
+                        <i class="fa-solid fa-money-bill-wave mr-2"></i> Abonar
                     </button>
                 `;
 
-                row.querySelector('.btn-pay-bill').addEventListener('click', (e) => {
+                // Listener para el botón de pago (FIFO)
+                row.querySelector('.btn-pay-supplier').addEventListener('click', (e) => {
+                    e.stopPropagation(); // Evitar abrir el detalle al hacer click en pagar
                     const btn = e.currentTarget;
-                    openRegisterExpenseModal(btn.dataset.id, btn.dataset.supplier, parseFloat(btn.dataset.debt));
+                    openRegisterExpenseModal(btn.dataset.supplierId, btn.dataset.supplier, parseFloat(btn.dataset.debt));
                 });
 
                 listContainer.appendChild(row);
             });
         };
 
-        renderRows(billsData);
+        renderRows(suppliersList);
 
         searchInput.addEventListener('input', (e) => {
             const term = e.target.value.toLowerCase();
-            const filtered = billsData.filter(i => i.supplier.toLowerCase().includes(term) || i.poNumber.toLowerCase().includes(term));
+            const filtered = suppliersList.filter(s => s.name.toLowerCase().includes(term));
             renderRows(filtered);
         });
 
     } catch (error) {
-        console.error("Error Pagar:", error);
-        listContainer.innerHTML = `<div class="p-6 text-center text-red-500">Error cargando datos.</div>`;
+        console.error("Error Cartera Pagar:", error);
+        listContainer.innerHTML = `<div class="p-6 text-center text-red-500">Error: ${error.message}</div>`;
     }
 }
 
 /**
  * Modal Flotante para Registrar Egreso (Pago a Proveedor)
  */
-function openRegisterExpenseModal(poId, supplierName, currentDebt) {
+function openRegisterExpenseModal(supplierId, supplierName, currentDebt) {
     const overlay = document.createElement('div');
     overlay.className = "fixed inset-0 bg-gray-900 bg-opacity-50 z-[70] flex items-center justify-center opacity-0 transition-opacity duration-300";
-    
+
     const modalHtml = `
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 transform scale-95 transition-transform duration-300">
             <div class="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
-                <h3 class="text-lg font-bold text-gray-800">Registrar Egreso</h3>
+                <h3 class="text-lg font-bold text-gray-800">Registrar Pago a Proveedor</h3>
                 <button id="close-exp-modal" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
             </div>
             
             <div class="bg-orange-50 p-3 rounded-lg mb-4 text-center border border-orange-100">
-                <p class="text-xs text-orange-500 uppercase font-bold">Pago a Proveedor</p>
+                <p class="text-xs text-orange-500 uppercase font-bold">Proveedor</p>
                 <p class="font-bold text-gray-800 truncate">${supplierName}</p>
-                <p class="text-xs text-gray-500 mt-1">Deuda: <span class="font-bold text-red-500">${_currencyFormatter.format(currentDebt)}</span></p>
+                <p class="text-xs text-gray-500 mt-1">Deuda Total: <span class="font-bold text-red-500">${_currencyFormatter.format(currentDebt)}</span></p>
             </div>
 
             <form id="form-register-expense" class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Valor a Pagar</label>
-                    <input type="text" id="expense-amount" required class="currency-input w-full border-2 border-gray-200 rounded-lg p-3 text-xl font-bold text-gray-700 focus:border-orange-400 outline-none" placeholder="$ 0">
+                    <div class="relative">
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</span>
+                        <input type="text" id="expense-amount" required class="currency-input w-full border-2 border-gray-200 rounded-lg p-3 pl-7 text-xl font-bold text-gray-700 focus:border-orange-400 outline-none" placeholder="0">
+                    </div>
                 </div>
                 
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Pago</label>
-                    <input type="date" id="expense-date" required class="w-full border border-gray-300 rounded-lg p-2 text-sm" value="${new Date().toISOString().split('T')[0]}">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Pago</label>
+                        <input type="date" id="expense-date" required class="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white" value="${new Date().toISOString().split('T')[0]}">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Método de Pago</label>
+                        <select id="expense-method" required class="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white focus:border-orange-500 outline-none">
+                            <option value="Transferencia">Transferencia</option>
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Tarjeta">Tarjeta</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Método / Nota</label>
-                    <input type="text" id="expense-concept" required class="w-full border border-gray-300 rounded-lg p-2 text-sm" placeholder="Ej: Transferencia Bancolombia...">
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Referencia / Nota (Opcional)</label>
+                    <input type="text" id="expense-note" class="w-full border border-gray-300 rounded-lg p-2 text-sm" placeholder="Ej: Comprobante #1234">
                 </div>
 
                 <button type="submit" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 rounded-lg shadow-md transition-transform active:scale-95 flex justify-center items-center">
@@ -350,7 +355,7 @@ function openRegisterExpenseModal(poId, supplierName, currentDebt) {
             </form>
         </div>
     `;
-    
+
     overlay.innerHTML = modalHtml;
     document.body.appendChild(overlay);
 
@@ -365,11 +370,10 @@ function openRegisterExpenseModal(poId, supplierName, currentDebt) {
         setTimeout(() => overlay.remove(), 300);
     };
 
-    // Setup Input Moneda
     const amountInput = overlay.querySelector('#expense-amount');
     amountInput.addEventListener('input', (e) => {
         let val = e.target.value.replace(/\D/g, '');
-        if(val) e.target.value = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val);
+        if (val) e.target.value = new Intl.NumberFormat('es-CO', { minimumFractionDigits: 0 }).format(val);
     });
 
     overlay.querySelector('#close-exp-modal').onclick = close;
@@ -378,43 +382,79 @@ function openRegisterExpenseModal(poId, supplierName, currentDebt) {
         e.preventDefault();
         const btn = e.target.querySelector('button');
         const rawAmount = amountInput.value.replace(/[$. ]/g, '');
-        const amount = parseFloat(rawAmount);
+        const amountToPay = parseFloat(rawAmount);
         const date = overlay.querySelector('#expense-date').value;
-        const concept = overlay.querySelector('#expense-concept').value;
 
-        if (!amount || amount <= 0) { alert("Monto inválido"); return; }
-        if (amount > currentDebt) { 
-            if(!confirm("Estás pagando más de lo que dice la deuda. ¿Seguro?")) return;
-        }
+        // Capturamos los nuevos campos
+        const method = overlay.querySelector('#expense-method').value;
+        const noteText = overlay.querySelector('#expense-note').value.trim();
+        const finalNote = noteText ? `${method} - ${noteText}` : method; // Combinamos para el historial
+
+        if (!amountToPay || amountToPay <= 0) { alert("Monto inválido"); return; }
 
         btn.disabled = true;
-        btn.textContent = "Procesando...";
+        btn.textContent = "Distribuyendo pago...";
 
         try {
-            // 1. Guardar el movimiento en subcolección 'payments' de la orden de compra
-            await addDoc(collection(_db, "purchase_orders", poId, "payments"), {
-                amount: amount,
-                date: date,
-                note: concept,
-                createdAt: serverTimestamp(),
-                createdBy: 'admin' // O ID real si lo tienes a mano
-            });
+            // 1. Buscar órdenes pendientes (FIFO)
+            const q = query(
+                collection(_db, "purchaseOrders"),
+                where("supplierId", "==", supplierId),
+                orderBy("createdAt", "asc")
+            );
 
-            // 2. Actualizar el acumulado en la orden maestra
-            await updateDoc(doc(_db, "purchase_orders", poId), {
-                paidAmount: increment(amount),
-                status: (amount >= currentDebt) ? 'paid' : 'partial' // Opcional: Cambiar estado si paga todo
-            });
+            const snapshot = await getDocs(q);
+            let remainingMoney = amountToPay;
+            let billsPaidCount = 0;
 
-            alert("Egreso registrado.");
+            // 2. Distribuir pago
+            for (const docSnap of snapshot.docs) {
+                if (remainingMoney <= 0) break;
+
+                const po = docSnap.data();
+                const total = po.totalCost || 0;
+                const paid = po.paidAmount || 0;
+                const debt = total - paid;
+
+                if (debt <= 100) continue;
+
+                const paymentForThisBill = Math.min(remainingMoney, debt);
+
+                // Guardamos el pago con los datos estructurados
+                await addDoc(collection(_db, "purchaseOrders", docSnap.id, "payments"), {
+                    amount: paymentForThisBill,
+                    date: date,
+                    paymentMethod: method, // Guardamos el método específico
+                    note: `${finalNote} (Auto)`,
+                    createdAt: serverTimestamp(),
+                    createdBy: 'admin'
+                });
+
+                await updateDoc(doc(_db, "purchaseOrders", docSnap.id), {
+                    paidAmount: increment(paymentForThisBill),
+                    status: (Math.abs(debt - paymentForThisBill) < 100) ? 'pagada' : (po.status === 'pendiente' ? 'parcial' : po.status)
+                });
+
+                remainingMoney -= paymentForThisBill;
+                billsPaidCount++;
+            }
+
+            if (billsPaidCount === 0) {
+                alert("El proveedor no tiene deudas pendientes antiguas para aplicar este pago.");
+            } else {
+                let msg = `Pago de ${_currencyFormatter.format(amountToPay - remainingMoney)} aplicado a ${billsPaidCount} orden(es).`;
+                if (remainingMoney > 0) msg += `\nSaldo a favor restante: ${_currencyFormatter.format(remainingMoney)}`;
+                alert(msg);
+            }
+
             close();
-            // Recargar la tabla (Hack de recarga)
+
             const currentTabBtn = document.getElementById('tab-cartera-pagar');
-            if(currentTabBtn) currentTabBtn.click();
+            if (currentTabBtn) currentTabBtn.click();
 
         } catch (error) {
-            console.error(error);
-            alert("Error al guardar.");
+            console.error("Error distribuyendo pago:", error);
+            alert("Error al procesar el pago: " + error.message);
             btn.disabled = false;
             btn.textContent = "Confirmar Pago";
         }
@@ -466,7 +506,7 @@ async function renderCuentasPorCobrarTab(container) {
         if (typeof val === 'number') return val;
         if (!val) return 0;
         // Elimina todo lo que no sea número, punto o guion
-        const clean = String(val).replace(/[^0-9.-]+/g, ""); 
+        const clean = String(val).replace(/[^0-9.-]+/g, "");
         return parseFloat(clean) || 0;
     };
 
@@ -476,7 +516,7 @@ async function renderCuentasPorCobrarTab(container) {
         const projectsSnap = await getDocs(projectsQuery);
 
         // B. Traer TODOS los Cortes Aprobados (Global)
-        const cortesQuery = query(collectionGroup(_db, 'cortes'), where('status', '==', 'approved'));
+        const cortesQuery = query(collectionGroup(_db, 'cortes'), where('status', '==', 'aprobado'));
         const cortesSnap = await getDocs(cortesQuery);
 
         // Mapa para sumar cortes: { projectId: 1500000 }
@@ -485,7 +525,7 @@ async function renderCuentasPorCobrarTab(container) {
             // El padre.parent.id es el ID del proyecto
             const pid = doc.ref.parent.parent.id;
             const valor = parseMoney(doc.data().totalValue || doc.data().valor || 0);
-            
+
             if (!sumCortesPorProyecto[pid]) sumCortesPorProyecto[pid] = 0;
             sumCortesPorProyecto[pid] += valor;
         });
@@ -496,7 +536,7 @@ async function renderCuentasPorCobrarTab(container) {
         // C. Cruzar la información
         projectsSnap.forEach(doc => {
             const p = doc.data();
-            
+
             // 1. Calcular lo que nos DEBEN pagar (Exigible)
             // Exigible = Anticipo + Suma de Cortes Aprobados
             const anticipo = parseMoney(p.downPayment || p.anticipo || p.advance || 0);
@@ -514,7 +554,7 @@ async function renderCuentasPorCobrarTab(container) {
             if (deuda > 100 || totalExigible > 0) {
                 // Porcentaje cobrado sobre lo ejecutado
                 const progress = totalExigible > 0 ? (pagado / totalExigible) * 100 : 0;
-                
+
                 // Valor total del contrato (Informativo)
                 const valorContrato = parseMoney(p.budget || p.totalValue || p.costo || 0);
 
@@ -537,7 +577,7 @@ async function renderCuentasPorCobrarTab(container) {
 
         // Ordenar: Los que más deben primero
         dataList.sort((a, b) => b.deuda - a.deuda);
-        
+
         totalDisplay.textContent = _currencyFormatter.format(totalGlobalDebt);
         countBadge.textContent = `${dataList.length} Proyectos`;
 
@@ -552,22 +592,28 @@ async function renderCuentasPorCobrarTab(container) {
             items.forEach(item => {
                 const row = document.createElement('div');
                 row.className = "p-4 hover:bg-gray-50 transition-colors group flex flex-col md:flex-row justify-between items-center gap-4";
-                
+
                 // Barra de estado
                 const barColor = item.progress >= 100 ? 'bg-green-500' : (item.progress > 50 ? 'bg-yellow-400' : 'bg-red-500');
-                
+
                 // Si la deuda es 0 o negativa (saldo a favor), mostrar en verde
                 const debtColor = item.deuda > 0 ? 'text-red-600' : 'text-green-600';
                 const debtText = item.deuda <= 0 ? 'Paz y Salvo' : _currencyFormatter.format(item.deuda);
 
-                row.innerHTML = `
-                    <div class="flex-1 w-full">
+row.innerHTML = `
+                    <div class="flex-1 w-full min-w-0 cursor-pointer select-none" 
+                         onclick="window.openClientPaymentsModal('${item.id}', '${item.name}')"
+                         title="Clic para ver historial detallado">
+                        
                         <div class="flex justify-between mb-1">
-                            <div>
-                                <h4 class="font-bold text-gray-800 text-sm truncate">${item.name}</h4>
-                                <p class="text-xs text-gray-500"><i class="fa-solid fa-user mr-1"></i> ${item.client}</p>
+                            <div class="min-w-0 pr-2">
+                                <h4 class="font-bold text-gray-800 text-sm truncate flex items-center group-hover:text-indigo-600 transition-colors">
+                                    ${item.name}
+                                    <i class="fa-solid fa-eye text-[10px] text-gray-300 ml-2 opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                </h4>
+                                <p class="text-xs text-gray-500 truncate"><i class="fa-solid fa-user mr-1"></i> ${item.client}</p>
                             </div>
-                            <div class="text-right">
+                            <div class="text-right flex-shrink-0">
                                 <p class="text-[10px] text-gray-400 uppercase font-bold">Saldo Pendiente</p>
                                 <p class="text-lg font-bold ${debtColor}">${debtText}</p>
                             </div>
@@ -580,16 +626,16 @@ async function renderCuentasPorCobrarTab(container) {
                             <span class="text-xs font-bold text-gray-500">${item.progress.toFixed(0)}%</span>
                         </div>
 
-                        <div class="flex gap-3 mt-2 text-[10px] text-gray-400 bg-gray-50 p-1.5 rounded border border-gray-100">
+                        <div class="flex flex-wrap gap-3 mt-2 text-[10px] text-gray-400 bg-gray-50 p-1.5 rounded border border-gray-100 group-hover:border-indigo-100 group-hover:bg-indigo-50/30 transition-colors">
                             <span title="Suma de Cortes Aprobados">🏗️ Cortes: <strong>${_currencyFormatter.format(item.cortes)}</strong></span>
                             <span title="Anticipo Inicial">💰 Anticipo: <strong>${_currencyFormatter.format(item.anticipo)}</strong></span>
                             <span class="ml-auto text-gray-600">Total Recaudado: <strong>${_currencyFormatter.format(item.pagado)}</strong></span>
                         </div>
                     </div>
 
-                    <button class="btn-abonar bg-white border border-gray-300 text-indigo-600 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm"
-                        data-id="${item.id}" data-name="${item.name}" data-debt="${item.deuda}">
-                        <i class="fa-solid fa-cash-register mr-1"></i> Registrar Ingreso
+                    <button class="btn-abonar bg-white border border-gray-300 text-indigo-600 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm flex-shrink-0 z-10"
+                        data-id="${item.id}" data-name="${item.name}" data-debt="${item.deuda}"
+                        onclick="event.stopPropagation()"> <i class="fa-solid fa-cash-register mr-1"></i> Registrar Ingreso
                     </button>
                 `;
 
@@ -627,7 +673,7 @@ function openRegisterPaymentModal(projectId, projectName, currentDebt) {
     // Usamos una estructura similar a openCustomInputModal pero más compleja
     const overlay = document.createElement('div');
     overlay.className = "fixed inset-0 bg-gray-900 bg-opacity-50 z-[70] flex items-center justify-center opacity-0 transition-opacity duration-300";
-    
+
     const modalHtml = `
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 transform scale-95 transition-transform duration-300">
             <div class="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
@@ -663,7 +709,7 @@ function openRegisterPaymentModal(projectId, projectName, currentDebt) {
             </form>
         </div>
     `;
-    
+
     overlay.innerHTML = modalHtml;
     document.body.appendChild(overlay);
 
@@ -685,7 +731,7 @@ function openRegisterPaymentModal(projectId, projectName, currentDebt) {
     // Si tienes una función global setupCurrencyInput, úsala, si no, lógica simple:
     amountInput.addEventListener('input', (e) => {
         let val = e.target.value.replace(/\D/g, '');
-        if(val) e.target.value = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val);
+        if (val) e.target.value = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val);
     });
 
     // Listeners
@@ -701,29 +747,30 @@ function openRegisterPaymentModal(projectId, projectName, currentDebt) {
         const concept = overlay.querySelector('#income-concept').value;
 
         if (!amount || amount <= 0) { alert("Monto inválido"); return; }
-        if (amount > currentDebt) { 
-            if(!confirm("El monto supera la deuda registrada. ¿Continuar igual?")) return;
+        if (amount > currentDebt) {
+            if (!confirm("El monto supera la deuda registrada. ¿Continuar igual?")) return;
         }
 
         btn.disabled = true;
         btn.textContent = "Guardando...";
 
         try {
-            // 1. Registrar el movimiento en una subcolección 'incomes' o 'payments' del proyecto
-            await addDoc(collection(_db, "projects", projectId, "incomes"), {
+            // CAMBIO 1: Usar la colección estándar "payments" en lugar de "incomes"
+            await addDoc(collection(_db, "projects", projectId, "payments"), {
                 amount: amount,
                 date: date,
                 concept: concept,
+                type: 'abono_cartera', // Identificador para saber que vino de cartera
                 createdAt: serverTimestamp()
             });
 
-            // 2. Actualizar el acumulado 'paidAmount' del proyecto
+            // Esto se mantiene igual (es lo que permite que Cartera se actualice)
             await updateDoc(doc(_db, "projects", projectId), {
                 paidAmount: increment(amount),
                 lastPaymentDate: date
             });
 
-            alert("Abono registrado exitosamente.");
+            alert("Abono registrado y sincronizado exitosamente.");
             close();
             // Recargar vista
             renderCuentasPorCobrarTab(document.getElementById('receivables-list').parentElement.parentElement); // Hack rápido para recargar o llamar a loadCarteraView()
@@ -736,3 +783,282 @@ function openRegisterPaymentModal(projectId, projectName, currentDebt) {
         }
     };
 }
+
+window.openSupplierOrdersModal = function (supplierName, ordersJson) {
+    const orders = JSON.parse(decodeURIComponent(ordersJson));
+
+    const overlay = document.createElement('div');
+    // CAMBIO 1: Z-Index ajustado a 45 para que el modal de "Ver Orden" (z-50) pueda abrirse encima
+    overlay.className = "fixed inset-0 bg-gray-900 bg-opacity-60 z-[45] flex items-center justify-center opacity-0 transition-opacity duration-300 backdrop-blur-sm";
+
+    let rowsHtml = '';
+
+    if (orders.length === 0) {
+        rowsHtml = `
+            <div class="text-center py-12 text-gray-400">
+                <i class="fa-solid fa-clipboard-check text-5xl mb-3 text-gray-200"></i>
+                <p>No hay órdenes pendientes para este proveedor.</p>
+            </div>`;
+    } else {
+        orders.forEach(po => {
+            const progress = po.total > 0 ? (po.paid / po.total) * 100 : 0;
+
+            let statusBadge = '';
+            let cardBorder = 'border-gray-200';
+            let progressBarColor = 'bg-orange-500';
+
+            if (po.debt <= 100) {
+                statusBadge = '<span class="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-green-200">PAGADA</span>';
+                cardBorder = 'border-green-200';
+                progressBarColor = 'bg-green-500';
+            } else if (po.paid > 0) {
+                statusBadge = '<span class="bg-yellow-50 text-yellow-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-yellow-200">PARCIAL</span>';
+                cardBorder = 'border-yellow-200';
+                progressBarColor = 'bg-yellow-500';
+            } else {
+                statusBadge = '<span class="bg-red-50 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-red-100">PENDIENTE</span>';
+                cardBorder = 'border-red-100';
+            }
+
+            rowsHtml += `
+                <div class="bg-white p-4 rounded-xl border ${cardBorder} shadow-sm mb-3 relative overflow-hidden hover:shadow-md transition-all group">
+                    
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-gray-50 flex items-center justify-center text-gray-400 border border-gray-100 group-hover:bg-orange-50 group-hover:text-orange-500 transition-colors">
+                                <i class="fa-solid fa-file-invoice text-lg"></i>
+                            </div>
+                            <div>
+                                <button class="font-bold text-blue-600 text-sm leading-tight hover:underline text-left flex items-center gap-1" 
+                                        data-action="view-purchase-order" 
+                                        data-id="${po.id}">
+                                    Orden #${po.poNumber}
+                                    <i class="fa-solid fa-arrow-up-right-from-square text-[10px] opacity-50"></i>
+                                </button>
+                                <p class="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
+                                    <i class="fa-regular fa-calendar"></i> ${po.date}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            ${statusBadge}
+                            <p class="font-bold text-orange-600 text-base mt-1 tracking-tight">${_currencyFormatter.format(po.debt)}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <div class="flex justify-between text-[10px] text-gray-500 font-medium uppercase tracking-wide">
+                            <span>Progreso Pago</span>
+                            <span>${progress.toFixed(0)}%</span>
+                        </div>
+                        <div class="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                            <div class="${progressBarColor} h-full rounded-full transition-all duration-500 ease-out relative" style="width: ${Math.min(progress, 100)}%"></div>
+                        </div>
+                        <div class="flex justify-between items-center pt-2 text-xs text-gray-600 border-t border-gray-50 mt-2">
+                            <span class="bg-gray-50 px-2 py-1 rounded">Total: <strong class="text-gray-800">${_currencyFormatter.format(po.total)}</strong></span>
+                            <span class="text-green-700 bg-green-50 px-2 py-1 rounded">Pagado: <strong>${_currencyFormatter.format(po.paid)}</strong></span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+    }
+
+    const modalHtml = `
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-0 transform scale-95 transition-transform duration-300 flex flex-col max-h-[85vh] overflow-hidden">
+            
+            <div class="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white z-10">
+                <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 flex-shrink-0 text-xl">
+                        <i class="fa-solid fa-building"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 class="text-xl font-bold text-gray-800 truncate">${supplierName}</h3>
+                        <p class="text-sm text-gray-500 font-medium">Detalle de Deuda por Orden</p>
+                    </div>
+                </div>
+                <button id="close-orders-modal" class="w-9 h-9 flex items-center justify-center rounded-full bg-gray-50 text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="overflow-y-auto flex-grow p-6 bg-gray-50/50 custom-scrollbar">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    ${rowsHtml}
+                </div>
+            </div>
+            
+            <div class="p-4 border-t border-gray-100 bg-white text-center">
+                <div class="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-700 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-circle-info flex-shrink-0"></i>
+                    <p>
+                        Para ver el detalle completo de una orden, haz clic en el número azul (ej. <strong>Orden #PO-001</strong>).
+                    </p>
+                </div>
+            </div>
+        </div>
+    `;
+
+    overlay.innerHTML = modalHtml;
+    document.body.appendChild(overlay);
+
+    requestAnimationFrame(() => {
+        overlay.classList.remove('opacity-0');
+        overlay.querySelector('div').classList.remove('scale-95');
+        overlay.querySelector('div').classList.add('scale-100');
+    });
+
+    overlay.querySelector('#close-orders-modal').onclick = () => {
+        overlay.classList.add('opacity-0');
+        overlay.querySelector('div').classList.remove('scale-100');
+        overlay.querySelector('div').classList.add('scale-95');
+        setTimeout(() => overlay.remove(), 300);
+    };
+};
+
+/**
+ * Abre un modal con el historial de pagos de un cliente (Proyecto)
+ */
+window.openClientPaymentsModal = async function (projectId, projectName) {
+    // Crear overlay
+    const overlay = document.createElement('div');
+    overlay.className = "fixed inset-0 bg-gray-900 bg-opacity-60 z-[80] flex items-center justify-center opacity-0 transition-opacity duration-300 backdrop-blur-sm";
+
+    // Estado de carga inicial
+    overlay.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl p-10 flex flex-col items-center justify-center transform scale-95 transition-transform duration-300">
+             <div class="loader mb-4"></div>
+             <p class="text-gray-500 font-medium animate-pulse">Cargando historial de pagos...</p>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    // Animación de entrada
+    requestAnimationFrame(() => {
+        overlay.classList.remove('opacity-0');
+        overlay.querySelector('div').classList.remove('scale-95');
+        overlay.querySelector('div').classList.add('scale-100');
+    });
+
+    try {
+        // Consultar pagos del proyecto
+        const q = query(collection(_db, "projects", projectId, "payments"), orderBy("createdAt", "desc"));
+        const snapshot = await getDocs(q);
+
+        let rowsHtml = '';
+
+        if (snapshot.empty) {
+            rowsHtml = `
+                <div class="text-center py-16 text-gray-400">
+                    <div class="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fa-solid fa-hand-holding-dollar text-3xl text-gray-300"></i>
+                    </div>
+                    <p class="text-lg font-medium text-gray-500">No hay pagos registrados</p>
+                    <p class="text-sm text-gray-400">Este proyecto aún no tiene abonos.</p>
+                </div>`;
+        } else {
+            snapshot.forEach(doc => {
+                const payment = doc.data();
+                const date = payment.date ? new Date(payment.date + 'T00:00:00').toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Fecha desconocida';
+                const amount = _currencyFormatter.format(payment.amount || 0);
+                const concept = payment.concept || payment.note || 'Sin concepto';
+
+                // Determinar tipo para icono y color
+                let typeLabel = 'Pago';
+                let icon = 'fa-money-bill-wave';
+                let colorClass = 'text-green-600 bg-green-50 border-green-100';
+
+                if (payment.type === 'abono_anticipo') {
+                    typeLabel = 'Anticipo';
+                    icon = 'fa-piggy-bank';
+                    colorClass = 'text-blue-600 bg-blue-50 border-blue-100';
+                } else if (payment.type === 'abono_cartera') {
+                    typeLabel = 'Abono Cartera';
+                    icon = 'fa-wallet';
+                    colorClass = 'text-indigo-600 bg-indigo-50 border-indigo-100';
+                }
+
+                rowsHtml += `
+                    <div class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4 group hover:border-indigo-100">
+                        <div class="w-12 h-12 rounded-full ${colorClass} flex items-center justify-center text-xl group-hover:scale-110 transition-transform shadow-sm border">
+                            <i class="fa-solid ${icon}"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex justify-between items-start">
+                                <h5 class="font-bold text-gray-800 text-sm truncate pr-2">${concept}</h5>
+                                <span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wide border border-gray-200">${typeLabel}</span>
+                            </div>
+                            <p class="text-xs text-gray-500 flex items-center gap-2 mt-1">
+                                <i class="fa-regular fa-calendar"></i> ${date}
+                            </p>
+                        </div>
+                        <div class="text-right pl-4 border-l border-gray-100">
+                            <p class="text-[10px] text-gray-400 uppercase font-bold">Monto</p>
+                            <p class="font-bold text-gray-800 text-lg">${amount}</p>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        // Reemplazar contenido con el modal real
+        const modalHtml = `
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl p-0 flex flex-col max-h-[85vh] overflow-hidden">
+                
+                <div class="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-white z-10">
+                    <div class="flex items-center gap-4 overflow-hidden">
+                        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white shadow-lg flex-shrink-0 text-2xl">
+                            <i class="fa-solid fa-building-user"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <h3 class="text-2xl font-bold text-gray-800 truncate">${projectName}</h3>
+                            <p class="text-sm text-gray-500 font-medium flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                                Historial de Abonos y Pagos
+                            </p>
+                        </div>
+                    </div>
+                    <button id="close-client-payments" class="w-10 h-10 flex items-center justify-center rounded-full bg-gray-50 text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="overflow-y-auto flex-grow p-6 bg-slate-50 custom-scrollbar">
+                    <div class="space-y-3">
+                        ${rowsHtml}
+                    </div>
+                </div>
+
+                <div class="p-4 border-t border-gray-100 bg-white text-center">
+                     <button class="text-sm text-gray-500 hover:text-indigo-600 font-medium transition-colors flex items-center justify-center gap-2 mx-auto" onclick="document.getElementById('close-client-payments').click()">
+                        Cerrar Ventana
+                    </button>
+                </div>
+            </div>
+        `;
+
+        // Actualizamos el contenido del overlay existente
+        overlay.innerHTML = modalHtml;
+
+        // Re-asignar el evento de cierre al nuevo botón
+        overlay.querySelector('#close-client-payments').onclick = () => {
+            overlay.classList.remove('opacity-100');
+            overlay.classList.add('opacity-0');
+            overlay.querySelector('div').classList.remove('scale-100');
+            overlay.querySelector('div').classList.add('scale-95');
+            setTimeout(() => overlay.remove(), 300);
+        };
+
+    } catch (error) {
+        console.error("Error loading payments:", error);
+        overlay.innerHTML = `
+            <div class="bg-white p-8 rounded-2xl shadow-xl text-center max-w-sm mx-4">
+                <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500 text-2xl">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <h3 class="text-lg font-bold text-gray-800 mb-2">Error al cargar</h3>
+                <p class="text-gray-600 mb-6">${error.message}</p>
+                <button class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-bold hover:bg-gray-200" onclick="this.closest('.fixed').remove()">Cerrar</button>
+            </div>`;
+    }
+};

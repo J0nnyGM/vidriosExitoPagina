@@ -12,6 +12,7 @@ import { initDashboard, showGeneralDashboard } from './dashboard.js';
 import { initEmpleados, loadEmpleadosView, showEmpleadoDetails, loadPaymentHistoryView } from './empleados.js'; // <-- AÑADIDO
 import { initConfiguracion, loadConfiguracionView } from './configuracion.js';
 import { initCartera, loadCarteraView } from "./cartera.js";
+import { initSolicitudes, loadSolicitudesView } from './solicitudes.js';
 // --- CONFIGURACIÓN Y ESTADO ---
 
 const firebaseConfig = {
@@ -1285,7 +1286,7 @@ async function loadReportsView() {
 
 /**
  * Abre y rellena el modal con los detalles de una Orden de Compra específica.
- * @param {string} poId - El ID de la Orden de Compra a mostrar.
+ * (DISEÑO MEJORADO: Más ancho, iconos, tarjetas de resumen y tabla limpia)
  */
 async function openPurchaseOrderModal(poId) {
     const modal = document.getElementById('po-details-modal');
@@ -1293,10 +1294,17 @@ async function openPurchaseOrderModal(poId) {
 
     const contentContainer = document.getElementById('po-details-content');
     const actionsContainer = document.getElementById('po-details-actions');
+    const modalContainer = modal.querySelector('.w-11\\/12'); // Seleccionamos el contenedor interno
 
-    // Preparamos el modal mostrando un estado de carga
-    contentContainer.innerHTML = '<p class="text-center text-gray-500 py-8">Cargando detalles...</p>';
-    actionsContainer.innerHTML = ''; // Limpiamos los botones de acciones anteriores
+    // 1. AJUSTE VISUAL: Hacemos el modal más ancho (igual que el de cartera)
+    if (modalContainer) {
+        modalContainer.classList.remove('md:max-w-2xl');
+        modalContainer.classList.add('md:max-w-5xl'); // Mucho más espacio
+    }
+
+    // Estado de carga
+    contentContainer.innerHTML = '<div class="flex justify-center items-center h-64"><div class="loader"></div></div>';
+    actionsContainer.innerHTML = '';
     modal.style.display = 'flex';
 
     try {
@@ -1308,116 +1316,190 @@ async function openPurchaseOrderModal(poId) {
 
         const po = { id: poSnap.id, ...poSnap.data() };
 
-        // --- Tarjeta 1: Información General ---
-        const statusText = po.status === 'recibida' ? 'Recibida' : 'Pendiente';
-        const statusColor = po.status === 'recibida' ? 'text-green-600' : 'text-yellow-600';
-        const infoCard = `
-            <div class="bg-white p-4 rounded-lg shadow-sm border">
-                <h4 class="text-lg font-bold text-gray-800 mb-3">Información General</h4>
-                <div class="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                        <p class="text-gray-500">Proveedor</p>
-                        <p class="font-semibold">${po.provider || po.supplierName || 'N/A'}</p>
-                    </div>
-                    <div>
-                        <p class="text-gray-500">Fecha</p>
-                        <p class="font-semibold">${po.createdAt.toDate().toLocaleDateString('es-CO')}</p>
-                    </div>
-                    <div class="col-span-2">
-                        <p class="text-gray-500">Estado</p>
-                        <p class="font-bold ${statusColor}">${statusText}</p>
-                    </div>
-                </div>
-            </div>
-        `;
+        // --- Preparación de Datos ---
+        const statusConfig = {
+            recibida: { text: 'RECIBIDA', classes: 'bg-green-100 text-green-700 border-green-200', icon: 'fa-check-circle' },
+            pendiente: { text: 'PENDIENTE', classes: 'bg-orange-100 text-orange-700 border-orange-200', icon: 'fa-clock' },
+            rechazada: { text: 'RECHAZADA', classes: 'bg-red-100 text-red-700 border-red-200', icon: 'fa-ban' }
+        };
+        const status = statusConfig[po.status] || { text: po.status.toUpperCase(), classes: 'bg-gray-100 text-gray-600', icon: 'fa-circle-question' };
+        const poNumber = po.poNumber || po.id.substring(0, 6).toUpperCase();
+        const creationDate = po.createdAt ? po.createdAt.toDate().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'Fecha desconocida';
 
-        // --- Tarjeta 2: Materiales Incluidos ---
-        let materialsListHtml = '<p class="text-sm text-gray-500">No se especificaron materiales.</p>';
+        // --- 1. Obtener detalles de los ítems ---
+        let itemsHtml = '';
         if (po.items && po.items.length > 0) {
-
-            // 1. Crear un array de promesas de lectura
             const itemPromises = po.items.map(item => {
-                let collectionPath = '';
-                // Determinamos en qué colección buscar
-                switch (item.itemType) {
-                    case 'dotacion':
-                        collectionPath = 'dotacionCatalog';
-                        break;
-                    case 'herramienta':
-                        collectionPath = 'tools';
-                        break;
-                    default: // 'material' y cualquier otro caso
-                        collectionPath = 'materialCatalog';
-                        break;
-                }
-                return getDoc(doc(db, collectionPath, item.materialId));
+                let collectionPath = 'materialCatalog'; // Default
+                if (item.itemType === 'dotacion') collectionPath = 'dotacionCatalog';
+                if (item.itemType === 'herramienta') collectionPath = 'tools';
+                return getDoc(doc(db, collectionPath, item.materialId))
+                    .then(snap => ({ ...item, details: snap.exists() ? snap.data() : null }));
             });
 
-            // 2. Esperar a que todas las lecturas se completen
-            const itemSnapshots = await Promise.all(itemPromises);
+            const itemsWithDetails = await Promise.all(itemPromises);
 
-            materialsListHtml = '<ul class="space-y-2">';
-            for (let i = 0; i < po.items.length; i++) {
-                const item = po.items[i];
-                const itemSnap = itemSnapshots[i];
-                let itemName = 'Material no encontrado'; // Default
+            itemsHtml = itemsWithDetails.map((item, index) => {
+                let itemName = 'Ítem desconocido';
+                let reference = '';
+                let icon = 'fa-box';
+                let typeLabel = 'Material';
 
-                // 3. Obtener el nombre del campo correcto
-                if (itemSnap.exists()) {
-                    const data = itemSnap.data();
+                if (item.details) {
                     if (item.itemType === 'dotacion') {
-                        itemName = data.itemName || 'Dotación s/n';
+                        itemName = item.details.itemName;
+                        typeLabel = 'Dotación';
+                        icon = 'fa-shirt';
+                    } else if (item.itemType === 'herramienta') {
+                        itemName = item.details.name;
+                        reference = item.details.reference;
+                        typeLabel = 'Herramienta';
+                        icon = 'fa-screwdriver-wrench';
                     } else {
-                        // 'materialCatalog' y 'tools' usan el campo 'name'
-                        itemName = data.name || 'Ítem s/n';
+                        itemName = item.details.name;
+                        reference = item.details.reference;
                     }
                 }
 
-                materialsListHtml += `
-                    <li class="p-3 bg-gray-50 rounded-md border text-sm">
-                        <p class="font-semibold text-gray-800">${itemName}</p>
-                        <div class="flex justify-between items-center mt-1 text-xs">
-                            <span class="text-gray-600">Cantidad: <span class="font-bold text-black">${item.quantity}</span></span>
-                            <span class="text-gray-600">Costo Unit.: <span class="font-bold text-black">${currencyFormatter.format(item.unitCost || 0)}</span></span>
-                        </div>
-                    </li>
+                const subtotal = (item.quantity * (item.unitCost || 0));
+
+                return `
+                    <tr class="hover:bg-gray-50 border-b last:border-0 transition-colors">
+                        <td class="px-4 py-3 text-center text-gray-400">${index + 1}</td>
+                        <td class="px-4 py-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500">
+                                    <i class="fa-solid ${icon} text-xs"></i>
+                                </div>
+                                <div>
+                                    <p class="font-bold text-gray-800 text-sm">${itemName}</p>
+                                    ${reference ? `<p class="text-xs text-gray-500">Ref: ${reference}</p>` : ''}
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-4 py-3 text-center">
+                            <span class="bg-blue-50 text-blue-700 py-1 px-2 rounded text-xs font-semibold">${typeLabel}</span>
+                        </td>
+                        <td class="px-4 py-3 text-center font-bold text-gray-700">${item.quantity}</td>
+                        <td class="px-4 py-3 text-right text-gray-600 text-sm">${currencyFormatter.format(item.unitCost || 0)}</td>
+                        <td class="px-4 py-3 text-right font-bold text-gray-800 text-sm">${currencyFormatter.format(subtotal)}</td>
+                    </tr>
                 `;
-            }
-            materialsListHtml += '</ul>';
+            }).join('');
+        } else {
+            itemsHtml = `<tr><td colspan="6" class="text-center py-8 text-gray-400">No hay ítems en esta orden.</td></tr>`;
         }
 
-        const materialsCard = `
-            <div class="bg-white p-4 rounded-lg shadow-sm border">
-                <h4 class="text-lg font-bold text-gray-800 mb-3">Materiales Incluidos</h4>
-                ${materialsListHtml}
+        // --- HTML PRINCIPAL DEL CONTENIDO ---
+        contentContainer.innerHTML = `
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                <div class="flex items-center gap-4">
+                    <div class="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 text-3xl shadow-sm">
+                        <i class="fa-solid fa-file-invoice-dollar"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800">Orden #${poNumber}</h2>
+                        <p class="text-gray-500 text-sm flex items-center gap-2">
+                            <i class="fa-regular fa-calendar"></i> ${creationDate}
+                        </p>
+                    </div>
+                </div>
+                <div class="flex flex-col items-end">
+                    <span class="${status.classes} px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-2 uppercase tracking-wide">
+                        <i class="fa-solid ${status.icon}"></i> ${status.text}
+                    </span>
+                    <p class="text-xs text-gray-400 mt-2">ID: ${po.id}</p>
+                </div>
             </div>
-        `;
 
-        // --- Tarjeta 3: Resumen de Costos ---
-        const totalCard = `
-            <div class="bg-white p-4 rounded-lg shadow-sm border">
-                <div class="flex justify-between items-center">
-                    <h4 class="text-lg font-bold text-gray-800">Costo Total</h4>
-                    <p class="text-2xl font-bold text-green-600">${currencyFormatter.format(po.totalCost || 0)}</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-start gap-3">
+                    <div class="mt-1 text-gray-400"><i class="fa-solid fa-store"></i></div>
+                    <div>
+                        <p class="text-xs font-bold text-gray-400 uppercase">Proveedor</p>
+                        <p class="font-bold text-gray-800 text-lg truncate" title="${po.provider || po.supplierName}">${po.provider || po.supplierName || 'N/A'}</p>
+                        
+                        <p class="text-xs text-blue-600 cursor-pointer hover:underline" 
+                           data-action="view-supplier-details" 
+                           data-id="${po.supplierId}">
+                           Ver perfil del proveedor
+                        </p>
+                        
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-start gap-3">
+                    <div class="mt-1 text-gray-400"><i class="fa-solid fa-coins"></i></div>
+                    <div>
+                        <p class="text-xs font-bold text-gray-400 uppercase">Costo Total</p>
+                        <p class="font-bold text-gray-800 text-2xl">${currencyFormatter.format(po.totalCost || 0)}</p>
+                        <p class="text-xs text-gray-500">Método: ${po.paymentMethod || 'Pendiente'}</p>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 flex items-start gap-3">
+                    <div class="mt-1 text-gray-400"><i class="fa-solid fa-money-bill-wave"></i></div>
+                    <div>
+                        <p class="text-xs font-bold text-gray-400 uppercase">Abonado</p>
+                        <p class="font-bold text-green-600 text-lg">${currencyFormatter.format(po.paidAmount || 0)}</p>
+                        <div class="w-full bg-gray-200 rounded-full h-1.5 mt-2 w-32">
+                            <div class="bg-green-500 h-1.5 rounded-full" style="width: ${Math.min(((po.paidAmount || 0) / (po.totalCost || 1)) * 100, 100)}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                    <h4 class="font-bold text-gray-700 text-sm uppercase tracking-wide">Ítems Incluidos</h4>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="text-xs text-gray-500 border-b border-gray-100">
+                                <th class="px-4 py-3 font-medium text-center w-10">#</th>
+                                <th class="px-4 py-3 font-medium">Descripción</th>
+                                <th class="px-4 py-3 font-medium text-center">Tipo</th>
+                                <th class="px-4 py-3 font-medium text-center">Cant.</th>
+                                <th class="px-4 py-3 font-medium text-right">Unitario</th>
+                                <th class="px-4 py-3 font-medium text-right">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-sm">
+                            ${itemsHtml}
+                        </tbody>
+                        <tfoot class="bg-gray-50 border-t border-gray-200">
+                            <tr>
+                                <td colspan="5" class="px-4 py-3 text-right font-bold text-gray-600">TOTAL ORDEN:</td>
+                                <td class="px-4 py-3 text-right font-bold text-gray-900 text-lg">${currencyFormatter.format(po.totalCost || 0)}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
                 </div>
             </div>
         `;
 
-        // Unimos todas las tarjetas y las mostramos
-        contentContainer.innerHTML = infoCard + materialsCard + totalCard;
-
         // --- Lógica de Botones de Acción ---
-        actionsContainer.innerHTML = `<button type="button" data-action="close-details-modal" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg">Cerrar</button>`;
+        actionsContainer.innerHTML = `
+            <button type="button" data-action="close-details-modal" class="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 font-bold py-2 px-4 rounded-lg shadow-sm transition-all">
+                Cerrar
+            </button>
+        `;
+
         if (po.status === 'pendiente' && (currentUserRole === 'admin' || currentUserRole === 'bodega')) {
             actionsContainer.innerHTML += `
-                <button data-action="reject-purchase-order" data-id="${po.id}" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg">Rechazar Orden</button>
-                <button data-action="receive-purchase-order" data-id="${po.id}" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Recibir Mercancía</button>
+                <button data-action="reject-purchase-order" data-id="${po.id}" class="bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 font-bold py-2 px-4 rounded-lg transition-all shadow-sm flex items-center">
+                    <i class="fa-solid fa-trash mr-2"></i> Eliminar / Rechazar
+                </button>
+                <button data-action="receive-purchase-order" data-id="${po.id}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center transform hover:-translate-y-0.5">
+                    <i class="fa-solid fa-box-open mr-2"></i> Recibir Mercancía
+                </button>
             `;
         }
 
     } catch (error) {
         console.error("Error al abrir los detalles de la orden de compra:", error);
-        contentContainer.innerHTML = `<p class="text-center text-red-500 py-8">${error.message}</p>`;
+        contentContainer.innerHTML = `<div class="flex flex-col items-center justify-center h-64 text-red-500"><i class="fa-solid fa-triangle-exclamation text-4xl mb-3"></i><p>${error.message}</p></div>`;
     }
 }
 
@@ -1590,42 +1672,138 @@ let unsubscribeSuppliers = null; // Variable global para el listener de proveedo
 
 function loadProveedoresView() {
     const tableBody = document.getElementById('suppliers-table-body');
+    const searchInput = document.getElementById('supplier-search-input'); // Referencia al nuevo input
+
     if (!tableBody) return;
 
     if (unsubscribeSuppliers) unsubscribeSuppliers();
 
-    const suppliersQuery = query(collection(db, "suppliers"), orderBy("name"));
-    unsubscribeSuppliers = onSnapshot(suppliersQuery, (snapshot) => {
+    // Variable para guardar los datos originales y filtrar sin volver a consultar la DB
+    let allSuppliers = [];
+
+    // Función interna para renderizar la tabla (reutilizable para el buscador)
+    const renderTable = (suppliersData) => {
         tableBody.innerHTML = '';
-        if (snapshot.empty) {
-            tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">No hay proveedores registrados.</td></tr>`;
+
+        if (suppliersData.length === 0) {
+            const message = searchInput.value.trim()
+                ? 'No se encontraron proveedores que coincidan con la búsqueda.'
+                : 'No hay proveedores registrados.';
+
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="4" class="text-center py-16">
+                        <div class="flex flex-col items-center justify-center text-gray-400">
+                            <div class="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-3">
+                                <i class="fa-solid fa-users-slash text-2xl text-gray-300"></i>
+                            </div>
+                            <p class="font-medium">${message}</p>
+                        </div>
+                    </td>
+                </tr>`;
             return;
         }
-        snapshot.forEach(doc => {
-            const supplier = { id: doc.id, ...doc.data() };
-            const row = document.createElement('tr');
-            row.className = 'bg-white border-b hover:bg-gray-50';
 
-            // =================== INICIO DE LA MODIFICACIÓN ===================
-            const baseButtonClasses = "text-sm font-semibold py-2 px-4 rounded-lg transition-colors w-32 text-center";
+        suppliersData.forEach(supplier => {
+            const row = document.createElement('tr');
+            row.className = 'bg-white border-b last:border-0 hover:bg-slate-50 transition-all group';
+            const initial = (supplier.name || '?').charAt(0).toUpperCase();
 
             row.innerHTML = `
-                <td class="px-6 py-4 font-medium text-gray-900">${supplier.name}</td>
-                <td class="px-6 py-4">${supplier.nit || 'N/A'}</td>
-                <td class="px-6 py-4">${supplier.contactName || 'N/A'}</td>
-                <td class="px-6 py-4">${supplier.contactPhone || 'N/A'}</td>
-                <td class="px-6 py-4 text-center">
-                    <div class="flex justify-center items-center gap-2">
-                        <button data-action="edit-supplier" data-id="${supplier.id}" class="bg-yellow-500 hover:bg-yellow-600 text-white ${baseButtonClasses}">Editar</button>
-                        <button data-action="view-supplier-details" data-id="${supplier.id}" class="bg-blue-500 hover:bg-blue-600 text-white ${baseButtonClasses}">Ver Detalles</button>
+                <td class="px-6 py-4">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 text-indigo-600 flex items-center justify-center text-lg font-bold border border-indigo-100 shadow-sm shrink-0">
+                            ${initial}
+                        </div>
+                        <div class="min-w-0">
+                            <p class="font-bold text-gray-800 text-sm leading-tight truncate" title="${supplier.name}">${supplier.name}</p>
+                            <p class="text-xs text-gray-500 mt-0.5 font-mono flex items-center">
+                                <span class="opacity-50 mr-1 text-[10px]">NIT:</span> ${supplier.nit || 'N/A'}
+                            </p>
+                        </div>
+                    </div>
+                </td>
+
+                <td class="px-6 py-4">
+                    <div class="flex flex-col">
+                        <span class="text-sm font-medium text-gray-700 flex items-center gap-2">
+                            <i class="fa-solid fa-user-tie text-gray-400 text-xs"></i> 
+                            ${supplier.contactName || '---'}
+                        </span>
+                        <span class="text-xs text-gray-500 ml-5 mt-0.5 font-mono">
+                            ${supplier.contactPhone || '---'}
+                        </span>
+                    </div>
+                </td>
+
+                <td class="px-6 py-4">
+                    <div class="flex flex-col gap-1.5">
+                        ${supplier.email ?
+                    `<a href="mailto:${supplier.email}" class="text-xs text-blue-600 hover:underline flex items-center gap-2 font-medium"><i class="fa-solid fa-envelope text-blue-300"></i> ${supplier.email}</a>` :
+                    `<span class="text-xs text-gray-400 flex items-center gap-2"><i class="fa-solid fa-envelope"></i> Sin email</span>`
+                }
+                        <span class="text-xs text-gray-500 flex items-center gap-2 truncate max-w-[200px]" title="${supplier.address || ''}">
+                            <i class="fa-solid fa-location-dot text-gray-400"></i> ${supplier.address || '---'}
+                        </span>
+                    </div>
+                </td>
+
+                <td class="px-6 py-4 text-right">
+                    <div class="flex justify-end items-center gap-2 opacity-80 group-hover:opacity-100 transition-opacity">
+                        <button data-action="edit-supplier" data-id="${supplier.id}" 
+                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all" 
+                            title="Editar Información">
+                            <i class="fa-solid fa-pen-to-square"></i>
+                        </button>
+                        <button data-action="view-supplier-details" data-id="${supplier.id}" 
+                            class="pl-3 pr-2 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-600 hover:border-indigo-300 hover:text-indigo-600 text-xs font-bold shadow-sm hover:shadow-md transition-all flex items-center gap-2 group/btn">
+                            Ver Perfil 
+                            <div class="bg-gray-100 group-hover/btn:bg-indigo-100 text-gray-400 group-hover/btn:text-indigo-600 rounded-md w-5 h-5 flex items-center justify-center transition-colors">
+                                <i class="fa-solid fa-chevron-right text-[10px]"></i>
+                            </div>
+                        </button>
                     </div>
                 </td>
             `;
-            // =================== FIN DE LA MODIFICACIÓN ===================
-
             tableBody.appendChild(row);
         });
+    };
+
+    // Consultar Firestore en tiempo real
+    const suppliersQuery = query(collection(db, "suppliers"), orderBy("name"));
+    unsubscribeSuppliers = onSnapshot(suppliersQuery, (snapshot) => {
+        // Actualizamos la lista maestra
+        allSuppliers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // Renderizamos (aplicando filtro si ya había algo escrito)
+        filterAndRender();
     });
+
+    // Lógica de Filtrado
+    const filterAndRender = () => {
+        const term = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
+        if (!term) {
+            renderTable(allSuppliers);
+            return;
+        }
+
+        const filtered = allSuppliers.filter(s => {
+            const name = (s.name || '').toLowerCase();
+            const nit = (s.nit || '').toLowerCase();
+            const contact = (s.contactName || '').toLowerCase();
+            const email = (s.email || '').toLowerCase();
+
+            return name.includes(term) || nit.includes(term) || contact.includes(term) || email.includes(term);
+        });
+
+        renderTable(filtered);
+    };
+
+    // Listener del Input
+    if (searchInput) {
+        searchInput.addEventListener('input', filterAndRender);
+    }
 }
 
 let currentSupplierId = null; // Variable global para saber en qué proveedor estamos
@@ -1636,14 +1814,13 @@ async function loadSupplierDetailsView(supplierId) {
     currentSupplierId = supplierId;
     showView('supplierDetails');
 
-    // =================== INICIO DE LA MODIFICACIÓN ===================
-    // Referencias a los nuevos contenedores
     const summaryContent = document.getElementById('summary-content');
     const posTableBody = document.getElementById('supplier-pos-table-body');
     const paymentsTableBody = document.getElementById('supplier-payments-table-body');
 
-    // Limpiar contenido previo
-    summaryContent.innerHTML = '<div class="text-center py-10"><div class="loader mx-auto"></div></div>';
+    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+
+    summaryContent.innerHTML = '<div class="flex justify-center items-center h-64"><div class="loader"></div></div>';
     posTableBody.innerHTML = '';
     paymentsTableBody.innerHTML = '';
 
@@ -1653,23 +1830,24 @@ async function loadSupplierDetailsView(supplierId) {
     const tabsContainer = document.getElementById('supplier-details-tabs');
     const tabContents = document.querySelectorAll('.supplier-tab-content');
 
-    const switchSupplierTab = (tabName) => {
-        tabsContainer.querySelectorAll('.tab-button').forEach(button => {
-            const isActive = button.dataset.tab === tabName;
-            button.classList.toggle('border-blue-500', isActive);
-            button.classList.toggle('text-blue-600', isActive);
-            button.classList.toggle('border-transparent', !isActive);
-            button.classList.toggle('text-gray-500', !isActive);
-        });
-        tabContents.forEach(content => {
-            content.classList.toggle('hidden', content.id !== `${tabName}-content`);
-        });
-    };
+    const newTabsContainer = tabsContainer.cloneNode(true);
+    tabsContainer.parentNode.replaceChild(newTabsContainer, tabsContainer);
 
-    tabsContainer.addEventListener('click', (e) => {
+    newTabsContainer.addEventListener('click', (e) => {
         const button = e.target.closest('.tab-button');
         if (button) {
-            switchSupplierTab(button.dataset.tab);
+            newTabsContainer.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('border-blue-500', 'text-blue-600');
+                btn.classList.add('border-transparent', 'text-gray-500');
+                btn.querySelector('i').classList.remove('text-blue-500');
+            });
+            button.classList.remove('border-transparent', 'text-gray-500');
+            button.classList.add('border-blue-500', 'text-blue-600');
+
+            const tabName = button.dataset.tab;
+            tabContents.forEach(content => {
+                content.classList.toggle('hidden', content.id !== `${tabName}-content`);
+            });
         }
     });
 
@@ -1678,81 +1856,202 @@ async function loadSupplierDetailsView(supplierId) {
         const supplierSnap = await getDoc(supplierRef);
         if (!supplierSnap.exists()) throw new Error("Proveedor no encontrado");
 
-        const supplier = supplierSnap.data();
+        // --- CORRECCIÓN APLICADA AQUÍ ---
+        const supplier = { id: supplierSnap.id, ...supplierSnap.data() };
+        // -------------------------------
+
         document.getElementById('supplier-details-name').textContent = supplier.name;
 
-        // Cargar Pestaña "Resumen" (Información General + Estado de Cuenta)
-        const infoCardHTML = `
-            <div class="bg-white p-4 rounded-lg shadow-sm border">
-                <h4 class="text-lg font-bold text-gray-800 mb-3">Datos del Proveedor</h4>
-                <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
-                    <div><p class="text-gray-500">NIT/Cédula</p><p class="font-semibold">${supplier.nit || 'N/A'}</p></div>
-                    <div><p class="text-gray-500">Email</p><p class="font-semibold">${supplier.email || 'N/A'}</p></div>
-                    <div><p class="text-gray-500">Dirección</p><p class="font-semibold">${supplier.address || 'N/A'}</p></div>
-                    <div><p class="text-gray-500">Contacto</p><p class="font-semibold">${supplier.contactName || 'N/A'}</p></div>
-                    <div><p class="text-gray-500">Teléfono</p><p class="font-semibold">${supplier.contactPhone || 'N/A'}</p></div>
+        // 1. Pestaña RESUMEN (Perfil Moderno)
+        const profileCard = `
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="bg-gradient-to-r from-slate-800 to-slate-900 px-8 py-6 flex justify-between items-center relative overflow-hidden">
+                    <div class="absolute top-0 right-0 opacity-10 transform translate-x-10 -translate-y-10">
+                        <i class="fa-solid fa-building text-9xl text-white"></i>
+                    </div>
+                    <div class="flex items-center gap-5 relative z-10">
+                        <div class="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-slate-700 text-2xl font-bold shadow-lg">
+                            ${supplier.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                            <h2 class="text-2xl font-bold text-white tracking-tight">${supplier.name}</h2>
+                            <div class="flex gap-4 text-slate-300 text-sm mt-1">
+                                <span class="flex items-center gap-1"><i class="fa-regular fa-id-card"></i> ${supplier.nit || 'S/N'}</span>
+                                <span class="flex items-center gap-1"><i class="fa-solid fa-location-dot"></i> ${supplier.address || 'Sin dirección'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button data-action="edit-supplier" data-id="${supplier.id}" class="bg-white/10 hover:bg-white/20 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-all backdrop-blur-sm border border-white/20 relative z-10">
+                        <i class="fa-solid fa-pen-to-square mr-2"></i> Editar
+                    </button>
+                </div>
+                
+                <div class="px-8 py-6 grid grid-cols-1 md:grid-cols-3 gap-8 text-sm border-b border-gray-100">
+                    <div>
+                        <p class="text-xs font-bold text-gray-400 uppercase mb-2">Contacto Principal</p>
+                        <p class="font-semibold text-gray-800 text-base"><i class="fa-solid fa-user mr-2 text-blue-500"></i> ${supplier.contactName || '---'}</p>
+                        <p class="text-gray-500 mt-1 ml-6">${supplier.contactPhone || ''}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold text-gray-400 uppercase mb-2">Correo Electrónico</p>
+                         ${supplier.email ? `<a href="mailto:${supplier.email}" class="font-semibold text-blue-600 hover:underline flex items-center"><i class="fa-solid fa-envelope mr-2"></i> ${supplier.email}</a>` : '<span class="text-gray-400">No registrado</span>'}
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold text-gray-400 uppercase mb-2">Datos Bancarios</p>
+                        <div class="bg-gray-50 p-2 rounded border border-gray-200 inline-block w-full">
+                            <p class="font-semibold text-gray-700"><i class="fa-solid fa-building-columns mr-1 text-gray-400"></i> ${supplier.bankName || '---'}</p>
+                            <p class="text-xs text-gray-500 font-mono mt-1">${supplier.accountType || ''} ${supplier.accountNumber || '---'}</p>
+                        </div>
+                    </div>
                 </div>
             </div>`;
 
         const allPOsQuery = query(collection(db, "purchaseOrders"), where("supplierId", "==", supplierId));
         const allPaymentsQuery = query(collection(db, "suppliers", supplierId, "payments"));
-        const [poSnapshot, paymentsSnapshot] = await Promise.all([getDocs(allPOsQuery), getDocs(allPaymentsQuery)]);
+        const [poSnapshot, paymentsSnap] = await Promise.all([getDocs(allPOsQuery), getDocs(allPaymentsQuery)]);
+
         const totalBilled = poSnapshot.docs.reduce((sum, doc) => sum + (doc.data().totalCost || 0), 0);
-        const totalPaid = paymentsSnapshot.docs.reduce((sum, doc) => sum + (doc.data().amount || 0), 0);
+        const totalPaid = paymentsSnap.docs.reduce((sum, doc) => sum + (doc.data().amount || 0), 0);
+        const saldo = totalBilled - totalPaid;
 
-        const balanceCardHTML = `
-            <div class="bg-white p-4 rounded-lg shadow-sm border">
-                <h4 class="text-lg font-bold text-gray-800 mb-3">Estado de Cuenta General</h4>
-                <div class="grid grid-cols-3 gap-4 text-center">
-                    <div><p class="text-sm text-gray-500">Total Facturado</p><p class="text-xl font-bold text-gray-800">${currencyFormatter.format(totalBilled)}</p></div>
-                    <div><p class="text-sm text-gray-500">Total Pagado</p><p class="text-xl font-bold text-green-600">${currencyFormatter.format(totalPaid)}</p></div>
-                    <div><p class="text-sm text-red-700">Saldo Pendiente</p><p class="text-2xl font-bold text-red-600">${currencyFormatter.format(totalBilled - totalPaid)}</p></div>
+        const balanceCards = `
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center gap-5">
+                    <div class="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 text-2xl">
+                        <i class="fa-solid fa-file-invoice-dollar"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold text-gray-400 uppercase tracking-wide">Total Facturado</p>
+                        <h3 class="text-2xl font-extrabold text-gray-800">${currencyFormatter.format(totalBilled)}</h3>
+                    </div>
                 </div>
-            </div>`;
+                
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center gap-5">
+                    <div class="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center text-green-600 text-2xl">
+                        <i class="fa-solid fa-money-bill-transfer"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold text-gray-400 uppercase tracking-wide">Total Pagado</p>
+                        <h3 class="text-2xl font-extrabold text-green-600">${currencyFormatter.format(totalPaid)}</h3>
+                    </div>
+                </div>
 
-        summaryContent.innerHTML = infoCardHTML + balanceCardHTML;
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center gap-5 relative overflow-hidden">
+                    ${saldo > 100 ? '<div class="absolute right-0 top-0 w-16 h-16 bg-red-500 blur-2xl opacity-10 rounded-full pointer-events-none"></div>' : ''}
+                    <div class="w-14 h-14 rounded-full ${saldo > 100 ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-400'} flex items-center justify-center text-2xl">
+                        <i class="fa-solid fa-scale-unbalanced"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold text-gray-400 uppercase tracking-wide">Saldo Pendiente</p>
+                        <h3 class="text-2xl font-extrabold ${saldo > 100 ? 'text-red-600' : 'text-gray-400'}">${currencyFormatter.format(saldo)}</h3>
+                    </div>
+                </div>
+            </div>
+        `;
 
-        // Cargar Pestaña de Órdenes de Compra (la lógica no cambia)
+        summaryContent.innerHTML = profileCard + balanceCards;
+
+        // 2. Pestaña ÓRDENES
         const poQuery = query(collection(db, "purchaseOrders"), where("supplierId", "==", supplierId), orderBy("createdAt", "desc"));
         unsubscribeSupplierPOs = onSnapshot(poQuery, (snapshot) => {
             posTableBody.innerHTML = '';
             if (snapshot.empty) {
-                posTableBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-500">No hay órdenes de compra.</td></tr>`;
-            } else {
-                snapshot.forEach(doc => {
-                    const po = { id: doc.id, ...doc.data() };
-                    const row = document.createElement('tr');
-                    const statusText = po.status === 'recibida' ? 'Recibida' : 'Pendiente';
-                    const statusColor = po.status === 'recibida' ? 'text-green-600' : 'text-yellow-600';
-                    row.innerHTML = `<td class="px-6 py-4">${po.createdAt.toDate().toLocaleDateString('es-CO')}</td><td class="px-6 py-4 text-right font-semibold">${currencyFormatter.format(po.totalCost || 0)}</td><td class="px-6 py-4 text-center font-bold ${statusColor}">${statusText}</td><td class="px-6 py-4 text-center"><button data-action="view-purchase-order" data-id="${po.id}" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-4 rounded-lg w-32 text-center">Ver</button></td>`;
-                    posTableBody.appendChild(row);
-                });
+                posTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-12 text-gray-400">No hay órdenes de compra registradas.</td></tr>`;
+                return;
             }
+            snapshot.forEach(doc => {
+                const po = { id: doc.id, ...doc.data() };
+                const row = document.createElement('tr');
+                row.className = "bg-white hover:bg-gray-50 border-b last:border-0 transition-colors group";
+
+                let statusBadge = '';
+                if (po.status === 'recibida') statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-200"><i class="fa-solid fa-check mr-1"></i> Recibida</span>';
+                else if (po.status === 'rechazada') statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-200"><i class="fa-solid fa-ban mr-1"></i> Rechazada</span>';
+                else statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-800 border border-orange-200"><i class="fa-regular fa-clock mr-1"></i> Pendiente</span>';
+
+                const progress = po.totalCost > 0 ? ((po.paidAmount || 0) / po.totalCost) * 100 : 0;
+                const progressColor = progress >= 100 ? 'bg-green-500' : 'bg-yellow-400';
+
+                row.innerHTML = `
+                    <td class="px-6 py-4">
+                        <p class="font-bold text-gray-800 text-sm">Orden #${po.poNumber || po.id.substring(0, 6)}</p>
+                        <p class="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><i class="fa-regular fa-calendar"></i> ${po.createdAt.toDate().toLocaleDateString('es-CO')}</p>
+                    </td>
+                    <td class="px-6 py-4 text-right font-bold text-gray-800 text-sm">
+                        ${currencyFormatter.format(po.totalCost || 0)}
+                    </td>
+                    <td class="px-6 py-4 text-center">
+                        <div class="flex flex-col items-center justify-center w-24 mx-auto">
+                            <div class="w-full bg-gray-200 rounded-full h-1.5 mb-1">
+                                <div class="${progressColor} h-1.5 rounded-full" style="width: ${Math.min(progress, 100)}%"></div>
+                            </div>
+                            <span class="text-[10px] text-gray-500 font-semibold">${progress.toFixed(0)}% Pagado</span>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-center">
+                        ${statusBadge}
+                    </td>
+                    <td class="px-6 py-4 text-center">
+                        <button data-action="view-purchase-order" data-id="${po.id}" 
+                            class="text-gray-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-all" title="Ver Detalle">
+                            <i class="fa-solid fa-eye text-lg"></i>
+                        </button>
+                    </td>
+                `;
+                posTableBody.appendChild(row);
+            });
         });
 
-        // Cargar Pestaña de Pagos (la lógica no cambia)
+        // 3. Pestaña PAGOS
         const paymentsQuery = query(collection(db, "suppliers", supplierId, "payments"), orderBy("date", "desc"));
         unsubscribeSupplierPayments = onSnapshot(paymentsQuery, (snapshot) => {
             paymentsTableBody.innerHTML = '';
             if (snapshot.empty) {
-                paymentsTableBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-500">No hay pagos registrados.</td></tr>`;
-            } else {
-                snapshot.forEach(doc => {
-                    const p = { id: doc.id, ...doc.data() };
-                    const row = document.createElement('tr');
-                    row.innerHTML = `<td class="px-6 py-4">${new Date(p.date + 'T00:00:00').toLocaleDateString('es-CO')}</td><td class="px-6 py-4">${p.paymentMethod || 'N/A'}</td><td class="px-6 py-4 text-right font-semibold">${currencyFormatter.format(p.amount || 0)}</td><td class="px-6 py-4 text-center"><button data-action="delete-supplier-payment" data-id="${p.id}" class="bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2 px-4 rounded-lg w-32 text-center">Eliminar</button></td>`;
-                    paymentsTableBody.appendChild(row);
-                });
+                paymentsTableBody.innerHTML = `<tr><td colspan="4" class="text-center py-12 text-gray-400">No hay pagos registrados.</td></tr>`;
+                return;
             }
+            snapshot.forEach(doc => {
+                const p = { id: doc.id, ...doc.data() };
+                const row = document.createElement('tr');
+                row.className = "bg-white hover:bg-gray-50 border-b last:border-0 transition-colors";
+
+                let methodIcon = 'fa-money-bill';
+                let methodClass = 'text-gray-500 bg-gray-100';
+                if (p.paymentMethod === 'Transferencia') { methodIcon = 'fa-building-columns'; methodClass = 'text-indigo-600 bg-indigo-50'; }
+                if (p.paymentMethod === 'Tarjeta') { methodIcon = 'fa-credit-card'; methodClass = 'text-purple-600 bg-purple-50'; }
+
+                row.innerHTML = `
+                    <td class="px-6 py-4 text-sm text-gray-600 font-medium">
+                        ${new Date(p.date + 'T00:00:00').toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' })}
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg ${methodClass} flex items-center justify-center flex-shrink-0">
+                                <i class="fa-solid ${methodIcon} text-xs"></i>
+                            </div>
+                            <div class="flex flex-col">
+                                <span class="text-sm font-medium text-gray-700">${p.paymentMethod || 'Desconocido'}</span>
+                                <span class="text-xs text-gray-400 truncate max-w-[150px]" title="${p.note || ''}">${p.note || ''}</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-right font-bold text-green-600 text-sm">
+                        ${currencyFormatter.format(p.amount || 0)}
+                    </td>
+                    <td class="px-6 py-4 text-center">
+                        <button data-action="delete-supplier-payment" data-id="${p.id}" 
+                            class="text-gray-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-all" title="Eliminar Pago">
+                            <i class="fa-regular fa-trash-can"></i>
+                        </button>
+                    </td>
+                `;
+                paymentsTableBody.appendChild(row);
+            });
         });
 
-        // Activar la nueva pestaña "Resumen" por defecto
-        switchSupplierTab('summary');
-        // =================== FIN DE LA MODIFICACIÓN ===================
-
     } catch (error) {
-        console.error("Error al cargar los detalles del proveedor:", error);
-        summaryContent.innerHTML = `<p class="text-center text-red-500 py-10">${error.message}</p>`;
+        console.error("Error detalle proveedor:", error);
+        summaryContent.innerHTML = `<div class="p-8 text-center text-red-500 bg-red-50 rounded-xl border border-red-100"><i class="fa-solid fa-triangle-exclamation text-3xl mb-2"></i><p>Error: ${error.message}</p></div>`;
     }
 }
 
@@ -2250,40 +2549,55 @@ async function setupCorteSelection(type) {
     const accordionContainer = document.getElementById('corte-items-accordion');
 
     selectionView.classList.remove('hidden');
-    accordionContainer.innerHTML = '<p class="text-gray-500">Buscando ítems disponibles...</p>';
+    accordionContainer.innerHTML = '<div class="text-center py-10"><div class="loader mx-auto"></div><p class="text-gray-500 mt-2">Analizando ítems...</p></div>';
 
-    // Define qué estados de sub-ítems buscar
+    // Validación de estados (Asegúrate que tus ítems tengan EXACTAMENTE estos estados en la BD)
     const validStates = type === 'nosotros'
-        ? ['Instalado', 'Suministrado'] // Asumimos que quieres poder facturar ambos
-        : ['Instalado']; // La obra solo paga por lo instalado
+        ? ['Instalado', 'Suministrado'] 
+        : ['Instalado'];
 
     description.textContent = type === 'nosotros'
         ? "Selecciona los sub-ítems suministrados o instalados para incluir en el corte."
         : "Selecciona los sub-ítems que la obra va a pagar en este corte.";
 
     try {
-        // 1. Obtener todos los sub-ítems en los estados válidos
-        const subItemsQuery = query(collection(db, "subItems"), where("projectId", "==", currentProject.id), where("status", "in", validStates));
+        // --- CORRECCIÓN CLAVE AQUÍ ---
+        // Usamos collectionGroup para buscar en las subcolecciones anidadas
+        const subItemsQuery = query(
+            collectionGroup(db, "subItems"), 
+            where("projectId", "==", currentProject.id), 
+            where("status", "in", validStates)
+        );
+        
         const subItemsSnapshot = await getDocs(subItemsQuery);
         const allValidSubItems = subItemsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        
+        // Debug: Verificación en consola
+        console.log(`Encontrados ${allValidSubItems.length} sub-ítems con estado ${validStates.join(' o ')}`);
 
-        // 2. Obtener sub-ítems que ya están en cortes aprobados
-        const cortesQuery = query(collection(db, "projects", currentProject.id, "cortes"), where("status", "==", "aprobado"));
+        // 2. Obtener sub-ítems que ya están en cortes aprobados (o preliminares, para no duplicar)
+        // Sugerencia: Filtra también los 'preliminar' para que no los agregues a dos cortes al tiempo
+        const cortesQuery = query(collection(db, "projects", currentProject.id, "cortes"), where("status", "in", ["aprobado", "preliminar"]));
         const cortesSnapshot = await getDocs(cortesQuery);
         const subItemsInCortes = new Set();
         cortesSnapshot.forEach(corteDoc => {
             corteDoc.data().subItemIds?.forEach(id => subItemsInCortes.add(id));
         });
 
-        // 3. Filtrar para obtener solo sub-ítems nuevos
+        // 3. Filtrar: (Todos los válidos) - (Los que ya tienen corte)
         const availableSubItems = allValidSubItems.filter(subItem => !subItemsInCortes.has(subItem.id));
 
         if (availableSubItems.length === 0) {
-            accordionContainer.innerHTML = '<p class="text-gray-500 text-center">No hay nuevos sub-ítems disponibles para este tipo de corte.</p>';
+            accordionContainer.innerHTML = `
+                <div class="text-center py-8 text-gray-500">
+                    <i class="fa-solid fa-clipboard-check text-3xl mb-2 text-gray-300"></i>
+                    <p>No hay nuevos sub-ítems disponibles para cortar.</p>
+                    <p class="text-xs mt-1">(Verifica que los ítems estén en estado "Instalado" o "Suministrado")</p>
+                </div>`;
             return;
         }
 
-        // 4. Agrupar sub-ítems por su ítem padre (V-01, V-02, etc.)
+        // 4. Agrupar sub-ítems por su ítem padre
         const groupedByItem = new Map();
         availableSubItems.forEach(si => {
             if (!groupedByItem.has(si.itemId)) {
@@ -2292,32 +2606,42 @@ async function setupCorteSelection(type) {
             groupedByItem.get(si.itemId).push(si);
         });
 
-        // 5. Obtener los datos de los ítems padres
+        // 5. Obtener datos de los ítems padres (Optimizado con 'documentId')
         const itemIds = Array.from(groupedByItem.keys());
-        if (itemIds.length === 0) return;
-        const itemsQuery = query(collection(db, "items"), where("__name__", "in", itemIds));
-        const itemsSnapshot = await getDocs(itemsQuery);
+        if (itemIds.length === 0) return; // Seguridad
+        
+        // Firestore 'in' soporta máximo 10, si tienes más, debes hacer lotes o traer todo el proyecto
+        // Como es un proyecto específico, es mejor traer todos los ítems del proyecto una sola vez si son muchos
+        // O usar el método de batches. Aquí uso la consulta directa asumiendo <10 grupos por corte usualmente.
+        const itemsSnapshot = await getDocs(query(collection(db, "projects", currentProject.id, "items"), where(documentId(), "in", itemIds.slice(0, 10)))); 
+        
         const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, d.data()]));
 
         // 6. Construir el acordeón
         accordionContainer.innerHTML = '';
         itemsMap.forEach((item, itemId) => {
             const subItems = groupedByItem.get(itemId);
+            // Ordenar numéricamente (1, 2, 10 en lugar de 1, 10, 2)
+            subItems.sort((a, b) => (parseInt(a.number) || 0) - (parseInt(b.number) || 0));
+
             const accordionItem = document.createElement('div');
-            accordionItem.className = 'border rounded-lg';
+            accordionItem.className = 'border border-gray-200 rounded-lg mb-2 overflow-hidden';
             accordionItem.innerHTML = `
-                <div class="accordion-header flex items-center justify-between p-3 bg-gray-100 cursor-pointer">
-                    <label class="flex items-center space-x-2 font-semibold">
-                        <input type="checkbox" class="corte-item-select-all rounded">
-                        <span>${item.name} (${subItems.length} disponibles)</span>
+                <div class="accordion-header flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors">
+                    <label class="flex items-center space-x-3 font-semibold text-gray-700 cursor-pointer select-none">
+                        <input type="checkbox" class="corte-item-select-all w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500">
+                        <span>${item.name} <span class="text-xs font-normal text-gray-500 ml-1">(${subItems.length} unds)</span></span>
                     </label>
-                    <svg class="h-5 w-5 transition-transform" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                    <svg class="h-5 w-5 text-gray-400 transition-transform transform" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
                 </div>
-                <div class="accordion-content hidden p-3 border-t space-y-2">
+                <div class="accordion-content hidden bg-white divide-y divide-gray-100">
                     ${subItems.map(si => `
-                        <label class="flex items-center space-x-2 text-sm">
-                            <input type="checkbox" class="corte-subitem-checkbox rounded" data-subitem-id="${si.id}" data-item-id="${si.itemId}">
-                            <span>#${si.number} - ${si.location || 'Sin ubicación'} (${si.status})</span>
+                        <label class="flex items-center justify-between p-3 hover:bg-gray-50 cursor-pointer">
+                            <div class="flex items-center space-x-3">
+                                <input type="checkbox" class="corte-subitem-checkbox w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" data-subitem-id="${si.id}" data-item-id="${si.itemId}">
+                                <span class="text-sm text-gray-700">Unidad <strong>#${si.number}</strong></span>
+                            </div>
+                            <span class="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">${si.location || 'Sin ubicación'}</span>
                         </label>
                     `).join('')}
                 </div>
@@ -2327,6 +2651,7 @@ async function setupCorteSelection(type) {
 
     } catch (error) {
         console.error("Error al preparar la selección de corte:", error);
+        accordionContainer.innerHTML = `<p class="text-red-500 text-center py-4">Error de consulta: Revisa la consola (posible falta de índice).</p>`;
     }
 }
 
@@ -6196,28 +6521,84 @@ async function openMainModal(type, data = {}) {
         }
         case 'new-supplier-payment': {
             title = 'Registrar Pago a Proveedor';
-            btnText = 'Guardar Pago';
-            btnClass = 'bg-green-500 hover:bg-green-600';
+            btnText = 'Confirmar Pago';
+            btnClass = 'bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white shadow-lg';
+
+            // Ajustamos el ancho para que se vea elegante
+            if (modalContentDiv) {
+                modalContentDiv.classList.remove('max-w-2xl');
+                modalContentDiv.classList.add('max-w-md');
+            }
+
+            // Ocultamos el título por defecto para usar nuestro propio header personalizado
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+
             bodyHtml = `
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium">Monto del Pago</label>
-                        <input type="text" name="amount" required class="currency-input mt-1 w-full border rounded-md p-2">
+                <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-r from-orange-500 to-red-600 px-6 py-5 flex justify-between items-center rounded-t-lg">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white backdrop-blur-sm shadow-sm">
+                            <i class="fa-solid fa-money-bill-wave"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-white leading-tight">Nuevo Pago</h3>
+                            <p class="text-xs text-orange-100 font-medium opacity-90">Abono a cuenta del proveedor</p>
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium">Método de Pago</label>
-                        <select name="paymentMethod" class="mt-1 w-full border rounded-md p-2 bg-white">
-                            <option value="Transferencia">Transferencia</option>
-                            <option value="Efectivo">Efectivo</option>
-                            <option value="Tarjeta">Tarjeta</option>
-                        </select>
                     </div>
+
+                <div class="space-y-5">
                     <div>
-                        <label class="block text-sm font-medium">Fecha del Pago</label>
-                        <input type="date" name="date" required class="mt-1 w-full border rounded-md p-2" value="${new Date().toISOString().split('T')[0]}">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Monto a Pagar</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                <span class="text-gray-400 font-bold text-xl">$</span>
+                            </div>
+                            <input type="text" name="amount" required 
+                                class="currency-input w-full pl-9 pr-4 py-3 border-2 border-gray-200 rounded-xl text-2xl font-bold text-gray-800 focus:border-orange-500 focus:ring-0 outline-none transition-colors placeholder-gray-300" 
+                                placeholder="0">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Fecha</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-regular fa-calendar"></i></div>
+                                <input type="date" name="date" required class="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-700 focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none transition-all" value="${new Date().toISOString().split('T')[0]}">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Método</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-wallet"></i></div>
+                                <select name="paymentMethod" class="w-full pl-9 pr-8 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-700 bg-white focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none transition-all appearance-none">
+                                    <option value="Transferencia">Transferencia</option>
+                                    <option value="Efectivo">Efectivo</option>
+                                    <option value="Tarjeta">Tarjeta</option>
+                                </select>
+                                <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-chevron-down text-xs"></i></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Referencia / Nota (Opcional)</label>
+                        <div class="relative">
+                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-pen"></i></div>
+                            <input type="text" name="note" class="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-700 focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none transition-all" placeholder="Ej: Comprobante #1234">
+                        </div>
+                    </div>
+                    
+                    <div class="bg-blue-50 p-3 rounded-lg flex items-start gap-3 text-xs text-blue-700 border border-blue-100">
+                        <i class="fa-solid fa-circle-info mt-0.5"></i>
+                        <p>El pago se distribuirá automáticamente a las órdenes de compra más antiguas pendientes (FIFO) y se guardará en el historial.</p>
                     </div>
                 </div>
             `;
+
+            // Inicializar formato de moneda
             setTimeout(() => {
                 setupCurrencyInput(modalForm.querySelector('input[name="amount"]'));
             }, 100);
@@ -6415,62 +6796,93 @@ async function openMainModal(type, data = {}) {
             const isEditing = type === 'edit-supplier';
             title = isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor';
             btnText = isEditing ? 'Guardar Cambios' : 'Crear Proveedor';
-            btnClass = isEditing ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-blue-500 hover:bg-blue-600';
+            btnClass = isEditing ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-blue-600 hover:bg-blue-700';
 
-            // El HTML del formulario
+            // Aumentamos un poco el ancho del modal para que se vea mejor
+            if (modalContentDiv) {
+                modalContentDiv.classList.remove('max-w-2xl');
+                modalContentDiv.classList.add('max-w-3xl');
+            }
+
             bodyHtml = `
-                <div class="space-y-4">
-                    <h4 class="text-md font-semibold text-gray-700 border-b pb-2">Información Principal</h4>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium">Nombre o Razón Social</label>
-                            <input type="text" name="name" required class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.name || '' : ''}">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium">NIT o Cédula</label>
-                            <input type="text" name="nit" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.nit || '' : ''}">
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium">Correo Electrónico</label>
-                            <input type="email" name="email" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.email || '' : ''}">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium">Dirección</label>
-                            <input type="text" name="address" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.address || '' : ''}">
+                <div class="space-y-6">
+                    
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <h4 class="text-sm font-bold text-gray-700 uppercase mb-3 flex items-center">
+                            <div class="p-1.5 bg-blue-100 text-blue-600 rounded-md mr-2"><i class="fa-solid fa-id-card"></i></div>
+                            Información Fiscal
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 mb-1">Razón Social / Nombre</label>
+                                <input type="text" name="name" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="Ej: Ferretería El Tornillo" value="${isEditing ? data.name || '' : ''}">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 mb-1">NIT / Cédula</label>
+                                <input type="text" name="nit" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="Ej: 900.123.456-7" value="${isEditing ? data.nit || '' : ''}">
+                            </div>
                         </div>
                     </div>
 
-                    <h4 class="text-md font-semibold text-gray-700 border-b pb-2 pt-4">Información de Contacto</h4>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium">Nombre del Contacto</label>
-                            <input type="text" name="contactName" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.contactName || '' : ''}">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium">Teléfono de Contacto</label>
-                            <input type="tel" name="contactPhone" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.contactPhone || '' : ''}">
+                    <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                        <h4 class="text-sm font-bold text-gray-700 uppercase mb-3 flex items-center">
+                            <div class="p-1.5 bg-green-100 text-green-600 rounded-md mr-2"><i class="fa-solid fa-address-book"></i></div>
+                            Datos de Contacto
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 mb-1">Nombre Contacto</label>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-user"></i></div>
+                                    <input type="text" name="contactName" class="pl-9 w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-green-500 outline-none" placeholder="Persona encargada" value="${isEditing ? data.contactName || '' : ''}">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 mb-1">Teléfono / Celular</label>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-phone"></i></div>
+                                    <input type="tel" name="contactPhone" class="pl-9 w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-green-500 outline-none" placeholder="300 123 4567" value="${isEditing ? data.contactPhone || '' : ''}">
+                                </div>
+                            </div>
+                             <div>
+                                <label class="block text-xs font-bold text-gray-500 mb-1">Correo Electrónico</label>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-envelope"></i></div>
+                                    <input type="email" name="email" class="pl-9 w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-green-500 outline-none" placeholder="contacto@empresa.com" value="${isEditing ? data.email || '' : ''}">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 mb-1">Dirección Física</label>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-location-dot"></i></div>
+                                    <input type="text" name="address" class="pl-9 w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-green-500 outline-none" placeholder="Calle 123 # 45-67" value="${isEditing ? data.address || '' : ''}">
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <h4 class="text-md font-semibold text-gray-700 border-b pb-2 pt-4">Información Bancaria</h4>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium">Banco</label>
-                            <input type="text" name="bankName" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.bankName || '' : ''}">
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <h4 class="text-sm font-bold text-gray-700 uppercase mb-3 flex items-center">
+                            <div class="p-1.5 bg-indigo-100 text-indigo-600 rounded-md mr-2"><i class="fa-solid fa-building-columns"></i></div>
+                            Información Bancaria
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 mb-1">Banco</label>
+                                <input type="text" name="bankName" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Ej: Bancolombia" value="${isEditing ? data.bankName || '' : ''}">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 mb-1">Tipo de Cuenta</label>
+                                <select name="accountType" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white">
+                                    <option value="Ahorros" ${isEditing && data.accountType === 'Ahorros' ? 'selected' : ''}>Ahorros</option>
+                                    <option value="Corriente" ${isEditing && data.accountType === 'Corriente' ? 'selected' : ''}>Corriente</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 mb-1">Número de Cuenta</label>
+                                <input type="text" name="accountNumber" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm font-mono" placeholder="000-00000-00" value="${isEditing ? data.accountNumber || '' : ''}">
+                            </div>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium">Tipo de Cuenta</label>
-                            <select name="accountType" class="mt-1 w-full border rounded-md p-2 bg-white">
-                                <option value="Ahorros" ${isEditing && data.accountType === 'Ahorros' ? 'selected' : ''}>Ahorros</option>
-                                <option value="Corriente" ${isEditing && data.accountType === 'Corriente' ? 'selected' : ''}>Corriente</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium">Número de Cuenta</label>
-                        <input type="text" name="accountNumber" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.accountNumber || '' : ''}">
                     </div>
                 </div>
             `;
@@ -7457,14 +7869,87 @@ modalForm.addEventListener('submit', async (e) => {
         }
 
         case 'new-supplier-payment': {
-            if (currentSupplierId) {
-                const paymentData = {
-                    amount: parseFloat(data.amount.replace(/[$. ]/g, '')) || 0,
-                    paymentMethod: data.paymentMethod,
+            if (!currentSupplierId) {
+                alert("Error: No se identificó el proveedor.");
+                break;
+            }
+
+            modalConfirmBtn.disabled = true;
+            modalConfirmBtn.textContent = "Procesando...";
+
+            try {
+                const amountToPay = parseFloat(data.amount.replace(/[$. ]/g, '')) || 0;
+                if (amountToPay <= 0) throw new Error("Monto inválido.");
+
+                let remainingMoney = amountToPay;
+                let billsPaidCount = 0;
+                const method = data.paymentMethod;
+                const noteText = data.note ? ` - ${data.note}` : '';
+
+                // 1. Buscar órdenes pendientes de este proveedor (FIFO)
+                const q = query(
+                    collection(db, "purchaseOrders"),
+                    where("supplierId", "==", currentSupplierId),
+                    orderBy("createdAt", "asc")
+                );
+
+                const snapshot = await getDocs(q);
+
+                // 2. Distribuir pago entre las órdenes
+                for (const docSnap of snapshot.docs) {
+                    if (remainingMoney <= 0) break;
+
+                    const po = docSnap.data();
+                    const total = po.totalCost || 0;
+                    const paid = po.paidAmount || 0;
+                    const debt = total - paid;
+
+                    if (debt <= 100) continue; // Ya pagada
+
+                    const paymentForThisBill = Math.min(remainingMoney, debt);
+
+                    // A. Guardar el pago en la orden
+                    await addDoc(collection(db, "purchaseOrders", docSnap.id, "payments"), {
+                        amount: paymentForThisBill,
+                        date: data.date,
+                        paymentMethod: method,
+                        note: `${method}${noteText} (Desde Perfil)`,
+                        createdAt: serverTimestamp(),
+                        createdBy: currentUser.uid
+                    });
+
+                    // B. Actualizar el saldo de la orden
+                    await updateDoc(doc(db, "purchaseOrders", docSnap.id), {
+                        paidAmount: increment(paymentForThisBill),
+                        status: (Math.abs(debt - paymentForThisBill) < 100) ? 'recibida' : 'pendiente' // Ojo: Ajusta tus estados si usas 'pagada'/'parcial'
+                    });
+
+                    remainingMoney -= paymentForThisBill;
+                    billsPaidCount++;
+                }
+
+                // 3. Guardar TAMBIÉN en el historial general del proveedor (para la tabla visual de esta vista)
+                // Esto mantiene la tabla "Historial de Pagos" actualizada inmediatamente
+                await addDoc(collection(db, "suppliers", currentSupplierId, "payments"), {
+                    amount: amountToPay,
+                    paymentMethod: method,
+                    note: data.note || '',
                     date: data.date,
-                    createdAt: new Date()
-                };
-                await addDoc(collection(db, "suppliers", currentSupplierId, "payments"), paymentData);
+                    createdAt: new Date(),
+                    distributedTo: billsPaidCount // Dato útil para saber que fue automático
+                });
+
+                let msg = `Pago registrado exitosamente.`;
+                if (billsPaidCount > 0) msg += ` Se aplicó a ${billsPaidCount} orden(es) pendiente(s).`;
+                else msg += ` (No se encontraron órdenes pendientes para cruzar, quedó como saldo a favor).`;
+
+                alert(msg);
+
+            } catch (error) {
+                console.error("Error al guardar pago:", error);
+                alert("Error: " + error.message);
+            } finally {
+                modalConfirmBtn.disabled = false;
             }
             break;
         }
@@ -7503,15 +7988,27 @@ modalForm.addEventListener('submit', async (e) => {
         case 'add-anticipo-payment':
         case 'add-corte-payment':
         case 'add-other-payment':
+            // Validar monto
+            const rawAmountPayment = parseFloat(data.amount.replace(/[$. ]/g, '')) || 0;
+
             const paymentData = {
-                amount: parseFloat(data.amount.replace(/[$. ]/g, '')) || 0,
+                amount: rawAmountPayment,
                 date: data.date,
-                type: data.type, // 'abono_anticipo', 'abono_corte', u 'otro'
-                targetId: data.targetId || null, // ID del corte si aplica
-                concept: data.concept || `Abono a ${data.type === 'abono_anticipo' ? 'Anticipo' : `Corte #${modalForm.dataset.corteNumber}`}`, // Concepto automático o manual
+                type: data.type,
+                targetId: data.targetId || null,
+                concept: data.concept || `Abono a ${data.type === 'abono_anticipo' ? 'Anticipo' : `Corte #${modalForm.dataset.corteNumber || ''}`}`,
+                createdAt: new Date() // Importante para ordenar
             };
-            modalForm.dataset.corteNumber = ''; // Limpiamos el dataset
+
+            // 1. Guardar en la colección de pagos (Historial)
             await addDoc(collection(db, "projects", currentProject.id, "payments"), paymentData);
+
+            // 2. NUEVO: Actualizar el acumulado del proyecto para que CARTERA lo vea
+            await updateDoc(doc(db, "projects", currentProject.id), {
+                paidAmount: increment(rawAmountPayment)
+            });
+
+            modalForm.dataset.corteNumber = '';
             break;
         case 'view-image': // Para abrir el modal de la imagen
             const imageUrl = e.target.getAttribute('src');
@@ -9397,6 +9894,14 @@ document.addEventListener('DOMContentLoaded', () => {
         setupCurrencyInput // Pasamos la función global de formato de moneda
     );
 
+    initSolicitudes(
+        db,
+        showView,
+        currentUserRole, // Variable global que ya existe en app.js
+        usersMap,        // Mapa de usuarios global
+        openMainModal    // Función global de modales
+    );
+
     // --- INICIO DE NUEVO CÓDIGO ---
     // Cargar los modelos de IA para la validación de rostros
     loadFaceAPImodels();
@@ -10305,7 +10810,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             case 'view-request-details': {
                 const requestId = elementWithAction.dataset.id;
-                openRequestDetailsModal(requestId);
+                // Leemos el projectId del botón, o usamos el global si no viene (para compatibilidad)
+                const projId = elementWithAction.dataset.projectId || (currentProject ? currentProject.id : null);
+
+                if (requestId && projId) {
+                    openRequestDetailsModal(requestId, projId);
+                } else {
+                    console.error("Falta ID de solicitud o proyecto");
+                }
                 break;
             }
             case 'approve-request': {
@@ -10321,6 +10833,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             case 'view-supplier-details': {
                 loadSupplierDetailsView(elementWithAction.dataset.id);
+
+                // AGREGAR ESTA LÍNEA:
+                closePurchaseOrderModal();
                 break;
             }
             case 'back-to-suppliers':
@@ -10533,9 +11048,48 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
 
             case 'edit-supplier': {
-                const supplierDoc = await getDoc(doc(db, "suppliers", elementWithAction.dataset.id));
-                if (supplierDoc.exists()) {
-                    openMainModal('edit-supplier', { id: supplierDoc.id, ...supplierDoc.data() });
+                // Recuperamos el ID del botón
+                const supId = elementWithAction.dataset.id;
+                if (supId) {
+                    loadingOverlay.classList.remove('hidden'); // Feedback visual
+                    try {
+                        const supplierDoc = await getDoc(doc(db, "suppliers", supId));
+                        if (supplierDoc.exists()) {
+                            // Abrimos el modal con los datos cargados
+                            openMainModal('edit-supplier', { id: supplierDoc.id, ...supplierDoc.data() });
+                        } else {
+                            alert("No se encontró la información del proveedor.");
+                        }
+                    } catch (error) {
+                        console.error("Error editando proveedor:", error);
+                        alert("Error al cargar los datos.");
+                    } finally {
+                        loadingOverlay.classList.add('hidden');
+                    }
+                }
+                break;
+            }
+
+            case 'delete-supplier-payment': {
+                // Recuperamos el ID del pago
+                const paymentId = elementWithAction.dataset.id;
+
+                // Usamos la variable global currentSupplierId que se establece al entrar a la vista
+                if (currentSupplierId && paymentId) {
+                    openConfirmModal("¿Estás seguro de eliminar este pago del historial? Esta acción no se puede deshacer.", async () => {
+                        try {
+                            loadingOverlay.classList.remove('hidden');
+                            await deleteDoc(doc(db, "suppliers", currentSupplierId, "payments", paymentId));
+                            // No es necesario un alert de éxito, la tabla se actualiza sola en tiempo real
+                        } catch (error) {
+                            console.error("Error eliminando pago:", error);
+                            alert("No se pudo eliminar el pago: " + error.message);
+                        } finally {
+                            loadingOverlay.classList.add('hidden');
+                        }
+                    });
+                } else {
+                    console.error("Falta ID de proveedor o pago");
                 }
                 break;
             }
@@ -10815,6 +11369,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (viewName === 'reports') {
                     showView('reports');
                     loadReportsView();
+                } else if (viewName === 'solicitud') { // Coincide con data-view="solicitud" del HTML
+                    loadSolicitudesView();
 
                 } else if (viewName === 'empleados') {
                     loadEmpleadosView();
@@ -11722,23 +12278,32 @@ async function loadMaterialsTab(project, taskItems = null) { // <-- PARÁMETRO A
  * Abre y rellena el modal con los detalles de una solicitud de material.
  * @param {string} requestId - El ID de la solicitud a mostrar.
  */
-async function openRequestDetailsModal(requestId) {
+async function openRequestDetailsModal(requestId, projectId) {
     const modal = document.getElementById('request-details-modal');
     const modalBody = document.getElementById('request-details-content');
+    
+    const modalContainer = modal.querySelector('.w-11\\/12');
+    if (modalContainer) {
+        modalContainer.classList.remove('md:max-w-2xl');
+        modalContainer.classList.add('md:max-w-4xl');
+    }
 
-    if (!modal || !modalBody || !currentProject) return;
+    if (!modal || !modalBody || !projectId) return;
 
-    modalBody.innerHTML = '<div class="loader mx-auto my-8"></div>';
+    modalBody.innerHTML = '<div class="flex justify-center items-center h-64"><div class="loader"></div></div>';
     modal.style.display = 'flex';
+    
+    const defaultTitle = document.getElementById('request-details-title');
+    if(defaultTitle) defaultTitle.parentElement.style.display = 'none';
 
     try {
         const [requestSnap, itemsSnap] = await Promise.all([
-            getDoc(doc(db, "projects", currentProject.id, "materialRequests", requestId)),
-            getDocs(query(collection(db, "items"), where("projectId", "==", currentProject.id)))
+            getDoc(doc(db, "projects", projectId, "materialRequests", requestId)),
+            getDocs(collection(db, "projects", projectId, "items")) 
         ]);
 
         if (!requestSnap.exists()) {
-            modalBody.innerHTML = '<p class="text-red-500 text-center">No se encontró la solicitud.</p>';
+            modalBody.innerHTML = '<div class="p-8 text-center text-red-500"><i class="fa-solid fa-triangle-exclamation text-3xl mb-2"></i><p>No se encontró la solicitud.</p></div>';
             return;
         }
 
@@ -11746,106 +12311,217 @@ async function openRequestDetailsModal(requestId) {
         const requestData = requestSnap.data();
         const consumedItems = requestData.consumedItems || [];
 
-        const consumedItemsPromises = consumedItems.map(async (item) => {
-            const materialDoc = await getDoc(doc(db, "materialCatalog", item.materialId));
-            const materialName = materialDoc.exists() ? materialDoc.data().name : 'Desconocido';
-            let description = '';
+        // 1. Preparar Tabla de Materiales (Igual que antes)
+        const consumedItemsPromises = consumedItems.map(async (item, index) => {
+            let materialName = 'Material Desconocido';
+            let icon = 'fa-box';
+            
+            try {
+                const materialDoc = await getDoc(doc(db, "materialCatalog", item.materialId));
+                if(materialDoc.exists()) materialName = materialDoc.data().name;
+            } catch (e) { console.warn("No es material de catálogo", e); }
+
+            let description = '<span class="text-gray-400 italic">Estándar</span>';
 
             switch (item.type) {
                 case 'full_unit':
-                    description = 'Unidad Completa';
+                    description = '<span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-semibold">Unidad Completa</span>';
+                    icon = 'fa-cube';
                     break;
                 case 'cut':
-                    description = `Corte de ${item.length * 100} cm`;
+                    description = `<span class="bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-xs font-semibold"><i class="fa-solid fa-scissors mr-1"></i> Corte: ${(item.length * 100).toFixed(0)} cm</span>`;
+                    icon = 'fa-scissors';
                     break;
                 case 'remnant':
-                    description = `Retazo de ${item.length * 100} cm`; // <-- CAMBIO
+                    description = `<span class="bg-orange-50 text-orange-700 px-2 py-0.5 rounded text-xs font-semibold"><i class="fa-solid fa-recycle mr-1"></i> Retazo: ${(item.length * 100).toFixed(0)} cm</span>`;
+                    icon = 'fa-recycle';
                     break;
-                default:
-                    description = 'N/A';
             }
             return `
-                <tr class="border-b last:border-b-0">
-                    <td class="py-3 px-4">${materialName}</td>
-                    <td class="py-3 px-4 text-gray-600">${description}</td>
-                    <td class="py-3 px-4 text-center font-bold text-lg">${item.quantity}</td>
+                <tr class="hover:bg-gray-50 transition-colors border-b last:border-0">
+                    <td class="py-3 px-4 text-center text-gray-400 font-mono text-xs">${index + 1}</td>
+                    <td class="py-3 px-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500">
+                                <i class="fa-solid ${icon} text-xs"></i>
+                            </div>
+                            <span class="font-medium text-gray-700">${materialName}</span>
+                        </div>
+                    </td>
+                    <td class="py-3 px-4">${description}</td>
+                    <td class="py-3 px-4 text-center font-bold text-gray-800 bg-gray-50/50">${item.quantity}</td>
                 </tr>
             `;
         });
 
         const consumedItemsHtml = (await Promise.all(consumedItemsPromises)).join('');
 
-        // ... (El resto del código de la función para generar el HTML permanece igual)
+        // 2. Datos Generales
         const requester = usersMap.get(requestData.requesterId);
         const responsible = requestData.responsibleId ? usersMap.get(requestData.responsibleId) : null;
-        let statusText, statusColor;
-        switch (requestData.status) { /* ... */ }
+        
+        // --- NUEVO: Formateo de Fechas ---
+        const formatDate = (timestamp) => {
+            if (!timestamp) return null;
+            return timestamp.toDate().toLocaleString('es-CO', { 
+                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+            });
+        };
 
-        const destinationItemsHtml = (requestData.itemsToConsume && requestData.itemsToConsume.length > 0) ? "..." : "...";
+        const dateRequested = formatDate(requestData.createdAt);
+        const dateApproved = formatDate(requestData.approvedAt);
+        const dateDelivered = formatDate(requestData.deliveredAt);
 
-        modalBody.innerHTML = `... ${consumedItemsHtml} ... ${destinationItemsHtml} ...`; // El HTML del modal
+        // Configuración de Estado
+        const statusConfig = {
+            'pendiente': { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: 'fa-clock', label: 'Pendiente' },
+            'aprobado': { bg: 'bg-blue-100', text: 'text-blue-800', icon: 'fa-thumbs-up', label: 'Aprobado' },
+            'entregado': { bg: 'bg-green-100', text: 'text-green-800', icon: 'fa-check-circle', label: 'Entregado' },
+            'entregado_parcial': { bg: 'bg-orange-100', text: 'text-orange-800', icon: 'fa-boxes-packing', label: 'Parcial' },
+            'rechazado': { bg: 'bg-red-100', text: 'text-red-800', icon: 'fa-ban', label: 'Rechazado' },
+        };
+        const st = statusConfig[requestData.status] || statusConfig['pendiente'];
 
-        // --- El código completo del innerHTML para mayor claridad ---
+        // Uso Previsto
         const destinationItemsHtmlFinal = (requestData.itemsToConsume && requestData.itemsToConsume.length > 0)
             ? requestData.itemsToConsume.map(item => {
                 const projectItem = projectItemsMap.get(item.itemId);
-                return `<li class="py-1"><strong>${item.quantityConsumed}</strong> para: <strong>${projectItem ? projectItem.name : 'Ítem Desconocido'}</strong></li>`;
+                return `
+                    <div class="flex justify-between items-center p-2 bg-gray-50 rounded-md border border-gray-100 mb-2">
+                        <span class="text-sm text-gray-700 font-medium flex items-center">
+                            <i class="fa-solid fa-screwdriver-wrench text-gray-400 mr-2"></i>
+                            ${projectItem ? projectItem.name : 'Ítem Desconocido'}
+                        </span>
+                        <span class="text-xs font-bold bg-white px-2 py-1 rounded border text-gray-600">x${item.quantityConsumed}</span>
+                    </div>`;
             }).join('')
-            : '<p class="text-sm text-gray-500">No se especificaron ítems de destino.</p>';
-        let statusTextFinal, statusColorFinal;
-        switch (requestData.status) {
-            case 'aprobado': statusTextFinal = 'Aprobado'; statusColorFinal = 'bg-blue-100 text-blue-800'; break;
-            case 'entregado': statusTextFinal = 'Entregado'; statusColorFinal = 'bg-green-100 text-green-800'; break;
-            case 'rechazado': statusTextFinal = 'Rechazado'; statusColorFinal = 'bg-red-100 text-red-800'; break;
-            default: statusTextFinal = 'Pendiente'; statusColorFinal = 'bg-yellow-100 text-yellow-800';
-        }
+            : '<div class="text-center py-4 text-gray-400 italic text-sm">No se especificó uso en ítems del proyecto.</div>';
+
         modalBody.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="md:col-span-2 space-y-6">
-                    <div class="bg-white p-5 rounded-lg border">
-                         <h4 class="flex items-center text-lg font-bold text-gray-800 mb-3">Materiales Solicitados</h4>
-                        <div class="overflow-hidden rounded-lg border">
-                             <table class="w-full text-sm">
-                                <thead class="bg-gray-50 text-left">
-                                    <tr>
-                                        <th class="py-2 px-4 font-semibold text-gray-600">Material</th>
-                                        <th class="py-2 px-4 font-semibold text-gray-600">Descripción</th>
-                                        <th class="py-2 px-4 font-semibold text-gray-600 text-center">Cant.</th>
+            <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-r from-slate-800 to-slate-900 p-6 text-white rounded-t-lg shadow-md relative overflow-hidden">
+                <div class="absolute top-0 right-0 opacity-10 transform translate-x-4 -translate-y-2">
+                    <i class="fa-solid fa-dolly text-9xl"></i>
+                </div>
+                <div class="relative z-10 flex justify-between items-start">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1 opacity-80">
+                            <span class="text-xs font-mono bg-white/20 px-2 py-0.5 rounded">ID: ${requestId.substring(0, 6).toUpperCase()}</span>
+                        </div>
+                        <h3 class="text-2xl font-bold">Solicitud de Material</h3>
+                    </div>
+                    <span class="${st.bg} ${st.text} px-3 py-1.5 rounded-lg text-xs font-bold flex items-center shadow-sm">
+                        <i class="fa-solid ${st.icon} mr-1.5"></i> ${st.label.toUpperCase()}
+                    </span>
+                </div>
+                <button onclick="document.getElementById('request-details-close-btn').click()" 
+                    class="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors backdrop-blur-md border border-white/10 z-20">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <div class="lg:col-span-2 space-y-6">
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                        <div class="px-4 py-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                            <h4 class="font-bold text-gray-700 text-sm uppercase tracking-wide flex items-center">
+                                <i class="fa-solid fa-boxes-stacked mr-2 text-blue-500"></i> Materiales Requeridos
+                            </h4>
+                            <span class="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">${consumedItems.length} ítems</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left">
+                                <thead>
+                                    <tr class="text-xs text-gray-500 border-b border-gray-100 bg-white">
+                                        <th class="py-2 px-4 text-center w-10">#</th>
+                                        <th class="py-2 px-4 font-medium">Material</th>
+                                        <th class="py-2 px-4 font-medium">Tipo / Detalle</th>
+                                        <th class="py-2 px-4 text-center font-medium">Cant.</th>
                                     </tr>
                                 </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
+                                <tbody class="divide-y divide-gray-50">
                                     ${consumedItemsHtml}
                                 </tbody>
                             </table>
                         </div>
                     </div>
-                    <div class="bg-white p-5 rounded-lg border">
-                        <h4 class="flex items-center text-lg font-bold text-gray-800 mb-3">Uso Previsto</h4>
-                        ${(requestData.itemsToConsume && requestData.itemsToConsume.length > 0) ? `<ul class="text-sm space-y-1 ml-4">${destinationItemsHtmlFinal}</ul>` : destinationItemsHtmlFinal}
-                    </div>
-                </div>
-                <div class="space-y-6">
-                    <div class="bg-gray-50 p-4 rounded-lg border">
-                        <h4 class="text-base font-bold text-gray-700 mb-2">Detalles</h4>
-                        <div class="text-sm space-y-2">
-                            <p><strong>Fecha:</strong><br>${requestData.createdAt.toDate().toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                            <p><strong>Estado:</strong><br><span class="font-semibold px-2 py-1 text-xs rounded-full ${statusColorFinal}">${statusTextFinal}</span></p>
-                        </div>
-                    </div>
-                    <div class="bg-gray-50 p-4 rounded-lg border">
-                        <h4 class="text-base font-bold text-gray-700 mb-2">Responsables</h4>
-                        <div class="text-sm space-y-2">
-                            <p><strong>Solicita:</strong><br>${requester ? requester.firstName + ' ' + requester.lastName : 'N/A'}</p>
-                            <p><strong>Gestiona:</strong><br>${responsible ? responsible.firstName + ' ' + responsible.lastName : 'N/A'}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>`;
 
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                        <h4 class="font-bold text-gray-700 text-sm uppercase tracking-wide mb-3 flex items-center">
+                            <i class="fa-solid fa-helmet-safety mr-2 text-orange-500"></i> Uso en Obra (Destino)
+                        </h4>
+                        <div class="max-h-40 overflow-y-auto pr-1 custom-scrollbar">
+                            ${destinationItemsHtmlFinal}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    
+                    <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                        <h5 class="text-xs font-bold text-gray-400 uppercase mb-4 tracking-wide">Cronología del Proceso</h5>
+                        <div class="relative pl-2 space-y-6 border-l-2 border-gray-100 ml-2">
+                            
+                            <div class="relative">
+                                <div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow-sm"></div>
+                                <div class="pl-4">
+                                    <p class="text-xs text-gray-500">Solicitado</p>
+                                    <p class="text-sm font-bold text-gray-800">${dateRequested || '---'}</p>
+                                </div>
+                            </div>
+
+                            <div class="relative">
+                                <div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full ${dateApproved ? 'bg-blue-500' : 'bg-gray-200'} border-2 border-white shadow-sm"></div>
+                                <div class="pl-4">
+                                    <p class="text-xs text-gray-500">Aprobado</p>
+                                    <p class="text-sm font-bold ${dateApproved ? 'text-gray-800' : 'text-gray-300 italic'}">${dateApproved || 'Pendiente'}</p>
+                                </div>
+                            </div>
+
+                            <div class="relative">
+                                <div class="absolute -left-[9px] top-1 w-4 h-4 rounded-full ${dateDelivered ? 'bg-green-500' : 'bg-gray-200'} border-2 border-white shadow-sm"></div>
+                                <div class="pl-4">
+                                    <p class="text-xs text-gray-500">Entregado</p>
+                                    <p class="text-sm font-bold ${dateDelivered ? 'text-green-600' : 'text-gray-300 italic'}">${dateDelivered || 'Pendiente'}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                        <h5 class="text-xs font-bold text-gray-400 uppercase mb-3">Solicitado por</h5>
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-600 flex items-center justify-center font-bold text-sm border border-blue-50">
+                                ${requester ? requester.firstName.charAt(0) : '?'}
+                            </div>
+                            <div>
+                                <p class="text-sm font-bold text-gray-800 leading-tight">
+                                    ${requester ? requester.firstName + ' ' + requester.lastName : 'Usuario Desconocido'}
+                                </p>
+                                <p class="text-xs text-gray-500">Operario</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <h5 class="text-xs font-bold text-gray-400 uppercase mb-3">Gestionado por</h5>
+                         <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-400 text-xs">
+                                <i class="fa-solid fa-user-gear"></i>
+                            </div>
+                            <p class="text-sm font-medium text-gray-600">
+                                ${responsible ? responsible.firstName + ' ' + responsible.lastName : 'Pendiente de asignación'}
+                            </p>
+                        </div>
+                    </div>
+                    
+                </div>
+            </div>
+        `;
 
     } catch (error) {
         console.error("Error al abrir los detalles de la solicitud:", error);
-        modalBody.innerHTML = '<p class="text-red-500 text-center">Ocurrió un error al cargar los detalles.</p>';
+        modalBody.innerHTML = `<div class="p-8 text-center text-red-500"><p>Error crítico: ${error.message}</p></div>`;
     }
 }
 
