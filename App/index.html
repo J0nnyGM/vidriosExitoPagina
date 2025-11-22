@@ -139,7 +139,7 @@
                 <nav id="main-nav">
                     <ul class="space-y-2">
                         <li>
-                            <a href="#" id="dashboard-general-nav-link"
+                            <a href="#" id="dashboard-nav-link"
                                 class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
                                 data-view="dashboard-general">
                                 <i class="fa-solid fa-chart-line h-6 w-6 mr-4 flex-shrink-0"></i>
@@ -155,49 +155,51 @@
                             </a>
                         </li>
                         <li>
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
+                            <a href="#" id="tareas-nav-link"
+                                class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
                                 data-view="tareas">
                                 <i class="fa-solid fa-list-check h-6 w-6 mr-4 flex-shrink-0"></i>
                                 <span class="whitespace-nowrap sidebar-text">Tareas Asignadas</span>
                             </a>
                         </li>
                         <li>
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
+                            <a href="#" id="herramienta-nav-link"
+                                class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
                                 data-view="herramienta">
                                 <i class="fa-solid fa-toolbox h-6 w-6 mr-4 flex-shrink-0"></i>
                                 <span class="whitespace-nowrap sidebar-text">Herramienta</span>
                             </a>
                         </li>
                         <li>
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
+                            <a href="#" id="dotacion-nav-link" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
                                 data-view="dotacion">
                                 <i class="fa-solid fa-hard-hat h-6 w-6 mr-4 flex-shrink-0"></i>
                                 <span class="whitespace-nowrap sidebar-text">Dotación</span>
                             </a>
                         </li>
                         <li>
-                            <a href="#" data-view="cartera"
+                            <a href="#" id="cartera-nav-link" data-view="cartera"
                                 class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700">
                                 <i class="fa-solid fa-wallet h-6 w-6 mr-4 flex-shrink-0"></i>
                                 <span class="whitespace-nowrap sidebar-text">Cartera</span>
                             </a>
                         </li>
                         <li>
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
+                            <a href="#" id="solicitud-nav-link" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
                                 data-view="solicitud">
                                 <i class="fa-solid fa-file-lines h-6 w-6 mr-4 flex-shrink-0"></i>
                                 <span class="whitespace-nowrap sidebar-text">Solicitud de Material</span>
                             </a>
                         </li>
                         <li>
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
+                            <a href="#" id="empleados-nav-link" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
                                 data-view="empleados">
                                 <i class="fa-solid fa-users h-6 w-6 mr-4 flex-shrink-0"></i>
                                 <span class="whitespace-nowrap sidebar-text">Empleados</span>
                             </a>
                         </li>
                         <li>
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
+                            <a href="#" id="proveedores-nav-link" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
                                 data-view="proveedores">
                                 <i class="fa-solid fa-truck-fast h-6 w-6 mr-4 flex-shrink-0"></i>
                                 <span class="whitespace-nowrap sidebar-text">Proveedores</span>
@@ -2526,7 +2528,7 @@
     <div id="toast-container"
         class="fixed top-5 right-5 z-[9999] space-y-3 flex flex-col items-end pointer-events-none">
     </div>
-    
+
     <script type="module" src="js/solicitudes.js"></script>
     <script type="module" src="js/empleados.js"></script>
     <script type="module" src="js/herramientas.js"></script>

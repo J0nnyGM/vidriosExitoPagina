@@ -869,28 +869,35 @@ async function loadSSTColaboradoresSubTab(container) {
     const tableBody = document.getElementById('sst-colab-table-body');
     const searchInput = document.getElementById('sst-colab-search');
 
-    // 2. OBTENER DATOS (Usuarios y sus Documentos SST)
+    // 2. OBTENER DATOS (Usuarios)
     const usersMap = _getUsersMap();
-    const activeUsers = Array.from(usersMap.values()).filter(u => u.status === 'active');
-
-    // Preparar consulta de documentos SST para todos los usuarios activos
-    // (Optimizacion: Consultamos la colección 'documents' de cada usuario es pesado, 
-    // para MVP iteramos. Para producción masiva se recomienda una collectionGroup o campo en user)
+    
+    // --- CORRECCIÓN AQUÍ: Usamos entries() para obtener el ID y el Objeto ---
+    const activeUsers = Array.from(usersMap.entries())
+        .map(([id, data]) => ({ id, ...data })) // Inyectamos el ID dentro del objeto
+        .filter(u => u.status === 'active');
+    // -----------------------------------------------------------------------
 
     tableBody.innerHTML = '';
+
+    if (activeUsers.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-10 text-gray-500">No hay colaboradores activos.</td></tr>`;
+        return;
+    }
 
     // Renderizamos fila por fila
     for (const user of activeUsers) {
         const tr = document.createElement('tr');
         tr.className = "hover:bg-blue-50 transition-colors group";
-        tr.dataset.name = `${user.firstName} ${user.lastName} ${user.idNumber}`.toLowerCase();
+        // Guardamos el nombre completo en minúsculas para el buscador
+        tr.dataset.name = `${user.firstName || ''} ${user.lastName || ''} ${user.idNumber || ''}`.toLowerCase();
 
-        // Marcadores de carga inicial
+        // Marcadores de carga inicial (Spinners)
         tr.innerHTML = `
             <td class="px-4 py-3 font-medium text-gray-900">
                 <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
-                        ${user.firstName[0]}${user.lastName[0]}
+                        ${(user.firstName?.[0] || '')}${(user.lastName?.[0] || '')}
                     </div>
                     <div>
                         <p>${user.firstName} ${user.lastName}</p>
@@ -916,7 +923,10 @@ async function loadSSTColaboradoresSubTab(container) {
         tableBody.appendChild(tr);
 
         // 3. CARGA ASÍNCRONA DE ESTADOS (Lazy Load por fila)
-        checkUserSSTStatus(user.id);
+        // Ahora 'user.id' SÍ existe y no dará error
+        if (user.id) {
+            checkUserSSTStatus(user.id);
+        }
     }
 
     // Buscador Local
