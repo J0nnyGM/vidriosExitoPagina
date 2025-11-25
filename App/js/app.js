@@ -210,6 +210,23 @@ function normalizeString(str) {
     return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
+/**
+ * Cambia entre las vistas de Login y Registro dentro del contenedor de autenticación.
+ * @param {string} viewName - 'login' o 'register'.
+ */
+function showAuthView(viewName) {
+    const loginView = document.getElementById('login-view');
+    const registerView = document.getElementById('register-view');
+
+    if (viewName === 'login') {
+        loginView.classList.remove('hidden');
+        registerView.classList.add('hidden');
+    } else if (viewName === 'register') {
+        loginView.classList.add('hidden');
+        registerView.classList.remove('hidden');
+    }
+}
+
 // --- INICIO: FUNCIÓN DE HELPER (Copiada de dotacion.js) ---
 function resizeImage(file, maxWidth = 800) {
     return new Promise((resolve, reject) => {
@@ -389,6 +406,76 @@ const authContainer = document.getElementById('auth-container');
 const appContainer = document.getElementById('app-container');
 let views = {}; // <-- AÑADE ESTA LÍNEA
 
+// --- CONFIGURACIÓN DE MÓDULOS DEL SIDEBAR ---
+const SIDEBAR_CONFIG = [
+    { key: 'dashboard', selector: '#dashboard-general-nav-link', label: 'Dashboard General' },
+    { key: 'proyectos', selector: '#proyectos-nav-link', label: 'Proyectos' },
+    { key: 'tareas', selector: 'a[data-view="tareas"]', label: 'Tareas Asignadas' },
+    { key: 'herramienta', selector: 'a[data-view="herramienta"]', label: 'Herramienta' },
+    { key: 'dotacion', selector: 'a[data-view="dotacion"]', label: 'Dotación' },
+    { key: 'cartera', selector: 'a[data-view="cartera"]', label: 'Cartera' },
+    { key: 'solicitud', selector: 'a[data-view="solicitud"]', label: 'Solicitud Material' },
+    { key: 'empleados', selector: 'a[data-view="empleados"]', label: 'Empleados' },
+    { key: 'proveedores', selector: 'a[data-view="proveedores"]', label: 'Proveedores' },
+    { key: 'catalog', selector: 'a[data-view="catalog"]', label: 'Catálogo Materiales' },
+    { key: 'compras', selector: 'a[data-view="compras"]', label: 'Órdenes Compra' },
+    { key: 'reports', selector: 'a[data-view="reports"]', label: 'Reportes' },
+    { key: 'adminPanel', selector: 'a[data-view="adminPanel"]', label: 'Gestionar Usuarios' },
+    { key: 'configuracion', selector: '#configuracion-nav-link', label: 'Configuración' }
+];
+
+// Función auxiliar para obtener los permisos base de un rol
+function getRoleDefaultPermissions(role) {
+    const isAdmin = role === 'admin';
+    const isBodega = role === 'bodega';
+    const isSST = role === 'sst';
+    const isOperario = role === 'operario';
+
+    // Definimos la lógica base aquí (centralizada)
+    return {
+        dashboard: true,
+        proyectos: isAdmin,
+        tareas: true,
+        herramienta: isAdmin || isBodega || isSST || isOperario,
+        dotacion: isAdmin || isBodega || isSST || isOperario,
+        cartera: isAdmin, // Ajusta según tu lógica de empleados.js si 'nomina' existe
+        solicitud: true,
+        empleados: isAdmin || isSST,
+        proveedores: isAdmin || isBodega,
+        catalog: isAdmin || isBodega,
+        compras: isAdmin || isBodega,
+        reports: isAdmin,
+        adminPanel: isAdmin,
+        configuracion: isAdmin
+    };
+}
+
+// Función Principal de Visibilidad
+function applySidebarPermissions(role, customPermissions = {}) {
+    const defaultVisibility = getRoleDefaultPermissions(role);
+
+    SIDEBAR_CONFIG.forEach(module => {
+        const element = document.querySelector(module.selector);
+        if (!element) return;
+
+        // 1. Estado base del rol
+        let shouldShow = defaultVisibility[module.key];
+
+        // 2. Sobrescritura personalizada
+        if (customPermissions[module.key] === 'show') shouldShow = true;
+        if (customPermissions[module.key] === 'hide') shouldShow = false;
+
+        // 3. Aplicar al DOM
+        if (shouldShow) {
+            element.classList.remove('hidden');
+            // Mostrar el contenedor <li> padre si existe
+            if (element.parentElement.tagName === 'LI') element.parentElement.classList.remove('hidden');
+        } else {
+            element.classList.add('hidden');
+        }
+    });
+}
+
 // ====================================================================
 //      INICIO: FUNCIÓN AÑADIDA PARA CERRAR EL MENÚ LATERAL
 // ====================================================================
@@ -523,29 +610,13 @@ onAuthStateChanged(auth, async (user) => {
                 payrollConfig = {};
             }
 
-            // 5. Configurar Visibilidad de Pestañas (Control de Acceso)
-            const isAdmin = currentUserRole === 'admin';
-            const isBodega = currentUserRole === 'bodega';
-            const isSST = currentUserRole === 'sst';
-            const isOperario = currentUserRole === 'operario';
-
-            // Ocultar/Mostrar Pestañas del Menú
-            document.getElementById('proyectos-nav-link')?.classList.toggle('hidden', !isAdmin);
-            document.getElementById('admin-nav-link')?.classList.toggle('hidden', !isAdmin);
-            document.getElementById('inventory-nav-link')?.classList.toggle('hidden', !isAdmin && !isBodega);
-            document.getElementById('compras-nav-link')?.classList.toggle('hidden', !isAdmin && !isBodega);
-            document.getElementById('reports-nav-link')?.classList.toggle('hidden', !isAdmin);
-
-            // Asumimos que los IDs de los enlaces son: 'tareas-nav-link', 'herramienta-nav-link', 'dotacion-nav-link'
-            document.getElementById('tareas-nav-link')?.classList.toggle('hidden', isOperario ? false : !isAdmin); // Operario solo ve Tareas, Admin ve todo
-            document.getElementById('herramienta-nav-link')?.classList.toggle('hidden', !isOperario && !isBodega && !isSST && !isAdmin);
-            document.getElementById('dotacion-nav-link')?.classList.toggle('hidden', !isOperario && !isBodega && !isSST && !isAdmin);
-
+            // 5. Configurar Visibilidad de Pestañas (Sistema Híbrido: Rol + Personalizado)
+            // Recuperamos los permisos personalizados guardados en el usuario
+            const userCustomPermissions = userData.customPermissions || {};
+            applySidebarPermissions(currentUserRole, userCustomPermissions);
 
             // 6. Mostrar la Vista por Defecto (Redirección por Rol)
             showGeneralDashboard();
-
-
 
             requestNotificationPermission();
             loadNotifications(); // <-- ¡Esta es la línea que faltaba!
@@ -625,14 +696,13 @@ async function handleRegister(e) {
 
 async function handleLogout() {
     try {
-        // 1. Desconecta todos los listeners de Firestore que estén activos.
-        //    (Esto previene el error de permisos).
         activeListeners.forEach(unsubscribe => unsubscribe());
-        activeListeners = []; // Limpia el array para la próxima sesión.
-
-        // 2. Cierra la sesión del usuario de forma segura.
+        activeListeners = [];
         await signOut(auth);
         console.log('Usuario cerró sesión exitosamente');
+
+        // --- AGREGAR ESTA LÍNEA PARA LIMPIEZA TOTAL ---
+        window.location.reload();
 
     } catch (error) {
         console.error('Error al cerrar sesión: ', error);
@@ -1544,63 +1614,132 @@ function loadProjects(status = 'active') {
     });
 }
 
+/**
+ * Crea la tarjeta de proyecto COMPACTA y LEGIBLE.
+ * (CORREGIDO: Incluye la Dirección del Proyecto)
+ */
 function createProjectCard(project, progress, stats) {
     const card = document.createElement('div');
-    card.className = "bg-white p-6 rounded-lg shadow-lg mb-6 project-card";
+    card.className = "bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-indigo-300 transition-all duration-300 project-card group flex flex-col";
     card.dataset.id = project.id;
     card.dataset.name = project.name;
 
-    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    const currencyFormatter = new Intl.NumberFormat('es-CO', {
+        style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0
+    });
 
-    // --- LÓGICA CONDICIONAL PARA LOS BOTONES ---
+    // --- CÁLCULOS ---
+    const physicalProgress = Math.min(progress, 100);
+    let physicalColor = physicalProgress >= 100 ? 'bg-emerald-500' : (physicalProgress > 0 ? 'bg-blue-600' : 'bg-slate-300');
+
+    const contractValue = project.value || 1;
+    const executedValue = stats.executedValue || 0;
+    const financialPercent = Math.min((executedValue / contractValue) * 100, 100);
+    let financialColor = 'bg-indigo-600';
+    if (financialPercent >= 100) financialColor = 'bg-emerald-500';
+
+    const formatDate = (dateStr) => dateStr ? new Date(dateStr + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: '2-digit' }) : '--/--';
+
+    // --- BOTONES ---
     let actionButtons = '';
+    const btnClass = "p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors";
+
     if (project.status === 'active') {
-        actionButtons = `<button data-action="archive" class="text-yellow-600 hover:text-yellow-800 font-semibold py-2 px-4 rounded-lg bg-yellow-100 hover:bg-yellow-200 transition-colors">Archivar</button>`;
+        actionButtons = `
+            <button data-action="archive" class="${btnClass}" title="Archivar">
+                <i class="fa-solid fa-box-archive"></i>
+            </button>
+        `;
     } else if (project.status === 'archived') {
         actionButtons = `
-            <button data-action="restore" class="text-green-600 hover:text-green-800 font-semibold py-2 px-4 rounded-lg bg-green-100 hover:bg-green-200 transition-colors">Restaurar</button>
-            ${currentUserRole === 'admin' ? `<button data-action="delete" class="text-red-600 hover:text-red-800 font-semibold py-2 px-4 rounded-lg bg-red-100 hover:bg-red-200 transition-colors">Eliminar</button>` : ''}
+            <button data-action="restore" class="${btnClass} text-emerald-600 hover:bg-emerald-50" title="Restaurar">
+                <i class="fa-solid fa-trash-arrow-up"></i>
+            </button>
+            ${currentUserRole === 'admin' ? `
+                <button data-action="delete" class="${btnClass} text-red-500 hover:bg-red-50" title="Eliminar">
+                    <i class="fa-solid fa-trash"></i>
+                </button>` : ''}
         `;
     }
 
     card.innerHTML = `
-        <div class="flex justify-between items-start mb-4">
-            <div>
-                <h2 class="text-2xl font-bold text-gray-800">${project.name}</h2>
-                <p class="text-sm text-gray-500 font-semibold">${project.builderName || 'Constructora no especificada'}</p>
-                <p class="text-sm text-gray-500">${project.location} - ${project.address}</p>
+        <div class="p-5 pb-0">
+            <div class="flex justify-between items-start gap-3">
+                <div class="flex gap-3 overflow-hidden">
+                    <div class="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 border border-slate-200 flex-shrink-0">
+                        <i class="fa-regular fa-building text-xl"></i>
+                    </div>
+                    <div class="min-w-0 flex flex-col justify-center">
+                        <h2 class="text-lg font-bold text-slate-900 truncate group-hover:text-indigo-700 transition-colors leading-tight" title="${project.name}">
+                            ${project.name}
+                        </h2>
+                        <p class="text-xs text-slate-500 truncate flex items-center gap-1 mt-0.5">
+                             <i class="fa-solid fa-hard-hat text-slate-400"></i> ${project.builderName || 'Sin Constructora'}
+                        </p>
+                    </div>
+                </div>
+                <button data-action="view-details" class="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white flex items-center justify-center transition-all shadow-sm flex-shrink-0">
+                    <i class="fa-solid fa-arrow-right text-sm"></i>
+                </button>
             </div>
-            <div class="flex flex-wrap gap-2 justify-end">
-                <button data-action="view-details" class="text-blue-600 hover:text-blue-800 font-semibold py-2 px-4 rounded-lg bg-blue-100 hover:bg-blue-200 transition-colors">Ver Detalles</button>
+            
+            <div class="mt-3 flex items-center gap-3 text-xs text-slate-500 font-medium border-b border-slate-100 pb-3">
+                <span class="flex items-center gap-1 truncate max-w-[60%]" title="${project.location} - ${project.address}">
+                    <i class="fa-solid fa-location-dot text-slate-400"></i> 
+                    ${project.location} ${project.address ? ` - ${project.address}` : ''}
+                </span>
+                <span class="flex items-center gap-1 flex-shrink-0 ml-auto">
+                    <i class="fa-regular fa-calendar text-slate-400"></i> 
+                    ${formatDate(project.startDate)} - ${formatDate(project.endDate)}
+                </span>
+            </div>
+        </div>
+
+        <div class="p-5 space-y-4 flex-grow">
+            
+            <div class="flex justify-between items-end bg-slate-50 p-2 rounded-lg border border-slate-100">
+                <div>
+                    <p class="text-[10px] font-bold text-slate-400 uppercase">Contrato</p>
+                    <p class="text-sm font-bold text-slate-700">${currencyFormatter.format(project.value || 0)}</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-[10px] font-bold text-emerald-600 uppercase">Ejecutado</p>
+                    <p class="text-sm font-bold text-emerald-700">${currencyFormatter.format(stats.executedValue || 0)}</p>
+                </div>
+            </div>
+
+            <div class="space-y-3">
+                <div>
+                    <div class="flex justify-between items-end mb-1">
+                        <span class="text-xs font-semibold text-slate-600">Avance Físico <span class="text-slate-400 font-normal">(${Math.round(stats.executedM2)}/${Math.round(stats.totalM2)} m²)</span></span>
+                        <span class="text-sm font-bold text-blue-600">${physicalProgress.toFixed(1)}%</span>
+                    </div>
+                    <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                        <div class="${physicalColor} h-full rounded-full transition-all duration-1000" style="width: ${physicalProgress}%"></div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-end mb-1">
+                        <span class="text-xs font-semibold text-slate-600">Presupuesto</span>
+                        <span class="text-sm font-bold text-indigo-600">${financialPercent.toFixed(1)}%</span>
+                    </div>
+                    <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                        <div class="${financialColor} h-full rounded-full transition-all duration-1000" style="width: ${financialPercent}%"></div>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+
+        <div class="px-5 py-2 bg-slate-50 border-t border-slate-100 rounded-b-xl flex justify-between items-center">
+             <div class="text-xs text-slate-500 font-medium flex items-center gap-2">
+                <i class="fa-solid fa-box-open text-slate-400"></i> 
+                <span>${stats.executedItems} / ${stats.totalItems} Ítems</span>
+             </div>
+             <div class="flex gap-1">
                 ${actionButtons}
-            </div>
-        </div>
-        <div class="mb-4">
-            <div class="flex justify-between mb-1">
-                <span class="text-sm font-medium text-gray-600">Progreso General</span>
-                <span class="text-sm font-bold text-blue-600">${progress.toFixed(2)}%</span>
-            </div>
-            <div class="w-full bg-gray-200 rounded-full h-4">
-                <div class="bg-blue-600 h-4 rounded-full transition-all duration-500" style="width: ${progress.toFixed(2)}%"></div>
-            </div>
-        </div>
-        <div class="border-t border-gray-200 pt-4 mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div class="text-center">
-                <p class="text-sm text-gray-500">Valor Contrato</p>
-                <p class="text-xl font-bold">${currencyFormatter.format(project.value || 0)}</p>
-            </div>
-            <div class="text-center">
-                <p class="text-sm text-gray-500">Valor Ejecutado</p>
-                <p class="text-xl font-bold text-green-600">${currencyFormatter.format(stats.executedValue || 0)}</p>
-            </div>
-            <div class="text-left text-sm">
-                <p><span class="font-semibold">Ítems Instalados:</span> ${stats.executedItems} / ${stats.totalItems}</p>
-                <p><span class="font-semibold">M² Ejecutados:</span> ${Math.round(stats.executedM2)} / ${Math.round(stats.totalM2)}</p>
-            </div>
-            <div class="text-left text-sm">
-                <p><span class="font-semibold">Inicio Contrato:</span> ${project.startDate ? new Date(project.startDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A'}</p>
-                <p><span class="font-semibold">Fin Contrato:</span> ${project.endDate ? new Date(project.endDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A'}</p>
-            </div>
+             </div>
         </div>
     `;
     return card;
@@ -2553,7 +2692,7 @@ async function setupCorteSelection(type) {
 
     // Validación de estados (Asegúrate que tus ítems tengan EXACTAMENTE estos estados en la BD)
     const validStates = type === 'nosotros'
-        ? ['Instalado', 'Suministrado'] 
+        ? ['Instalado', 'Suministrado']
         : ['Instalado'];
 
     description.textContent = type === 'nosotros'
@@ -2564,14 +2703,14 @@ async function setupCorteSelection(type) {
         // --- CORRECCIÓN CLAVE AQUÍ ---
         // Usamos collectionGroup para buscar en las subcolecciones anidadas
         const subItemsQuery = query(
-            collectionGroup(db, "subItems"), 
-            where("projectId", "==", currentProject.id), 
+            collectionGroup(db, "subItems"),
+            where("projectId", "==", currentProject.id),
             where("status", "in", validStates)
         );
-        
+
         const subItemsSnapshot = await getDocs(subItemsQuery);
         const allValidSubItems = subItemsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-        
+
         // Debug: Verificación en consola
         console.log(`Encontrados ${allValidSubItems.length} sub-ítems con estado ${validStates.join(' o ')}`);
 
@@ -2609,12 +2748,12 @@ async function setupCorteSelection(type) {
         // 5. Obtener datos de los ítems padres (Optimizado con 'documentId')
         const itemIds = Array.from(groupedByItem.keys());
         if (itemIds.length === 0) return; // Seguridad
-        
+
         // Firestore 'in' soporta máximo 10, si tienes más, debes hacer lotes o traer todo el proyecto
         // Como es un proyecto específico, es mejor traer todos los ítems del proyecto una sola vez si son muchos
         // O usar el método de batches. Aquí uso la consulta directa asumiendo <10 grupos por corte usualmente.
-        const itemsSnapshot = await getDocs(query(collection(db, "projects", currentProject.id, "items"), where(documentId(), "in", itemIds.slice(0, 10)))); 
-        
+        const itemsSnapshot = await getDocs(query(collection(db, "projects", currentProject.id, "items"), where(documentId(), "in", itemIds.slice(0, 10))));
+
         const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, d.data()]));
 
         // 6. Construir el acordeón
@@ -6733,6 +6872,46 @@ async function openMainModal(type, data = {}) {
                         <p class="text-xs text-gray-500 mt-1 ml-6">Si no se marca, las deducciones se calculan sobre el total devengado (Básico + Bonos + Horas Extra).</p>
                     </div>
 
+                    <div class="md:col-span-3 border-t pt-4 mt-2">
+                        <h4 class="text-md font-semibold text-gray-700 mb-3 flex items-center">
+                            <i class="fa-solid fa-toggle-on mr-2 text-indigo-500"></i> 
+                            Acceso a Módulos
+                        </h4>
+                        
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200 max-h-60 overflow-y-auto custom-scrollbar">
+                            ${(() => {
+                    // Obtenemos los defaults del rol actual del usuario
+                    const roleDefaults = getRoleDefaultPermissions(data.role || 'operario');
+
+                    return SIDEBAR_CONFIG.map(mod => {
+                        const currentPerm = (data.customPermissions && data.customPermissions[mod.key]);
+
+                        // Lógica para saber si el checkbox debe estar marcado:
+                        // Está marcado SI (Tiene permiso Custom 'show') O (Es Default True Y NO tiene 'hide')
+                        const isChecked = (currentPerm === 'show') || (roleDefaults[mod.key] && currentPerm !== 'hide');
+
+                        // Estilo visual para indicar si es un permiso heredado o modificado (opcional, para feedback visual)
+                        let labelClass = "text-gray-700";
+                        if (currentPerm === 'show') labelClass = "text-green-700 font-bold"; // Forzado a mostrar
+                        if (currentPerm === 'hide') labelClass = "text-red-500 line-through"; // Forzado a ocultar (aunque el checkbox estará desmarcado)
+
+                        return `
+                                    <label class="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-1 rounded">
+                                        <input type="checkbox" name="perm_${mod.key}" 
+                                            class="permission-checkbox h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                            ${isChecked ? 'checked' : ''}
+                                            data-key="${mod.key}">
+                                        <span class="text-xs ${labelClass}">${mod.label}</span>
+                                    </label>
+                                    `;
+                    }).join('');
+                })()}
+                        </div>
+                        <p class="text-[10px] text-gray-500 mt-2">
+                            * Marca las casillas para dar acceso. Desmarca para restringir. El sistema guardará automáticamente la excepción según el rol.
+                        </p>
+                    </div>
+
                     <div class="md:col-span-3 border-t pt-4">
                         <button type="button" data-action="view-profile-history" data-userid="${data.id}" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg">
                             Ver Historial de Cambios
@@ -8259,60 +8438,81 @@ modalForm.addEventListener('submit', async (e) => {
             break;
         }
         case 'editUser':
-            // --- INICIO DE MODIFICACIÓN (Añadir lógica de historial) ---
             try {
                 modalConfirmBtn.disabled = true;
                 modalConfirmBtn.textContent = 'Guardando...';
 
-                // 1. Obtenemos los datos antiguos para comparar
+                // 1. Obtenemos los datos antiguos para comparar (historial)
                 const userRef = doc(db, "users", id);
                 const oldUserData = usersMap.get(id) || {};
-                const changes = {}; // Objeto para guardar solo lo que cambió
+                const changes = {}; // Objeto para registrar auditoría
 
-                // 2. LEEMOS DESDE LA VARIABLE GLOBAL (MODIFICADO)
-                const photoFile = processedPhotoFile; // ¡Usamos nuestra variable!
-                processedPhotoFile = null; // Limpiamos la variable global
+                // ---------------------------------------------------------
+                // A. PROCESAMIENTO DE FOTO (Cámara o Archivo)
+                // ---------------------------------------------------------
+                const photoFile = processedPhotoFile; // Variable global de app.js
+                processedPhotoFile = null; // Limpiar variable
                 let downloadURL = null;
 
-                // 3. Si hay un archivo (HEIC o JPG) listo para subir...
                 if (photoFile && photoFile.size > 0) {
+                    let fileToResize = photoFile;
 
-                    let fileToResize = photoFile; // Este será el archivo que redimensionaremos
-
-                    // 3a. Verificamos si es HEIC
+                    // Detectar y convertir HEIC (iPhone)
                     const fileType = photoFile.type.toLowerCase();
                     const fileName = photoFile.name.toLowerCase();
-                    const isHEIC = fileType === 'image/heic' || fileType === 'image/heif' || fileName.endsWith('.heic') || fileName.endsWith('.heif');
+                    const isHEIC = fileType === 'image/heic' || fileType === 'image/heif' || fileName.endsWith('.heic');
 
                     if (isHEIC) {
-                        // ¡Aquí ocurre la conversión LENTA, pero el usuario ya está esperando!
                         modalConfirmBtn.textContent = 'Convirtiendo HEIC...';
                         const convertedBlob = await heic2any({
                             blob: photoFile,
                             toType: "image/jpeg",
                             quality: 0.8,
-                            width: 1024 // Lo bajamos a 1024px primero
+                            width: 1024
                         });
                         fileToResize = new File([convertedBlob], "converted.jpg", { type: "image/jpeg" });
                     }
 
-                    // 3b. Redimensionamos el archivo (sea el JPG original o el JPG convertido)
+                    // Redimensionar a 400px
                     modalConfirmBtn.textContent = 'Redimensionando foto...';
-                    // Usamos tu función 'resizeImage' que ya existe y es rápida
-                    const resizedBlob = await resizeImage(fileToResize, 400); // Compresión final a 400px
+                    const resizedBlob = await resizeImage(fileToResize, 400);
 
-                    // 3c. Subimos el archivo final
+                    // Subir a Firebase Storage
                     modalConfirmBtn.textContent = 'Subiendo foto...';
                     const photoPath = `profile_photos/${id}/profile.jpg`;
                     const photoStorageRef = ref(storage, photoPath);
                     await uploadBytes(photoStorageRef, resizedBlob);
                     downloadURL = await getDownloadURL(photoStorageRef);
 
-                    // Registramos el cambio de foto en el historial
+                    // Registrar cambio en historial
                     changes.profilePhotoURL = { old: oldUserData.profilePhotoURL || 'ninguna', new: 'nueva foto' };
                 }
 
-                // 4. Preparar los datos a actualizar y comparar
+                // ---------------------------------------------------------
+                // B. LÓGICA DE PERMISOS (SIDEBAR)
+                // ---------------------------------------------------------
+                const customPermissions = {};
+
+                // Obtenemos el rol base (asumiendo que no cambia en este modal, o está en oldUserData)
+                const targetRole = oldUserData.role || 'operario';
+                const roleDefaults = getRoleDefaultPermissions(targetRole);
+
+                // Iteramos los checkboxes para detectar cambios respecto al default
+                const checkboxes = modalForm.querySelectorAll('.permission-checkbox');
+                checkboxes.forEach(cb => {
+                    const key = cb.dataset.key;
+                    const isChecked = cb.checked;
+                    const defaultState = !!roleDefaults[key]; // true si el rol lo tiene, false si no
+
+                    if (isChecked !== defaultState) {
+                        // Guardamos la excepción solo si difiere del rol
+                        customPermissions[key] = isChecked ? 'show' : 'hide';
+                    }
+                });
+
+                // ---------------------------------------------------------
+                // C. PREPARAR DATOS DE ACTUALIZACIÓN
+                // ---------------------------------------------------------
                 const dataToUpdate = {
                     firstName: data.firstName,
                     lastName: data.lastName,
@@ -8320,68 +8520,83 @@ modalForm.addEventListener('submit', async (e) => {
                     phone: data.phone,
                     address: data.address,
 
+                    // Datos Bancarios
                     bankName: data.bankName || '',
                     accountType: data.accountType || 'Ahorros',
                     accountNumber: data.accountNumber || '',
 
+                    // Dotación (Tallas)
                     tallaCamiseta: data.tallaCamiseta || '',
                     tallaPantalón: data.tallaPantalón || '',
                     tallaBotas: data.tallaBotas || '',
+
+                    // Nómina
                     commissionLevel: data.commissionLevel || '',
                     salarioBasico: parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0,
-                    deduccionSobreMinimo: !!data.deduccionSobreMinimo // <-- AÑADIDO
+                    deduccionSobreMinimo: !!data.deduccionSobreMinimo,
+
+                    // Permisos Calculados
+                    customPermissions: customPermissions
                 };
 
-                // 5. Comparamos los campos de texto
+                if (downloadURL) {
+                    dataToUpdate.profilePhotoURL = downloadURL;
+                }
+
+                // ---------------------------------------------------------
+                // D. COMPARAR CAMBIOS PARA HISTORIAL
+                // ---------------------------------------------------------
                 if (data.firstName !== oldUserData.firstName) changes.firstName = { old: oldUserData.firstName, new: data.firstName };
                 if (data.lastName !== oldUserData.lastName) changes.lastName = { old: oldUserData.lastName, new: data.lastName };
                 if (data.idNumber !== oldUserData.idNumber) changes.idNumber = { old: oldUserData.idNumber, new: data.idNumber };
                 if (data.phone !== oldUserData.phone) changes.phone = { old: oldUserData.phone, new: data.phone };
                 if (data.address !== oldUserData.address) changes.address = { old: oldUserData.address, new: data.address };
-                if ((data.tallaCamiseta || '') !== (oldUserData.tallaCamiseta || '')) changes.tallaCamiseta = { old: oldUserData.tallaCamiseta || '', new: data.tallaCamiseta };
-                if ((data.tallaPantalón || '') !== (oldUserData.tallaPantalón || '')) changes.tallaPantalón = { old: oldUserData.tallaPantalón || '', new: data.tallaPantalón };
-                if ((data.tallaBotas || '') !== (oldUserData.tallaBotas || '')) changes.tallaBotas = { old: oldUserData.tallaBotas || '', new: data.tallaBotas };
-                if ((data.commissionLevel || '') !== (oldUserData.commissionLevel || '')) changes.commissionLevel = { old: oldUserData.commissionLevel || '', new: data.commissionLevel };
-                if ((parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0) !== (oldUserData.salarioBasico || 0)) changes.salarioBasico = { old: oldUserData.salarioBasico || 0, new: parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0 };
-                if ((parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0) !== (oldUserData.salarioBasico || 0)) changes.salarioBasico = { old: oldUserData.salarioBasico || 0, new: parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0 };
-                if (data.bankName !== oldUserData.bankName) changes.bankName = { old: oldUserData.bankName || '', new: data.bankName };
-                if (data.accountNumber !== oldUserData.accountNumber) changes.accountNumber = { old: oldUserData.accountNumber || '', new: data.accountNumber };
 
-                // 6. Añadir la URL de la foto SOLO SI se subió una nueva
-                if (downloadURL) {
-                    dataToUpdate.profilePhotoURL = downloadURL;
+                // Comparar Tallas
+                if ((data.tallaCamiseta || '') !== (oldUserData.tallaCamiseta || '')) changes.tallaCamiseta = { old: oldUserData.tallaCamiseta, new: data.tallaCamiseta };
+                if ((data.tallaPantalón || '') !== (oldUserData.tallaPantalón || '')) changes.tallaPantalón = { old: oldUserData.tallaPantalón, new: data.tallaPantalón };
+                if ((data.tallaBotas || '') !== (oldUserData.tallaBotas || '')) changes.tallaBotas = { old: oldUserData.tallaBotas, new: data.tallaBotas };
+
+                // Comparar Nómina
+                const oldSalario = oldUserData.salarioBasico || 0;
+                const newSalario = dataToUpdate.salarioBasico;
+                if (newSalario !== oldSalario) changes.salarioBasico = { old: oldSalario, new: newSalario };
+                if (data.commissionLevel !== (oldUserData.commissionLevel || '')) changes.commissionLevel = { old: oldUserData.commissionLevel, new: data.commissionLevel };
+
+                // Comparar Permisos (Simplificado)
+                if (JSON.stringify(oldUserData.customPermissions || {}) !== JSON.stringify(customPermissions)) {
+                    changes.permissions = { old: 'Permisos previos', new: 'Permisos actualizados' };
                 }
 
-                // 7. Usar un BATCH para guardar la actualización Y el historial
+                // ---------------------------------------------------------
+                // E. GUARDAR EN FIRESTORE (BATCH)
+                // ---------------------------------------------------------
                 const batch = writeBatch(db);
 
-                // 7a. Actualizar el documento principal del usuario
+                // 1. Actualizar documento del usuario
                 batch.update(userRef, dataToUpdate);
 
-                // 7b. Guardar el historial SOLO SI hubo cambios
+                // 2. Crear registro en subcolección profileHistory
                 if (Object.keys(changes).length > 0) {
                     const historyRef = doc(collection(userRef, "profileHistory"));
                     batch.set(historyRef, {
                         changes: changes,
-                        changedBy: currentUser.uid, // ¡El ID del ADMIN!
+                        changedBy: currentUser.uid,
                         timestamp: serverTimestamp()
                     });
                 }
 
-                // 8. Ejecutar el batch
                 await batch.commit();
 
             } catch (error) {
-                console.error("Error al actualizar perfil de usuario (admin):", error);
-                alert("Error al actualizar el perfil.");
+                console.error("Error al actualizar perfil:", error);
+                alert("Error al actualizar el perfil: " + error.message);
             } finally {
                 modalConfirmBtn.disabled = false;
                 modalConfirmBtn.textContent = 'Guardar Cambios';
-                closeMainModal(); // Cerramos el modal al finalizar
+                closeMainModal();
             }
-
-            break; // <-- Este break ya existía
-
+            break;
 
         case 'editProfile':
             // --- INICIO DE MODIFICACIÓN (Verificar cambios antes de autenticar) ---
@@ -9801,6 +10016,224 @@ if ('serviceWorker' in navigator) {
             }).catch(error => {
                 console.error('Service Worker registration failed:', error);
             });
+    });
+}
+
+// =============================================================================
+//  LÓGICA DE REPORTE DE INGRESO (BIOMETRÍA + GPS)
+// =============================================================================
+
+/**
+ * Maneja el flujo completo de reporte de ingreso:
+ * 1. Abre modal de cámara.
+ * 2. Captura foto y ubicación.
+ * 3. Valida rostro con face-api.
+ * 4. Guarda en Firebase.
+ */
+async function handleReportEntry() {
+    // 1. Obtener el usuario autenticado
+    const currentUserObj = auth.currentUser;
+    if (!currentUserObj) {
+        alert("Error: No se detecta una sesión activa. Por favor recarga la página.");
+        return;
+    }
+
+    // 2. Obtener perfil (usersMap o DB)
+    let userProfile = null;
+    if (typeof usersMap !== 'undefined' && usersMap.has(currentUserObj.uid)) {
+        userProfile = usersMap.get(currentUserObj.uid);
+    } else {
+        try {
+            const docSnap = await getDoc(doc(db, "users", currentUserObj.uid));
+            if (docSnap.exists()) userProfile = docSnap.data();
+        } catch (e) { console.error(e); }
+    }
+
+    if (!userProfile || !userProfile.profilePhotoURL) {
+        alert("⚠️ Error: No tienes una foto de perfil registrada para validación facial.");
+        return;
+    }
+
+    if (typeof currentCameraAction !== 'undefined') currentCameraAction = 'entry_report';
+
+    // 3. OBTENER REFERENCIAS AL DOM CON SEGURIDAD
+    const modal = document.getElementById('main-modal');
+    const modalTitle = document.getElementById('main-modal-title');
+    let modalBody = document.getElementById('main-modal-body');
+    const modalFooter = document.getElementById('main-modal-footer');
+
+    // --- CORRECCIÓN DE EMERGENCIA ---
+    // Si modalBody es null, intentamos buscarlo por clase o usar el modal mismo
+    if (!modalBody) {
+        console.warn("⚠️ Aviso: No se encontró #main-modal-body. Buscando alternativa...");
+        // Intento 1: Buscar por ID alternativo común
+        modalBody = document.getElementById('modal-body');
+        
+        // Intento 2: Si no, si existe el modal, creamos un div dentro al vuelo
+        if (!modalBody && modal) {
+            // Buscar algún contenedor interno
+            const internalContainer = modal.querySelector('.bg-white.rounded-lg') || modal;
+            modalBody = document.createElement('div');
+            modalBody.id = 'main-modal-body-generated';
+            internalContainer.appendChild(modalBody);
+        }
+
+        // Si sigue siendo null, detenemos para evitar el crash
+        if (!modalBody) {
+            alert("Error Crítico: No se encontró la estructura del modal en el HTML (#main-modal-body). Revisa el index.html.");
+            return;
+        }
+    }
+    // --------------------------------
+
+    // Ocultar footer si existe
+    if (modalFooter) modalFooter.classList.add('hidden');
+    if (modalTitle) modalTitle.textContent = " 📸 Validación de Ingreso";
+
+    // 4. Inyectar HTML
+    modalBody.innerHTML = `
+        <div class="flex flex-col items-center justify-center space-y-6 py-4">
+            <div class="relative w-64 h-64 sm:w-80 sm:h-80 bg-black rounded-full overflow-hidden shadow-2xl border-4 border-emerald-500 ring-4 ring-emerald-100">
+                <video id="camera-video" autoplay playsinline class="w-full h-full object-cover transform scale-x-[-1]"></video>
+                <canvas id="camera-canvas" class="absolute top-0 left-0 w-full h-full hidden"></canvas>
+                <div class="absolute inset-0 border-2 border-white/40 rounded-full m-8 pointer-events-none border-dashed animate-pulse"></div>
+            </div>
+            
+            <div id="entry-status-msg" class="text-center h-10 flex items-center justify-center">
+                <p class="text-slate-600 font-medium text-sm bg-slate-100 px-4 py-1 rounded-full">
+                    <i class="fa-solid fa-face-viewfinder mr-2"></i>Ubica tu rostro en el círculo
+                </p>
+            </div>
+
+            <div class="flex gap-4 w-full justify-center px-4">
+                <button type="button" onclick="closeMainModal()" class="flex-1 max-w-[120px] bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 py-3 rounded-xl font-bold transition-colors shadow-sm">
+                    Cancelar
+                </button>
+                <button id="capture-entry-btn" class="flex-1 max-w-[200px] bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white py-3 rounded-xl font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-camera"></i> 
+                    <span>Validar</span>
+                </button>
+            </div>
+            <div class="text-[10px] text-slate-400 text-center mt-2">
+                <i class="fa-solid fa-location-dot mr-1"></i> Se registrará tu ubicación actual.
+            </div>
+        </div>
+    `;
+
+    // Abrir modal
+    if (typeof openMainModal === 'function') {
+        openMainModal('camera_entry');
+    } else {
+        // Fallback manual si la función no existe
+        modal.classList.remove('hidden');
+    }
+
+    // 5. Iniciar Cámara
+    const video = document.getElementById('camera-video');
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+        video.srcObject = stream;
+        video.dataset.stream = "active";
+    } catch (err) {
+        console.error("Error cámara:", err);
+        alert("No se pudo acceder a la cámara.");
+        closeMainModal();
+        return;
+    }
+
+    // 6. Listener Captura
+    document.getElementById('capture-entry-btn').addEventListener('click', async () => {
+        const captureBtn = document.getElementById('capture-entry-btn');
+        const statusMsg = document.getElementById('entry-status-msg');
+        
+        captureBtn.disabled = true;
+        captureBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> ...';
+        
+        try {
+            // A. Ubicación
+            statusMsg.innerHTML = '<span class="text-blue-600 text-xs font-bold">Obteniendo GPS...</span>';
+            const location = await getCurrentLocation();
+            
+            // B. Foto
+            const canvas = document.getElementById('camera-canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+            
+            // C. Biometría
+            statusMsg.innerHTML = '<span class="text-indigo-600 text-xs font-bold">Analizando rostro...</span>';
+            
+            const detectionsCurrent = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
+            if (!detectionsCurrent) throw new Error("Rostro no detectado.");
+
+            const refImg = await faceapi.fetchImage(userProfile.profilePhotoURL);
+            const detectionsRef = await faceapi.detectSingleFace(refImg).withFaceLandmarks().withFaceDescriptor();
+            
+            if (!detectionsRef) throw new Error("Error en foto de perfil base.");
+
+            const faceMatcher = new faceapi.FaceMatcher(detectionsRef);
+            const match = faceMatcher.findBestMatch(detectionsCurrent.descriptor);
+            
+            if (match.distance > 0.55) throw new Error("Rostro no coincide.");
+
+            // D. Guardar
+            statusMsg.innerHTML = '<span class="text-emerald-600 text-xs font-bold">Guardando...</span>';
+            const photoBlob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.7));
+            const filename = `attendance/${currentUserObj.uid}_${Date.now()}.jpg`;
+            const storageRefObj = ref(storage, filename);
+            await uploadBytes(storageRefObj, photoBlob);
+            const evidenceURL = await getDownloadURL(storageRefObj);
+
+            await addDoc(collection(db, "attendance_reports"), {
+                userId: currentUserObj.uid,
+                userName: `${userProfile.firstName} ${userProfile.lastName}`,
+                role: userProfile.role || 'operario',
+                type: 'ingreso',
+                timestamp: serverTimestamp(),
+                location: {
+                    lat: location.coords.latitude,
+                    lng: location.coords.longitude,
+                    accuracy: location.coords.accuracy
+                },
+                photoURL: evidenceURL,
+                biometricScore: match.distance
+            });
+
+            statusMsg.innerHTML = '<span class="text-green-600 text-sm font-bold">¡Éxito!</span>';
+            if (navigator.vibrate) navigator.vibrate(200);
+            setTimeout(() => closeMainModal(), 1500);
+
+        } catch (error) {
+            console.error(error);
+            statusMsg.innerHTML = `<span class="text-red-500 text-xs font-bold">${error.message}</span>`;
+            captureBtn.disabled = false;
+            captureBtn.innerHTML = 'Reintentar';
+        }
+    });
+}
+
+/**
+ * Promesa que envuelve la API de Geolocalización del navegador.
+ */
+function getCurrentLocation() {
+    return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+            reject(new Error("Tu navegador no soporta geolocalización."));
+            return;
+        }
+        
+        navigator.geolocation.getCurrentPosition(
+            (pos) => resolve(pos),
+            (err) => {
+                let msg = "Error obteniendo ubicación.";
+                if (err.code === 1) msg = "Permiso de ubicación denegado.";
+                if (err.code === 2) msg = "Ubicación no disponible (enciende el GPS).";
+                if (err.code === 3) msg = "Tiempo de espera agotado buscando GPS.";
+                reject(new Error(msg));
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
     });
 }
 
@@ -11451,6 +11884,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 projectTabsDropdownMenu.classList.add('hidden');
             }
         });
+
+        // Listener global para acciones del Dashboard (incluyendo el nuevo botón)
+        document.addEventListener('click', (e) => {
+            // Buscar el botón o su padre si se hizo clic en el ícono/texto
+            const btn = e.target.closest('button');
+            if (!btn) return;
+
+            const action = btn.dataset.action;
+
+            if (action === 'report-entry') {
+                e.preventDefault();
+                handleReportEntry();
+            }
+        });
     }
     // ====================================================================
     //      FIN: CORRECCIÓN
@@ -12156,63 +12603,113 @@ async function loadPayments(project) {
 
 /**
  * Carga la pestaña de Materiales.
+ * (MODIFICADO: Muestra la descripción de la tarea asociada)
  * @param {object} project - El objeto del proyecto actual.
  * @param {Array|null} taskItems - (Opcional) Array de ítems de una tarea, si se llama desde una.
  */
-async function loadMaterialsTab(project, taskItems = null) { // <-- PARÁMETRO AÑADIDO
+async function loadMaterialsTab(project, taskItems = null) {
     const canRequest = currentUserRole === 'admin' || currentUserRole === 'operario';
     const requestMaterialBtn = document.getElementById('request-material-btn');
+
     if (requestMaterialBtn) {
         requestMaterialBtn.classList.toggle('hidden', !canRequest);
 
-        // --- INICIO DE LA MODIFICACIÓN ---
-        // Almacenamos los ítems de la tarea en el botón para usarlos al hacer clic
+        // Almacenamos los ítems de la tarea en el botón
         if (taskItems) {
-            // Guardamos los ítems como un string JSON en el dataset del botón
             requestMaterialBtn.dataset.taskItems = JSON.stringify(taskItems);
         } else {
-            // Limpiamos si no venimos de una tarea
             requestMaterialBtn.dataset.taskItems = "";
         }
-        // --- FIN DE LA MODIFICACIÓN ---
     }
 
     const requestsTableBody = document.getElementById('requests-table-body');
     if (!requestsTableBody) return;
 
+    // --- LÓGICA DE FILTRADO OPERARIO ---
+    let allowedTaskIds = new Set();
+    if (currentUserRole === 'operario') {
+        try {
+            const q1 = query(collection(db, "tasks"), where("projectId", "==", project.id), where("assigneeId", "==", currentUser.uid));
+            const q2 = query(collection(db, "tasks"), where("projectId", "==", project.id), where("additionalAssigneeIds", "array-contains", currentUser.uid));
+            const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+            snap1.forEach(d => allowedTaskIds.add(d.id));
+            snap2.forEach(d => allowedTaskIds.add(d.id));
+        } catch (error) {
+            console.error("Error cargando tareas:", error);
+        }
+    }
+    // ------------------------------------
+
     if (unsubscribeMaterialRequests) unsubscribeMaterialRequests();
+
     const requestsQuery = query(collection(db, "projects", project.id, "materialRequests"), orderBy("createdAt", "desc"));
 
     unsubscribeMaterialRequests = onSnapshot(requestsQuery, async (snapshot) => {
-        // ... (El resto de la lógica de onSnapshot para cargar la tabla de solicitudes no cambia) ...
         if (snapshot.empty) {
             requestsTableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-gray-500">No hay solicitudes de material.</td></tr>`;
             return;
         }
+
         const requestsPromises = snapshot.docs.map(async (requestDoc) => {
             const request = { id: requestDoc.id, ...requestDoc.data() };
+
+            // Filtro de seguridad para operarios
+            if (currentUserRole === 'operario') {
+                const isMyRequest = request.requesterId === currentUser.uid;
+                const isMyTask = request.taskId && allowedTaskIds.has(request.taskId);
+                if (!isMyRequest && !isMyTask) return null;
+            }
+
+            // --- NUEVO: Cargar descripción de la tarea asociada ---
+            if (request.taskId) {
+                try {
+                    // Consultamos la tarea para obtener su descripción
+                    const taskSnap = await getDoc(doc(db, "tasks", request.taskId));
+                    if (taskSnap.exists()) {
+                        request.taskDescription = taskSnap.data().description;
+                    }
+                } catch (e) {
+                    console.warn("No se pudo cargar la info de la tarea", e);
+                }
+            }
+            // -----------------------------------------------------
+
             const consumedItems = request.consumedItems || [];
             if (consumedItems.length > 0 && consumedItems[0].materialId) {
                 const firstItem = consumedItems[0];
-                const materialRef = doc(db, "materialCatalog", firstItem.materialId);
-                const materialDoc = await getDoc(materialRef);
-                const materialName = materialDoc.exists() ? materialDoc.data().name : 'Desconocido';
-                request.summary = `${firstItem.quantity} x ${materialName}`;
-                if (consumedItems.length > 1) {
-                    request.summary += ` (y ${consumedItems.length - 1} más)`;
+                try {
+                    const materialRef = doc(db, "materialCatalog", firstItem.materialId);
+                    const materialDoc = await getDoc(materialRef);
+                    const materialName = materialDoc.exists() ? materialDoc.data().name : 'Desconocido';
+                    request.summary = `${firstItem.quantity} x ${materialName}`;
+                    if (consumedItems.length > 1) {
+                        request.summary += ` (y ${consumedItems.length - 1} más)`;
+                    }
+                } catch (e) {
+                    request.summary = 'Error cargando ítem';
                 }
             } else {
                 request.summary = 'N/A';
             }
             return request;
         });
-        const requestsWithData = await Promise.all(requestsPromises);
+
+        const allRequests = await Promise.all(requestsPromises);
+        const requestsWithData = allRequests.filter(r => r !== null);
+
         requestsTableBody.innerHTML = '';
+
+        if (requestsWithData.length === 0) {
+            requestsTableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-gray-500">No hay solicitudes visibles.</td></tr>`;
+            return;
+        }
+
         requestsWithData.forEach(request => {
             const solicitante = usersMap.get(request.requesterId)?.firstName || 'Desconocido';
             const responsable = usersMap.get(request.responsibleId)?.firstName || 'N/A';
             const baseButtonClasses = "text-sm font-semibold py-2 px-4 rounded-lg transition-colors w-40 text-center";
             const viewDetailsBtn = `<button data-action="view-request-details" data-id="${request.id}" class="bg-blue-500 hover:bg-blue-600 text-white ${baseButtonClasses}">Ver Detalles</button>`;
+
             let statusText, statusColor, actionsHtml = '';
             switch (request.status) {
                 case 'pendiente':
@@ -12227,22 +12724,18 @@ async function loadMaterialsTab(project, taskItems = null) { // <-- PARÁMETRO A
                 case 'aprobado':
                     statusText = 'Aprobado'; statusColor = 'bg-blue-100 text-blue-800';
                     if (currentUserRole === 'bodega' || currentUserRole === 'admin') {
-                        // Cambiamos el texto del botón a "Registrar Entrega"
                         actionsHtml = `<button data-action="deliver-material" data-id="${request.id}" class="bg-teal-500 hover:bg-teal-600 text-white ${baseButtonClasses}">Registrar Entrega</button>`;
                     }
                     break;
-                // --- INICIO DE NUEVO ESTADO ---
                 case 'entregado_parcial':
                     statusText = 'Entrega Parcial'; statusColor = 'bg-yellow-100 text-yellow-800';
                     if (currentUserRole === 'bodega' || currentUserRole === 'admin') {
-                        // Mantenemos el botón para seguir entregando
                         actionsHtml = `<button data-action="deliver-material" data-id="${request.id}" class="bg-teal-500 hover:bg-teal-600 text-white ${baseButtonClasses}">Registrar Entrega</button>`;
                     }
                     if (currentUserRole === 'admin' || currentUserRole === 'operario') {
                         actionsHtml += `<button data-action="return-material" data-id="${request.id}" class="bg-yellow-500 hover:bg-yellow-600 text-white ${baseButtonClasses} mt-1">Devolver</button>`;
                     }
                     break;
-                // --- FIN DE NUEVO ESTADO ---
                 case 'entregado':
                     statusText = 'Entregado'; statusColor = 'bg-green-100 text-green-800';
                     if (currentUserRole === 'admin' || currentUserRole === 'operario') {
@@ -12255,15 +12748,30 @@ async function loadMaterialsTab(project, taskItems = null) { // <-- PARÁMETRO A
                 default:
                     statusText = request.status || 'Desconocido'; statusColor = 'bg-gray-100 text-gray-800';
             }
+
+            // --- NUEVO: HTML para mostrar la Tarea ---
+            const taskHtml = request.taskDescription
+                ? `<div class="mt-2 flex items-start text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded border border-indigo-100">
+                     <i class="fa-solid fa-thumbtack mt-0.5 mr-1.5 flex-shrink-0"></i>
+                     <span class="font-medium truncate max-w-[200px]" title="${request.taskDescription}">${request.taskDescription}</span>
+                   </div>`
+                : '';
+            // -----------------------------------------
+
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td class="px-6 py-4">${request.createdAt.toDate().toLocaleDateString('es-CO')}</td>
                 <td class="px-6 py-4">${solicitante}</td>
-                <td class="px-6 py-4">${request.summary}</td>
+                <td class="px-6 py-4">
+                    <div>
+                        <span class="block text-gray-800">${request.summary}</span>
+                        ${taskHtml}
+                    </div>
+                </td>
                 <td class="px-6 py-4 text-center"><span class="px-2 py-1 text-xs font-semibold rounded-full ${statusColor}">${statusText}</span></td>
                 <td class="px-6 py-4">${responsable}</td>
                 <td class="px-6 py-4 text-center">
-                    <div class="flex justify-center items-center gap-2">
+                    <div class="flex justify-center items-center gap-2 flex-wrap">
                         ${viewDetailsBtn}
                         ${actionsHtml}
                     </div>
@@ -12276,12 +12784,13 @@ async function loadMaterialsTab(project, taskItems = null) { // <-- PARÁMETRO A
 
 /**
  * Abre y rellena el modal con los detalles de una solicitud de material.
+ * (MODIFICADO: Ahora muestra la descripción de la tarea asociada si existe)
  * @param {string} requestId - El ID de la solicitud a mostrar.
  */
 async function openRequestDetailsModal(requestId, projectId) {
     const modal = document.getElementById('request-details-modal');
     const modalBody = document.getElementById('request-details-content');
-    
+
     const modalContainer = modal.querySelector('.w-11\\/12');
     if (modalContainer) {
         modalContainer.classList.remove('md:max-w-2xl');
@@ -12292,14 +12801,14 @@ async function openRequestDetailsModal(requestId, projectId) {
 
     modalBody.innerHTML = '<div class="flex justify-center items-center h-64"><div class="loader"></div></div>';
     modal.style.display = 'flex';
-    
+
     const defaultTitle = document.getElementById('request-details-title');
-    if(defaultTitle) defaultTitle.parentElement.style.display = 'none';
+    if (defaultTitle) defaultTitle.parentElement.style.display = 'none';
 
     try {
         const [requestSnap, itemsSnap] = await Promise.all([
             getDoc(doc(db, "projects", projectId, "materialRequests", requestId)),
-            getDocs(collection(db, "projects", projectId, "items")) 
+            getDocs(collection(db, "projects", projectId, "items"))
         ]);
 
         if (!requestSnap.exists()) {
@@ -12311,14 +12820,40 @@ async function openRequestDetailsModal(requestId, projectId) {
         const requestData = requestSnap.data();
         const consumedItems = requestData.consumedItems || [];
 
-        // 1. Preparar Tabla de Materiales (Igual que antes)
+        // --- NUEVO: Cargar Información de la Tarea Asociada ---
+        let taskDescriptionHtml = '';
+        if (requestData.taskId) {
+            try {
+                const taskSnap = await getDoc(doc(db, "tasks", requestData.taskId));
+                if (taskSnap.exists()) {
+                    const taskDesc = taskSnap.data().description || "Sin descripción";
+                    // Creamos un bloque visual destacado para la tarea
+                    taskDescriptionHtml = `
+                        <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-6 flex items-start gap-4 shadow-sm">
+                            <div class="flex-shrink-0 w-10 h-10 rounded-full bg-white flex items-center justify-center text-indigo-600 shadow-sm border border-indigo-50">
+                                <i class="fa-solid fa-thumbtack"></i>
+                            </div>
+                            <div>
+                                <h5 class="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">Tarea Asociada (Contexto)</h5>
+                                <p class="text-sm font-bold text-indigo-900 leading-relaxed">"${taskDesc}"</p>
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (e) {
+                console.warn("No se pudo cargar la info de la tarea:", e);
+            }
+        }
+        // -----------------------------------------------------
+
+        // 1. Preparar Tabla de Materiales
         const consumedItemsPromises = consumedItems.map(async (item, index) => {
             let materialName = 'Material Desconocido';
             let icon = 'fa-box';
-            
+
             try {
                 const materialDoc = await getDoc(doc(db, "materialCatalog", item.materialId));
-                if(materialDoc.exists()) materialName = materialDoc.data().name;
+                if (materialDoc.exists()) materialName = materialDoc.data().name;
             } catch (e) { console.warn("No es material de catálogo", e); }
 
             let description = '<span class="text-gray-400 italic">Estándar</span>';
@@ -12359,12 +12894,11 @@ async function openRequestDetailsModal(requestId, projectId) {
         // 2. Datos Generales
         const requester = usersMap.get(requestData.requesterId);
         const responsible = requestData.responsibleId ? usersMap.get(requestData.responsibleId) : null;
-        
-        // --- NUEVO: Formateo de Fechas ---
+
         const formatDate = (timestamp) => {
             if (!timestamp) return null;
-            return timestamp.toDate().toLocaleString('es-CO', { 
-                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+            return timestamp.toDate().toLocaleString('es-CO', {
+                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
             });
         };
 
@@ -12372,7 +12906,6 @@ async function openRequestDetailsModal(requestId, projectId) {
         const dateApproved = formatDate(requestData.approvedAt);
         const dateDelivered = formatDate(requestData.deliveredAt);
 
-        // Configuración de Estado
         const statusConfig = {
             'pendiente': { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: 'fa-clock', label: 'Pendiente' },
             'aprobado': { bg: 'bg-blue-100', text: 'text-blue-800', icon: 'fa-thumbs-up', label: 'Aprobado' },
@@ -12418,6 +12951,8 @@ async function openRequestDetailsModal(requestId, projectId) {
                     <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
+
+            ${taskDescriptionHtml}
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
