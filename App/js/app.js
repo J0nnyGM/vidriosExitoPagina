@@ -11534,14 +11534,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
     const mainNav = document.getElementById('main-nav');
 
-function initializeDesktopSidebar() {
-    // Si es pantalla de escritorio (>= 768px)
-    if (window.innerWidth >= 768 && sidebar && mainContent) {
-        // Forzar estado colapsado por defecto
-        sidebar.classList.add('is-collapsed'); 
-        mainContent.classList.add('is-shifted');
+    function initializeDesktopSidebar() {
+        if (window.innerWidth >= 768 && sidebar && mainContent) {
+            mainContent.classList.add('is-shifted');
+            sidebar.classList.add('is-collapsed');
+        }
     }
-}
 
 
 

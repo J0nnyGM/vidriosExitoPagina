@@ -129,12 +129,17 @@
 
             <div
                 class="logo-container p-6 flex flex-col items-center justify-center border-b border-slate-800/50 min-h-[100px]">
-                <div class="logo-text text-center transition-all duration-200 opacity-100">
+
+                <div class="logo-text text-center transition-all duration-200 w-full">
                     <h2 class="text-2xl font-bold text-white tracking-tight">Vidrios <span
                             class="text-blue-500">Exito</span></h2>
                     <p class="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mt-1">Panel de Gestión</p>
                 </div>
-                <div class="logo-icon-collapsed hidden text-blue-500 text-xl font-bold">VE</div>
+
+                <div class="logo-icon-collapsed hidden text-3xl font-black tracking-tighter select-none">
+                    <span class="text-blue-500">V</span><span class="text-yellow-400">E</span>
+                </div>
+
             </div>
 
             <nav id="main-nav" class="flex-1 overflow-y-auto sidebar-scroll py-6 px-3 space-y-1 overflow-x-hidden">
@@ -315,9 +320,9 @@
                 <div class="flex items-center gap-3 md:gap-6">
 
                     <button data-action="report-entry"
-                        class="flex bg-white text-emerald-600 hover:bg-emerald-50 border border-emerald-200 font-bold py-2 px-3 sm:px-4 rounded-full shadow-sm hover:shadow-md transition-all items-center text-sm">
-                        <i class="fa-solid fa-id-badge text-xl sm:text-lg sm:mr-2"></i>
-                        <span class="hidden sm:inline">Ingreso</span>
+                        class="flex items-center bg-white text-emerald-600 hover:bg-emerald-50 border border-emerald-200 font-bold py-2 px-4 rounded-full shadow-sm hover:shadow-md transition-all text-sm">
+                        <i class="fa-solid fa-id-badge text-lg mr-2"></i>
+                        <span>Ingreso</span>
                     </button>
 
                     <div class="relative">
@@ -382,7 +387,6 @@
                                         <i class="fa-solid fa-user-gear"></i></div>
                                     Mi Perfil
                                 </button>
-
                             </div>
 
                             <div class="border-t border-gray-100 my-2 mx-2"></div>
@@ -403,10 +407,6 @@
 
 
             <div id="dashboard-general-view" class="hidden">
-                <div class="flex justify-between items-center mb-6 flex-wrap gap-2">
-                    <h1 class="text-3xl font-bold text-gray-700">Resumen General</h1>
-                </div>
-
                 <div id="dashboard-widgets-container" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <p class="text-gray-500">Cargando estadísticas...</p>
                 </div>

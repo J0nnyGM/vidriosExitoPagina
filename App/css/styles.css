@@ -75,45 +75,6 @@ body {
     font-weight: 600;
 }
 
-/* Overlay para cuando el menú móvil está abierto */
-#sidebar-overlay {
-    background-color: rgba(0, 0, 0, 0.5);
-    transition: opacity 0.3s ease-in-out;
-}
-
-/* Estilos para el menú lateral plegable */
-#sidebar.collapsed {
-    width: 5rem;
-    /* 80px */
-}
-
-/* Oculta el contenido superior cuando está plegado */
-#sidebar.collapsed .sidebar-content {
-    display: none;
-}
-
-/* Oculta solo el texto del botón de despliegue */
-#sidebar.collapsed #sidebar-toggle-btn .sidebar-text {
-    display: none;
-}
-
-/* Gira el icono y elimina su margen derecho */
-#sidebar.collapsed #sidebar-toggle-btn svg {
-    transform: rotate(180deg);
-    margin-right: 0;
-}
-
-/* Centra el icono en el botón cuando está plegado */
-#sidebar.collapsed #sidebar-toggle-btn {
-    justify-content: center;
-}
-
-/* Ajuste del contenido principal cuando el menú está plegado */
-#main-content.sidebar-collapsed {
-    margin-left: 5rem;
-    /* Mismo ancho que la sidebar plegada */
-}
-
 /* Estilos para las nuevas tarjetas de proyecto */
 .project-card {
     transition: box-shadow 0.3s ease-in-out, transform 0.3s ease-in-out;
@@ -440,69 +401,6 @@ body,
     /* gray-700 */
 }
 
-/* ==================================================================== */
-/* INICIO: ESTILOS RESTAURADOS PARA MENÚ LATERAL FLOTANTE */
-/* ==================================================================== */
-
-/* Transiciones suaves para el menú y el contenido */
-#sidebar,
-#main-content {
-    transition: all 0.3s ease-in-out;
-}
-
-/* --- ESTADO COLAPSADO (SOLO ICONOS) --- */
-/* Se aplica solo en pantallas de escritorio (md y superiores) */
-@media (min-width: 768px) {
-    #sidebar {
-        width: 5rem;
-        /* 80px */
-    }
-
-    #sidebar .nav-link span,
-    #sidebar .sidebar-text {
-        display: none;
-        /* Oculta el texto por defecto */
-    }
-
-    #sidebar .nav-link {
-        justify-content: center;
-        /* Centra el ícono */
-    }
-
-    #sidebar .nav-link svg {
-        margin-right: 0;
-        /* Quita el margen del ícono */
-    }
-
-    #main-content {
-        margin-left: 5rem;
-        /* Mantiene el espacio para el menú colapsado */
-    }
-}
-
-/* --- ESTADO EXPANDIDO (AL PASAR EL MOUSE) --- */
-#sidebar.is-expanded-hover {
-    width: 16rem;
-    /* 256px */
-    position: fixed;
-    /* Lo hacemos flotante para que no empuje el contenido */
-    z-index: 40;
-    /* Se asegura que esté por encima del contenido */
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    /* Sombra opcional */
-}
-
-#sidebar.is-expanded-hover .nav-link span,
-#sidebar.is-expanded-hover .sidebar-text {
-    display: inline;
-    /* Muestra el texto cuando está expandido */
-}
-
-#sidebar.is-expanded-hover .nav-link {
-    justify-content: flex-start;
-    /* Alinea el ícono y texto a la izquierda */
-}
-
 /*
 ==============================================
   ESTILOS RESPONSIVE PARA BOTONES (NUEVO)
@@ -556,65 +454,6 @@ dl dd span.block {
 
 dl dd span.block:last-child {
     margin-bottom: 0;
-}
-
-/* Estado por defecto: Menú expandido (como en móvil) */
-
-#sidebar .full-title {
-    display: inline;
-}
-
-#sidebar .initials-title {
-    display: none;
-}
-
-/* Estado 1: Menú colapsado */
-#sidebar.is-collapsed .full-title {
-    display: none;
-}
-
-#sidebar.is-collapsed .initials-title {
-    display: inline;
-}
-
-/* Estado 2: Menú colapsado, pero expandido temporalmente por el hover del mouse */
-#sidebar.is-collapsed.is-expanded-hover .full-title {
-    display: inline;
-}
-
-#sidebar.is-collapsed.is-expanded-hover .initials-title {
-    display: none;
-}
-
-/* =============================================================== */
-/* ANIMACIÓN PARA EL TEXTO DEL SIDEBAR (AÑADIR AL FINAL)     */
-/* =============================================================== */
-
-/* 1. Estilos base para el texto del menú */
-.sidebar-text {
-    /* Define la transición: se animará la opacidad y la posición */
-    transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
-}
-
-/* 2. Cuando el sidebar está colapsado... */
-#sidebar.is-collapsed .sidebar-text {
-    /* Hacemos el texto completamente transparente */
-    opacity: 0;
-    /* Lo movemos un poco a la izquierda para el efecto de deslizamiento */
-    transform: translateX(-10px);
-    /* Ocultamos para que no interfiera */
-    visibility: hidden;
-}
-
-/* 3. Cuando el sidebar colapsado se expande al pasar el mouse... */
-#sidebar.is-collapsed.is-expanded-hover .sidebar-text {
-    /* Hacemos el texto visible de nuevo */
-    opacity: 1;
-    /* Lo devolvemos a su posición original */
-    transform: translateX(0);
-    visibility: visible;
-    /* Añadimos un pequeño retraso para que la animación se vea más suave */
-    transition-delay: 0.1s;
 }
 
 /* --- INICIO: Estilos para Tarjetas de Tareas (Grid Layout) --- */
@@ -755,7 +594,7 @@ dl dd span.block:last-child {
 
 
 /* =========================================
-   SIDEBAR V5 (TÉCNICA MAX-WIDTH - INFALIBLE)
+   SIDEBAR V7 (LOGO VE + TEXTOS)
    ========================================= */
 
 /* 1. COMPORTAMIENTO GENERAL */
@@ -763,14 +602,19 @@ dl dd span.block:last-child {
     transition: width 0.3s ease, padding 0.3s ease, margin 0.3s ease;
 }
 
-/* Configuración base de los textos para que puedan animarse */
-.sidebar-text, .group-title, .logo-text, .footer-text {
-    white-space: nowrap;       /* Obligatorio: El texto nunca baja de línea */
-    overflow: hidden;          /* Obligatorio: Lo que no cabe, se oculta */
+/* Configuración de textos del menú */
+.sidebar-text, .group-title, .footer-text {
+    white-space: nowrap;
+    overflow: hidden;
     opacity: 1;
-    max-width: 200px;          /* Ancho suficiente para el texto */
-    transition: all 0.3s ease-in-out; /* La magia de la suavidad */
+    max-width: 200px;
+    transition: all 0.3s ease-in-out;
 }
+
+/* Configuración del LOGO */
+.logo-text { display: block; }          /* Texto completo visible por defecto */
+.logo-icon-collapsed { display: none; } /* VE oculto por defecto */
+
 
 /* =========================================
    2. ESTADO NORMAL (EXPANDIDO)
@@ -780,81 +624,100 @@ dl dd span.block:last-child {
 }
 
 /* =========================================
-   3. ESTADO COLAPSADO (MINIMIZADO)
-   ========================================= */
-#sidebar.is-collapsed {
-    width: 5rem !important; /* 80px */
-}
-
-/* EN LUGAR DE QUITARLOS, LOS "APLASTAMOS" A CERO */
-#sidebar.is-collapsed .sidebar-text,
-#sidebar.is-collapsed .group-title,
-#sidebar.is-collapsed .logo-text,
-#sidebar.is-collapsed .footer-text {
-    max-width: 0 !important;   /* Ancho cero */
-    opacity: 0 !important;     /* Invisible */
-    margin: 0 !important;      /* Sin margen */
-    padding: 0 !important;     /* Sin relleno */
-}
-
-/* Centrar iconos perfectamente */
-#sidebar.is-collapsed .nav-link {
-    justify-content: center;
-    padding-left: 0;
-    padding-right: 0;
-}
-
-#sidebar.is-collapsed .nav-link i {
-    margin-right: 0 !important; /* Sin margen derecho */
-    font-size: 1.5rem;          /* Icono más grande */
-}
-
-#sidebar.is-collapsed .logo-container {
-    padding: 1.5rem 0.5rem;
-}
-
-/* =========================================
-   4. INTERACCIÓN HOVER (DESPLIEGUE)
+   3. ESTADO COLAPSADO (SOLO PC)
    ========================================= */
 @media (min-width: 768px) {
+
+    #sidebar.is-collapsed {
+        width: 5rem !important; /* 80px */
+    }
+
+    /* --- INTERCAMBIO DE LOGO --- */
+    #sidebar.is-collapsed .logo-text {
+        display: none !important; /* Oculta "Vidrios Exito" */
+    }
+    #sidebar.is-collapsed .logo-icon-collapsed {
+        display: block !important; /* Muestra "VE" */
+        animation: fadeInLogo 0.3s ease-out;
+    }
+
+    /* --- OCULTAR TEXTOS DEL MENÚ (APLASTAR) --- */
+    #sidebar.is-collapsed .sidebar-text,
+    #sidebar.is-collapsed .group-title,
+    #sidebar.is-collapsed .footer-text {
+        max-width: 0 !important;
+        opacity: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    /* Centrar iconos */
+    #sidebar.is-collapsed .nav-link {
+        justify-content: center;
+        padding-left: 0;
+        padding-right: 0;
+    }
+    #sidebar.is-collapsed .nav-link i {
+        margin-right: 0 !important;
+        font-size: 1.5rem;
+    }
+    #sidebar.is-collapsed .logo-container {
+        padding: 1.5rem 0.5rem;
+    }
+
+
+    /* =========================================
+       4. INTERACCIÓN HOVER (EXPANSIÓN FLOTANTE)
+       ========================================= */
     
-    /* Al pasar el mouse por el sidebar colapsado */
+    /* Al pasar el mouse sobre el sidebar cerrado */
     #sidebar.is-collapsed:hover {
-        width: 18rem !important; /* Vuelve a su tamaño original */
+        width: 18rem !important;
         z-index: 9999;
         box-shadow: 5px 0 30px rgba(0, 0, 0, 0.6);
     }
 
-    /* RECUPERAR LOS TEXTOS (Hacer que "crezcan" de nuevo) */
+    /* --- RESTAURAR LOGO COMPLETO --- */
+    #sidebar.is-collapsed:hover .logo-text {
+        display: block !important; /* Vuelve "Vidrios Exito" */
+        animation: fadeInLogo 0.2s ease-out;
+    }
+    #sidebar.is-collapsed:hover .logo-icon-collapsed {
+        display: none !important; /* Se va "VE" */
+    }
+
+    /* --- RESTAURAR TEXTOS DEL MENÚ --- */
     #sidebar.is-collapsed:hover .sidebar-text,
     #sidebar.is-collapsed:hover .group-title,
-    #sidebar.is-collapsed:hover .logo-text,
     #sidebar.is-collapsed:hover .footer-text {
-        max-width: 200px !important; /* Recuperan su espacio */
-        opacity: 1 !important;       /* Se vuelven visibles */
+        max-width: 200px !important;
+        opacity: 1 !important;
         margin-left: 0;
         visibility: visible !important;
     }
 
-    /* Título de grupo visible de nuevo */
     #sidebar.is-collapsed:hover .group-title {
+        padding-left: 1rem;
         margin-bottom: 0.5rem !important;
         margin-top: 0.25rem !important;
-        padding-left: 1rem;
     }
 
-    /* Restaurar alineación de botones */
+    /* Restaurar alineación izquierda */
     #sidebar.is-collapsed:hover .nav-link {
-        justify-content: flex-start; /* Alineados a la izquierda */
+        justify-content: flex-start;
         padding-left: 1.5rem;
         padding-right: 1.5rem;
     }
-
-    /* Restaurar margen del icono para separarlo del texto */
     #sidebar.is-collapsed:hover .nav-link i {
         margin-right: 0.75rem !important;
         font-size: 1.125rem;
     }
+}
+
+/* Animación suave para el logo */
+@keyframes fadeInLogo {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
 }
 
 /* Estilo Activo */
