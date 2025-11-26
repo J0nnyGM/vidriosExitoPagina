@@ -1394,6 +1394,10 @@ dl dd span.block:last-child {
   top: -0.5rem;
 }
 
+.bottom-0\.5 {
+  bottom: 0.125rem;
+}
+
 .bottom-4 {
   bottom: 1rem;
 }
@@ -1408,6 +1412,14 @@ dl dd span.block:last-child {
 
 .right-0 {
   right: 0px;
+}
+
+.right-0\.5 {
+  right: 0.125rem;
+}
+
+.right-1 {
+  right: 0.25rem;
 }
 
 .right-4 {
@@ -1436,6 +1448,10 @@ dl dd span.block:last-child {
 
 .top-5 {
   top: 1.25rem;
+}
+
+.top-full {
+  top: 100%;
 }
 
 .z-10 {
@@ -1527,6 +1543,11 @@ dl dd span.block:last-child {
   margin-right: -1.5rem;
 }
 
+.mx-2 {
+  margin-left: 0.5rem;
+  margin-right: 0.5rem;
+}
+
 .mx-4 {
   margin-left: 1rem;
   margin-right: 1rem;
@@ -1535,6 +1556,11 @@ dl dd span.block:last-child {
 .mx-auto {
   margin-left: auto;
   margin-right: auto;
+}
+
+.my-2 {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
 }
 
 .my-4 {
@@ -1632,10 +1658,6 @@ dl dd span.block:last-child {
 
 .mr-3 {
   margin-right: 0.75rem;
-}
-
-.mr-4 {
-  margin-right: 1rem;
 }
 
 .mt-0\.5 {
@@ -1736,6 +1758,10 @@ dl dd span.block:last-child {
 
 .h-2 {
   height: 0.5rem;
+}
+
+.h-2\.5 {
+  height: 0.625rem;
 }
 
 .h-3 {
@@ -1842,6 +1868,10 @@ dl dd span.block:last-child {
   min-height: 0px;
 }
 
+.min-h-\[100px\] {
+  min-height: 100px;
+}
+
 .min-h-\[140px\] {
   min-height: 140px;
 }
@@ -1930,6 +1960,10 @@ dl dd span.block:last-child {
   width: 0.5rem;
 }
 
+.w-2\.5 {
+  width: 0.625rem;
+}
+
 .w-2\/3 {
   width: 66.666667%;
 }
@@ -1966,12 +2000,24 @@ dl dd span.block:last-child {
   width: 1.5rem;
 }
 
+.w-60 {
+  width: 15rem;
+}
+
 .w-64 {
   width: 16rem;
 }
 
+.w-72 {
+  width: 18rem;
+}
+
 .w-8 {
   width: 2rem;
+}
+
+.w-80 {
+  width: 20rem;
 }
 
 .w-9 {
@@ -1985,6 +2031,10 @@ dl dd span.block:last-child {
 
 .w-full {
   width: 100%;
+}
+
+.w-px {
+  width: 1px;
 }
 
 .min-w-0 {
@@ -2240,10 +2290,6 @@ dl dd span.block:last-child {
   align-items: stretch;
 }
 
-.justify-start {
-  justify-content: flex-start;
-}
-
 .justify-end {
   justify-content: flex-end;
 }
@@ -2423,6 +2469,10 @@ dl dd span.block:last-child {
   overflow-y: auto;
 }
 
+.overflow-x-hidden {
+  overflow-x: hidden;
+}
+
 .truncate {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2529,6 +2579,10 @@ dl dd span.block:last-child {
   border-left-width: 4px;
 }
 
+.border-r {
+  border-right-width: 1px;
+}
+
 .border-t {
   border-top-width: 1px;
 }
@@ -2604,11 +2658,6 @@ dl dd span.block:last-child {
 .border-gray-50 {
   --tw-border-opacity: 1;
   border-color: rgb(249 250 251 / var(--tw-border-opacity, 1));
-}
-
-.border-gray-700 {
-  --tw-border-opacity: 1;
-  border-color: rgb(55 65 81 / var(--tw-border-opacity, 1));
 }
 
 .border-green-100 {
@@ -2704,6 +2753,19 @@ dl dd span.block:last-child {
 .border-slate-300 {
   --tw-border-opacity: 1;
   border-color: rgb(203 213 225 / var(--tw-border-opacity, 1));
+}
+
+.border-slate-700\/50 {
+  border-color: rgb(51 65 85 / 0.5);
+}
+
+.border-slate-800 {
+  --tw-border-opacity: 1;
+  border-color: rgb(30 41 59 / var(--tw-border-opacity, 1));
+}
+
+.border-slate-800\/50 {
+  border-color: rgb(30 41 59 / 0.5);
 }
 
 .border-transparent {
@@ -2995,6 +3057,15 @@ dl dd span.block:last-child {
 
 .bg-slate-50\/50 {
   background-color: rgb(248 250 252 / 0.5);
+}
+
+.bg-slate-900 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(15 23 42 / var(--tw-bg-opacity, 1));
+}
+
+.bg-slate-900\/50 {
+  background-color: rgb(15 23 42 / 0.5);
 }
 
 .bg-teal-500 {
@@ -3477,6 +3548,10 @@ dl dd span.block:last-child {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
+.font-sans {
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
 .text-2xl {
   font-size: 1.5rem;
   line-height: 2rem;
@@ -3594,6 +3669,10 @@ dl dd span.block:last-child {
 
 .leading-tight {
   line-height: 1.25;
+}
+
+.tracking-\[0\.2em\] {
+  letter-spacing: 0.2em;
 }
 
 .tracking-tight {
@@ -4245,6 +4324,157 @@ dl dd span.block:last-child {
   }
 }
 
+/* =========================================
+   SIDEBAR V5 (TÉCNICA MAX-WIDTH - INFALIBLE)
+   ========================================= */
+
+/* 1. COMPORTAMIENTO GENERAL */
+
+#sidebar, #main-content, .nav-link, .logo-container {
+  transition: width 0.3s ease, padding 0.3s ease, margin 0.3s ease;
+}
+
+/* Configuración base de los textos para que puedan animarse */
+
+.sidebar-text, .group-title, .logo-text, .footer-text {
+  white-space: nowrap;
+  /* Obligatorio: El texto nunca baja de línea */
+  overflow: hidden;
+  /* Obligatorio: Lo que no cabe, se oculta */
+  opacity: 1;
+  max-width: 200px;
+  /* Ancho suficiente para el texto */
+  transition: all 0.3s ease-in-out;
+  /* La magia de la suavidad */
+}
+
+/* =========================================
+   2. ESTADO NORMAL (EXPANDIDO)
+   ========================================= */
+
+#sidebar {
+  width: 18rem;
+  /* w-72 */
+}
+
+/* =========================================
+   3. ESTADO COLAPSADO (MINIMIZADO)
+   ========================================= */
+
+#sidebar.is-collapsed {
+  width: 5rem !important;
+  /* 80px */
+}
+
+/* EN LUGAR DE QUITARLOS, LOS "APLASTAMOS" A CERO */
+
+#sidebar.is-collapsed .sidebar-text,
+#sidebar.is-collapsed .group-title,
+#sidebar.is-collapsed .logo-text,
+#sidebar.is-collapsed .footer-text {
+  max-width: 0 !important;
+  /* Ancho cero */
+  opacity: 0 !important;
+  /* Invisible */
+  margin: 0 !important;
+  /* Sin margen */
+  padding: 0 !important;
+  /* Sin relleno */
+}
+
+/* Centrar iconos perfectamente */
+
+#sidebar.is-collapsed .nav-link {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+#sidebar.is-collapsed .nav-link i {
+  margin-right: 0 !important;
+  /* Sin margen derecho */
+  font-size: 1.5rem;
+  /* Icono más grande */
+}
+
+#sidebar.is-collapsed .logo-container {
+  padding: 1.5rem 0.5rem;
+}
+
+/* =========================================
+   4. INTERACCIÓN HOVER (DESPLIEGUE)
+   ========================================= */
+
+@media (min-width: 768px) {
+  /* Al pasar el mouse por el sidebar colapsado */
+
+  #sidebar.is-collapsed:hover {
+    width: 18rem !important;
+    /* Vuelve a su tamaño original */
+    z-index: 9999;
+    box-shadow: 5px 0 30px rgba(0, 0, 0, 0.6);
+  }
+
+  /* RECUPERAR LOS TEXTOS (Hacer que "crezcan" de nuevo) */
+
+  #sidebar.is-collapsed:hover .sidebar-text,
+    #sidebar.is-collapsed:hover .group-title,
+    #sidebar.is-collapsed:hover .logo-text,
+    #sidebar.is-collapsed:hover .footer-text {
+    max-width: 200px !important;
+    /* Recuperan su espacio */
+    opacity: 1 !important;
+    /* Se vuelven visibles */
+    margin-left: 0;
+    visibility: visible !important;
+  }
+
+  /* Título de grupo visible de nuevo */
+
+  #sidebar.is-collapsed:hover .group-title {
+    margin-bottom: 0.5rem !important;
+    margin-top: 0.25rem !important;
+    padding-left: 1rem;
+  }
+
+  /* Restaurar alineación de botones */
+
+  #sidebar.is-collapsed:hover .nav-link {
+    justify-content: flex-start;
+    /* Alineados a la izquierda */
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+
+  /* Restaurar margen del icono para separarlo del texto */
+
+  #sidebar.is-collapsed:hover .nav-link i {
+    margin-right: 0.75rem !important;
+    font-size: 1.125rem;
+  }
+}
+
+/* Estilo Activo */
+
+.nav-link.active {
+  background: linear-gradient(90deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
+  color: white !important;
+  font-weight: 600;
+}
+
+.nav-link.active i {
+  color: white !important;
+}
+
+/* Ajuste Contenido Principal */
+
+@media (min-width: 768px) {
+  #main-content.is-shifted {
+    margin-left: 5rem !important;
+  }
+}
+
 .file\:mr-4::file-selector-button {
   margin-right: 1rem;
 }
@@ -4453,6 +4683,11 @@ dl dd span.block:last-child {
   border-color: rgb(203 213 225 / var(--tw-border-opacity, 1));
 }
 
+.hover\:border-slate-600:hover {
+  --tw-border-opacity: 1;
+  border-color: rgb(71 85 105 / var(--tw-border-opacity, 1));
+}
+
 .hover\:border-yellow-300:hover {
   --tw-border-opacity: 1;
   border-color: rgb(253 224 71 / var(--tw-border-opacity, 1));
@@ -4531,11 +4766,6 @@ dl dd span.block:last-child {
 .hover\:bg-gray-600:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(75 85 99 / var(--tw-bg-opacity, 1));
-}
-
-.hover\:bg-gray-700:hover {
-  --tw-bg-opacity: 1;
-  background-color: rgb(55 65 81 / var(--tw-bg-opacity, 1));
 }
 
 .hover\:bg-gray-800:hover {
@@ -4636,6 +4866,11 @@ dl dd span.block:last-child {
 .hover\:bg-slate-50:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(248 250 252 / var(--tw-bg-opacity, 1));
+}
+
+.hover\:bg-slate-800:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(30 41 59 / var(--tw-bg-opacity, 1));
 }
 
 .hover\:bg-teal-600:hover {
@@ -4980,6 +5215,11 @@ dl dd span.block:last-child {
   border-color: rgb(191 219 254 / var(--tw-border-opacity, 1));
 }
 
+.group:hover .group-hover\:border-blue-400 {
+  --tw-border-opacity: 1;
+  border-color: rgb(96 165 250 / var(--tw-border-opacity, 1));
+}
+
 .group:hover .group-hover\:border-indigo-100 {
   --tw-border-opacity: 1;
   border-color: rgb(224 231 255 / var(--tw-border-opacity, 1));
@@ -5034,6 +5274,11 @@ dl dd span.block:last-child {
   color: rgb(79 70 229 / var(--tw-text-opacity, 1));
 }
 
+.group:hover .group-hover\:text-blue-400 {
+  --tw-text-opacity: 1;
+  color: rgb(96 165 250 / var(--tw-text-opacity, 1));
+}
+
 .group:hover .group-hover\:text-blue-600 {
   --tw-text-opacity: 1;
   color: rgb(37 99 235 / var(--tw-text-opacity, 1));
@@ -5047,6 +5292,11 @@ dl dd span.block:last-child {
 .group:hover .group-hover\:text-emerald-500 {
   --tw-text-opacity: 1;
   color: rgb(16 185 129 / var(--tw-text-opacity, 1));
+}
+
+.group:hover .group-hover\:text-gray-500 {
+  --tw-text-opacity: 1;
+  color: rgb(107 114 128 / var(--tw-text-opacity, 1));
 }
 
 .group:hover .group-hover\:text-gray-600 {
@@ -5184,6 +5434,10 @@ dl dd span.block:last-child {
     margin-left: 1rem;
   }
 
+  .sm\:mr-2 {
+    margin-right: 0.5rem;
+  }
+
   .sm\:mt-0 {
     margin-top: 0px;
   }
@@ -5216,10 +5470,6 @@ dl dd span.block:last-child {
     height: 100vh;
   }
 
-  .sm\:max-h-\[600px\] {
-    max-height: 600px;
-  }
-
   .sm\:w-72 {
     width: 18rem;
   }
@@ -5228,8 +5478,8 @@ dl dd span.block:last-child {
     width: 20rem;
   }
 
-  .sm\:w-\[500px\] {
-    width: 500px;
+  .sm\:w-96 {
+    width: 24rem;
   }
 
   .sm\:w-auto {
@@ -5304,6 +5554,11 @@ dl dd span.block:last-child {
     padding: 1.5rem;
   }
 
+  .sm\:px-4 {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
   .sm\:px-6 {
     padding-left: 1.5rem;
     padding-right: 1.5rem;
@@ -5337,6 +5592,11 @@ dl dd span.block:last-child {
     vertical-align: middle;
   }
 
+  .sm\:text-lg {
+    font-size: 1.125rem;
+    line-height: 1.75rem;
+  }
+
   .sm\:text-sm {
     font-size: 0.875rem;
     line-height: 1.25rem;
@@ -5368,6 +5628,10 @@ dl dd span.block:last-child {
     margin-top: 0px;
   }
 
+  .md\:block {
+    display: block;
+  }
+
   .md\:flex {
     display: flex;
   }
@@ -5380,8 +5644,16 @@ dl dd span.block:last-child {
     display: none;
   }
 
+  .md\:h-11 {
+    height: 2.75rem;
+  }
+
   .md\:w-1\/3 {
     width: 33.333333%;
+  }
+
+  .md\:w-11 {
+    width: 2.75rem;
   }
 
   .md\:w-auto {
@@ -5443,6 +5715,10 @@ dl dd span.block:last-child {
 
   .md\:items-center {
     align-items: center;
+  }
+
+  .md\:gap-6 {
+    gap: 1.5rem;
   }
 
   .md\:space-x-8 > :not([hidden]) ~ :not([hidden]) {

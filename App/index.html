@@ -125,194 +125,279 @@
 
     <div id="app-container" class="hidden">
         <div id="sidebar"
-            class="fixed top-0 left-0 h-full bg-gray-800 text-white w-64 p-4 transform -translate-x-full md:translate-x-0 transition-all z-30 flex flex-col">
-            <div class="sidebar-content">
+            class="fixed top-0 left-0 h-full bg-slate-900 text-slate-300 w-72 transform -translate-x-full md:translate-x-0 transition-transform duration-300 z-30 flex flex-col shadow-2xl border-r border-slate-800 font-sans">
 
-                <h2 class="text-2xl font-bold mb-6 text-center">
-                    <span class="full-title">
-                        <span class="text-blue-400">V</span>idrios <span class="text-yellow-400">E</span>xito
-                    </span>
-                    <span class="initials-title">
-                        <span class="text-blue-400">V</span><span class="text-yellow-400">E</span>
-                    </span>
-                </h2>
-                <nav id="main-nav">
-                    <ul class="space-y-2">
-                        <li>
-                            <a href="#" id="dashboard-general-nav-link"
-                                class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
-                                data-view="dashboard-general">
-                                <i class="fa-solid fa-chart-line h-6 w-6 mr-4 flex-shrink-0"></i>
-                                <span class="whitespace-nowrap sidebar-text">Dashboard</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="#" id="proyectos-nav-link"
-                                class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
-                                data-view="proyectos">
-                                <i class="fa-solid fa-house h-6 w-6 mr-4 flex-shrink-0"></i>
-                                <span class="whitespace-nowrap sidebar-text">Proyectos</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
-                                data-view="tareas">
-                                <i class="fa-solid fa-list-check h-6 w-6 mr-4 flex-shrink-0"></i>
-                                <span class="whitespace-nowrap sidebar-text">Tareas Asignadas</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
-                                data-view="herramienta">
-                                <i class="fa-solid fa-toolbox h-6 w-6 mr-4 flex-shrink-0"></i>
-                                <span class="whitespace-nowrap sidebar-text">Herramienta</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
-                                data-view="dotacion">
-                                <i class="fa-solid fa-hard-hat h-6 w-6 mr-4 flex-shrink-0"></i>
-                                <span class="whitespace-nowrap sidebar-text">Dotación</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="#" data-view="cartera"
-                                class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700">
-                                <i class="fa-solid fa-wallet h-6 w-6 mr-4 flex-shrink-0"></i>
-                                <span class="whitespace-nowrap sidebar-text">Cartera</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
-                                data-view="solicitud">
-                                <i class="fa-solid fa-file-lines h-6 w-6 mr-4 flex-shrink-0"></i>
-                                <span class="whitespace-nowrap sidebar-text">Solicitud de Material</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
-                                data-view="empleados">
-                                <i class="fa-solid fa-users h-6 w-6 mr-4 flex-shrink-0"></i>
-                                <span class="whitespace-nowrap sidebar-text">Empleados</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
-                                data-view="proveedores">
-                                <i class="fa-solid fa-truck-fast h-6 w-6 mr-4 flex-shrink-0"></i>
-                                <span class="whitespace-nowrap sidebar-text">Proveedores</span>
-                            </a>
-                        </li>
-                        <li id="inventory-nav-link" class="hidden">
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
-                                data-view="catalog">
-                                <i class="fa-solid fa-boxes-stacked h-6 w-6 mr-4 flex-shrink-0"></i>
-                                <span class="whitespace-nowrap sidebar-text">Catálogo de Materiales</span>
-                            </a>
-                        </li>
-                        <li id="compras-nav-link" class="hidden">
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
-                                data-view="compras">
-                                <i class="fa-solid fa-cart-shopping h-6 w-6 mr-4 flex-shrink-0"></i>
-                                <span class="whitespace-nowrap sidebar-text">Órdenes de Compra</span>
-                            </a>
-                        </li>
-                        <li id="reports-nav-link" class="hidden">
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
-                                data-view="reports">
-                                <i class="fa-solid fa-chart-pie h-6 w-6 mr-4 flex-shrink-0"></i>
-                                <span class="whitespace-nowrap sidebar-text">Reportes</span>
-                            </a>
-                        </li>
-                        <li id="admin-nav-link" class="hidden">
-                            <a href="#" class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
-                                data-view="adminPanel">
-                                <i class="fa-solid fa-user-gear h-6 w-6 mr-4 flex-shrink-0"></i>
-                                <span class="whitespace-nowrap sidebar-text">Gestionar Usuarios</span>
-                            </a>
-                        </li>
-                        <li class="admin-nav-item">
-                            <a href="#" id="configuracion-nav-link"
-                                class="nav-link flex items-center py-2 px-4 rounded hover:bg-gray-700"
-                                data-view="configuracion">
-                                <i class="fa-solid fa-cogs h-6 w-6 mr-4 flex-shrink-0"></i>
-                                <span class="whitespace-nowrap sidebar-text">Configuración</span>
-                            </a>
-                        </li>
-                        <li class="mt-auto"></li>
-                    </ul>
-                </nav>
+            <div
+                class="logo-container p-6 flex flex-col items-center justify-center border-b border-slate-800/50 min-h-[100px]">
+                <div class="logo-text text-center transition-all duration-200 opacity-100">
+                    <h2 class="text-2xl font-bold text-white tracking-tight">Vidrios <span
+                            class="text-blue-500">Exito</span></h2>
+                    <p class="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mt-1">Panel de Gestión</p>
+                </div>
+                <div class="logo-icon-collapsed hidden text-blue-500 text-xl font-bold">VE</div>
             </div>
 
-            <div class="mt-auto pt-4 border-t border-gray-700">
+            <nav id="main-nav" class="flex-1 overflow-y-auto sidebar-scroll py-6 px-3 space-y-1 overflow-x-hidden">
+
+                <p
+                    class="group-title px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 mt-1 transition-opacity">
+                    Principal</p>
+
+                <ul class="space-y-1 mb-6">
+                    <li>
+                        <a href="#" id="dashboard-general-nav-link"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="dashboard-general">
+                            <i
+                                class="fa-solid fa-chart-pie text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                            <span class="sidebar-text text-sm font-medium">Dashboard</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" id="proyectos-nav-link"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="proyectos">
+                            <i
+                                class="fa-solid fa-city text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                            <span class="sidebar-text text-sm font-medium">Proyectos</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="tareas">
+                            <i
+                                class="fa-solid fa-list-check text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                            <span class="sidebar-text text-sm font-medium">Mis Tareas</span>
+                        </a>
+                    </li>
+                </ul>
+
+                <p
+                    class="group-title px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 transition-opacity">
+                    Operativo</p>
+
+                <ul class="space-y-1 mb-6">
+                    <li>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="herramienta">
+                            <i
+                                class="fa-solid fa-screwdriver-wrench text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                            <span class="sidebar-text text-sm font-medium">Herramienta</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="dotacion">
+                            <i
+                                class="fa-solid fa-vest text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                            <span class="sidebar-text text-sm font-medium">Dotación</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="solicitud">
+                            <i
+                                class="fa-solid fa-dolly text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                            <span class="sidebar-text text-sm font-medium">Solicitar Material</span>
+                        </a>
+                    </li>
+                </ul>
+
+                <p
+                    class="group-title px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 admin-only-label transition-opacity">
+                    Administración</p>
+
+                <ul class="space-y-1 mb-8">
+                    <li>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="empleados">
+                            <i
+                                class="fa-solid fa-users-gear text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                            <span class="sidebar-text text-sm font-medium">Empleados</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="cartera">
+                            <i
+                                class="fa-solid fa-wallet text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                            <span class="sidebar-text text-sm font-medium">Cartera</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="proveedores">
+                            <i
+                                class="fa-solid fa-truck-fast text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                            <span class="sidebar-text text-sm font-medium">Proveedores</span>
+                        </a>
+                    </li>
+
+                    <li id="inventory-nav-link" class="hidden">
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="catalog">
+                            <i
+                                class="fa-solid fa-boxes-stacked text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                            <span class="sidebar-text text-sm font-medium">Catálogo</span>
+                        </a>
+                    </li>
+                    <li id="compras-nav-link" class="hidden">
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="compras">
+                            <i
+                                class="fa-solid fa-file-invoice-dollar text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                            <span class="sidebar-text text-sm font-medium">Órdenes Compra</span>
+                        </a>
+                    </li>
+                    <li id="reports-nav-link" class="hidden">
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="reports">
+                            <i
+                                class="fa-solid fa-chart-line text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                            <span class="sidebar-text text-sm font-medium">Reportes</span>
+                        </a>
+                    </li>
+                    <li id="admin-nav-link" class="hidden">
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="adminPanel">
+                            <i
+                                class="fa-solid fa-user-shield text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                            <span class="sidebar-text text-sm font-medium">Usuarios</span>
+                        </a>
+                    </li>
+
+                    <li class="admin-nav-item">
+                        <a href="#" id="configuracion-nav-link"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="configuracion">
+                            <i
+                                class="fa-solid fa-gears text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                            <span class="sidebar-text text-sm font-medium">Configuración</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+
+            <div class="mt-auto p-4 border-t border-slate-800 bg-slate-900/50">
+
                 <button id="sidebar-toggle-btn" data-action="toggle-sidebar"
-                    class="w-full flex items-center justify-start py-2 px-4 rounded hover:bg-gray-700 text-gray-400 md:hidden">
-                    <i class="fa-solid fa-angles-left h-6 w-6 mr-3 transition-transform"></i>
-                    <span class="sidebar-text">Ocultar Menú</span>
+                    class="md:hidden w-full flex items-center justify-center px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all border border-slate-700/50 hover:border-slate-600">
+                    <i class="fa-solid fa-arrow-right-to-bracket rotate-180 mr-2 transition-transform sidebar-icon"></i>
+                    <span class="footer-text font-medium text-sm whitespace-nowrap">Ocultar</span>
                 </button>
+
+                <p class="footer-text text-[10px] text-slate-600 text-center font-mono mt-3">v2.5.0</p>
             </div>
         </div>
 
 
-
         <div id="main-content" class="md:ml-64 transition-all p-4 md:p-8">
-            <header class="flex justify-between items-center mb-6">
+            <header class="flex justify-between items-center mb-8">
+
                 <div class="flex items-center">
-                    <button id="menu-toggle-btn" data-action="toggle-menu" class="md:hidden text-gray-600 mr-4">
+                    <button id="menu-toggle-btn" data-action="toggle-menu"
+                        class="md:hidden text-gray-500 hover:text-gray-700 focus:outline-none p-2 rounded-md hover:bg-gray-100 transition-colors">
                         <i class="fa-solid fa-bars h-6 w-6"></i>
                     </button>
-                    <div id="user-info-container" class="flex items-center gap-3">
-
-                        <div
-                            class="flex-shrink-0 w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center text-white font-bold overflow-hidden border-2 border-white shadow">
-                            <img id="header-profile-photo" src="" alt="Foto" class="hidden w-full h-full object-cover">
-                            <span id="header-profile-initials" class="text-lg"></span>
-                        </div>
-
-                        <div>
-                            <span id="user-info-name" class="block text-sm font-bold text-gray-900">Cargando...</span>
-                            <span id="user-info-role" class="block text-xs font-semibold text-blue-800">...</span>
-                        </div>
-                    </div>
                 </div>
 
-                <div class="relative flex items-center space-x-4 w-full md:w-auto justify-end">
-                    <div>
+                <div class="flex items-center gap-3 md:gap-6">
+
+                    <button data-action="report-entry"
+                        class="flex bg-white text-emerald-600 hover:bg-emerald-50 border border-emerald-200 font-bold py-2 px-3 sm:px-4 rounded-full shadow-sm hover:shadow-md transition-all items-center text-sm">
+                        <i class="fa-solid fa-id-badge text-xl sm:text-lg sm:mr-2"></i>
+                        <span class="hidden sm:inline">Ingreso</span>
+                    </button>
+
+                    <div class="relative">
                         <button id="notifications-btn"
-                            class="relative text-gray-600 hover:text-gray-800 focus:outline-none">
+                            class="relative p-2 text-gray-400 hover:text-blue-600 transition-colors focus:outline-none">
                             <i class="fa-solid fa-bell h-6 w-6"></i>
                             <span id="notification-badge"
-                                class="absolute top-0 right-0 h-2 w-2 bg-red-500 rounded-full hidden"></span>
-                        </button>                    
+                                class="absolute top-1 right-1 h-2.5 w-2.5 bg-red-500 border-2 border-gray-50 rounded-full hidden"></span>
+                        </button>
 
                         <div id="notifications-dropdown"
-                            class="hidden absolute mt-2 w-full right-0 sm:w-[500px] bg-white rounded-md shadow-lg z-20 flex flex-col max-h-[80vh] sm:max-h-[600px]">
-                            <div class="flex-shrink-0">
-                                <p class="px-4 py-3 text-base font-semibold text-gray-900 border-b">Notificaciones</p>
+                            class="hidden absolute top-full right-0 mt-3 w-80 sm:w-96 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden origin-top-right transform transition-all">
+                            <div class="px-5 py-4 bg-white border-b border-gray-50 flex justify-between items-center">
+                                <p class="text-sm font-bold text-gray-800">Tus Notificaciones</p>
                             </div>
-
-                            <ul id="notifications-list" class="divide-y divide-gray-100 overflow-y-auto">
+                            <ul id="notifications-list" class="divide-y divide-gray-50 max-h-[60vh] overflow-y-auto">
                             </ul>
                         </div>
                     </div>
 
-                    <button id="profile-btn" data-action="edit-profile"
-                        class="text-gray-600 hover:text-gray-800 focus:outline-none">
-                        <i class="fa-solid fa-user h-6 w-6"></i>
-                    </button>
+                    <div class="h-6 w-px bg-gray-300 hidden md:block opacity-50"></div>
 
-                    <button 
-                        type="button"
-                        data-action="report-entry" 
-                        class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-lg shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
-                    >
-                    <i class="fa-solid fa-id-badge text-lg"></i>
-                    <span>Reportar Ingreso</span>
-                    </button>
+                    <div class="relative" id="user-menu-container">
+                        <button id="user-menu-btn" class="flex items-center gap-3 focus:outline-none group">
+                            <div class="text-right hidden md:block">
+                                <p id="header-user-name"
+                                    class="text-sm font-bold text-gray-700 group-hover:text-blue-600 transition-colors">
+                                    Cargando...</p>
+                                <p id="header-user-role"
+                                    class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">...</p>
+                            </div>
 
-                    <button data-action="logout"
-                        class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg">Cerrar
-                        Sesión</button>
+                            <div class="relative">
+                                <div
+                                    class="h-10 w-10 md:h-11 md:w-11 rounded-full bg-white border-2 border-gray-200 shadow-sm overflow-hidden flex items-center justify-center text-gray-400 text-lg font-bold group-hover:border-blue-400 transition-all">
+                                    <img id="header-profile-photo" src="" alt="Perfil"
+                                        class="hidden h-full w-full object-cover">
+                                    <span id="header-profile-initials">U</span>
+                                </div>
+                                <div
+                                    class="absolute bottom-0.5 right-0.5 h-3 w-3 bg-green-500 border-2 border-white rounded-full">
+                                </div>
+                            </div>
+
+                            <i
+                                class="fa-solid fa-chevron-down text-gray-300 text-xs group-hover:text-gray-500 transition-colors ml-1"></i>
+                        </button>
+
+                        <div id="user-dropdown"
+                            class="hidden absolute top-full right-0 mt-3 w-60 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 py-2 origin-top-right">
+
+                            <div class="px-5 py-4 border-b border-gray-50 md:hidden bg-gray-50 mb-2">
+                                <p class="text-sm font-bold text-gray-800" id="mobile-user-name">Usuario</p>
+                                <p class="text-xs text-gray-500 truncate" id="mobile-user-email">...</p>
+                            </div>
+
+                            <div class="px-2 space-y-1">
+                                <button id="profile-btn" data-action="edit-profile"
+                                    class="w-full text-left px-3 py-2.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors flex items-center gap-3 font-medium">
+                                    <div
+                                        class="w-8 h-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center">
+                                        <i class="fa-solid fa-user-gear"></i></div>
+                                    Mi Perfil
+                                </button>
+
+                            </div>
+
+                            <div class="border-t border-gray-100 my-2 mx-2"></div>
+
+                            <div class="px-2 pb-1">
+                                <button data-action="logout"
+                                    class="w-full text-left px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-3 font-bold">
+                                    <div
+                                        class="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
+                                        <i class="fa-solid fa-power-off"></i></div>
+                                    Cerrar Sesión
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </header>
 

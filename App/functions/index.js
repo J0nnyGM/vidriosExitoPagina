@@ -1,6 +1,8 @@
 const functions = require("firebase-functions");
+const admin = require("firebase-admin");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { initializeApp, getApps } = require("firebase-admin/app");
+const { getMessaging } = require("firebase-admin/messaging");
 
 // Importaciones para la sintaxis v2
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
@@ -2072,5 +2074,96 @@ exports.updateDotacionHistoryStats = onDocumentWritten("dotacionHistory/{history
     } catch (error) {
         console.error("Error al actualizar estadísticas de Dotación (Asignado):", error.message);
         return null;
+    }
+});
+
+/**
+ * Función programada para las 8:30 AM hora Colombia.
+ * Revisa quién no ha marcado ingreso desde la 1:00 AM y envía alerta.
+ * APLICA PARA TODOS LOS USUARIOS ACTIVOS.
+ */
+exports.checkLateEntries = onSchedule({
+    schedule: "30 8 * * *", // 8:30 AM todos los días
+    timeZone: "America/Bogota",
+}, async (event) => {
+    console.log("Iniciando verificación de llegadas tarde (8:30 AM) - PARA TODOS...");
+    
+    const now = new Date();
+    // Definimos el inicio del turno operativo de hoy (1:00 AM)
+    const startOfDay = new Date(now);
+    startOfDay.setHours(1, 0, 0, 0); 
+
+    try {
+        // 1. Obtener TODOS los usuarios activos (SIN importar el rol)
+        const usersSnapshot = await db.collection("users")
+            .where("status", "==", "active")
+            // .where("role", "==", "operario") <--- ESTA LÍNEA FUE ELIMINADA
+            .get();
+
+        const notificationsBatch = db.batch();
+        const messagingPromises = [];
+        let lateCount = 0;
+
+        // 2. Verificar cada usuario
+        for (const userDoc of usersSnapshot.docs) {
+            const userId = userDoc.id;
+            const userData = userDoc.data();
+
+            // Opcional: Si en el futuro quieres excluir solo al 'admin' supremo, puedes descomentar esto:
+            // if (userData.role === 'admin') continue; 
+
+            // Buscar si tiene un reporte de ingreso DESPUÉS de la 1:00 AM de hoy
+            const reportsSnapshot = await db.collection("users").doc(userId).collection("attendance_reports")
+                .where("type", "==", "ingreso")
+                .where("timestamp", ">=", startOfDay)
+                .limit(1)
+                .get();
+
+            // Si NO tiene reportes, llegó tarde
+            if (reportsSnapshot.empty) {
+                lateCount++;
+                console.log(`Usuario ${userData.firstName || userId} (${userData.role}) no ha marcado ingreso.`);
+
+                // A. Crear notificación en la base de datos (Campanita)
+                const notifRef = db.collection("notifications").doc();
+                notificationsBatch.set(notifRef, {
+                    userId: userId,
+                    title: "⚠️ Alerta de Asistencia",
+                    message: "No has registrado tu ingreso hoy (Corte 8:30 AM). Por favor reporta tu ubicación.",
+                    type: "late_entry_alert",
+                    read: false,
+                    createdAt: FieldValue.serverTimestamp(),
+                    link: "/dashboard-general"
+                });
+
+                // B. Enviar Notificación Push al celular (si tiene token)
+                if (userData.fcmToken) {
+                    const message = {
+                        notification: {
+                            title: "⚠️ Reporte Pendiente",
+                            body: "Son las 8:30 AM y no has registrado tu ingreso. Toca aquí para reportar."
+                        },
+                        token: userData.fcmToken,
+                        data: {
+                            url: "/dashboard-general"
+                        }
+                    };
+                    messagingPromises.push(getMessaging().send(message).catch(e => console.error(`Error push a ${userId}:`, e.message)));
+                }
+            }
+        }
+
+        // 3. Ejecutar escrituras en DB y envíos Push
+        if (lateCount > 0) {
+            await notificationsBatch.commit();
+            await Promise.all(messagingPromises);
+        }
+
+        console.log(`Verificación completada. ${lateCount} usuarios marcados como tarde.`);
+        return { success: true, lateCount };
+
+    } catch (error) {
+        console.error("Error en checkLateEntries:", error);
+        return { success: false, error: error.message };
     }
 });

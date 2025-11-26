@@ -537,102 +537,112 @@ function showView(viewName, fromHistory = false) {
 onAuthStateChanged(auth, async (user) => {
     if (user) {
         const userDoc = await getDoc(doc(db, "users", user.uid));
+        
+        // Verificamos que el usuario exista y esté activo
         if (userDoc.exists() && userDoc.data().status === 'active') {
             currentUser = user;
             const userData = userDoc.data();
             currentUserRole = userData.role;
 
-            // --- INICIO DE MODIFICACIÓN (Lógica de Carga y Redirección) ---
-
-            // 1. Cargamos el mapa de usuarios PRIMERO
+            // 1. Cargar mapa de usuarios (Necesario para nombres y referencias)
             await loadUsersMap();
 
-            // 2. Configurar la Interfaz de Usuario (Perfil)
+            // --- INICIO: LÓGICA UI HEADER (NUEVO DISEÑO) ---
             const nombre = userData.firstName || 'Usuario';
             const apellido = userData.lastName || '';
             const rolFormateado = currentUserRole.charAt(0).toUpperCase() + currentUserRole.slice(1);
-            const profilePhotoURL = userData.profilePhotoURL || null; // Foto de perfil
+            const profilePhotoURL = userData.profilePhotoURL || null;
             const initials = `${nombre.charAt(0)}${apellido.charAt(0) || ''}`.toUpperCase();
 
-            // (Actualizamos los nuevos elementos del DOM de la cabecera)
-            const nameEl = document.getElementById('user-info-name');
-            const roleEl = document.getElementById('user-info-role');
+            // Referencias a los elementos del nuevo header
+            const nameEl = document.getElementById('header-user-name');
+            const roleEl = document.getElementById('header-user-role');
             const photoEl = document.getElementById('header-profile-photo');
             const initialsEl = document.getElementById('header-profile-initials');
+            
+            // Referencias para el menú móvil (dentro del dropdown)
+            const mobileNameEl = document.getElementById('mobile-user-name');
+            const mobileEmailEl = document.getElementById('mobile-user-email');
 
+            // Actualizar textos
             if (nameEl) nameEl.textContent = `${nombre} ${apellido}`;
             if (roleEl) roleEl.textContent = rolFormateado;
+            if (mobileNameEl) mobileNameEl.textContent = `${nombre} ${apellido}`;
+            if (mobileEmailEl) mobileEmailEl.textContent = userData.email;
+
+            // Actualizar Foto o Iniciales
             if (photoEl && initialsEl) {
                 if (profilePhotoURL) {
                     photoEl.src = profilePhotoURL;
                     photoEl.classList.remove('hidden');
                     initialsEl.classList.add('hidden');
+                    // Quitar fondo gris si hay foto
+                    if(photoEl.parentElement) photoEl.parentElement.classList.remove('bg-gray-200');
                 } else {
                     photoEl.classList.add('hidden');
                     initialsEl.textContent = initials;
                     initialsEl.classList.remove('hidden');
+                    // Poner fondo gris si son letras
+                    if(photoEl.parentElement) photoEl.parentElement.classList.add('bg-gray-200');
                 }
             }
+            // --- FIN: LÓGICA UI HEADER ---
 
-            // 3. (CORRECCIÓN CLAVE) Esperamos a que la huella facial esté lista
+
+            // 2. Generar huella facial para validación (Biometría)
             if (profilePhotoURL) {
-                // Usamos 'await' y guardamos el resultado en la variable global
-                currentUserFaceDescriptor = await generateProfileFaceDescriptor(profilePhotoURL);
+                try {
+                    // Usamos await para asegurar que esté listo antes de que el usuario intente validar
+                    currentUserFaceDescriptor = await generateProfileFaceDescriptor(profilePhotoURL);
+                } catch (e) {
+                    console.warn("No se pudo generar el descriptor facial:", e);
+                    currentUserFaceDescriptor = null;
+                }
             } else {
-                console.warn("Usuario no tiene foto de perfil. El reconocimiento facial se saltará.");
+                console.warn("Usuario sin foto. Reconocimiento facial deshabilitado.");
                 currentUserFaceDescriptor = null;
             }
 
-            // 4. AHORA SÍ mostramos la aplicación
+            // 3. Mostrar la aplicación
             authContainer.classList.add('hidden');
             appContainer.classList.remove('hidden');
 
-            // 2. Cargar datos globales (usuarios)
-            const qUsers = query(collection(db, 'users'));
-            const usersSnapshot = await getDocs(qUsers);
-            usersMap.clear();
-            usersSnapshot.forEach(doc => {
-                usersMap.set(doc.id, { id: doc.id, ...doc.data() });
-            });
-            console.log("Mapa de usuarios cargado:", usersMap.size);
-
-            // --- INICIO DE BLOQUE AÑADIDO (O VERIFICADO) ---
-            // 3. Cargar configuración global de nómina
+            // 4. Cargar configuración de nómina
             try {
                 const payrollConfigRef = doc(db, "system", "payrollConfig");
                 const payrollConfigSnap = await getDoc(payrollConfigRef);
                 if (payrollConfigSnap.exists()) {
                     payrollConfig = payrollConfigSnap.data();
-                    console.log("Configuración de nómina cargada:", payrollConfig);
                 } else {
-                    console.warn("¡CONFIGURACIÓN DE NÓMINA NO ENCONTRADA!");
-                    payrollConfig = {}; // Dejarlo vacío para evitar errores
+                    payrollConfig = {}; // Prevenir errores si no existe
                 }
             } catch (error) {
-                console.error("Error al cargar configuración de nómina:", error);
+                console.error("Error cargando nómina:", error);
                 payrollConfig = {};
             }
 
-            // 5. Configurar Visibilidad de Pestañas (Sistema Híbrido: Rol + Personalizado)
-            // Recuperamos los permisos personalizados guardados en el usuario
+            // 5. Aplicar permisos de visualización (Sidebar)
             const userCustomPermissions = userData.customPermissions || {};
             applySidebarPermissions(currentUserRole, userCustomPermissions);
 
-            // 6. Mostrar la Vista por Defecto (Redirección por Rol)
+            // 6. Cargar vista inicial y notificaciones
             showGeneralDashboard();
-
             requestNotificationPermission();
-            loadNotifications(); // <-- ¡Esta es la línea que faltaba!
+            loadNotifications();
 
         } else {
+            // Si el usuario no está activo o no existe, cerrar sesión forzada
             await signOut(auth);
         }
     } else {
+        // Si no hay usuario logueado
         currentUser = null;
         currentUserRole = null;
         authContainer.classList.remove('hidden');
         appContainer.classList.add('hidden');
     }
+    
+    // Ocultar loader al finalizar todo el proceso
     loadingOverlay.classList.add('hidden');
 });
 
@@ -11496,7 +11506,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const notificationsBtn = document.getElementById('notifications-btn');
-    const notificationsDropdown = document.getElementById('notifications-dropdown');
     const profileBtn = document.getElementById('profile-btn');
 
     if (notificationsBtn) {
@@ -11525,23 +11534,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
     const mainNav = document.getElementById('main-nav');
 
-    function initializeDesktopSidebar() {
-        if (window.innerWidth >= 768 && sidebar && mainContent) {
-            mainContent.classList.add('is-shifted');
-            sidebar.classList.add('is-collapsed');
-        }
+function initializeDesktopSidebar() {
+    // Si es pantalla de escritorio (>= 768px)
+    if (window.innerWidth >= 768 && sidebar && mainContent) {
+        // Forzar estado colapsado por defecto
+        sidebar.classList.add('is-collapsed'); 
+        mainContent.classList.add('is-shifted');
     }
+}
 
-    if (window.innerWidth >= 768 && sidebar) {
-        sidebar.addEventListener('mouseenter', () => {
-            if (sidebar.classList.contains('is-collapsed')) {
-                sidebar.classList.add('is-expanded-hover');
-            }
-        });
-        sidebar.addEventListener('mouseleave', () => {
-            sidebar.classList.remove('is-expanded-hover');
-        });
-    }
+
 
     if (mainNav) {
         mainNav.addEventListener('click', (e) => {
@@ -12212,6 +12214,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     // --- FIN DE CORRECCIÓN ---
+
+    // Lógica del Menú de Usuario (Dropdown)
+    const userMenuBtn = document.getElementById('user-menu-btn');
+    const userDropdown = document.getElementById('user-dropdown');
+    const notificationsDropdown = document.getElementById('notifications-dropdown');
+
+    if (userMenuBtn && userDropdown) {
+        // Toggle al hacer clic
+        userMenuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            userDropdown.classList.toggle('hidden');
+            // Cerrar notificaciones si está abierto para evitar superposición
+            if (notificationsDropdown) notificationsDropdown.classList.add('hidden');
+        });
+
+        // Cerrar al hacer clic fuera
+        document.addEventListener('click', (e) => {
+            if (!userMenuBtn.contains(e.target) && !userDropdown.contains(e.target)) {
+                userDropdown.classList.add('hidden');
+            }
+        });
+    }
 });
 
 // ====================================================================
