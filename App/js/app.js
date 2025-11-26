@@ -14,6 +14,7 @@ import { initConfiguracion, loadConfiguracionView } from './configuracion.js';
 import { initCartera, loadCarteraView } from "./cartera.js";
 import { initSolicitudes, loadSolicitudesView } from './solicitudes.js';
 import { handleReportEntry } from './ingresopersonal.js';
+
 // --- CONFIGURACIÓN Y ESTADO ---
 
 const firebaseConfig = {
@@ -277,18 +278,16 @@ let modelsLoaded = false; // <-- AÑADE ESTA LÍNEA
 async function loadFaceAPImodels() {
     console.log("Cargando modelos de reconocimiento facial...");
     try {
-        // Cargamos TODOS los modelos necesarios en paralelo
         await Promise.all([
-            // Cargamos el SsdMobilenetv1 (el que da el error)
-            faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
-            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-            // Nota: Ya no necesitamos tinyFaceDetector si usamos SsdMobilenetv1
+            // Cargar estos 3 modelos obligatoriamente
+            faceapi.nets.ssdMobilenetv1.loadFromUri('models'),
+            faceapi.nets.faceLandmark68Net.loadFromUri('models'),
+            faceapi.nets.faceRecognitionNet.loadFromUri('models')
         ]);
-        console.log("Modelos de face-api.js cargados exitosamente.");
-        modelsLoaded = true; // <-- AÑADE ESTA LÍNEA
+        console.log("Modelos cargados.");
+        modelsLoaded = true;
     } catch (error) {
-        console.error("Error crítico: No se pudieron cargar los modelos de face-api.js:", error);
+        console.error("Error cargando IA:", error);
     }
 }
 
@@ -11680,10 +11679,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (action === 'report-entry') {
                 e.preventDefault();
-                // --- CAMBIO AQUÍ: Pasamos los parámetros necesarios ---
-                const userProfile = usersMap.get(currentUser.uid); // Obtenemos perfil del mapa global
+                // Obtenemos el perfil completo del usuario para tener su foto
+                const userProfile = usersMap.get(currentUser.uid);
+                // Llamamos a la función importada
                 handleReportEntry(db, storage, currentUser, userProfile, openMainModal, closeMainModal);
-                // -----------------------------------------------------
             }
         });
     }

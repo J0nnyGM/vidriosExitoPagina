@@ -1,33 +1,25 @@
-// App/js/ingresopersonal.js
-
 import { collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 
 let videoStream = null;
 
 /**
- * Inicia el flujo de reporte de ingreso.
- * @param {Object} db - Instancia de Firestore.
- * @param {Object} storage - Instancia de Storage.
- * @param {Object} currentUser - Usuario autenticado de Firebase Auth.
- * @param {Object} userProfile - Datos del usuario (Firestore) incluyendo foto de perfil y descriptor.
- * @param {Function} openMainModalFunc - Función global para abrir el modal.
- * @param {Function} closeMainModalFunc - Función global para cerrar el modal.
+ * Inicia el flujo de reporte de ingreso con validación facial y GPS.
  */
 export async function handleReportEntry(db, storage, currentUser, userProfile, openMainModalFunc, closeMainModalFunc) {
     
-    // 1. Validaciones iniciales
+    // 1. Validaciones previas
     if (!currentUser || !userProfile) {
-        alert("Error: No se detecta una sesión activa o perfil de usuario.");
+        alert("Error: No se detecta una sesión activa.");
         return;
     }
 
     if (!userProfile.profilePhotoURL) {
-        alert("⚠️ Error: No tienes una foto de perfil registrada. Por favor, edita tu perfil y sube una selfie clara.");
+        alert("⚠️ Error: No tienes una foto de perfil registrada. Por favor sube una selfie en 'Mi Perfil' para poder validar tu identidad.");
         return;
     }
 
-    // 2. Preparar el Modal
+    // 2. Inyectar HTML del Modal (Diseño limpio)
     const modalBodyHTML = `
         <div class="flex flex-col items-center justify-center space-y-6 py-4">
             <div class="relative w-64 h-64 sm:w-80 sm:h-80 bg-black rounded-full overflow-hidden shadow-2xl border-4 border-emerald-500 ring-4 ring-emerald-100">
@@ -53,27 +45,23 @@ export async function handleReportEntry(db, storage, currentUser, userProfile, o
             </div>
             
             <div class="text-[10px] text-slate-400 text-center mt-2">
-                <i class="fa-solid fa-location-dot mr-1"></i> Se registrará tu ubicación actual y biometría.
+                <i class="fa-solid fa-location-dot mr-1"></i> Se registrará tu ubicación y biometría.
             </div>
         </div>
     `;
 
-    // Usamos el modal genérico de la app
-    // Hack: Modificamos el título manualmente antes de llamar a openMainModal si es necesario, 
-    // o pasamos un tipo dummy si openMainModal maneja lógica específica.
+    // Configurar Modal usando los elementos existentes en tu HTML
     const modalTitle = document.getElementById('modal-title');
     const modalBody = document.getElementById('modal-body');
-    const modalFooter = document.getElementById('main-modal-footer'); // Ocultamos el footer por defecto
+    const modalFooter = document.getElementById('main-modal-footer'); 
     
     if(modalTitle) modalTitle.textContent = "📸 Validación de Ingreso";
     if(modalBody) modalBody.innerHTML = modalBodyHTML;
-    if(modalFooter) modalFooter.style.display = 'none';
+    if(modalFooter) modalFooter.style.display = 'none'; // Ocultamos footer por defecto
     
-    // Mostrar el modal
-    const mainModal = document.getElementById('main-modal');
-    mainModal.style.display = 'flex';
+    openMainModalFunc('camera_entry'); // Abrimos el modal
 
-    // 3. Iniciar Cámara
+    // 3. Encender Cámara
     const videoEl = document.getElementById('entry-camera-video');
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
@@ -81,12 +69,12 @@ export async function handleReportEntry(db, storage, currentUser, userProfile, o
         videoEl.srcObject = stream;
     } catch (err) {
         console.error("Error cámara:", err);
-        alert("No se pudo acceder a la cámara. Verifica los permisos del navegador.");
+        alert("No se pudo acceder a la cámara. Verifica permisos.");
         closeAndCleanup(closeMainModalFunc);
         return;
     }
 
-    // 4. Listeners
+    // 4. Listeners de Botones
     document.getElementById('btn-cancel-entry').addEventListener('click', () => closeAndCleanup(closeMainModalFunc));
     
     document.getElementById('btn-capture-entry').addEventListener('click', async () => {
@@ -97,77 +85,65 @@ export async function handleReportEntry(db, storage, currentUser, userProfile, o
         captureBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Procesando...';
 
         try {
-            // A. Validar que FaceAPI esté listo
-            // @ts-ignore (faceapi global)
-            if (typeof faceapi === 'undefined') throw new Error("Librería de reconocimiento facial no cargada.");
+            // A. Validar librería FaceAPI
+            // @ts-ignore
+            if (typeof faceapi === 'undefined') throw new Error("Error: IA Facial no cargada.");
 
-            // B. Obtener GPS
+            // B. Obtener GPS (Primero, para no bloquear la UI después)
             updateStatus(statusMsg, 'blue', 'Obteniendo ubicación GPS...');
             const location = await getCurrentLocation();
 
-            // C. Capturar Foto (Canvas)
+            // C. Capturar Foto del Video al Canvas
             const canvas = document.getElementById('entry-camera-canvas');
             canvas.width = videoEl.videoWidth;
             canvas.height = videoEl.videoHeight;
             const ctx = canvas.getContext('2d');
-            // Espejo horizontal para que coincida con el video css transform
-            ctx.translate(videoEl.videoWidth, 0);
+            ctx.translate(videoEl.videoWidth, 0); // Efecto espejo
             ctx.scale(-1, 1);
             ctx.drawImage(videoEl, 0, 0);
-            // Restaurar contexto
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset
 
-            // D. Detección Facial
-            updateStatus(statusMsg, 'indigo', 'Analizando biometría...');
-            
-            // Detección Live
-            const detection = await faceapi.detectSingleFace(canvas)
-                .withFaceLandmarks()
-                .withFaceDescriptor();
+            // D. Detección Facial (Foto actual)
+            updateStatus(statusMsg, 'indigo', 'Analizando rostro en vivo...');
+            const detection = await faceapi.detectSingleFace(canvas).withFaceLandmarks().withFaceDescriptor();
 
             if (!detection) {
-                throw new Error("No se detectó ningún rostro. Ajusta la iluminación.");
+                throw new Error("No se detectó un rostro. Ajusta la luz y céntrate.");
             }
 
-            // E. Comparación Facial
-            // Necesitamos cargar la foto de perfil de referencia para sacar su descriptor
-            // NOTA: Idealmente el descriptor debería guardarse en Firestore al subir la foto de perfil para no recalcularlo siempre.
-            // Aquí lo recalculamos al vuelo para asegurar compatibilidad con datos viejos.
+            // E. Comparación con Foto de Perfil (Seguridad)
             updateStatus(statusMsg, 'indigo', 'Verificando identidad...');
             
+            // Cargamos la foto de perfil guardada para comparar
             const referenceImage = await faceapi.fetchImage(userProfile.profilePhotoURL);
-            const referenceDetection = await faceapi.detectSingleFace(referenceImage)
-                .withFaceLandmarks()
-                .withFaceDescriptor();
+            const referenceDetection = await faceapi.detectSingleFace(referenceImage).withFaceLandmarks().withFaceDescriptor();
 
             if (!referenceDetection) {
-                throw new Error("Tu foto de perfil no tiene un rostro claro. Por favor actualízala.");
+                throw new Error("Tu foto de perfil actual no es válida para comparación. Actualízala.");
             }
 
             const faceMatcher = new faceapi.FaceMatcher(referenceDetection);
             const match = faceMatcher.findBestMatch(detection.descriptor);
             
-            // Umbral de distancia (menor es más parecido). 0.6 es el estándar, 0.5 es más estricto.
+            // Distancia menor = más parecido. 0.6 es normal, 0.55 es estricto.
             if (match.distance > 0.55) {
-                throw new Error(`Rostro no coincide (${(match.distance).toFixed(2)}). Intenta de nuevo.`);
+                throw new Error(`Validación fallida. Rostro no coincide (${(match.distance).toFixed(2)}).`);
             }
 
-            // F. Subir Evidencia y Guardar
+            // F. Guardar en Firebase (Subida + Doc)
             updateStatus(statusMsg, 'emerald', 'Guardando reporte...');
             
             const photoBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
-            const filename = `attendance/${currentUser.uid}_${Date.now()}.jpg`;
+            const filename = `attendance/${currentUser.uid}/${Date.now()}.jpg`;
             const storageRef = ref(storage, filename);
             
             await uploadBytes(storageRef, photoBlob);
             const photoURL = await getDownloadURL(storageRef);
 
-            // Guardar en Firestore
-            await addDoc(collection(db, "attendance_reports"), {
-                userId: currentUser.uid,
-                userName: `${userProfile.firstName} ${userProfile.lastName}`,
-                role: userProfile.role || 'operario',
-                type: 'ingreso', // Tipo de reporte
+            // --- AQUÍ ESTÁ EL CAMBIO SOLICITADO ---
+            // Guardamos dentro de la colección del usuario
+            await addDoc(collection(db, "users", currentUser.uid, "attendance_reports"), {
+                type: 'ingreso',
                 timestamp: serverTimestamp(),
                 location: {
                     lat: location.coords.latitude,
@@ -175,16 +151,16 @@ export async function handleReportEntry(db, storage, currentUser, userProfile, o
                     accuracy: location.coords.accuracy
                 },
                 photoURL: photoURL,
-                biometricDistance: match.distance, // Guardamos qué tan preciso fue el match
+                biometricScore: match.distance, // Guardamos qué tan preciso fue
                 device: navigator.userAgent
             });
 
-            updateStatus(statusMsg, 'green', '¡Ingreso registrado exitosamente!');
+            updateStatus(statusMsg, 'green', '¡Ingreso registrado!');
             if (navigator.vibrate) navigator.vibrate(200);
             
             setTimeout(() => {
                 closeAndCleanup(closeMainModalFunc);
-            }, 2000);
+            }, 1500);
 
         } catch (error) {
             console.error(error);
@@ -195,56 +171,43 @@ export async function handleReportEntry(db, storage, currentUser, userProfile, o
     });
 }
 
-// Función auxiliar para cerrar y limpiar cámara
+// --- Funciones Auxiliares ---
+
 function closeAndCleanup(closeModalFunc) {
     if (videoStream) {
         videoStream.getTracks().forEach(track => track.stop());
         videoStream = null;
     }
-    // Restaurar el footer del modal por si se usa para otra cosa
+    // Restaurar footer por si acaso
     const modalFooter = document.getElementById('main-modal-footer');
     if(modalFooter) modalFooter.style.display = 'flex';
-    
     closeModalFunc();
 }
 
-// Función auxiliar para GPS
 function getCurrentLocation() {
     return new Promise((resolve, reject) => {
-        if (!navigator.geolocation) {
-            reject(new Error("Geolocalización no soportada."));
-            return;
-        }
+        if (!navigator.geolocation) return reject(new Error("Navegador sin soporte GPS."));
         navigator.geolocation.getCurrentPosition(
             resolve,
             (err) => {
-                let msg = "Error de ubicación.";
-                if(err.code === 1) msg = "Permiso de GPS denegado.";
-                else if(err.code === 2) msg = "Señal GPS no encontrada.";
-                else if(err.code === 3) msg = "Tiempo de espera GPS agotado.";
+                let msg = "Error GPS.";
+                if(err.code === 1) msg = "Permiso GPS denegado.";
+                else if(err.code === 2) msg = "Sin señal GPS.";
                 reject(new Error(msg));
             },
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+            { enableHighAccuracy: true, timeout: 10000 }
         );
     });
 }
 
-// Función auxiliar para mensajes visuales
 function updateStatus(element, color, text) {
-    // Mapeo simple de colores de Tailwind
     const colorClasses = {
-        'blue': 'text-blue-600 bg-blue-50',
-        'indigo': 'text-indigo-600 bg-indigo-50',
-        'emerald': 'text-emerald-600 bg-emerald-50',
-        'green': 'text-green-600 bg-green-50',
-        'red': 'text-red-600 bg-red-50'
+        'blue': 'text-blue-700 bg-blue-100 border-blue-200',
+        'indigo': 'text-indigo-700 bg-indigo-100 border-indigo-200',
+        'emerald': 'text-emerald-700 bg-emerald-100 border-emerald-200',
+        'green': 'text-green-700 bg-green-100 border-green-200',
+        'red': 'text-red-700 bg-red-100 border-red-200'
     };
-    
     const classes = colorClasses[color] || 'text-gray-600 bg-gray-50';
-    
-    element.innerHTML = `
-        <p class="${classes} font-bold text-sm px-4 py-2 rounded-full shadow-sm transition-all">
-            ${text}
-        </p>
-    `;
+    element.innerHTML = `<p class="${classes} border font-bold text-sm px-6 py-2 rounded-full shadow-sm transition-all animate-pulse">${text}</p>`;
 }
