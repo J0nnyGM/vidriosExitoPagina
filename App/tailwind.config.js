@@ -8,7 +8,8 @@ module.exports = {
     "./js/dashboard.js",
     "./js/dotacion.js",
     "./js/empleados.js",
-    "./js/solicitudes.js", 
+    "./js/solicitudes.js",
+    "./js/ingresopersonal.js",
     "./js/herramientas.js" // <-- Asegúrate que esta línea esté
   ],
   theme: {

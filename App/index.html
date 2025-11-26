@@ -283,7 +283,7 @@
                             <i class="fa-solid fa-bell h-6 w-6"></i>
                             <span id="notification-badge"
                                 class="absolute top-0 right-0 h-2 w-2 bg-red-500 rounded-full hidden"></span>
-                        </button>
+                        </button>                    
 
                         <div id="notifications-dropdown"
                             class="hidden absolute mt-2 w-full right-0 sm:w-[500px] bg-white rounded-md shadow-lg z-20 flex flex-col max-h-[80vh] sm:max-h-[600px]">
@@ -300,6 +300,16 @@
                         class="text-gray-600 hover:text-gray-800 focus:outline-none">
                         <i class="fa-solid fa-user h-6 w-6"></i>
                     </button>
+
+                    <button 
+                        type="button"
+                        data-action="report-entry" 
+                        class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-lg shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
+                    >
+                    <i class="fa-solid fa-id-badge text-lg"></i>
+                    <span>Reportar Ingreso</span>
+                    </button>
+
                     <button data-action="logout"
                         class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg">Cerrar
                         Sesión</button>

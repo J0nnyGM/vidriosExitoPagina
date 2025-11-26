@@ -485,18 +485,6 @@ async function loadOperarioDashboard(container, userId) {
                     
                     <div class="space-y-3">
                         
-                        <button data-action="report-entry" class="w-full text-left p-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all flex items-center justify-between group relative overflow-hidden">
-                            <div class="flex items-center gap-3 z-10">
-                                <div class="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center backdrop-blur-sm">
-                                    <i class="fa-solid fa-location-crosshairs text-xl"></i>
-                                </div>
-                                <div>
-                                    <span class="block text-sm font-black tracking-wide">REPORTAR INGRESO</span>
-                                    <span class="text-[10px] font-medium text-emerald-100 opacity-90">Validación Facial + GPS</span>
-                                </div>
-                            </div>
-                            <i class="fa-solid fa-camera text-4xl absolute -right-2 -bottom-2 opacity-10 group-hover:opacity-20 group-hover:scale-125 transition-all z-0 rotate-12"></i>
-                        </button>
 
                         <div class="my-4 border-t border-slate-100"></div>
 
@@ -527,7 +515,7 @@ async function loadOperarioDashboard(container, userId) {
             </div>
         </div>
     `;
-    
+
     // Iniciar listeners y lógica
     startOperarioListeners(userId);
 }

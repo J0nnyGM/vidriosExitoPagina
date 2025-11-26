@@ -13,6 +13,7 @@ import { initEmpleados, loadEmpleadosView, showEmpleadoDetails, loadPaymentHisto
 import { initConfiguracion, loadConfiguracionView } from './configuracion.js';
 import { initCartera, loadCarteraView } from "./cartera.js";
 import { initSolicitudes, loadSolicitudesView } from './solicitudes.js';
+import { handleReportEntry } from './ingresopersonal.js';
 // --- CONFIGURACIÓN Y ESTADO ---
 
 const firebaseConfig = {
@@ -272,7 +273,7 @@ let modelsLoaded = false; // <-- AÑADE ESTA LÍNEA
 /**
  * Carga los modelos de IA para la detección Y RECONOCIMIENTO de rostros.
  * (VERSIÓN CORREGIDA: Carga SsdMobilenetv1)
- 
+ */
 async function loadFaceAPImodels() {
     console.log("Cargando modelos de reconocimiento facial...");
     try {
@@ -289,12 +290,12 @@ async function loadFaceAPImodels() {
     } catch (error) {
         console.error("Error crítico: No se pudieron cargar los modelos de face-api.js:", error);
     }
-}*/
+}
 
 /**
  * Carga los modelos de IA para la detección Y RECONOCIMIENTO de rostros.
  * (VERSIÓN CORREGIDA: Carga SsdMobilenetv1)
- */
+
 async function loadFaceAPImodels() {
     console.log("RECONOCIMIENTO FACIAL DESHABILITADO. Saltando carga de modelos.");
     // --- INICIO DE MODIFICACIÓN ---
@@ -303,13 +304,15 @@ async function loadFaceAPImodels() {
     modelsLoaded = true;
     // --- FIN DE MODIFICACIÓN ---
 }
+*/
 
 /**
  * (VERSIÓN CORREGIDA: Devuelve el descriptor)
  * Carga la foto de perfil y genera el descriptor facial para comparar.
  * @param {string} imageUrl - La URL de la foto de perfil del usuario.
  * @returns {Promise<Float32Array|null>} El descriptor facial o null.
- 
+ */
+
 async function generateProfileFaceDescriptor(imageUrl) {
     if (!modelsLoaded) {
         console.warn("Los modelos de IA aún no han cargado. Saltando generación de descriptor.");
@@ -334,20 +337,21 @@ async function generateProfileFaceDescriptor(imageUrl) {
         console.error("Error al generar el descriptor de perfil:", error);
         return null; // <-- CAMBIO CLAVE
     }
-}*/
-
+}
 /**
  * (VERSIÓN CORREGIDA: Devuelve el descriptor)
  * Carga la foto de perfil y genera el descriptor facial para comparar.
  * @param {string} imageUrl - La URL de la foto de perfil del usuario.
  * @returns {Promise<Float32Array|null>} El descriptor facial o null.
- */
+ 
 async function generateProfileFaceDescriptor(imageUrl) {
     // --- INICIO DE MODIFICACIÓN ---
     console.warn("RECONOCIMIENTO FACIAL DESHABILITADO. Omitiendo generación de descriptor.");
     return null;
     // --- FIN DE MODIFICACIÓN ---
 }
+*/
+
 
 /**
  * Convierte un timestamp o fecha a un formato de tiempo relativo.
@@ -10019,224 +10023,6 @@ if ('serviceWorker' in navigator) {
     });
 }
 
-// =============================================================================
-//  LÓGICA DE REPORTE DE INGRESO (BIOMETRÍA + GPS)
-// =============================================================================
-
-/**
- * Maneja el flujo completo de reporte de ingreso:
- * 1. Abre modal de cámara.
- * 2. Captura foto y ubicación.
- * 3. Valida rostro con face-api.
- * 4. Guarda en Firebase.
- */
-async function handleReportEntry() {
-    // 1. Obtener el usuario autenticado
-    const currentUserObj = auth.currentUser;
-    if (!currentUserObj) {
-        alert("Error: No se detecta una sesión activa. Por favor recarga la página.");
-        return;
-    }
-
-    // 2. Obtener perfil (usersMap o DB)
-    let userProfile = null;
-    if (typeof usersMap !== 'undefined' && usersMap.has(currentUserObj.uid)) {
-        userProfile = usersMap.get(currentUserObj.uid);
-    } else {
-        try {
-            const docSnap = await getDoc(doc(db, "users", currentUserObj.uid));
-            if (docSnap.exists()) userProfile = docSnap.data();
-        } catch (e) { console.error(e); }
-    }
-
-    if (!userProfile || !userProfile.profilePhotoURL) {
-        alert("⚠️ Error: No tienes una foto de perfil registrada para validación facial.");
-        return;
-    }
-
-    if (typeof currentCameraAction !== 'undefined') currentCameraAction = 'entry_report';
-
-    // 3. OBTENER REFERENCIAS AL DOM CON SEGURIDAD
-    const modal = document.getElementById('main-modal');
-    const modalTitle = document.getElementById('main-modal-title');
-    let modalBody = document.getElementById('main-modal-body');
-    const modalFooter = document.getElementById('main-modal-footer');
-
-    // --- CORRECCIÓN DE EMERGENCIA ---
-    // Si modalBody es null, intentamos buscarlo por clase o usar el modal mismo
-    if (!modalBody) {
-        console.warn("⚠️ Aviso: No se encontró #main-modal-body. Buscando alternativa...");
-        // Intento 1: Buscar por ID alternativo común
-        modalBody = document.getElementById('modal-body');
-        
-        // Intento 2: Si no, si existe el modal, creamos un div dentro al vuelo
-        if (!modalBody && modal) {
-            // Buscar algún contenedor interno
-            const internalContainer = modal.querySelector('.bg-white.rounded-lg') || modal;
-            modalBody = document.createElement('div');
-            modalBody.id = 'main-modal-body-generated';
-            internalContainer.appendChild(modalBody);
-        }
-
-        // Si sigue siendo null, detenemos para evitar el crash
-        if (!modalBody) {
-            alert("Error Crítico: No se encontró la estructura del modal en el HTML (#main-modal-body). Revisa el index.html.");
-            return;
-        }
-    }
-    // --------------------------------
-
-    // Ocultar footer si existe
-    if (modalFooter) modalFooter.classList.add('hidden');
-    if (modalTitle) modalTitle.textContent = " 📸 Validación de Ingreso";
-
-    // 4. Inyectar HTML
-    modalBody.innerHTML = `
-        <div class="flex flex-col items-center justify-center space-y-6 py-4">
-            <div class="relative w-64 h-64 sm:w-80 sm:h-80 bg-black rounded-full overflow-hidden shadow-2xl border-4 border-emerald-500 ring-4 ring-emerald-100">
-                <video id="camera-video" autoplay playsinline class="w-full h-full object-cover transform scale-x-[-1]"></video>
-                <canvas id="camera-canvas" class="absolute top-0 left-0 w-full h-full hidden"></canvas>
-                <div class="absolute inset-0 border-2 border-white/40 rounded-full m-8 pointer-events-none border-dashed animate-pulse"></div>
-            </div>
-            
-            <div id="entry-status-msg" class="text-center h-10 flex items-center justify-center">
-                <p class="text-slate-600 font-medium text-sm bg-slate-100 px-4 py-1 rounded-full">
-                    <i class="fa-solid fa-face-viewfinder mr-2"></i>Ubica tu rostro en el círculo
-                </p>
-            </div>
-
-            <div class="flex gap-4 w-full justify-center px-4">
-                <button type="button" onclick="closeMainModal()" class="flex-1 max-w-[120px] bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 py-3 rounded-xl font-bold transition-colors shadow-sm">
-                    Cancelar
-                </button>
-                <button id="capture-entry-btn" class="flex-1 max-w-[200px] bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white py-3 rounded-xl font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-camera"></i> 
-                    <span>Validar</span>
-                </button>
-            </div>
-            <div class="text-[10px] text-slate-400 text-center mt-2">
-                <i class="fa-solid fa-location-dot mr-1"></i> Se registrará tu ubicación actual.
-            </div>
-        </div>
-    `;
-
-    // Abrir modal
-    if (typeof openMainModal === 'function') {
-        openMainModal('camera_entry');
-    } else {
-        // Fallback manual si la función no existe
-        modal.classList.remove('hidden');
-    }
-
-    // 5. Iniciar Cámara
-    const video = document.getElementById('camera-video');
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-        video.srcObject = stream;
-        video.dataset.stream = "active";
-    } catch (err) {
-        console.error("Error cámara:", err);
-        alert("No se pudo acceder a la cámara.");
-        closeMainModal();
-        return;
-    }
-
-    // 6. Listener Captura
-    document.getElementById('capture-entry-btn').addEventListener('click', async () => {
-        const captureBtn = document.getElementById('capture-entry-btn');
-        const statusMsg = document.getElementById('entry-status-msg');
-        
-        captureBtn.disabled = true;
-        captureBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> ...';
-        
-        try {
-            // A. Ubicación
-            statusMsg.innerHTML = '<span class="text-blue-600 text-xs font-bold">Obteniendo GPS...</span>';
-            const location = await getCurrentLocation();
-            
-            // B. Foto
-            const canvas = document.getElementById('camera-canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0);
-            
-            // C. Biometría
-            statusMsg.innerHTML = '<span class="text-indigo-600 text-xs font-bold">Analizando rostro...</span>';
-            
-            const detectionsCurrent = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
-            if (!detectionsCurrent) throw new Error("Rostro no detectado.");
-
-            const refImg = await faceapi.fetchImage(userProfile.profilePhotoURL);
-            const detectionsRef = await faceapi.detectSingleFace(refImg).withFaceLandmarks().withFaceDescriptor();
-            
-            if (!detectionsRef) throw new Error("Error en foto de perfil base.");
-
-            const faceMatcher = new faceapi.FaceMatcher(detectionsRef);
-            const match = faceMatcher.findBestMatch(detectionsCurrent.descriptor);
-            
-            if (match.distance > 0.55) throw new Error("Rostro no coincide.");
-
-            // D. Guardar
-            statusMsg.innerHTML = '<span class="text-emerald-600 text-xs font-bold">Guardando...</span>';
-            const photoBlob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.7));
-            const filename = `attendance/${currentUserObj.uid}_${Date.now()}.jpg`;
-            const storageRefObj = ref(storage, filename);
-            await uploadBytes(storageRefObj, photoBlob);
-            const evidenceURL = await getDownloadURL(storageRefObj);
-
-            await addDoc(collection(db, "attendance_reports"), {
-                userId: currentUserObj.uid,
-                userName: `${userProfile.firstName} ${userProfile.lastName}`,
-                role: userProfile.role || 'operario',
-                type: 'ingreso',
-                timestamp: serverTimestamp(),
-                location: {
-                    lat: location.coords.latitude,
-                    lng: location.coords.longitude,
-                    accuracy: location.coords.accuracy
-                },
-                photoURL: evidenceURL,
-                biometricScore: match.distance
-            });
-
-            statusMsg.innerHTML = '<span class="text-green-600 text-sm font-bold">¡Éxito!</span>';
-            if (navigator.vibrate) navigator.vibrate(200);
-            setTimeout(() => closeMainModal(), 1500);
-
-        } catch (error) {
-            console.error(error);
-            statusMsg.innerHTML = `<span class="text-red-500 text-xs font-bold">${error.message}</span>`;
-            captureBtn.disabled = false;
-            captureBtn.innerHTML = 'Reintentar';
-        }
-    });
-}
-
-/**
- * Promesa que envuelve la API de Geolocalización del navegador.
- */
-function getCurrentLocation() {
-    return new Promise((resolve, reject) => {
-        if (!navigator.geolocation) {
-            reject(new Error("Tu navegador no soporta geolocalización."));
-            return;
-        }
-        
-        navigator.geolocation.getCurrentPosition(
-            (pos) => resolve(pos),
-            (err) => {
-                let msg = "Error obteniendo ubicación.";
-                if (err.code === 1) msg = "Permiso de ubicación denegado.";
-                if (err.code === 2) msg = "Ubicación no disponible (enciende el GPS).";
-                if (err.code === 3) msg = "Tiempo de espera agotado buscando GPS.";
-                reject(new Error(msg));
-            },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-        );
-    });
-}
-
 // --- EVENT LISTENERS ---
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -11887,7 +11673,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Listener global para acciones del Dashboard (incluyendo el nuevo botón)
         document.addEventListener('click', (e) => {
-            // Buscar el botón o su padre si se hizo clic en el ícono/texto
             const btn = e.target.closest('button');
             if (!btn) return;
 
@@ -11895,7 +11680,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (action === 'report-entry') {
                 e.preventDefault();
-                handleReportEntry();
+                // --- CAMBIO AQUÍ: Pasamos los parámetros necesarios ---
+                const userProfile = usersMap.get(currentUser.uid); // Obtenemos perfil del mapa global
+                handleReportEntry(db, storage, currentUser, userProfile, openMainModal, closeMainModal);
+                // -----------------------------------------------------
             }
         });
     }
