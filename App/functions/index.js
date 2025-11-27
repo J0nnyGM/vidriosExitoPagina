@@ -2206,15 +2206,36 @@ exports.sendPushOnNotificationCreate = onDocumentWritten("notifications/{notific
             title = "🚨 ¡ATENCIÓN REQUERIDA!";
         }
 
-        // 4. Construir el mensaje
+        // 4. Construir el mensaje Push MEJORADO
         const messagePayload = {
             notification: {
                 title: title,
                 body: notifData.message,
             },
+            // Configuración específica para Android para intentar hacer ruido
+            android: {
+                notification: {
+                    sound: 'default',
+                    priority: 'high', // Máxima prioridad
+                    channelId: 'urgent_alerts', // Canal sugerido (requiere config extra en service worker, pero ayuda)
+                    vibrateTimingsMillis: [0, 500, 200, 500] // Patrón de vibración: Vrr... Vrr...
+                },
+                priority: 'high' 
+            },
+            // Configuración para Apple (APNS)
+            apns: {
+                payload: {
+                    aps: {
+                        sound: 'default',
+                        contentAvailable: true
+                    }
+                }
+            },
             data: {
                 url: notifData.link || "/", 
-                type: notifData.type || 'general'
+                type: notifData.type || 'general',
+                // Enviamos una bandera para que el Service Worker sepa que es urgente
+                isUrgent: notifData.type === 'admin_urgent_alert' ? 'true' : 'false'
             },
             token: fcmToken
         };

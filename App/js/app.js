@@ -537,6 +537,7 @@ function showView(viewName, fromHistory = false) {
 }
 
 
+
 async function initializePushNotifications(user) {
     try {
         // 1. Verificar soporte
@@ -583,6 +584,104 @@ async function initializePushNotifications(user) {
 
     } catch (error) {
         console.error("Error al inicializar notificaciones push:", error);
+    }
+}
+
+// --- GESTIÓN DE PERMISOS DE INICIO ---
+
+// 1. Función maestra que actualiza la interfaz del modal
+window.updatePermissionUI = async function() {
+    const updateCard = (type, isGranted) => {
+        const container = document.getElementById(`perm-status-${type}`);
+        const card = document.getElementById(`perm-card-${type}`);
+        if(!container || !card) return;
+
+        if (isGranted) {
+            container.innerHTML = `<span class="text-green-600 font-bold text-xl"><i class="fa-solid fa-circle-check"></i></span>`;
+            card.classList.remove('bg-gray-50', 'border-gray-200');
+            card.classList.add('bg-green-50', 'border-green-200');
+        }
+    };
+
+    // Chequeo Notificaciones
+    const notifGranted = Notification.permission === 'granted';
+    updateCard('notification', notifGranted);
+
+    // Chequeo Cámara (Usamos query si el navegador lo soporta)
+    try {
+        const camStatus = await navigator.permissions.query({ name: 'camera' });
+        updateCard('camera', camStatus.state === 'granted');
+    } catch (e) {
+        // Fallback si el navegador no soporta query para cámara (ej. Firefox antiguo)
+        // No hacemos nada, dejamos el botón
+    }
+
+    // Chequeo Ubicación
+    try {
+        const locStatus = await navigator.permissions.query({ name: 'geolocation' });
+        updateCard('location', locStatus.state === 'granted');
+    } catch (e) {}
+};
+
+// 2. Pedir Cámara
+window.requestCameraPermission = async function() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        // Si tenemos éxito, apagamos la cámara inmediatamente (solo queríamos el permiso)
+        stream.getTracks().forEach(track => track.stop());
+        updatePermissionUI();
+    } catch (error) {
+        alert("Permiso denegado. Por favor habilita la cámara en la configuración del navegador.");
+    }
+};
+
+// 3. Pedir Ubicación
+window.requestLocationPermission = function() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+        (pos) => { updatePermissionUI(); },
+        (err) => { alert("Permiso denegado. Habilita la ubicación en el candado de la barra de dirección."); }
+    );
+};
+
+// 4. Pedir Notificaciones (Reutilizamos tu lógica existente)
+window.requestPushPermission = async function() {
+    if (!('Notification' in window)) return;
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+        // Llamamos a tu función existente que obtiene el token
+        if (currentUser) initializePushNotifications(currentUser);
+        updatePermissionUI();
+    } else {
+        alert("Permiso denegado. Habilita las notificaciones en el navegador.");
+    }
+};
+
+// 5. Función que decide si abrir el modal o no al iniciar sesión
+async function checkAllPermissionsOnLogin() {
+    let missing = false;
+
+    // A. Notificaciones
+    if (Notification.permission !== 'granted') missing = true;
+
+    // B. Cámara y Ubicación (Verificación asíncrona)
+    try {
+        const camStatus = await navigator.permissions.query({ name: 'camera' });
+        if (camStatus.state !== 'granted') missing = true;
+
+        const locStatus = await navigator.permissions.query({ name: 'geolocation' });
+        if (locStatus.state !== 'granted') missing = true;
+    } catch (e) {
+        // Si falla la verificación (navegadores viejos), asumimos que falta para forzar el chequeo manual
+        missing = true; 
+    }
+
+    if (missing) {
+        openMainModal('check-permissions');
+    } else {
+        console.log("Todos los permisos están habilitados. Continuando.");
+        // Aquí podrías llamar a initializePushNotifications por si acaso el token expiró
+        if (currentUser) initializePushNotifications(currentUser);
     }
 }
 
@@ -679,11 +778,18 @@ onAuthStateChanged(auth, async (user) => {
             const userCustomPermissions = userData.customPermissions || {};
             applySidebarPermissions(currentUserRole, userCustomPermissions);
 
-            initializePushNotifications(user);
+            // --- CAMBIO: Reemplazar la llamada directa por el chequeo completo ---
+            
+            // initializePushNotifications(user);  <-- BORRAR O COMENTAR ESTA LÍNEA
+            
+            // Insertar la nueva verificación:
+            checkAllPermissionsOnLogin(); 
+            
+            // --------------------------------------------------------------------
 
-            // 6. Cargar vista inicial y notificaciones
+            // 6. Cargar vista inicial...
             showGeneralDashboard();
-            requestNotificationPermission();
+            // requestNotificationPermission(); <-- PUEDES BORRAR ESTA LÍNEA (el modal ya se encarga)
             loadNotifications();
 
         } else {
@@ -5020,6 +5126,69 @@ async function openMainModal(type, data = {}) {
                     listContainer.innerHTML = `<p class="text-red-500 text-center">Error cargando logs. (Asegúrate de crear el índice compuesto en Firebase si la consola lo pide).</p>`;
                 }
             }, 100);
+            break;
+
+            case 'check-permissions':
+            title = 'Verificación de Permisos';
+            btnText = 'Continuar a la App';
+            btnClass = 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed';
+            
+            // Hacemos que el modal no se pueda cerrar con la X ni cancelar si es crítico
+            if(document.getElementById('modal-cancel-btn')) document.getElementById('modal-cancel-btn').style.display = 'none';
+            
+            bodyHtml = `
+                <div class="space-y-4">
+                    <p class="text-sm text-gray-600 mb-4">Para utilizar el Gestor de Proyectos, necesitamos activar las siguientes funciones del dispositivo:</p>
+                    
+                    <div class="flex items-center justify-between p-4 border rounded-xl bg-gray-50" id="perm-card-camera">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-camera"></i>
+                            </div>
+                            <div>
+                                <p class="font-bold text-gray-800 text-sm">Cámara</p>
+                                <p class="text-xs text-gray-500">Para reporte de ingreso y evidencia.</p>
+                            </div>
+                        </div>
+                        <div id="perm-status-camera">
+                            <button type="button" onclick="requestCameraPermission()" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-blue-700 transition-colors">Activar</button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between p-4 border rounded-xl bg-gray-50" id="perm-card-location">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-location-dot"></i>
+                            </div>
+                            <div>
+                                <p class="font-bold text-gray-800 text-sm">Ubicación</p>
+                                <p class="text-xs text-gray-500">Para validar el sitio de trabajo.</p>
+                            </div>
+                        </div>
+                        <div id="perm-status-location">
+                            <button type="button" onclick="requestLocationPermission()" class="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-green-700 transition-colors">Activar</button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between p-4 border rounded-xl bg-gray-50" id="perm-card-notification">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-bell"></i>
+                            </div>
+                            <div>
+                                <p class="font-bold text-gray-800 text-sm">Notificaciones</p>
+                                <p class="text-xs text-gray-500">Para alertas y llamados urgentes.</p>
+                            </div>
+                        </div>
+                        <div id="perm-status-notification">
+                            <button type="button" onclick="requestPushPermission()" class="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-red-700 transition-colors">Activar</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Verificamos el estado inicial al abrir el modal
+            setTimeout(updatePermissionUI, 100);
             break;
 
         case 'return-material': {
@@ -10192,9 +10361,9 @@ function loadNotifications() {
     const personalQuery = query(collection(db, "notifications"), where("userId", "==", currentUser.uid), where("read", "==", false));
     const unsubscribePersonal = onSnapshot(personalQuery, (snapshot) => {
         console.log(`DEBUG: 'personalQuery' obtuvo ${snapshot.docs.length} docs.`);
-        personalNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        // --- INICIO NUEVO CÓDIGO: DETECTAR ALERTA URGENTE ---
+personalNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // --- INICIO CÓDIGO MEJORADO: ALERTA URGENTE CON SONIDO ---
         const urgentAlert = personalNotifs.find(n => n.type === 'admin_urgent_alert' && !n.read);
         
         if (urgentAlert) {
@@ -10205,7 +10374,7 @@ function loadNotifications() {
             const dismissBtn = document.getElementById('dismiss-alert-btn');
 
             if (overlay && overlay.classList.contains('hidden')) {
-                // Rellenar datos
+                // Rellenar datos visuales
                 msgEl.textContent = urgentAlert.message;
                 senderEl.textContent = urgentAlert.senderName || "Administración";
                 timeEl.textContent = formatTimeAgo(urgentAlert.createdAt?.toDate ? urgentAlert.createdAt.toDate().getTime() : Date.now());
@@ -10214,22 +10383,48 @@ function loadNotifications() {
                 overlay.classList.remove('hidden');
                 overlay.classList.add('flex');
 
-                // Sonido de Alerta (Opcional: requiere interacción previa del usuario en la mayoría de navegadores)
-                try {
-                    // Puedes usar un audio base64 corto o una URL
-                    // const audio = new Audio('path_to_alert_sound.mp3');
-                    // audio.play().catch(e => console.log("Audio bloqueado por navegador"));
-                } catch (e) {}
+                // --- LÓGICA DE SONIDO DE ALARMA ---
+                // Usamos un sonido de "Sonar/Alarma" (puedes cambiar esta URL por un archivo local)
+                const alertSound = new Audio('https://assets.mixkit.co/active_storage/sfx/995/995-preview.mp3'); 
+                alertSound.volume = 1.0; // Volumen máximo
 
-                // Lógica de cierre
+                // Función para reproducir 3 veces
+                let playCount = 0;
+                const playAlarm = () => {
+                    if (playCount < 3) { // Sonar 3 veces
+                        alertSound.play().then(() => {
+                            playCount++;
+                        }).catch(error => {
+                            console.warn("El navegador bloqueó el audio automático (interacción requerida):", error);
+                        });
+                    }
+                };
+
+                // Intentar reproducir inmediatamente
+                playAlarm();
+
+                // Configurar el evento para repetir el sonido cuando termine
+                alertSound.onended = () => {
+                    if (playCount < 3) {
+                        setTimeout(playAlarm, 500); // Esperar medio segundo entre repeticiones
+                    }
+                };
+
+                // Lógica de cierre y detener sonido
                 dismissBtn.onclick = async () => {
-                    // Marcar como leída al cerrar
+                    // Detener sonido si sigue sonando
+                    alertSound.pause();
+                    alertSound.currentTime = 0;
+                    playCount = 99; // Evitar que siga el bucle
+
+                    // Marcar como leída
                     await updateDoc(doc(db, "notifications", urgentAlert.id), { read: true });
                     overlay.classList.add('hidden');
                     overlay.classList.remove('flex');
                 };
             }
         }
+        // --- FIN CÓDIGO MEJORADO ---
 
         renderNotifications(personalNotifs, channelNotifs);
     }, (error) => console.error("Error en listener personal:", error));
