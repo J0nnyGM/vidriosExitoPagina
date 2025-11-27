@@ -540,32 +540,49 @@ function showView(viewName, fromHistory = false) {
 async function initializePushNotifications(user) {
     try {
         // 1. Verificar soporte
-        if (!('Notification' in window)) return;
+        if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+            console.warn("Este navegador no soporta notificaciones.");
+            return;
+        }
 
         // 2. Pedir Permiso
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-            console.log("Permiso de notificaciones denegado.");
+            console.warn("Permiso de notificaciones denegado.");
             return;
         }
 
-        // 3. Obtener el Token (La "dirección" del celular)
-        // Nota: Asegúrate de haber puesto tu VAPID_KEY arriba
-        const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+        // --- CAMBIO IMPORTANTE AQUÍ ---
+        
+        // A. Registramos manualmente el Service Worker indicando la ruta relativa correcta
+        // El punto './' es crucial, le dice que busque en la misma carpeta que el index.html
+        const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+
+        // B. Pasamos ese registro a getToken
+        const token = await getToken(messaging, { 
+            vapidKey: VAPID_KEY,
+            serviceWorkerRegistration: registration 
+        });
+
+        // -------------------------------
 
         if (token) {
+            console.log("FCM Token obtenido:", token);
+            
             // 4. Guardar el Token en la base de datos del usuario
             const userRef = doc(db, "users", user.uid);
             await updateDoc(userRef, { 
                 fcmToken: token,
                 lastTokenUpdate: new Date(),
-                deviceInfo: navigator.userAgent // Para saber qué celular es
+                deviceInfo: navigator.userAgent
             });
-            console.log("Notificaciones Push activadas para este dispositivo.");
+            
+        } else {
+            console.log("No se pudo obtener el token de registro.");
         }
 
     } catch (error) {
-        console.error("Error al activar notificaciones:", error);
+        console.error("Error al inicializar notificaciones push:", error);
     }
 }
 
