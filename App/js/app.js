@@ -4692,6 +4692,60 @@ async function openMainModal(type, data = {}) {
             break;
 
 
+            case 'report-entry':
+            title = 'Registrar Ingreso';
+            btnText = 'Confirmar Ingreso';
+            btnClass = 'bg-green-600 hover:bg-green-700 text-white shadow-lg';
+            
+            // Ajustamos el tamaño para que parezca una app móvil
+            if (modalContentDiv) {
+                modalContentDiv.classList.remove('max-w-2xl');
+                modalContentDiv.classList.add('max-w-md');
+            }
+
+            bodyHtml = `
+                <div class="space-y-6">
+                    <div class="relative w-full aspect-[3/4] bg-black rounded-2xl overflow-hidden shadow-inner border-2 border-gray-100 group">
+                        
+                        <video id="entry-video-feed" class="w-full h-full object-cover transform scale-x-[-1]" autoplay playsinline muted></video>
+                        
+                        <canvas id="entry-photo-canvas" class="absolute inset-0 w-full h-full object-cover hidden pointer-events-none transform scale-x-[-1]"></canvas>
+                        
+                        <div id="camera-loading-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80 text-white z-10 transition-opacity duration-300">
+                            <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-2 text-blue-500"></i>
+                            <p class="text-xs font-bold uppercase tracking-wider">Iniciando Cámara...</p>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-center -mt-10 relative z-20">
+                        <button type="button" id="btn-capture-photo" class="w-16 h-16 bg-white rounded-full border-4 border-gray-100 shadow-xl flex items-center justify-center hover:bg-gray-50 transition-all transform hover:scale-105 active:scale-95 group/btn">
+                            <div class="w-12 h-12 bg-red-500 rounded-full group-hover/btn:bg-red-600 transition-colors"></div>
+                        </button>
+                        
+                        <button type="button" id="btn-retake-photo" class="hidden px-5 py-2.5 bg-gray-800 text-white rounded-full shadow-lg hover:bg-gray-700 text-xs font-bold uppercase tracking-wide flex items-center gap-2 transition-all">
+                            <i class="fa-solid fa-rotate-left"></i> Retomar
+                        </button>
+                    </div>
+
+                    <div class="bg-blue-50 rounded-xl p-4 border border-blue-100 flex items-start gap-3">
+                        <div class="bg-white p-2 rounded-full text-blue-500 shadow-sm shrink-0">
+                            <i id="location-icon" class="fa-solid fa-location-dot animate-bounce"></i>
+                        </div>
+                        <div>
+                            <h4 class="text-blue-900 font-bold text-xs uppercase tracking-wide mb-1">Ubicación en Tiempo Real</h4>
+                            <p id="location-status" class="text-blue-700 text-sm font-medium leading-tight">Obteniendo coordenadas GPS...</p>
+                            <p id="location-coords" class="text-blue-400 text-[10px] font-mono mt-1 hidden">---, ---</p>
+                        </div>
+                    </div>
+
+                    <input type="hidden" name="latitude" id="entry-lat">
+                    <input type="hidden" name="longitude" id="entry-lng">
+                    <input type="hidden" name="photoData" id="entry-photo-data">
+                </div>
+            `;
+            break;
+
+
         // --- CASO: REVISAR Y APROBAR/RECHAZAR PRÉSTAMO ---
         case 'review-loan':
             title = 'Revisión y Aprobación';
@@ -10529,7 +10583,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     target.disabled = true;
                     target.textContent = 'Verificación Biométrica Deshabilitada';
 
-                    return; // SALIMOS DE LA FUNCIÓN AQUÍ.
+                    return; // SALIMOS DE LA FUNCIÓN AQUÍ.*/
 
                     // --- FIN DE MODIFICACIÓN ---
 
