@@ -2167,3 +2167,76 @@ exports.checkLateEntries = onSchedule({
         return { success: false, error: error.message };
     }
 });
+
+
+/**
+ * Trigger AUTOMÁTICO: Escucha cuando se crea una notificación en la base de datos
+ * y la envía como Push Notification al celular del usuario (si tiene token).
+ */
+exports.sendPushOnNotificationCreate = onDocumentWritten("notifications/{notificationId}", async (event) => {
+    // 1. Validar que sea un documento NUEVO (Creación)
+    // Si 'before' existe, es una edición. Si 'after' no existe, es un borrado.
+    if (event.data.before.exists || !event.data.after.exists) {
+        return null;
+    }
+
+    const notifData = event.data.after.data();
+    const userId = notifData.userId;
+
+    // Si es una notificación de canal (ej: admins_bodega), la lógica sería distinta (topics).
+    // Por ahora nos enfocamos en notificaciones directas a usuarios.
+    if (!userId || !notifData.message) return null;
+
+    try {
+        // 2. Obtener el Token FCM del usuario destinatario
+        const userDoc = await db.doc(`users/${userId}`).get();
+        
+        if (!userDoc.exists) {
+            console.log(`Usuario ${userId} no encontrado para enviar push.`);
+            return null;
+        }
+
+        const userData = userDoc.data();
+        const fcmToken = userData.fcmToken;
+
+        if (!fcmToken) {
+            console.log(`El usuario ${userData.firstName || userId} no tiene token FCM registrado (no ha aceptado notificaciones o no ha entrado).`);
+            return null;
+        }
+
+        // 3. Personalizar el Título según la urgencia
+        let title = notifData.title || "Nueva Notificación";
+        
+        // Si es tu nueva alerta urgente, le ponemos emojis para destacar
+        if (notifData.type === 'admin_urgent_alert') {
+            title = "🚨 ¡ATENCIÓN REQUERIDA!";
+        }
+
+        // 4. Construir el mensaje Push
+        const messagePayload = {
+            notification: {
+                title: title,
+                body: notifData.message,
+            },
+            data: {
+                // Estos datos los usa el Service Worker para saber qué abrir
+                url: notifData.link || "/", 
+                notificationId: event.params.notificationId,
+                type: notifData.type || 'general'
+            },
+            token: fcmToken
+        };
+
+        // 5. Enviar usando Firebase Messaging
+        await getMessaging().send(messagePayload);
+        console.log(`Push enviado exitosamente a ${userData.firstName || userId} (Tipo: ${notifData.type})`);
+
+    } catch (error) {
+        console.error("Error enviando Push Notification:", error);
+        // Importante: Si el token es inválido (usuario desinstaló app o limpió caché), deberíamos borrarlo.
+        if (error.code === 'messaging/registration-token-not-registered') {
+            console.log(`Token inválido para usuario ${userId}. Eliminando...`);
+            await db.doc(`users/${userId}`).update({ fcmToken: FieldValue.delete() });
+        }
+    }
+});

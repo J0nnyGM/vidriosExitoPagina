@@ -336,7 +336,23 @@ function renderAdminDashboard(stats, container) {
                             <span id="pending-loans-badge" class="hidden bg-red-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full shadow-sm animate-pulse z-10">0</span>
                             <div class="absolute inset-0 bg-indigo-50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         </button>
-                        
+
+                        <div class="bg-white p-6 rounded-xl shadow-sm border border-red-100 hover:shadow-md transition-all group cursor-pointer relative overflow-hidden" data-action="send-admin-alert">
+                            <div class="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <i class="fa-solid fa-bullhorn text-6xl text-red-600 transform rotate-12"></i>
+                            </div>
+                            
+                            <div class="flex items-center gap-4 relative z-10">
+                                <div class="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
+                                    <i class="fa-solid fa-bell"></i>
+                                </div>
+                                <div>
+                                    <h3 class="text-lg font-bold text-gray-800 group-hover:text-red-600 transition-colors">Llamado Urgente</h3>
+                                    <p class="text-xs text-gray-500">Enviar alerta de pantalla completa</p>
+                                </div>
+                            </div>
+                        </div>
+                                            
                         <div class="my-4 border-t border-slate-100"></div>
 
                         <div class="grid grid-cols-2 gap-3">
@@ -358,6 +374,7 @@ function renderAdminDashboard(stats, container) {
             </div>
         </div>
     `;
+    
 }
 
 /**

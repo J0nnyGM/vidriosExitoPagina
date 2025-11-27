@@ -217,6 +217,7 @@
                     Administración</p>
 
                 <ul class="space-y-1 mb-8">
+
                     <li>
                         <a href="#"
                             class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
@@ -2653,6 +2654,38 @@
                     </button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div id="admin-alert-overlay" class="fixed inset-0 z-[100] hidden bg-red-600 flex-col items-center justify-center text-white p-6 transition-all duration-300">
+        <div class="absolute inset-0 bg-red-500 animate-pulse opacity-50 pointer-events-none"></div>
+        
+        <div class="relative z-10 text-center max-w-2xl w-full bg-white text-gray-800 p-8 rounded-3xl shadow-2xl border-4 border-red-500">
+            <div class="w-24 h-24 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
+                <i class="fa-solid fa-bell text-5xl text-red-600"></i>
+            </div>
+            
+            <h2 class="text-4xl font-black text-red-600 uppercase tracking-tight mb-2">¡Atención!</h2>
+            <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-6">Comunicado Oficial de Administración</p>
+            
+            <div class="bg-gray-50 border-l-4 border-red-500 p-6 rounded-r-xl mb-8 text-left">
+                <p id="admin-alert-message" class="text-2xl font-bold text-gray-800 leading-relaxed">
+                    </p>
+            </div>
+
+            <div class="flex items-center justify-center gap-3 text-sm text-gray-500 mb-8">
+                <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+                    <i class="fa-solid fa-user-shield text-gray-500"></i>
+                </div>
+                <span>Enviado por: <span id="admin-alert-sender" class="font-bold text-gray-700">Administrador</span></span>
+                <span class="mx-2">•</span>
+                <span id="admin-alert-time">Hace un momento</span>
+            </div>
+
+            <button id="dismiss-alert-btn" class="w-full bg-red-600 hover:bg-red-700 text-white text-xl font-bold py-4 px-8 rounded-xl shadow-lg transform hover:scale-[1.02] transition-all flex items-center justify-center gap-3">
+                <i class="fa-solid fa-check-circle"></i>
+                Entendido, Voy en Camino
+            </button>
         </div>
     </div>
 

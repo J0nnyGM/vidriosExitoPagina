@@ -30,6 +30,9 @@ const firebaseConfig = {
 
 
 const app = initializeApp(firebaseConfig);
+
+const VAPID_KEY = "BKdSH8VAjrl0Fpzc-FZmIVvahDsXV_BlIXU440PWRL3CBkqHiNCg3tav-Lf2kZFOy99sfTHfA5L2e-yXpf-eMiQ";
+
 const appCheck = initializeAppCheck(app, {
     provider: new ReCaptchaV3Provider('6Lc-090rAAAAAKkE09k5txsrVWXG3Xelxnrpb7Ty'),
     isTokenAutoRefreshEnabled: true
@@ -532,6 +535,54 @@ function showView(viewName, fromHistory = false) {
         history.pushState(state, title, url);
     }
 }
+
+
+async function initializePushNotifications(user) {
+    try {
+        // 1. Verificar soporte
+        if (!('Notification' in window)) {
+            console.warn("Este navegador no soporta notificaciones de escritorio.");
+            return;
+        }
+
+        // 2. Pedir Permiso
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+            console.warn("Permiso de notificaciones denegado.");
+            return;
+        }
+
+        // 3. Obtener el Token
+        const token = await getToken(messaging, { 
+            vapidKey: VAPID_KEY 
+        });
+
+        if (token) {
+            console.log("FCM Token obtenido:", token);
+            
+            // 4. Guardar el Token en el documento del usuario en Firestore
+            // Esto es CRUCIAL: Así el backend sabe a quién enviarle el mensaje
+            const userRef = doc(db, "users", user.uid);
+            
+            // Usamos setDoc con merge para no borrar otros datos, 
+            // o updateDoc si estamos seguros que el usuario existe.
+            // Guardamos también el userAgent para saber qué dispositivo es.
+            await updateDoc(userRef, { 
+                fcmToken: token,
+                lastTokenUpdate: new Date(),
+                deviceInfo: navigator.userAgent
+            });
+            
+        } else {
+            console.log("No se pudo obtener el token de registro.");
+        }
+
+    } catch (error) {
+        console.error("Error al inicializar notificaciones push:", error);
+    }
+}
+
+
 // --- AUTENTICACIÓN ---
 
 onAuthStateChanged(auth, async (user) => {
@@ -624,6 +675,8 @@ onAuthStateChanged(auth, async (user) => {
             // 5. Aplicar permisos de visualización (Sidebar)
             const userCustomPermissions = userData.customPermissions || {};
             applySidebarPermissions(currentUserRole, userCustomPermissions);
+
+            initializePushNotifications(user);
 
             // 6. Cargar vista inicial y notificaciones
             showGeneralDashboard();
@@ -4390,19 +4443,30 @@ const modalConfirmBtn = document.getElementById('modal-confirm-btn');
 const modalContentDiv = document.getElementById('main-modal-content'); // <-- AÑADE ESTA LÍNEA
 
 async function openMainModal(type, data = {}) {
-    // --- INICIO DE MODIFICACIÓN (Resetear tamaño) ---
+    
+    // --- INICIO DE CORRECCIÓN (Reseteo Robustecido) ---
     if (modalContentDiv) {
-        // Quitamos todas las clases de ancho que hayamos añadido
-        modalContentDiv.classList.remove('max-w-4xl', 'max-w-6xl', 'max-w-7xl', 'lg:w-3/4');
+        // 1. Limpiamos TODAS las clases de ancho que hayamos podido usar en cualquier caso
+        modalContentDiv.classList.remove(
+            'max-w-md', 'max-w-lg', 'max-w-xl', 'max-w-2xl', 'max-w-3xl', 
+            'max-w-4xl', 'max-w-5xl', 'max-w-6xl', 'max-w-7xl', 
+            'w-11/12', 'lg:w-3/4'
+        );
 
-        // (Línea eliminada en el paso anterior, la dejamos fuera)
-        // modalContentDiv.classList.add('max-w-2xl'); 
+        // 2. Restauramos SIEMPRE el tamaño por defecto (max-w-2xl)
+        // Así, si el caso específico no dice nada, se verá normal.
+        modalContentDiv.classList.add('max-w-2xl');
 
-        // ¡NUEVO! Reseteamos los estilos en línea
+        // 3. Limpiamos estilos en línea (usados en Orden de Compra)
         modalContentDiv.style.width = '';
         modalContentDiv.style.maxWidth = '';
     }
 
+    // Restaurar el encabezado por defecto (por si la alerta lo ocultó)
+    if(document.getElementById('modal-title')) {
+        document.getElementById('modal-title').parentElement.style.display = 'flex';
+    }
+    // --- FIN DE CORRECCIÓN ---
 
     let title, bodyHtml, btnText, btnClass;
     modalForm.reset();
@@ -4927,6 +4991,91 @@ async function openMainModal(type, data = {}) {
             modalForm.dataset.id = request.id;
             break;
         }
+
+case 'send-admin-alert':
+            // 1. Ocultamos el encabezado estándar del modal para usar el nuestro personalizado
+            if(document.getElementById('modal-title')) document.getElementById('modal-title').parentElement.style.display = 'none';
+
+            title = 'Llamado Urgente'; // (No se verá, pero se mantiene por referencia)
+            btnText = 'Enviar Alerta';
+            btnClass = 'bg-red-600 hover:bg-red-700 text-white shadow-lg w-full sm:w-auto';
+            
+            if (modalContentDiv) {
+                modalContentDiv.classList.remove('max-w-2xl');
+                modalContentDiv.classList.add('max-w-md'); // Hacemos el modal un poco más angosto para que parezca una notificación móvil
+            }
+
+            // Preparar datos de usuarios (Igual que antes)
+            const activeUsersData = Array.from(usersMap.entries())
+                .filter(([id, user]) => user.status === 'active')
+                .sort((a, b) => a[1].firstName.localeCompare(b[1].firstName))
+                .map(([id, user]) => ({
+                    value: id,
+                    label: `${user.firstName} ${user.lastName}`
+                }));
+
+            // --- NUEVO DISEÑO HTML CON ENCABEZADO CENTRADO ---
+            bodyHtml = `
+                <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-b from-red-600 to-red-700 px-6 py-8 flex flex-col items-center justify-center relative rounded-t-lg shadow-md text-white">
+                    
+                    <button type="button" id="custom-close-alert" class="absolute top-4 right-4 text-white/60 hover:text-white hover:bg-white/10 rounded-full p-1 transition-all">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+
+                    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center text-3xl mb-3 backdrop-blur-sm shadow-inner border border-white/10">
+                         <i class="fa-solid fa-tower-broadcast animate-pulse"></i>
+                    </div>
+                    
+                    <h2 class="text-2xl font-black uppercase tracking-wider text-center leading-tight">Llamado Urgente</h2>
+                    <p class="text-red-100 text-xs font-medium mt-1 bg-red-800/30 px-3 py-1 rounded-full">Sistema de Prioridad Alta</p>
+                </div>
+
+                <div class="space-y-5 px-2">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5 ml-1">Destinatario</label>
+                        <select id="alert-target-user" name="targetUserId" required class="w-full">
+                            <option value="" placeholder>Cargando lista...</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5 ml-1">Instrucción</label>
+                        <div class="relative group">
+                             <div class="absolute top-3.5 left-3 text-gray-400 group-focus-within:text-red-500 transition-colors">
+                                <i class="fa-regular fa-comment-dots"></i>
+                            </div>
+                            <textarea name="alertMessage" rows="3" required 
+                                class="w-full pl-10 pr-4 py-3 border-2 border-gray-100 hover:border-gray-200 rounded-xl text-gray-800 bg-gray-50 focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition-all text-base font-medium placeholder-gray-400 resize-none"
+                                placeholder="Ej: Favor presentarse en oficina..."></textarea>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Lógica de inicialización (Choices y Botón Cerrar)
+            setTimeout(() => {
+                // 1. Activar Choices.js
+                const selectElement = document.getElementById('alert-target-user');
+                if (selectElement) {
+                    new Choices(selectElement, {
+                        choices: activeUsersData,
+                        searchEnabled: true,
+                        searchPlaceholderValue: 'Buscar...',
+                        placeholder: true,
+                        placeholderValue: 'Seleccionar colaborador...',
+                        itemSelectText: '',
+                        allowHTML: false,
+                    });
+                }
+
+                // 2. Activar botón de cerrar personalizado
+                const closeBtn = document.getElementById('custom-close-alert');
+                if(closeBtn) {
+                    closeBtn.addEventListener('click', closeMainModal);
+                }
+            }, 100);
+            break;
+
         case 'add-catalog-item':
         case 'edit-catalog-item': {
             const isEditing = type === 'edit-catalog-item';
@@ -7697,6 +7846,43 @@ modalForm.addEventListener('submit', async (e) => {
         return; // Salimos para no ejecutar el switch de abajo
     }
 
+    if (type === 'send-admin-alert') {
+        const targetUserId = data.targetUserId;
+        const message = data.alertMessage;
+        
+        if(!targetUserId || !message) {
+            alert("Faltan datos.");
+            return;
+        }
+
+        modalConfirmBtn.disabled = true;
+        modalConfirmBtn.textContent = "Enviando Alerta...";
+
+        try {
+            // Crear la notificación especial
+            await addDoc(collection(db, "notifications"), {
+                userId: targetUserId,
+                title: "LLAMADO URGENTE DE ADMINISTRACIÓN",
+                message: message,
+                senderId: currentUser.uid,
+                senderName: usersMap.get(currentUser.uid)?.firstName || "Administrador",
+                read: false,
+                createdAt: serverTimestamp(),
+                type: 'admin_urgent_alert', // <--- TIPO CLAVE
+                priority: 'high'
+            });
+            
+            showToast("Alerta enviada correctamente", "success");
+            closeMainModal();
+        } catch (error) {
+            console.error(error);
+            alert("Error al enviar alerta.");
+        } finally {
+             modalConfirmBtn.disabled = false;
+        }
+        return; // Salir para evitar otros switch
+    }
+
     // --- AÑADE ESTE CASE COMPLETO ---
     if (type === 'new-dotacion') {
         const userId = data.userId;
@@ -9871,6 +10057,44 @@ function loadNotifications() {
     const unsubscribePersonal = onSnapshot(personalQuery, (snapshot) => {
         console.log(`DEBUG: 'personalQuery' obtuvo ${snapshot.docs.length} docs.`);
         personalNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // --- INICIO NUEVO CÓDIGO: DETECTAR ALERTA URGENTE ---
+        const urgentAlert = personalNotifs.find(n => n.type === 'admin_urgent_alert' && !n.read);
+        
+        if (urgentAlert) {
+            const overlay = document.getElementById('admin-alert-overlay');
+            const msgEl = document.getElementById('admin-alert-message');
+            const senderEl = document.getElementById('admin-alert-sender');
+            const timeEl = document.getElementById('admin-alert-time');
+            const dismissBtn = document.getElementById('dismiss-alert-btn');
+
+            if (overlay && overlay.classList.contains('hidden')) {
+                // Rellenar datos
+                msgEl.textContent = urgentAlert.message;
+                senderEl.textContent = urgentAlert.senderName || "Administración";
+                timeEl.textContent = formatTimeAgo(urgentAlert.createdAt?.toDate ? urgentAlert.createdAt.toDate().getTime() : Date.now());
+                
+                // Mostrar Overlay
+                overlay.classList.remove('hidden');
+                overlay.classList.add('flex');
+
+                // Sonido de Alerta (Opcional: requiere interacción previa del usuario en la mayoría de navegadores)
+                try {
+                    // Puedes usar un audio base64 corto o una URL
+                    // const audio = new Audio('path_to_alert_sound.mp3');
+                    // audio.play().catch(e => console.log("Audio bloqueado por navegador"));
+                } catch (e) {}
+
+                // Lógica de cierre
+                dismissBtn.onclick = async () => {
+                    // Marcar como leída al cerrar
+                    await updateDoc(doc(db, "notifications", urgentAlert.id), { read: true });
+                    overlay.classList.add('hidden');
+                    overlay.classList.remove('flex');
+                };
+            }
+        }
+
         renderNotifications(personalNotifs, channelNotifs);
     }, (error) => console.error("Error en listener personal:", error));
 
@@ -10599,6 +10823,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // --- ACCIONES GENERALES Y DE MODALES (MANEJADAS POR UN SWITCH) ---
         switch (action) {
+
+            case 'send-admin-alert':
+                openMainModal('send-admin-alert');
+                break;
 
             case 'go-to-tareas':
                 showView('tareas');
@@ -11464,6 +11692,8 @@ document.addEventListener('DOMContentLoaded', () => {
             closeOtroSiModal();
         }
     });
+
+
 
     const otroSiForm = document.getElementById('otro-si-form');
     if (otroSiForm) {
