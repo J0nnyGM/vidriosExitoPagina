@@ -540,48 +540,34 @@ function showView(viewName, fromHistory = false) {
 async function initializePushNotifications(user) {
     try {
         // 1. Verificar soporte
-        if (!('Notification' in window)) {
-            console.warn("Este navegador no soporta notificaciones de escritorio.");
-            return;
-        }
+        if (!('Notification' in window)) return;
 
         // 2. Pedir Permiso
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-            console.warn("Permiso de notificaciones denegado.");
+            console.log("Permiso de notificaciones denegado.");
             return;
         }
 
-        // 3. Obtener el Token
-        const token = await getToken(messaging, { 
-            vapidKey: VAPID_KEY 
-        });
+        // 3. Obtener el Token (La "dirección" del celular)
+        // Nota: Asegúrate de haber puesto tu VAPID_KEY arriba
+        const token = await getToken(messaging, { vapidKey: VAPID_KEY });
 
         if (token) {
-            console.log("FCM Token obtenido:", token);
-            
-            // 4. Guardar el Token en el documento del usuario en Firestore
-            // Esto es CRUCIAL: Así el backend sabe a quién enviarle el mensaje
+            // 4. Guardar el Token en la base de datos del usuario
             const userRef = doc(db, "users", user.uid);
-            
-            // Usamos setDoc con merge para no borrar otros datos, 
-            // o updateDoc si estamos seguros que el usuario existe.
-            // Guardamos también el userAgent para saber qué dispositivo es.
             await updateDoc(userRef, { 
                 fcmToken: token,
                 lastTokenUpdate: new Date(),
-                deviceInfo: navigator.userAgent
+                deviceInfo: navigator.userAgent // Para saber qué celular es
             });
-            
-        } else {
-            console.log("No se pudo obtener el token de registro.");
+            console.log("Notificaciones Push activadas para este dispositivo.");
         }
 
     } catch (error) {
-        console.error("Error al inicializar notificaciones push:", error);
+        console.error("Error al activar notificaciones:", error);
     }
 }
-
 
 // --- AUTENTICACIÓN ---
 
@@ -4691,56 +4677,135 @@ async function openMainModal(type, data = {}) {
 
             break;
 
-
             case 'report-entry':
-            title = 'Registrar Ingreso';
+            title = 'Reportar Ingreso';
             btnText = 'Confirmar Ingreso';
-            btnClass = 'bg-green-600 hover:bg-green-700 text-white shadow-lg';
+            btnClass = 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg w-full sm:w-auto';
             
-            // Ajustamos el tamaño para que parezca una app móvil
+            // Ajustamos el ancho para que se vea bien en móviles y escritorio
             if (modalContentDiv) {
                 modalContentDiv.classList.remove('max-w-2xl');
-                modalContentDiv.classList.add('max-w-md');
+                modalContentDiv.classList.add('max-w-lg');
             }
 
             bodyHtml = `
-                <div class="space-y-6">
-                    <div class="relative w-full aspect-[3/4] bg-black rounded-2xl overflow-hidden shadow-inner border-2 border-gray-100 group">
-                        
-                        <video id="entry-video-feed" class="w-full h-full object-cover transform scale-x-[-1]" autoplay playsinline muted></video>
-                        
-                        <canvas id="entry-photo-canvas" class="absolute inset-0 w-full h-full object-cover hidden pointer-events-none transform scale-x-[-1]"></canvas>
-                        
-                        <div id="camera-loading-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80 text-white z-10 transition-opacity duration-300">
-                            <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-2 text-blue-500"></i>
-                            <p class="text-xs font-bold uppercase tracking-wider">Iniciando Cámara...</p>
+                <div class="space-y-5">
+                    <div class="bg-blue-50 rounded-xl p-4 border border-blue-100 relative overflow-hidden">
+                        <div class="flex items-start gap-3 relative z-10">
+                            <div class="bg-white p-2 rounded-full text-blue-500 shadow-sm border border-blue-50 shrink-0">
+                                <i class="fa-solid fa-location-dot text-xl"></i>
+                            </div>
+                            <div class="w-full">
+                                <h4 class="text-blue-900 font-bold text-sm uppercase tracking-wide mb-1">Ubicación Actual</h4>
+                                <p id="entry-location-text" class="text-blue-700 text-xs font-medium">Obteniendo coordenadas...</p>
+                                <div id="entry-map-placeholder" class="mt-3 h-32 bg-blue-100/50 rounded-lg border-2 border-dashed border-blue-200 flex items-center justify-center text-blue-300">
+                                    <span class="text-xs">Mapa de ubicación</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="flex justify-center -mt-10 relative z-20">
-                        <button type="button" id="btn-capture-photo" class="w-16 h-16 bg-white rounded-full border-4 border-gray-100 shadow-xl flex items-center justify-center hover:bg-gray-50 transition-all transform hover:scale-105 active:scale-95 group/btn">
-                            <div class="w-12 h-12 bg-red-500 rounded-full group-hover/btn:bg-red-600 transition-colors"></div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-2 ml-1">Evidencia Fotográfica (Selfie)</label>
+                        
+                        <div id="entry-photo-container" class="aspect-[4/5] w-full rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 transition-all group relative overflow-hidden">
+                            
+                            <div id="entry-photo-placeholder" class="text-center p-6 transition-opacity group-hover:scale-105">
+                                <div class="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mx-auto mb-3 group-hover:shadow-md transition-all">
+                                    <i class="fa-solid fa-camera text-2xl text-gray-400 group-hover:text-emerald-500 transition-colors"></i>
+                                </div>
+                                <p class="text-sm font-bold text-gray-400 group-hover:text-emerald-600">Tocar para tomar foto</p>
+                            </div>
+
+                            <img id="entry-photo-preview" class="absolute inset-0 w-full h-full object-cover hidden" />
+                        </div>
+                        
+                        <input type="file" id="entry-photo-input" name="photo" accept="image/*" capture="user" class="hidden">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5 ml-1">Observaciones (Opcional)</label>
+                        <div class="relative group">
+                             <div class="absolute top-3.5 left-3 text-gray-400 group-focus-within:text-emerald-500 transition-colors">
+                                <i class="fa-regular fa-comment-dots"></i>
+                            </div>
+                            <textarea name="comments" rows="2" 
+                                class="w-full pl-10 pr-4 py-3 border-2 border-gray-100 hover:border-gray-200 rounded-xl text-gray-800 bg-gray-50 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all text-sm font-medium placeholder-gray-400 resize-none"
+                                placeholder="Ej: Ingreso a obra Torre 2..."></textarea>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Inicialización de eventos específicos para este modal
+            setTimeout(() => {
+                const container = document.getElementById('entry-photo-container');
+                const input = document.getElementById('entry-photo-input');
+                const preview = document.getElementById('entry-photo-preview');
+                const placeholder = document.getElementById('entry-photo-placeholder');
+
+                if(container && input) {
+                    // Al hacer clic en la caja, abrir cámara
+                    container.addEventListener('click', () => input.click());
+
+                    // Al seleccionar archivo, mostrar preview
+                    input.addEventListener('change', (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (evt) => {
+                                preview.src = evt.target.result;
+                                preview.classList.remove('hidden');
+                                placeholder.classList.add('hidden');
+                                container.classList.remove('border-dashed', 'bg-gray-50');
+                                container.classList.add('border-emerald-500');
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                    });
+                }
+            }, 100);
+            break;
+
+
+            case 'camera_entry': // <--- ESTE ES EL CASO QUE FALTA
+            title = '📸 Validación de Ingreso';
+            // Ocultamos el botón por defecto porque ingresopersonal.js tiene sus propios botones
+            btnText = ''; 
+            btnClass = 'hidden'; 
+            
+            // Ocultamos el footer estándar del modal para usar los botones personalizados
+            if(document.getElementById('main-modal-footer')) {
+                document.getElementById('main-modal-footer').style.display = 'none';
+            }
+
+            bodyHtml = `
+                <div class="flex flex-col items-center justify-center space-y-6 py-4">
+                    <div class="relative w-64 h-64 sm:w-80 sm:h-80 bg-black rounded-full overflow-hidden shadow-2xl border-4 border-emerald-500 ring-4 ring-emerald-100">
+                        <video id="entry-camera-video" autoplay playsinline class="w-full h-full object-cover transform scale-x-[-1]"></video>
+                        <canvas id="entry-camera-canvas" class="absolute top-0 left-0 w-full h-full hidden"></canvas>
+                        <div class="absolute inset-0 border-2 border-white/40 rounded-full m-8 pointer-events-none border-dashed animate-pulse"></div>
+                    </div>
+                    
+                    <div id="entry-status-msg" class="text-center min-h-[2.5rem] flex items-center justify-center px-4">
+                        <p class="text-slate-600 font-medium text-sm bg-slate-100 px-4 py-1 rounded-full">
+                            <i class="fa-solid fa-face-viewfinder mr-2"></i>Ubica tu rostro en el círculo
+                        </p>
+                    </div>
+
+                    <div class="flex gap-4 w-full justify-center px-4">
+                        <button type="button" id="btn-cancel-entry" class="flex-1 max-w-[120px] bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 py-3 rounded-xl font-bold transition-colors shadow-sm">
+                            Cancelar
                         </button>
-                        
-                        <button type="button" id="btn-retake-photo" class="hidden px-5 py-2.5 bg-gray-800 text-white rounded-full shadow-lg hover:bg-gray-700 text-xs font-bold uppercase tracking-wide flex items-center gap-2 transition-all">
-                            <i class="fa-solid fa-rotate-left"></i> Retomar
+                        <button id="btn-capture-entry" class="flex-1 max-w-[200px] bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white py-3 rounded-xl font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-camera"></i> 
+                            <span>Validar Ingreso</span>
                         </button>
                     </div>
-
-                    <div class="bg-blue-50 rounded-xl p-4 border border-blue-100 flex items-start gap-3">
-                        <div class="bg-white p-2 rounded-full text-blue-500 shadow-sm shrink-0">
-                            <i id="location-icon" class="fa-solid fa-location-dot animate-bounce"></i>
-                        </div>
-                        <div>
-                            <h4 class="text-blue-900 font-bold text-xs uppercase tracking-wide mb-1">Ubicación en Tiempo Real</h4>
-                            <p id="location-status" class="text-blue-700 text-sm font-medium leading-tight">Obteniendo coordenadas GPS...</p>
-                            <p id="location-coords" class="text-blue-400 text-[10px] font-mono mt-1 hidden">---, ---</p>
-                        </div>
+                    
+                    <div class="text-[10px] text-slate-400 text-center mt-2">
+                        <i class="fa-solid fa-location-dot mr-1"></i> Se registrará tu ubicación y biometría.
                     </div>
-
-                    <input type="hidden" name="latitude" id="entry-lat">
-                    <input type="hidden" name="longitude" id="entry-lng">
-                    <input type="hidden" name="photoData" id="entry-photo-data">
                 </div>
             `;
             break;
