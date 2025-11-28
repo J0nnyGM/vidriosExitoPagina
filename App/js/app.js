@@ -1574,7 +1574,7 @@ async function openPurchaseOrderModal(poId) {
         // Renderizar ítems
         let itemsHtml = '';
         if (po.items && po.items.length > 0) {
-             itemsHtml = po.items.map((item, idx) => `
+            itemsHtml = po.items.map((item, idx) => `
                 <tr class="border-b border-gray-50 last:border-0">
                     <td class="py-3 pl-4 text-sm text-gray-500 font-mono">${idx + 1}</td>
                     <td class="py-3 text-sm font-medium text-gray-800">
@@ -2247,7 +2247,7 @@ async function loadSupplierDetailsView(supplierId) {
         // Inyectamos el contenido
         summaryContent.innerHTML = profileCard + balanceCards;
 
-// --- 2. Pestaña ÓRDENES ---
+        // --- 2. Pestaña ÓRDENES ---
         const poQuery = query(collection(db, "purchaseOrders"), where("supplierId", "==", supplierId), orderBy("createdAt", "desc"));
         unsubscribeSupplierPOs = onSnapshot(poQuery, (snapshot) => {
             posTableBody.innerHTML = '';
@@ -2260,7 +2260,7 @@ async function loadSupplierDetailsView(supplierId) {
                 const row = document.createElement('tr');
                 row.className = "bg-white hover:bg-gray-50 border-b last:border-0 transition-colors group";
 
-let statusBadge = '';
+                let statusBadge = '';
                 if (po.status === 'recibida') statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-200"><i class="fa-solid fa-check mr-1"></i> Recibida</span>';
                 else if (po.status === 'rechazada') statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-200"><i class="fa-solid fa-ban mr-1"></i> Rechazada</span>';
                 else statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-800 border border-orange-200"><i class="fa-regular fa-clock mr-1"></i> Pendiente</span>';
@@ -2301,7 +2301,7 @@ let statusBadge = '';
         // --- 3. Pestaña PAGOS ---
         const paymentsQuery = query(collection(db, "suppliers", supplierId, "payments"), orderBy("date", "desc"));
         unsubscribeSupplierPayments = onSnapshot(paymentsQuery, (snapshot) => {
-             paymentsTableBody.innerHTML = '';
+            paymentsTableBody.innerHTML = '';
             if (snapshot.empty) {
                 paymentsTableBody.innerHTML = `<tr><td colspan="4" class="text-center py-12 text-gray-400">No hay pagos registrados.</td></tr>`;
                 return;
@@ -11132,24 +11132,32 @@ document.addEventListener('DOMContentLoaded', () => {
         const checkinModal = target.closest('#safety-checkin-modal');
         if (checkinModal) {
 
-            // Botón: Tomar Foto y Verificar
-            if (target.id === 'checkin-take-photo-btn') {
-                target.disabled = true;
-                target.textContent = 'Verificando...';
+  // 1. DETECTAR EL BOTÓN CORRECTAMENTE (Corrección aquí)
+            const scanBtn = target.closest('#checkin-take-photo-btn');
+            
+            // Botón: ESCANEAR ROSTRO
+            if (scanBtn) {
                 const faceStatus = document.getElementById('checkin-face-status');
                 const videoEl = document.getElementById('checkin-video-feed');
                 const canvasEl = document.getElementById('checkin-video-canvas');
-                const step2 = document.getElementById('checkin-step-2-epp');
+                const scannerLine = document.getElementById('scanner-line');
+                const confirmBtn = document.getElementById('checkin-confirm-btn');
+
+                scanBtn.disabled = true;
+                // Guardamos el contenido original por si falla
+                const originalContent = scanBtn.innerHTML; 
+                scanBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> <span>Procesando...</span>';
+                
+                // Activar efecto láser
+                if(scannerLine) {
+                    scannerLine.classList.remove('hidden');
+                    scannerLine.classList.add('animate-scan');
+                }
 
                 try {
-                    if (!modelsLoaded) {
-                        throw new Error("Modelos de IA aún cargando. Intenta de nuevo en 5 segundos.");
-                    }
+                    if (!modelsLoaded) throw new Error("Cargando IA...");
 
-                    // --- INICIO DE MODIFICACIÓN PARA DESHABILITAR RECONOCIMIENTO FACIAL ---
-
-                    // 1. Forzamos la captura de la imagen en el canvas (necesario para el paso final)
-                    // Este bloque asegura que verifiedCanvas tenga la imagen capturada.
+                    // 1. Configurar Canvas
                     const videoWidth = videoEl.videoWidth;
                     const videoHeight = videoEl.videoHeight;
                     canvasEl.width = videoWidth;
@@ -11159,183 +11167,124 @@ document.addEventListener('DOMContentLoaded', () => {
                     ctx.scale(-1, 1);
                     ctx.drawImage(videoEl, 0, 0, videoWidth, videoHeight);
                     ctx.setTransform(1, 0, 0, 1, 0, 0);
-                    verifiedCanvas = canvasEl;
 
-                    if (videoStream) videoStream.getTracks().forEach(track => track.stop());
+                    // 2. Pausar video para efecto de "captura"
+                    videoEl.pause(); 
 
-                    // 2. Mostramos el mensaje de bypass y forzamos el éxito
-                    faceStatus.textContent = "VERIFICACIÓN MANUAL: Reconocimiento Deshabilitado.";
-                    faceStatus.className = "text-center text-sm font-medium text-green-600 mt-2 h-4";
+                    // 3. Detección Facial
+                    faceStatus.textContent = 'Analizando biometría...';
+                    const detection = await faceapi.detectSingleFace(canvasEl).withFaceLandmarks().withFaceDescriptor();
 
-                    step2.classList.remove('hidden');
-                    document.getElementById('checkin-confirm-btn').disabled = false;
-                    target.disabled = true;
-                    target.textContent = 'Verificación Biométrica Deshabilitada';
+                    if (!detection) throw new Error("No se detectó rostro.");
+                    if (detection.detection.score < 0.6) throw new Error("Imagen borrosa. Repetir.");
 
-                    return; // SALIMOS DE LA FUNCIÓN AQUÍ.*/
-
-                    // --- FIN DE MODIFICACIÓN ---
-
-                    /* --- INICIO DE LA CORRECCIÓN ---
-
-                    // 1. Obtenemos las dimensiones REALES del stream de video
-                    const videoWidth = videoEl.videoWidth;
-                    const videoHeight = videoEl.videoHeight;
-
-                    // 2. Ajustamos el tamaño del canvas a las dimensiones del video
-                    canvasEl.width = videoWidth;
-                    canvasEl.height = videoHeight;
-
-                    const ctx = canvasEl.getContext('2d');
-
-                    // 3. Usamos el ancho real del canvas para el espejo
-                    ctx.translate(videoWidth, 0);
-                    ctx.scale(-1, 1);
-
-                    // 4. Dibujamos la imagen usando las dimensiones correctas
-                    ctx.drawImage(videoEl, 0, 0, videoWidth, videoHeight);
-
-                    // 5. Reseteamos la transformación
-                    ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-                    // --- FIN DE LA CORRECCIÓN ---
-
-
-                    // 2. Detener la cámara (Sin cambios)
-                    if (videoStream) videoStream.getTracks().forEach(track => track.stop());
-
-                    // 3. Ejecutar Detección (Sin cambios)
-                    faceStatus.textContent = 'Detectando rostro...';
-                    const detection = await faceapi.detectSingleFace(canvasEl)
-                        .withFaceLandmarks()
-                        .withFaceDescriptor();
-
-                    // --- INICIO DE MODIFICACIÓN (Mejores Guías de Error) ---
-                    if (!detection) {
-                        throw new Error("Rostro no detectado. Asegúrate de estar en un lugar bien iluminado.");
-                    }
-
-                    // 4. NUEVO: Verificar la calidad de la detección
-                    // (Si 'score' es bajo, la foto es de mala calidad)
-                    if (detection.detection.score < 0.7) {
-                        throw new Error(`Detección de baja calidad (${detection.detection.score.toFixed(2)}). Intenta con mejor luz.`);
-                    }
-
-
-                    // 5. Comparar rostros
-                    faceStatus.textContent = "Rostro detectado. Comparando...";
-
+                    // 4. Comparación
                     if (!currentUserFaceDescriptor) {
-                        console.warn("Saltando reconocimiento (no hay descriptor de perfil). Solo se hizo detección.");
+                         faceStatus.textContent = "⚠️ Sin huella registrada. (Paso autorizado)";
                     } else {
                         const distance = faceapi.euclideanDistance(currentUserFaceDescriptor, detection.descriptor);
-
-                        // --- INICIO DE MODIFICACIÓN (Más Flexible) ---
-                        // El estándar es 0.6. 0.5 era muy estricto. Usemos 0.55
-                        const umbralDeCoincidencia = 0.55; // (Original era 0.5)
-
-                        if (distance > umbralDeCoincidencia) {
-                            throw new Error(`Rostro no coincide (Distancia: ${distance.toFixed(2)}). Verifica que eres tú y no usas gafas de sol.`);
-                        }
-                        faceStatus.textContent = `Rostro Coincide (Distancia: ${distance.toFixed(2)})`;
-
+                        // Umbral de similitud (0.55)
+                        if (distance > 0.55) throw new Error("Identidad no verificada.");
                     }
 
-                    // 6. ¡Éxito! (Sin cambios)
-                    faceStatus.textContent = "¡Verificación Exitosa!";
-                    faceStatus.className = "text-center text-sm font-medium text-green-600 mt-2 h-4";
-                    step2.classList.remove('hidden');
+                    // --- ÉXITO ---
+                    faceStatus.innerHTML = '<span class="flex items-center justify-center gap-2"><i class="fa-solid fa-circle-check"></i> Identidad Confirmada</span>';
+                    faceStatus.className = "text-sm font-bold text-green-600";
+                    
+                    // Detener animación
+                    if(scannerLine) scannerLine.classList.add('hidden');
+
                     verifiedCanvas = canvasEl;
-                    document.getElementById('checkin-confirm-btn').disabled = false;
-                    target.disabled = true;*/
+                    
+                    // Cambio de Botones: Ocultar "Escanear", Mostrar "Autorizar"
+                    scanBtn.classList.add('hidden'); 
+                    confirmBtn.classList.remove('hidden');
+                    confirmBtn.disabled = false;
 
                 } catch (err) {
-                    // (El 'catch' ahora recibe los mensajes de error mejorados)
+                    // --- ERROR ---
+                    console.error(err);
+                    videoEl.play(); // Reanudar video
+                    if(scannerLine) scannerLine.classList.add('hidden'); // Parar láser
+                    
                     faceStatus.textContent = err.message;
-                    faceStatus.className = "text-center text-sm font-medium text-red-600 mt-2 h-4";
-                    target.disabled = false;
-                    target.textContent = 'Reintentar Verificación';
+                    faceStatus.className = "text-sm font-bold text-red-500";
+                    
+                    scanBtn.disabled = false;
+                    scanBtn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> <span>Reintentar</span>';
                     verifiedCanvas = null;
-
-                    // Reiniciar la cámara para un nuevo intento (Sin cambios)
-                    try {
-                        videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
-                        videoEl.srcObject = videoStream;
-                    } catch (camErr) {
-                        faceStatus.textContent = "Error al reiniciar la cámara.";
-                    }
                 }
             }
 
-            // Botón: Confirmar Check-in
+ // Botón: Confirmar Check-in (AUTORIZAR AVANCE)
             if (target.id === 'checkin-confirm-btn') {
-                const taskId = target.dataset.taskId; // Obtenemos el taskId
-
-                // (La validación de EPP y 'verifiedCanvas' sigue igual...)
+                const taskId = target.dataset.taskId; // Recuperamos el ID de la tarea
+                
+                // 1. Validación de Seguridad
                 if (!verifiedCanvas) {
-                    alert("Error: Aún no se ha verificado una foto.");
+                    alert("Error de seguridad: No se ha verificado el rostro. Por favor, repite el escaneo.");
+                    // Reseteamos la interfaz por seguridad
+                    document.getElementById('checkin-take-photo-btn').classList.remove('hidden');
+                    target.classList.add('hidden');
                     return;
                 }
 
-
-                // Omitimos la validación de EPP si es un cambio de perfil (no hay taskId)
-                if (taskId) {
-                    const checkboxes = document.querySelectorAll('.epp-checkbox');
-                    if (checkboxes.length > 0) {
-                        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-                        if (!allChecked) {
-                            alert("Por favor, confirma que tienes todos tus equipos de protección (EPP) marcando las casillas.");
-                            return;
-                        }
-                    }
-                }
-
-
                 target.disabled = true;
-                target.textContent = 'Guardando...';
+                const originalText = target.innerHTML;
+                target.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Autorizando...';
 
                 try {
-
-                    // Solo guardamos la foto si estamos haciendo un check-in de TAREA
+                    // CASO A: Check-in de TAREA (Tiene taskId)
                     if (taskId) {
-                        target.textContent = 'Guardando evidencia...';
+                        // 1. Convertir la foto verificada a archivo (Blob)
+                        const selfieBlob = await new Promise(resolve => verifiedCanvas.toBlob(resolve, 'image/jpeg', 0.80));
 
-                        // 1. Convertir el Canvas (selfie) a Blob
-                        const selfieBlob = await new Promise(resolve => verifiedCanvas.toBlob(resolve, 'image/jpeg', 0.85));
-
-                        // 2. Subir la selfie a Storage
-                        const selfiePath = `checkin_evidence/${taskId}/${currentUser.uid}_${Date.now()}.jpg`;
+                        // 2. Subir la evidencia a Storage (Ruta organizada)
+                        const timestamp = Date.now();
+                        const selfiePath = `checkin_evidence/${taskId}/${currentUser.uid}_${timestamp}.jpg`;
                         const selfieStorageRef = ref(storage, selfiePath);
+                        
                         await uploadBytes(selfieStorageRef, selfieBlob);
                         const downloadURL = await getDownloadURL(selfieStorageRef);
 
-                        // 3. Guardar el log en la bitácora de la Tarea
+                        // 3. Registrar el evento en la bitácora de la tarea (Log inmutable)
                         await addDoc(collection(db, "tasks", taskId, "comments"), {
-                            type: 'log',
-                            text: `<b>Check-in de seguridad verificado.</b>`,
-                            photoURL: downloadURL, // La selfie
+                            type: 'log', // Importante para que se vea gris y pequeño
+                            text: `<b>Identidad Verificada.</b> El usuario autorizó un avance.`,
+                            photoURL: downloadURL, // Evidencia biométrica
                             userId: currentUser.uid,
                             userName: `${usersMap.get(currentUser.uid)?.firstName || 'Usuario'} ${usersMap.get(currentUser.uid)?.lastName || ''}`,
-                            createdAt: new Date()
+                            createdAt: new Date() // Timestamp del servidor
                         });
+                        
+                        console.log("Evidencia biométrica guardada correctamente.");
+                    }
+                    
+                    // CASO B: Check-in de PERFIL (Sin taskId, solo validación)
+                    else {
+                        console.log("Validación de perfil exitosa. Procediendo...");
                     }
 
-
-
-                    // 4. Cerramos el modal
+                    // 4. CERRAR MODAL
+                    // Detenemos la cámara para liberar memoria y luz
+                    if (videoStream) videoStream.getTracks().forEach(track => track.stop());
                     document.getElementById('safety-checkin-modal').style.display = 'none';
 
-                    // 5. ¡Ejecutamos la acción original!
-                    // (Si era un check-in, ejecuta 'handleRegisterTaskProgress')
-                    // (Si era un perfil, ejecuta 'savePendingProfileUpdate')
-                    if (onSafetyCheckInSuccess) {
+                    // 5. EJECUTAR LA ACCIÓN FINAL (Callback)
+                    // Esta es la función que realmente guarda el avance o el perfil
+                    if (typeof onSafetyCheckInSuccess === 'function') {
                         onSafetyCheckInSuccess();
+                    } else {
+                        console.warn("No había acción posterior definida (callback).");
                     }
+
                 } catch (err) {
-                    console.error("Error al guardar la evidencia del check-in:", err);
-                    alert("No se pudo guardar la evidencia. Inténtalo de nuevo.");
+                    console.error("Error crítico en autorización:", err);
+                    alert("Error al autorizar: " + err.message);
+                    
+                    // Restaurar botón
                     target.disabled = false;
-                    target.textContent = 'Confirmar Check-in del Día';
+                    target.innerHTML = originalText;
                 }
             }
 
@@ -15862,117 +15811,52 @@ async function sendNotification(userId, title, message, view) {
 
 
 /**
- * Abre el modal de Check-in de Seguridad.
- * (MODIFICADA para aceptar taskId y guardar evidencia)
- * @param {string} taskId - El ID de la tarea para la auditoría.
- * @param {function} callbackOnSuccess - La función a ejecutar cuando el check-in sea exitoso.
+ * Abre el modal de Validación Biométrica (Firma Digital).
  */
 async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
-    onSafetyCheckInSuccess = callbackOnSuccess; // Guarda la función
-    verifiedCanvas = null; // Resetea la foto verificada
+    onSafetyCheckInSuccess = callbackOnSuccess;
+    verifiedCanvas = null;
 
     const modal = document.getElementById('safety-checkin-modal');
     const step1 = document.getElementById('checkin-step-1-face');
-    const step2 = document.getElementById('checkin-step-2-epp');
     const videoEl = document.getElementById('checkin-video-feed');
-    const canvasEl = document.getElementById('checkin-video-canvas');
     const takePhotoButton = document.getElementById('checkin-take-photo-btn');
     const faceStatus = document.getElementById('checkin-face-status');
-    const eppList = document.getElementById('checkin-epp-list');
     const confirmBtn = document.getElementById('checkin-confirm-btn');
+    const scannerLine = document.getElementById('scanner-line'); // Referencia a la línea láser
 
-    modal.style.zIndex = "60"; // <-- ¡AÑADE ESTA LÍNEA!
+    modal.style.zIndex = "60";
 
-    // 1. Resetear el modal a su estado inicial
-    step1.classList.remove('hidden');
-    step2.classList.add('hidden');
+    // 1. Resetear estado
+    step1.classList.remove('hidden');     // Mostrar botón de escanear
+    confirmBtn.classList.add('hidden');   // Ocultar botón de confirmar
     confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Confirmar Check-in del Día';
+    
     takePhotoButton.disabled = false;
-    takePhotoButton.textContent = 'Tomar Foto y Verificar Rostro';
-    faceStatus.textContent = '';
-    eppList.innerHTML = '<p class="text-gray-400">Cargando dotación...</p>';
+    takePhotoButton.innerHTML = '<i class="fa-solid fa-camera"></i> <span>Iniciar Escaneo</span>';
+    takePhotoButton.classList.remove('hidden');
 
-    // Guardamos el taskId en el botón de confirmar para usarlo al guardar
+    faceStatus.textContent = 'Listo para validar';
+    faceStatus.className = 'text-sm font-bold text-slate-600';
+    
+    if(scannerLine) scannerLine.classList.add('hidden'); // Ocultar láser al inicio
+
+    // Guardamos el taskId
     confirmBtn.dataset.taskId = taskId;
 
     modal.style.display = 'flex';
 
-    // 2. Iniciar la cámara (Paso 1)
+    // 2. Iniciar cámara
     try {
         if (videoStream) {
             videoStream.getTracks().forEach(track => track.stop());
         }
-        // Pedimos "video: true" (cualquier cámara de video)
-        videoStream = await navigator.mediaDevices.getUserMedia({
-            video: true
-        });
+        videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
         videoEl.srcObject = videoStream;
     } catch (err) {
-        console.error("Error al acceder a la cámara:", err);
-        faceStatus.textContent = "Error al acceder a la cámara. Revisa los permisos.";
-        return;
-    }
-
-    // 3. Cargar la dotación (Paso 2)
-    try {
-        const historyQuery = query(
-            collection(db, "dotacionHistory"),
-            where("action", "==", "asignada"),
-            where("userId", "==", currentUser.uid),
-            where("status", "==", "activo")
-        );
-        const snapshot = await getDocs(historyQuery);
-
-        if (snapshot.empty) {
-            eppList.innerHTML = '<p class="text-sm text-gray-500">No tienes dotación activa asignada.</p>';
-        } else {
-            let eppHtml = '';
-            const catalogIds = snapshot.docs.map(doc => doc.data().itemId);
-            // Manejo de lotes de consulta (Firestore 'in' tiene un límite de 30)
-            let allCatalogItems = [];
-            for (let i = 0; i < catalogIds.length; i += 30) {
-                const chunk = catalogIds.slice(i, i + 30);
-                const catalogQuery = query(collection(db, "dotacionCatalog"), where(documentId(), "in", chunk));
-                const catalogSnapshot = await getDocs(catalogQuery);
-                catalogSnapshot.forEach(doc => allCatalogItems.push(doc));
-            }
-
-            const catalogMap = new Map(allCatalogItems.map(doc => [doc.id, doc.data()]));
-
-            snapshot.forEach(doc => {
-                const item = doc.data();
-                const catalogItem = catalogMap.get(item.itemId);
-                let vencimientoHtml = '<span class="text-xs text-green-600">(Vigente)</span>';
-
-                if (catalogItem && catalogItem.vidaUtilDias && item.fechaEntrega) {
-                    const today = new Date(); today.setHours(0, 0, 0, 0);
-                    const deliveryDate = new Date(item.fechaEntrega + 'T00:00:00');
-                    const expirationDate = new Date(deliveryDate.getTime());
-                    expirationDate.setDate(expirationDate.getDate() + catalogItem.vidaUtilDias);
-                    const diffTime = expirationDate.getTime() - today.getTime();
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-                    if (diffDays <= 0) {
-                        vencimientoHtml = `<span class="text-xs text-red-600 font-bold">(VENCIDO)</span>`;
-                    } else if (diffDays <= 30) {
-                        vencimientoHtml = `<span class="text-xs text-yellow-600 font-bold">(Vence en ${diffDays} días)</span>`;
-                    }
-                }
-
-                eppHtml += `
-                    <label class="flex items-center p-2 bg-white border rounded-md">
-                        <input type="checkbox" class="h-5 w-5 rounded epp-checkbox">
-                        <span class="ml-3 text-sm font-medium">${item.itemName || 'Ítem'}</span>
-                        <span class="ml-auto">${vencimientoHtml}</span>
-                    </label>
-                `;
-            });
-            eppList.innerHTML = eppHtml;
-        }
-    } catch (err) {
-        console.error("Error al cargar EPP:", err);
-        eppList.innerHTML = '<p class="text-red-500">Error al cargar tu dotación.</p>';
+        console.error("Error cámara:", err);
+        faceStatus.textContent = "Error: No se detecta la cámara.";
+        faceStatus.className = "text-sm font-bold text-red-500";
     }
 }
 
@@ -15981,13 +15865,12 @@ async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
  * Reutiliza el modal de check-in pero oculta la parte de EPP.
  */
 async function openProfileAuthModal() {
-    onSafetyCheckInSuccess = savePendingProfileUpdate; // ¡La función que se ejecutará si la cara es correcta!
+    onSafetyCheckInSuccess = savePendingProfileUpdate;
     verifiedCanvas = null;
 
     const modal = document.getElementById('safety-checkin-modal');
     const title = document.getElementById('safety-checkin-title');
     const step1 = document.getElementById('checkin-step-1-face');
-    const step2 = document.getElementById('checkin-step-2-epp'); // Lo vamos a ocultar
     const videoEl = document.getElementById('checkin-video-feed');
     const takePhotoButton = document.getElementById('checkin-take-photo-btn');
     const faceStatus = document.getElementById('checkin-face-status');
@@ -15997,18 +15880,17 @@ async function openProfileAuthModal() {
 
     // 1. Resetear el modal
     step1.classList.remove('hidden');
-    step2.classList.add('hidden'); // Ocultamos el checklist de EPP
-    title.textContent = 'Verificar Identidad'; // Cambiamos el título
+    title.textContent = 'Verificar Identidad';
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Confirmar Identidad';
     takePhotoButton.disabled = false;
     takePhotoButton.textContent = 'Tomar Foto y Verificar Rostro';
     faceStatus.textContent = '';
-    confirmBtn.dataset.taskId = ''; // Nos aseguramos de que no haya un ID de tarea
+    confirmBtn.dataset.taskId = '';
 
     modal.style.display = 'flex';
 
-    // 2. Iniciar la cámara
+    // 2. Iniciar cámara
     try {
         if (videoStream) {
             videoStream.getTracks().forEach(track => track.stop());

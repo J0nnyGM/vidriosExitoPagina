@@ -1990,57 +1990,55 @@
         </div>
     </div>
 
-    <div id="safety-checkin-modal"
-        class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50 hidden">
+<div id="safety-checkin-modal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-900/90 backdrop-blur-sm transition-opacity duration-300">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative transform transition-all scale-100 mx-4">
+        
+        <div class="bg-slate-50 px-6 py-5 text-center border-b border-slate-100">
+            <div class="w-14 h-14 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 shadow-inner">
+                <i class="fa-solid fa-fingerprint text-3xl"></i>
+            </div>
+            <h3 id="safety-checkin-title" class="text-xl font-black text-slate-800 uppercase tracking-tight">Firma Biométrica</h3>
+            <p class="text-xs text-slate-500 font-medium mt-1">Validando identidad para registrar avance</p>
+        </div>
 
-        <div id="safety-checkin-modal-content"
-            class="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center p-4 border-b">
-                <h2 id="safety-checkin-title" class="text-2xl font-bold text-gray-800">Check-in de Seguridad Diario
-                </h2>
-                <button id="safety-checkin-close-btn" class="text-gray-400 hover:text-gray-600">&times;</button>
+        <div class="p-6 flex flex-col items-center space-y-5">
+            
+            <div class="relative w-64 h-64 rounded-full overflow-hidden border-4 border-slate-200 shadow-inner bg-black group">
+                
+                <video id="checkin-video-feed" autoplay playsinline class="absolute inset-0 w-full h-full object-cover transform scale-x-[-1]"></video>
+                <canvas id="checkin-video-canvas" class="hidden absolute inset-0 w-full h-full object-cover transform scale-x-[-1]"></canvas>
+                
+                <div class="absolute inset-0 border-2 border-white/30 rounded-full m-4 pointer-events-none"></div>
+                
+                <div id="scanner-line" class="absolute top-0 left-0 w-full h-1 bg-blue-500/80 shadow-[0_0_15px_rgba(59,130,246,1)] animate-scan hidden"></div>
             </div>
 
-            <div class="p-6 space-y-6 overflow-y-auto">
-
-                <div id="checkin-step-1-face">
-                    <h3 class="text-lg font-semibold text-gray-700">Paso 1: Verificación Facial</h3>
-                    <p class="text-sm text-gray-500 mb-3">Por favor, tómate una selfie clara para verificar tu
-                        identidad.</p>
-
-                    <div class="w-full h-96 bg-gray-200 rounded-lg overflow-hidden relative">
-                        <video id="checkin-video-feed" class="w-full h-full object-cover" autoplay playsinline></video>
-                        <canvas id="checkin-video-canvas" class="absolute top-0 left-0 w-full h-full hidden"></canvas>
-                    </div>
-
-                    <button id="checkin-take-photo-btn"
-                        class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg mt-4">
-                        Tomar Foto y Verificar Rostro
-                    </button>
-                    <p id="checkin-face-status" class="text-center text-sm font-medium text-blue-600 mt-2 h-4"></p>
-                </div>
-
-                <div id="checkin-step-2-epp" class="hidden">
-                    <h3 class="text-lg font-semibold text-gray-700">Paso 2: Checklist de Dotación Activa</h3>
-                    <p class="text-sm text-gray-500 mb-3">Confirma que tienes contigo los siguientes equipos de
-                        protección:</p>
-
-                    <div id="checkin-epp-list"
-                        class="space-y-2 max-h-48 overflow-y-auto p-3 bg-gray-50 border rounded-md">
-                        <p class="text-gray-400">Cargando dotación...</p>
-                    </div>
-                </div>
-
+            <div class="w-full text-center h-12 flex flex-col justify-center">
+                <p id="checkin-face-status" class="text-sm font-bold text-slate-600">Esperando cámara...</p>
+                <p class="text-[10px] text-slate-400 mt-1">Mantén tu rostro dentro del círculo</p>
             </div>
 
-            <div class="p-4 bg-gray-50 border-t flex justify-end">
-                <button id="checkin-confirm-btn"
-                    class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg" disabled>
-                    Confirmar Check-in del Día
+            <div id="checkin-step-1-face" class="w-full">
+                <button id="checkin-take-photo-btn" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg hover:shadow-xl transform active:scale-95 transition-all flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-camera"></i>
+                    <span>Escanear Rostro</span>
                 </button>
             </div>
+            
+            <button id="checkin-confirm-btn" class="hidden w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg hover:shadow-xl transform active:scale-95 transition-all flex items-center justify-center gap-2 animate-fade-in-up">
+                <i class="fa-solid fa-shield-check"></i>
+                <span>Autorizar Avance</span>
+            </button>
+
+        </div>
+
+        <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 text-center">
+            <button id="safety-checkin-close-btn" class="text-slate-400 hover:text-slate-600 text-sm font-semibold transition-colors">
+                Cancelar Operación
+            </button>
         </div>
     </div>
+</div>
 
     <div id="documents-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
         <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto p-6 max-h-[90vh] flex flex-col">
