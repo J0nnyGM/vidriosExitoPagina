@@ -554,30 +554,30 @@ async function initializePushNotifications(user) {
         }
 
         // --- CAMBIO IMPORTANTE AQUÍ ---
-        
+
         // A. Registramos manualmente el Service Worker indicando la ruta relativa correcta
         // El punto './' es crucial, le dice que busque en la misma carpeta que el index.html
         const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
 
         // B. Pasamos ese registro a getToken
-        const token = await getToken(messaging, { 
+        const token = await getToken(messaging, {
             vapidKey: VAPID_KEY,
-            serviceWorkerRegistration: registration 
+            serviceWorkerRegistration: registration
         });
 
         // -------------------------------
 
         if (token) {
             console.log("FCM Token obtenido:", token);
-            
+
             // 4. Guardar el Token en la base de datos del usuario
             const userRef = doc(db, "users", user.uid);
-            await updateDoc(userRef, { 
+            await updateDoc(userRef, {
                 fcmToken: token,
                 lastTokenUpdate: new Date(),
                 deviceInfo: navigator.userAgent
             });
-            
+
         } else {
             console.log("No se pudo obtener el token de registro.");
         }
@@ -590,11 +590,11 @@ async function initializePushNotifications(user) {
 // --- GESTIÓN DE PERMISOS DE INICIO ---
 
 // 1. Función maestra que actualiza la interfaz del modal
-window.updatePermissionUI = async function() {
+window.updatePermissionUI = async function () {
     const updateCard = (type, isGranted) => {
         const container = document.getElementById(`perm-status-${type}`);
         const card = document.getElementById(`perm-card-${type}`);
-        if(!container || !card) return;
+        if (!container || !card) return;
 
         if (isGranted) {
             container.innerHTML = `<span class="text-green-600 font-bold text-xl"><i class="fa-solid fa-circle-check"></i></span>`;
@@ -620,11 +620,11 @@ window.updatePermissionUI = async function() {
     try {
         const locStatus = await navigator.permissions.query({ name: 'geolocation' });
         updateCard('location', locStatus.state === 'granted');
-    } catch (e) {}
+    } catch (e) { }
 };
 
 // 2. Pedir Cámara
-window.requestCameraPermission = async function() {
+window.requestCameraPermission = async function () {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         // Si tenemos éxito, apagamos la cámara inmediatamente (solo queríamos el permiso)
@@ -636,7 +636,7 @@ window.requestCameraPermission = async function() {
 };
 
 // 3. Pedir Ubicación
-window.requestLocationPermission = function() {
+window.requestLocationPermission = function () {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
         (pos) => { updatePermissionUI(); },
@@ -645,7 +645,7 @@ window.requestLocationPermission = function() {
 };
 
 // 4. Pedir Notificaciones (Reutilizamos tu lógica existente)
-window.requestPushPermission = async function() {
+window.requestPushPermission = async function () {
     if (!('Notification' in window)) return;
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
@@ -673,7 +673,7 @@ async function checkAllPermissionsOnLogin() {
         if (locStatus.state !== 'granted') missing = true;
     } catch (e) {
         // Si falla la verificación (navegadores viejos), asumimos que falta para forzar el chequeo manual
-        missing = true; 
+        missing = true;
     }
 
     if (missing) {
@@ -690,7 +690,7 @@ async function checkAllPermissionsOnLogin() {
 onAuthStateChanged(auth, async (user) => {
     if (user) {
         const userDoc = await getDoc(doc(db, "users", user.uid));
-        
+
         // Verificamos que el usuario exista y esté activo
         if (userDoc.exists() && userDoc.data().status === 'active') {
             currentUser = user;
@@ -712,7 +712,7 @@ onAuthStateChanged(auth, async (user) => {
             const roleEl = document.getElementById('header-user-role');
             const photoEl = document.getElementById('header-profile-photo');
             const initialsEl = document.getElementById('header-profile-initials');
-            
+
             // Referencias para el menú móvil (dentro del dropdown)
             const mobileNameEl = document.getElementById('mobile-user-name');
             const mobileEmailEl = document.getElementById('mobile-user-email');
@@ -730,13 +730,13 @@ onAuthStateChanged(auth, async (user) => {
                     photoEl.classList.remove('hidden');
                     initialsEl.classList.add('hidden');
                     // Quitar fondo gris si hay foto
-                    if(photoEl.parentElement) photoEl.parentElement.classList.remove('bg-gray-200');
+                    if (photoEl.parentElement) photoEl.parentElement.classList.remove('bg-gray-200');
                 } else {
                     photoEl.classList.add('hidden');
                     initialsEl.textContent = initials;
                     initialsEl.classList.remove('hidden');
                     // Poner fondo gris si son letras
-                    if(photoEl.parentElement) photoEl.parentElement.classList.add('bg-gray-200');
+                    if (photoEl.parentElement) photoEl.parentElement.classList.add('bg-gray-200');
                 }
             }
             // --- FIN: LÓGICA UI HEADER ---
@@ -779,12 +779,12 @@ onAuthStateChanged(auth, async (user) => {
             applySidebarPermissions(currentUserRole, userCustomPermissions);
 
             // --- CAMBIO: Reemplazar la llamada directa por el chequeo completo ---
-            
+
             // initializePushNotifications(user);  <-- BORRAR O COMENTAR ESTA LÍNEA
-            
+
             // Insertar la nueva verificación:
-            checkAllPermissionsOnLogin(); 
-            
+            checkAllPermissionsOnLogin();
+
             // --------------------------------------------------------------------
 
             // 6. Cargar vista inicial...
@@ -803,7 +803,7 @@ onAuthStateChanged(auth, async (user) => {
         authContainer.classList.remove('hidden');
         appContainer.classList.add('hidden');
     }
-    
+
     // Ocultar loader al finalizar todo el proceso
     loadingOverlay.classList.add('hidden');
 });
@@ -1530,8 +1530,8 @@ async function loadReportsView() {
 }
 
 /**
- * Abre y rellena el modal con los detalles de una Orden de Compra específica.
- * (DISEÑO MEJORADO: Más ancho, iconos, tarjetas de resumen y tabla limpia)
+ * Abre el detalle de la Orden de Compra con diseño tipo "Invoice/Factura".
+ * Incluye sección destacada para facilitar el pago con QR.
  */
 async function openPurchaseOrderModal(poId) {
     const modal = document.getElementById('po-details-modal');
@@ -1539,212 +1539,192 @@ async function openPurchaseOrderModal(poId) {
 
     const contentContainer = document.getElementById('po-details-content');
     const actionsContainer = document.getElementById('po-details-actions');
-    const modalContainer = modal.querySelector('.w-11\\/12'); // Seleccionamos el contenedor interno
+    const modalContainer = modal.querySelector('.w-11\\/12');
 
-    // 1. AJUSTE VISUAL: Hacemos el modal más ancho (igual que el de cartera)
+    // Hacer el modal más ancho para el nuevo diseño
     if (modalContainer) {
-        modalContainer.classList.remove('md:max-w-2xl');
-        modalContainer.classList.add('md:max-w-5xl'); // Mucho más espacio
+        modalContainer.className = "w-11/12 md:max-w-5xl bg-white rounded-xl shadow-2xl transform transition-all relative flex flex-col max-h-[95vh]";
     }
 
-    // Estado de carga
     contentContainer.innerHTML = '<div class="flex justify-center items-center h-64"><div class="loader"></div></div>';
     actionsContainer.innerHTML = '';
     modal.style.display = 'flex';
 
     try {
+        // 1. Cargar datos de PO y Proveedor
         const poRef = doc(db, "purchaseOrders", poId);
         const poSnap = await getDoc(poRef);
-        if (!poSnap.exists()) {
-            throw new Error("No se encontró la orden de compra.");
-        }
-
+        if (!poSnap.exists()) throw new Error("Orden no encontrada");
         const po = { id: poSnap.id, ...poSnap.data() };
 
-        // --- Preparación de Datos ---
-        const statusConfig = {
-            recibida: { text: 'RECIBIDA', classes: 'bg-green-100 text-green-700 border-green-200', icon: 'fa-check-circle' },
-            pendiente: { text: 'PENDIENTE', classes: 'bg-orange-100 text-orange-700 border-orange-200', icon: 'fa-clock' },
-            rechazada: { text: 'RECHAZADA', classes: 'bg-red-100 text-red-700 border-red-200', icon: 'fa-ban' }
-        };
-        const status = statusConfig[po.status] || { text: po.status.toUpperCase(), classes: 'bg-gray-100 text-gray-600', icon: 'fa-circle-question' };
-        const poNumber = po.poNumber || po.id.substring(0, 6).toUpperCase();
-        const creationDate = po.createdAt ? po.createdAt.toDate().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'Fecha desconocida';
-
-        // --- 1. Obtener detalles de los ítems ---
-        let itemsHtml = '';
-        if (po.items && po.items.length > 0) {
-            const itemPromises = po.items.map(item => {
-                let collectionPath = 'materialCatalog'; // Default
-                if (item.itemType === 'dotacion') collectionPath = 'dotacionCatalog';
-                if (item.itemType === 'herramienta') collectionPath = 'tools';
-                return getDoc(doc(db, collectionPath, item.materialId))
-                    .then(snap => ({ ...item, details: snap.exists() ? snap.data() : null }));
-            });
-
-            const itemsWithDetails = await Promise.all(itemPromises);
-
-            itemsHtml = itemsWithDetails.map((item, index) => {
-                let itemName = 'Ítem desconocido';
-                let reference = '';
-                let icon = 'fa-box';
-                let typeLabel = 'Material';
-
-                if (item.details) {
-                    if (item.itemType === 'dotacion') {
-                        itemName = item.details.itemName;
-                        typeLabel = 'Dotación';
-                        icon = 'fa-shirt';
-                    } else if (item.itemType === 'herramienta') {
-                        itemName = item.details.name;
-                        reference = item.details.reference;
-                        typeLabel = 'Herramienta';
-                        icon = 'fa-screwdriver-wrench';
-                    } else {
-                        itemName = item.details.name;
-                        reference = item.details.reference;
-                    }
-                }
-
-                const subtotal = (item.quantity * (item.unitCost || 0));
-
-                return `
-                    <tr class="hover:bg-gray-50 border-b last:border-0 transition-colors">
-                        <td class="px-4 py-3 text-center text-gray-400">${index + 1}</td>
-                        <td class="px-4 py-3">
-                            <div class="flex items-center gap-3">
-                                <div class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500">
-                                    <i class="fa-solid ${icon} text-xs"></i>
-                                </div>
-                                <div>
-                                    <p class="font-bold text-gray-800 text-sm">${itemName}</p>
-                                    ${reference ? `<p class="text-xs text-gray-500">Ref: ${reference}</p>` : ''}
-                                </div>
-                            </div>
-                        </td>
-                        <td class="px-4 py-3 text-center">
-                            <span class="bg-blue-50 text-blue-700 py-1 px-2 rounded text-xs font-semibold">${typeLabel}</span>
-                        </td>
-                        <td class="px-4 py-3 text-center font-bold text-gray-700">${item.quantity}</td>
-                        <td class="px-4 py-3 text-right text-gray-600 text-sm">${currencyFormatter.format(item.unitCost || 0)}</td>
-                        <td class="px-4 py-3 text-right font-bold text-gray-800 text-sm">${currencyFormatter.format(subtotal)}</td>
-                    </tr>
-                `;
-            }).join('');
-        } else {
-            itemsHtml = `<tr><td colspan="6" class="text-center py-8 text-gray-400">No hay ítems en esta orden.</td></tr>`;
+        let supplierData = {};
+        if (po.supplierId) {
+            const supSnap = await getDoc(doc(db, "suppliers", po.supplierId));
+            if (supSnap.exists()) supplierData = supSnap.data();
         }
 
-        // --- HTML PRINCIPAL DEL CONTENIDO ---
+        const statusColors = {
+            recibida: "bg-emerald-100 text-emerald-800 border-emerald-200",
+            pendiente: "bg-amber-100 text-amber-800 border-amber-200",
+            rechazada: "bg-rose-100 text-rose-800 border-rose-200"
+        };
+        const statusClass = statusColors[po.status] || "bg-gray-100 text-gray-800";
+        const creationDate = po.createdAt ? po.createdAt.toDate().toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' }) : '---';
+
+        // Renderizar ítems
+        let itemsHtml = '';
+        if (po.items && po.items.length > 0) {
+             itemsHtml = po.items.map((item, idx) => `
+                <tr class="border-b border-gray-50 last:border-0">
+                    <td class="py-3 pl-4 text-sm text-gray-500 font-mono">${idx + 1}</td>
+                    <td class="py-3 text-sm font-medium text-gray-800">
+                        ${item.itemName || 'Ítem'} 
+                        ${item.itemType ? `<span class="text-[10px] text-gray-400 uppercase ml-1 px-1 bg-gray-100 rounded border"> ${item.itemType} </span>` : ''}
+                    </td>
+                    <td class="py-3 text-center text-sm text-gray-600 font-bold">${item.quantity}</td>
+                    <td class="py-3 text-right text-sm text-gray-600 font-mono">${currencyFormatter.format(item.unitCost)}</td>
+                    <td class="py-3 pr-4 text-right text-sm font-bold text-gray-900 font-mono">${currencyFormatter.format(item.quantity * item.unitCost)}</td>
+                </tr>
+            `).join('');
+        }
+
+        // --- HTML NUEVO DISEÑO ---
         contentContainer.innerHTML = `
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                <div class="flex items-center gap-4">
-                    <div class="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 text-3xl shadow-sm">
-                        <i class="fa-solid fa-file-invoice-dollar"></i>
-                    </div>
+            <div class="flex flex-col h-full bg-gray-50/50">
+                
+                <div class="bg-white px-8 py-6 border-b border-gray-200 flex justify-between items-start shadow-sm relative z-10">
                     <div>
-                        <h2 class="text-2xl font-bold text-gray-800">Orden #${poNumber}</h2>
-                        <p class="text-gray-500 text-sm flex items-center gap-2">
-                            <i class="fa-regular fa-calendar"></i> ${creationDate}
-                        </p>
+                        <div class="flex items-center gap-3 mb-1">
+                             <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white"><i class="fa-solid fa-cart-shopping"></i></div>
+                             <h2 class="text-2xl font-black text-gray-800 tracking-tight">Orden de Compra</h2>
+                        </div>
+                        <p class="text-sm text-gray-500 ml-11">#${po.poNumber || po.id.substring(0, 6).toUpperCase()}</p>
+                    </div>
+                    <div class="text-right">
+                        <span class="px-3 py-1 rounded-full text-xs font-black uppercase border ${statusClass} mb-2 inline-block">
+                            ${po.status}
+                        </span>
+                        <p class="text-xs text-gray-400 flex items-center justify-end gap-1"><i class="fa-regular fa-calendar"></i> ${creationDate}</p>
                     </div>
                 </div>
-                <div class="flex flex-col items-end">
-                    <span class="${status.classes} px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-2 uppercase tracking-wide">
-                        <i class="fa-solid ${status.icon}"></i> ${status.text}
-                    </span>
-                    <p class="text-xs text-gray-400 mt-2">ID: ${po.id}</p>
-                </div>
-            </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-start gap-3">
-                    <div class="mt-1 text-gray-400"><i class="fa-solid fa-store"></i></div>
-                    <div>
-                        <p class="text-xs font-bold text-gray-400 uppercase">Proveedor</p>
-                        <p class="font-bold text-gray-800 text-lg truncate" title="${po.provider || po.supplierName}">${po.provider || po.supplierName || 'N/A'}</p>
+                <div class="flex-grow overflow-y-auto custom-scrollbar p-6">
+                    <div class="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
                         
-                        <p class="text-xs text-blue-600 cursor-pointer hover:underline" 
-                           data-action="view-supplier-details" 
-                           data-id="${po.supplierId}">
-                           Ver perfil del proveedor
-                        </p>
-                        
-                    </div>
-                </div>
+                        <div class="lg:col-span-8 space-y-6">
+                            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                <p class="text-xs font-bold text-gray-400 uppercase mb-3 tracking-wide">Proveedor</p>
+                                <div class="flex items-start gap-4">
+                                    <div class="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 font-bold text-lg border border-gray-200">
+                                        ${(po.supplierName || 'P').charAt(0)}
+                                    </div>
+                                    <div>
+                                        <p class="font-bold text-gray-800 text-lg leading-tight">${po.supplierName || 'Proveedor General'}</p>
+                                        <p class="text-sm text-gray-500 mt-0.5">${supplierData.nit ? `NIT: ${supplierData.nit}` : ''}</p>
+                                        <button class="text-xs text-blue-600 hover:underline mt-1 font-medium flex items-center gap-1" 
+                                           data-action="view-supplier-details" data-id="${po.supplierId}">
+                                           Ver perfil completo <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
 
-                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-start gap-3">
-                    <div class="mt-1 text-gray-400"><i class="fa-solid fa-coins"></i></div>
-                    <div>
-                        <p class="text-xs font-bold text-gray-400 uppercase">Costo Total</p>
-                        <p class="font-bold text-gray-800 text-2xl">${currencyFormatter.format(po.totalCost || 0)}</p>
-                        <p class="text-xs text-gray-500">Método: ${po.paymentMethod || 'Pendiente'}</p>
-                    </div>
-                </div>
+                            <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                <div class="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                                    <h4 class="text-xs font-bold text-gray-500 uppercase">Detalle de Ítems</h4>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left">
+                                        <thead class="bg-white text-xs text-gray-400 uppercase border-b border-gray-100">
+                                            <tr>
+                                                <th class="py-2 pl-4 font-semibold">#</th>
+                                                <th class="py-2 font-semibold">Descripción</th>
+                                                <th class="py-2 text-center font-semibold">Cant.</th>
+                                                <th class="py-2 text-right font-semibold">Unit.</th>
+                                                <th class="py-2 pr-4 text-right font-semibold">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>${itemsHtml}</tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
 
-                <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 flex items-start gap-3">
-                    <div class="mt-1 text-gray-400"><i class="fa-solid fa-money-bill-wave"></i></div>
-                    <div>
-                        <p class="text-xs font-bold text-gray-400 uppercase">Abonado</p>
-                        <p class="font-bold text-green-600 text-lg">${currencyFormatter.format(po.paidAmount || 0)}</p>
-                        <div class="w-full bg-gray-200 rounded-full h-1.5 mt-2 w-32">
-                            <div class="bg-green-500 h-1.5 rounded-full" style="width: ${Math.min(((po.paidAmount || 0) / (po.totalCost || 1)) * 100, 100)}%"></div>
+                        <div class="lg:col-span-4 space-y-4">
+                            
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <p class="text-xs font-bold text-gray-400 uppercase mb-3">Resumen Financiero</p>
+                                <div class="flex justify-between items-end mb-2">
+                                    <span class="text-sm text-gray-600">Total Orden</span>
+                                    <span class="text-xl font-black text-gray-900">${currencyFormatter.format(po.totalCost || 0)}</span>
+                                </div>
+                                <div class="flex justify-between items-center text-sm mb-4 pt-2 border-t border-dashed border-gray-200">
+                                    <span class="text-gray-500">Abonado</span>
+                                    <span class="font-bold text-green-600">${currencyFormatter.format(po.paidAmount || 0)}</span>
+                                </div>
+                                <div class="w-full bg-gray-100 rounded-full h-2 mb-1">
+                                    <div class="bg-blue-600 h-2 rounded-full" style="width: ${Math.min(((po.paidAmount || 0) / (po.totalCost || 1)) * 100, 100)}%"></div>
+                                </div>
+                                <p class="text-xs text-right text-gray-400">${Math.round(((po.paidAmount || 0) / (po.totalCost || 1)) * 100)}% Pagado</p>
+                            </div>
+
+                            <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-5 text-white shadow-lg relative overflow-hidden">
+                                <div class="absolute top-0 right-0 opacity-10 -mt-4 -mr-4"><i class="fa-solid fa-wallet text-9xl"></i></div>
+                                
+                                <h4 class="font-bold text-sm uppercase tracking-wider mb-4 flex items-center text-blue-200">
+                                    <i class="fa-solid fa-money-bill-transfer mr-2"></i> Datos de Pago
+                                </h4>
+
+                                <div class="space-y-3 relative z-10">
+                                    <div>
+                                        <p class="text-[10px] text-slate-400 uppercase">Banco</p>
+                                        <p class="font-bold text-base">${supplierData.bankName || 'No registrado'}</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-[10px] text-slate-400 uppercase">Cuenta (${supplierData.accountType || ''})</p>
+                                        <div class="flex items-center gap-2">
+                                            <p class="font-mono text-lg font-bold tracking-wide text-yellow-400">${supplierData.accountNumber || '---'}</p>
+                                            <button onclick="navigator.clipboard.writeText('${supplierData.accountNumber}'); window.showToast('Copiado', 'success')" class="text-white/50 hover:text-white transition-colors"><i class="fa-regular fa-copy"></i></button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                ${supplierData.qrCodeURL ? `
+                                    <div class="mt-6 pt-4 border-t border-white/10 text-center">
+                                        <div class="bg-white p-1.5 rounded-lg inline-block cursor-pointer hover:scale-105 transition-transform shadow-md" onclick="window.openImageModal('${supplierData.qrCodeURL}')">
+                                            <img src="${supplierData.qrCodeURL}" class="w-28 h-28 object-cover rounded">
+                                        </div>
+                                        <p class="text-[10px] text-slate-400 mt-2 flex items-center justify-center gap-1"><i class="fa-solid fa-qrcode"></i> Toca para ampliar</p>
+                                    </div>
+                                ` : '<div class="mt-4 p-3 bg-white/5 rounded text-center text-xs text-slate-400 italic border border-white/10">Sin código QR disponible</div>'}
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-
-            <div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                    <h4 class="font-bold text-gray-700 text-sm uppercase tracking-wide">Ítems Incluidos</h4>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="text-xs text-gray-500 border-b border-gray-100">
-                                <th class="px-4 py-3 font-medium text-center w-10">#</th>
-                                <th class="px-4 py-3 font-medium">Descripción</th>
-                                <th class="px-4 py-3 font-medium text-center">Tipo</th>
-                                <th class="px-4 py-3 font-medium text-center">Cant.</th>
-                                <th class="px-4 py-3 font-medium text-right">Unitario</th>
-                                <th class="px-4 py-3 font-medium text-right">Subtotal</th>
-                            </tr>
-                        </thead>
-                        <tbody class="text-sm">
-                            ${itemsHtml}
-                        </tbody>
-                        <tfoot class="bg-gray-50 border-t border-gray-200">
-                            <tr>
-                                <td colspan="5" class="px-4 py-3 text-right font-bold text-gray-600">TOTAL ORDEN:</td>
-                                <td class="px-4 py-3 text-right font-bold text-gray-900 text-lg">${currencyFormatter.format(po.totalCost || 0)}</td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            </div>
         `;
 
-        // --- Lógica de Botones de Acción ---
+        // --- Footer de Acciones ---
         actionsContainer.innerHTML = `
-            <button type="button" data-action="close-details-modal" class="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 font-bold py-2 px-4 rounded-lg shadow-sm transition-all">
+            <button type="button" data-action="close-details-modal" class="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 font-bold py-2.5 px-5 rounded-xl shadow-sm transition-all">
                 Cerrar
             </button>
         `;
 
         if (po.status === 'pendiente' && (currentUserRole === 'admin' || currentUserRole === 'bodega')) {
             actionsContainer.innerHTML += `
-                <button data-action="reject-purchase-order" data-id="${po.id}" class="bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 font-bold py-2 px-4 rounded-lg transition-all shadow-sm flex items-center">
-                    <i class="fa-solid fa-trash mr-2"></i> Eliminar / Rechazar
+                <button data-action="reject-purchase-order" data-id="${po.id}" class="bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 font-bold py-2.5 px-5 rounded-xl transition-all shadow-sm flex items-center">
+                    <i class="fa-solid fa-trash mr-2"></i> Rechazar
                 </button>
-                <button data-action="receive-purchase-order" data-id="${po.id}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center transform hover:-translate-y-0.5">
+                <button data-action="receive-purchase-order" data-id="${po.id}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center transform hover:-translate-y-0.5">
                     <i class="fa-solid fa-box-open mr-2"></i> Recibir Mercancía
                 </button>
             `;
         }
 
     } catch (error) {
-        console.error("Error al abrir los detalles de la orden de compra:", error);
-        contentContainer.innerHTML = `<div class="flex flex-col items-center justify-center h-64 text-red-500"><i class="fa-solid fa-triangle-exclamation text-4xl mb-3"></i><p>${error.message}</p></div>`;
+        console.error("Error modal PO:", error);
+        contentContainer.innerHTML = `<div class="p-10 text-center text-red-500">Error: ${error.message}</div>`;
     }
 }
 
@@ -2141,9 +2121,9 @@ async function loadSupplierDetailsView(supplierId) {
     if (unsubscribeSupplierPOs) unsubscribeSupplierPOs();
     if (unsubscribeSupplierPayments) unsubscribeSupplierPayments();
 
+    // Configuración de pestañas internas
     const tabsContainer = document.getElementById('supplier-details-tabs');
     const tabContents = document.querySelectorAll('.supplier-tab-content');
-
     const newTabsContainer = tabsContainer.cloneNode(true);
     tabsContainer.parentNode.replaceChild(newTabsContainer, tabsContainer);
 
@@ -2153,15 +2133,11 @@ async function loadSupplierDetailsView(supplierId) {
             newTabsContainer.querySelectorAll('.tab-button').forEach(btn => {
                 btn.classList.remove('border-blue-500', 'text-blue-600');
                 btn.classList.add('border-transparent', 'text-gray-500');
-                btn.querySelector('i').classList.remove('text-blue-500');
             });
             button.classList.remove('border-transparent', 'text-gray-500');
             button.classList.add('border-blue-500', 'text-blue-600');
-
             const tabName = button.dataset.tab;
-            tabContents.forEach(content => {
-                content.classList.toggle('hidden', content.id !== `${tabName}-content`);
-            });
+            tabContents.forEach(content => content.classList.toggle('hidden', content.id !== `${tabName}-content`));
         }
     });
 
@@ -2170,102 +2146,108 @@ async function loadSupplierDetailsView(supplierId) {
         const supplierSnap = await getDoc(supplierRef);
         if (!supplierSnap.exists()) throw new Error("Proveedor no encontrado");
 
-        // --- CORRECCIÓN APLICADA AQUÍ ---
         const supplier = { id: supplierSnap.id, ...supplierSnap.data() };
-        // -------------------------------
-
         document.getElementById('supplier-details-name').textContent = supplier.name;
 
-        // 1. Pestaña RESUMEN (Perfil Moderno)
+        // --- 1. TARJETA DE PERFIL (Con QR Integrado) ---
         const profileCard = `
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <div class="bg-gradient-to-r from-slate-800 to-slate-900 px-8 py-6 flex justify-between items-center relative overflow-hidden">
-                    <div class="absolute top-0 right-0 opacity-10 transform translate-x-10 -translate-y-10">
-                        <i class="fa-solid fa-building text-9xl text-white"></i>
-                    </div>
-                    <div class="flex items-center gap-5 relative z-10">
-                        <div class="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-slate-700 text-2xl font-bold shadow-lg">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+                <div class="bg-slate-800 px-6 py-4 flex justify-between items-center">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-white rounded-lg flex items-center justify-center text-slate-800 text-xl font-bold shadow">
                             ${supplier.name.charAt(0).toUpperCase()}
                         </div>
                         <div>
-                            <h2 class="text-2xl font-bold text-white tracking-tight">${supplier.name}</h2>
-                            <div class="flex gap-4 text-slate-300 text-sm mt-1">
-                                <span class="flex items-center gap-1"><i class="fa-regular fa-id-card"></i> ${supplier.nit || 'S/N'}</span>
-                                <span class="flex items-center gap-1"><i class="fa-solid fa-location-dot"></i> ${supplier.address || 'Sin dirección'}</span>
-                            </div>
+                            <h2 class="text-xl font-bold text-white">${supplier.name}</h2>
+                            <p class="text-slate-300 text-xs flex items-center gap-2">
+                                <span><i class="fa-regular fa-id-card"></i> ${supplier.nit || 'S/N'}</span>
+                                <span class="w-1 h-1 bg-slate-500 rounded-full"></span>
+                                <span><i class="fa-solid fa-location-dot"></i> ${supplier.address || 'Sin dirección'}</span>
+                            </p>
                         </div>
                     </div>
-                    <button data-action="edit-supplier" data-id="${supplier.id}" class="bg-white/10 hover:bg-white/20 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-all backdrop-blur-sm border border-white/20 relative z-10">
-                        <i class="fa-solid fa-pen-to-square mr-2"></i> Editar
+                    <button data-action="edit-supplier" data-id="${supplier.id}" class="text-xs bg-white/10 hover:bg-white/20 text-white font-bold py-2 px-4 rounded transition-colors">
+                        <i class="fa-solid fa-pen-to-square mr-1"></i> Editar
                     </button>
                 </div>
                 
-                <div class="px-8 py-6 grid grid-cols-1 md:grid-cols-3 gap-8 text-sm border-b border-gray-100">
-                    <div>
-                        <p class="text-xs font-bold text-gray-400 uppercase mb-2">Contacto Principal</p>
-                        <p class="font-semibold text-gray-800 text-base"><i class="fa-solid fa-user mr-2 text-blue-500"></i> ${supplier.contactName || '---'}</p>
-                        <p class="text-gray-500 mt-1 ml-6">${supplier.contactPhone || ''}</p>
-                    </div>
-                    <div>
-                        <p class="text-xs font-bold text-gray-400 uppercase mb-2">Correo Electrónico</p>
-                         ${supplier.email ? `<a href="mailto:${supplier.email}" class="font-semibold text-blue-600 hover:underline flex items-center"><i class="fa-solid fa-envelope mr-2"></i> ${supplier.email}</a>` : '<span class="text-gray-400">No registrado</span>'}
-                    </div>
-                    <div>
-                        <p class="text-xs font-bold text-gray-400 uppercase mb-2">Datos Bancarios</p>
-                        <div class="bg-gray-50 p-2 rounded border border-gray-200 inline-block w-full">
-                            <p class="font-semibold text-gray-700"><i class="fa-solid fa-building-columns mr-1 text-gray-400"></i> ${supplier.bankName || '---'}</p>
-                            <p class="text-xs text-gray-500 font-mono mt-1">${supplier.accountType || ''} ${supplier.accountNumber || '---'}</p>
+                <div class="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="space-y-3 border-r border-gray-100 pr-4">
+                        <h5 class="text-xs font-bold text-gray-400 uppercase tracking-wide">Contacto</h5>
+                        <div>
+                            <p class="text-sm font-bold text-gray-800">${supplier.contactName || '---'}</p>
+                            <p class="text-xs text-gray-500">Encargado</p>
                         </div>
+                        <div class="flex items-center gap-2 text-sm text-gray-600">
+                            <i class="fa-solid fa-phone text-gray-300 w-5"></i> ${supplier.contactPhone || '---'}
+                        </div>
+                        <div class="flex items-center gap-2 text-sm text-gray-600">
+                            <i class="fa-solid fa-envelope text-gray-300 w-5"></i> ${supplier.email || '---'}
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <h5 class="text-xs font-bold text-gray-400 uppercase tracking-wide">Información Bancaria</h5>
+                        <div>
+                            <p class="text-sm font-bold text-indigo-700">${supplier.bankName || 'Banco no registrado'}</p>
+                            <p class="text-xs text-gray-500">${supplier.accountType || 'Cuenta'}</p>
+                        </div>
+                        <div class="flex items-center gap-2 bg-gray-50 p-2 rounded border border-gray-100 w-fit">
+                            <span class="font-mono text-sm font-bold text-gray-700 select-all">${supplier.accountNumber || '---'}</span>
+                            <button onclick="navigator.clipboard.writeText('${supplier.accountNumber}'); window.showToast('Copiado', 'success')" class="text-indigo-500 hover:text-indigo-700" title="Copiar">
+                                <i class="fa-regular fa-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col items-center justify-center pl-4 border-l border-gray-100">
+                        ${supplier.qrCodeURL ? `
+                            <div class="relative group cursor-pointer" onclick="window.openImageModal('${supplier.qrCodeURL}')">
+                                <img src="${supplier.qrCodeURL}" class="w-24 h-24 object-cover rounded-lg border-2 border-dashed border-indigo-200 shadow-sm group-hover:border-indigo-500 transition-all">
+                                <div class="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/10 transition-all rounded-lg">
+                                    <i class="fa-solid fa-expand text-white opacity-0 group-hover:opacity-100 drop-shadow-md"></i>
+                                </div>
+                            </div>
+                            <p class="text-[10px] text-indigo-500 mt-2 font-bold uppercase">Escanear QR</p>
+                        ` : `
+                            <div class="w-24 h-24 border-2 border-dashed border-gray-200 rounded-lg flex flex-col items-center justify-center text-gray-300">
+                                <i class="fa-solid fa-qrcode text-2xl mb-1"></i>
+                                <span class="text-[9px]">Sin QR</span>
+                            </div>
+                        `}
                     </div>
                 </div>
             </div>`;
 
+        // --- CÁLCULO DE SALDOS (Sin cambios) ---
         const allPOsQuery = query(collection(db, "purchaseOrders"), where("supplierId", "==", supplierId));
         const allPaymentsQuery = query(collection(db, "suppliers", supplierId, "payments"));
         const [poSnapshot, paymentsSnap] = await Promise.all([getDocs(allPOsQuery), getDocs(allPaymentsQuery)]);
-
         const totalBilled = poSnapshot.docs.reduce((sum, doc) => sum + (doc.data().totalCost || 0), 0);
         const totalPaid = paymentsSnap.docs.reduce((sum, doc) => sum + (doc.data().amount || 0), 0);
         const saldo = totalBilled - totalPaid;
 
         const balanceCards = `
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center gap-5">
-                    <div class="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 text-2xl">
-                        <i class="fa-solid fa-file-invoice-dollar"></i>
-                    </div>
-                    <div>
-                        <p class="text-xs font-bold text-gray-400 uppercase tracking-wide">Total Facturado</p>
-                        <h3 class="text-2xl font-extrabold text-gray-800">${currencyFormatter.format(totalBilled)}</h3>
-                    </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex items-center gap-4">
+                    <div class="p-3 bg-blue-50 text-blue-600 rounded-full text-xl"><i class="fa-solid fa-file-invoice"></i></div>
+                    <div><p class="text-xs font-bold text-gray-400 uppercase">Total Facturado</p><h3 class="text-xl font-black text-gray-800">${currencyFormatter.format(totalBilled)}</h3></div>
                 </div>
-                
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center gap-5">
-                    <div class="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center text-green-600 text-2xl">
-                        <i class="fa-solid fa-money-bill-transfer"></i>
-                    </div>
-                    <div>
-                        <p class="text-xs font-bold text-gray-400 uppercase tracking-wide">Total Pagado</p>
-                        <h3 class="text-2xl font-extrabold text-green-600">${currencyFormatter.format(totalPaid)}</h3>
-                    </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex items-center gap-4">
+                    <div class="p-3 bg-green-50 text-green-600 rounded-full text-xl"><i class="fa-solid fa-check-circle"></i></div>
+                    <div><p class="text-xs font-bold text-gray-400 uppercase">Total Pagado</p><h3 class="text-xl font-black text-green-600">${currencyFormatter.format(totalPaid)}</h3></div>
                 </div>
-
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center gap-5 relative overflow-hidden">
-                    ${saldo > 100 ? '<div class="absolute right-0 top-0 w-16 h-16 bg-red-500 blur-2xl opacity-10 rounded-full pointer-events-none"></div>' : ''}
-                    <div class="w-14 h-14 rounded-full ${saldo > 100 ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-400'} flex items-center justify-center text-2xl">
-                        <i class="fa-solid fa-scale-unbalanced"></i>
-                    </div>
-                    <div>
-                        <p class="text-xs font-bold text-gray-400 uppercase tracking-wide">Saldo Pendiente</p>
-                        <h3 class="text-2xl font-extrabold ${saldo > 100 ? 'text-red-600' : 'text-gray-400'}">${currencyFormatter.format(saldo)}</h3>
-                    </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex items-center gap-4">
+                    <div class="p-3 ${saldo > 100 ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-400'} rounded-full text-xl"><i class="fa-solid fa-scale-unbalanced"></i></div>
+                    <div><p class="text-xs font-bold text-gray-400 uppercase">Saldo Pendiente</p><h3 class="text-xl font-black ${saldo > 100 ? 'text-red-600' : 'text-gray-400'}">${currencyFormatter.format(saldo)}</h3></div>
                 </div>
             </div>
         `;
 
+        // Inyectamos el contenido
         summaryContent.innerHTML = profileCard + balanceCards;
 
-        // 2. Pestaña ÓRDENES
+// --- 2. Pestaña ÓRDENES ---
         const poQuery = query(collection(db, "purchaseOrders"), where("supplierId", "==", supplierId), orderBy("createdAt", "desc"));
         unsubscribeSupplierPOs = onSnapshot(poQuery, (snapshot) => {
             posTableBody.innerHTML = '';
@@ -2278,7 +2260,7 @@ async function loadSupplierDetailsView(supplierId) {
                 const row = document.createElement('tr');
                 row.className = "bg-white hover:bg-gray-50 border-b last:border-0 transition-colors group";
 
-                let statusBadge = '';
+let statusBadge = '';
                 if (po.status === 'recibida') statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-200"><i class="fa-solid fa-check mr-1"></i> Recibida</span>';
                 else if (po.status === 'rechazada') statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-200"><i class="fa-solid fa-ban mr-1"></i> Rechazada</span>';
                 else statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-800 border border-orange-200"><i class="fa-regular fa-clock mr-1"></i> Pendiente</span>';
@@ -2316,10 +2298,10 @@ async function loadSupplierDetailsView(supplierId) {
             });
         });
 
-        // 3. Pestaña PAGOS
+        // --- 3. Pestaña PAGOS ---
         const paymentsQuery = query(collection(db, "suppliers", supplierId, "payments"), orderBy("date", "desc"));
         unsubscribeSupplierPayments = onSnapshot(paymentsQuery, (snapshot) => {
-            paymentsTableBody.innerHTML = '';
+             paymentsTableBody.innerHTML = '';
             if (snapshot.empty) {
                 paymentsTableBody.innerHTML = `<tr><td colspan="4" class="text-center py-12 text-gray-400">No hay pagos registrados.</td></tr>`;
                 return;
@@ -4552,13 +4534,13 @@ const modalConfirmBtn = document.getElementById('modal-confirm-btn');
 const modalContentDiv = document.getElementById('main-modal-content'); // <-- AÑADE ESTA LÍNEA
 
 async function openMainModal(type, data = {}) {
-    
+
     // --- INICIO DE CORRECCIÓN (Reseteo Robustecido) ---
     if (modalContentDiv) {
         // 1. Limpiamos TODAS las clases de ancho que hayamos podido usar en cualquier caso
         modalContentDiv.classList.remove(
-            'max-w-md', 'max-w-lg', 'max-w-xl', 'max-w-2xl', 'max-w-3xl', 
-            'max-w-4xl', 'max-w-5xl', 'max-w-6xl', 'max-w-7xl', 
+            'max-w-md', 'max-w-lg', 'max-w-xl', 'max-w-2xl', 'max-w-3xl',
+            'max-w-4xl', 'max-w-5xl', 'max-w-6xl', 'max-w-7xl',
             'w-11/12', 'lg:w-3/4'
         );
 
@@ -4572,7 +4554,7 @@ async function openMainModal(type, data = {}) {
     }
 
     // Restaurar el encabezado por defecto (por si la alerta lo ocultó)
-    if(document.getElementById('modal-title')) {
+    if (document.getElementById('modal-title')) {
         document.getElementById('modal-title').parentElement.style.display = 'flex';
     }
     // --- FIN DE CORRECCIÓN ---
@@ -4800,11 +4782,11 @@ async function openMainModal(type, data = {}) {
 
             break;
 
-            case 'report-entry':
+        case 'report-entry':
             title = 'Reportar Ingreso';
             btnText = 'Confirmar Ingreso';
             btnClass = 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg w-full sm:w-auto';
-            
+
             // Ajustamos el ancho para que se vea bien en móviles y escritorio
             if (modalContentDiv) {
                 modalContentDiv.classList.remove('max-w-2xl');
@@ -4859,7 +4841,7 @@ async function openMainModal(type, data = {}) {
                     </div>
                 </div>
             `;
-            
+
             // Inicialización de eventos específicos para este modal
             setTimeout(() => {
                 const container = document.getElementById('entry-photo-container');
@@ -4867,7 +4849,7 @@ async function openMainModal(type, data = {}) {
                 const preview = document.getElementById('entry-photo-preview');
                 const placeholder = document.getElementById('entry-photo-placeholder');
 
-                if(container && input) {
+                if (container && input) {
                     // Al hacer clic en la caja, abrir cámara
                     container.addEventListener('click', () => input.click());
 
@@ -4891,14 +4873,14 @@ async function openMainModal(type, data = {}) {
             break;
 
 
-            case 'camera_entry': // <--- ESTE ES EL CASO QUE FALTA
+        case 'camera_entry': // <--- ESTE ES EL CASO QUE FALTA
             title = '📸 Validación de Ingreso';
             // Ocultamos el botón por defecto porque ingresopersonal.js tiene sus propios botones
-            btnText = ''; 
-            btnClass = 'hidden'; 
-            
+            btnText = '';
+            btnClass = 'hidden';
+
             // Ocultamos el footer estándar del modal para usar los botones personalizados
-            if(document.getElementById('main-modal-footer')) {
+            if (document.getElementById('main-modal-footer')) {
                 document.getElementById('main-modal-footer').style.display = 'none';
             }
 
@@ -5128,14 +5110,14 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
 
-            case 'check-permissions':
+        case 'check-permissions':
             title = 'Verificación de Permisos';
             btnText = 'Continuar a la App';
             btnClass = 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed';
-            
+
             // Hacemos que el modal no se pueda cerrar con la X ni cancelar si es crítico
-            if(document.getElementById('modal-cancel-btn')) document.getElementById('modal-cancel-btn').style.display = 'none';
-            
+            if (document.getElementById('modal-cancel-btn')) document.getElementById('modal-cancel-btn').style.display = 'none';
+
             bodyHtml = `
                 <div class="space-y-4">
                     <p class="text-sm text-gray-600 mb-4">Para utilizar el Gestor de Proyectos, necesitamos activar las siguientes funciones del dispositivo:</p>
@@ -5186,7 +5168,7 @@ async function openMainModal(type, data = {}) {
                     </div>
                 </div>
             `;
-            
+
             // Verificamos el estado inicial al abrir el modal
             setTimeout(updatePermissionUI, 100);
             break;
@@ -5297,20 +5279,20 @@ async function openMainModal(type, data = {}) {
             break;
         }
 
-case 'send-admin-alert':
-            // 1. Ocultamos el encabezado estándar del modal para usar el nuestro personalizado
-            if(document.getElementById('modal-title')) document.getElementById('modal-title').parentElement.style.display = 'none';
+        case 'send-admin-alert':
+            // Ocultamos encabezado estándar
+            if (document.getElementById('modal-title')) document.getElementById('modal-title').parentElement.style.display = 'none';
 
-            title = 'Llamado Urgente'; // (No se verá, pero se mantiene por referencia)
+            title = 'Llamado Urgente';
             btnText = 'Enviar Alerta';
             btnClass = 'bg-red-600 hover:bg-red-700 text-white shadow-lg w-full sm:w-auto';
-            
+
             if (modalContentDiv) {
                 modalContentDiv.classList.remove('max-w-2xl');
-                modalContentDiv.classList.add('max-w-md'); // Hacemos el modal un poco más angosto para que parezca una notificación móvil
+                modalContentDiv.classList.add('max-w-md');
             }
 
-            // Preparar datos de usuarios (Igual que antes)
+            // Preparamos datos de usuarios
             const activeUsersData = Array.from(usersMap.entries())
                 .filter(([id, user]) => user.status === 'active')
                 .sort((a, b) => a[1].firstName.localeCompare(b[1].firstName))
@@ -5319,32 +5301,50 @@ case 'send-admin-alert':
                     label: `${user.firstName} ${user.lastName}`
                 }));
 
-            // --- NUEVO DISEÑO HTML CON ENCABEZADO CENTRADO ---
             bodyHtml = `
-                <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-b from-red-600 to-red-700 px-6 py-8 flex flex-col items-center justify-center relative rounded-t-lg shadow-md text-white">
-                    
+                <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-b from-red-600 to-red-700 px-6 py-6 flex flex-col items-center justify-center relative rounded-t-lg shadow-md text-white">
                     <button type="button" id="custom-close-alert" class="absolute top-4 right-4 text-white/60 hover:text-white hover:bg-white/10 rounded-full p-1 transition-all">
                         <i class="fa-solid fa-xmark text-xl"></i>
                     </button>
-
-                    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center text-3xl mb-3 backdrop-blur-sm shadow-inner border border-white/10">
+                    <div class="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center text-3xl mb-2 backdrop-blur-sm shadow-inner border border-white/10">
                          <i class="fa-solid fa-tower-broadcast animate-pulse"></i>
                     </div>
-                    
-                    <h2 class="text-2xl font-black uppercase tracking-wider text-center leading-tight">Llamado Urgente</h2>
-                    <p class="text-red-100 text-xs font-medium mt-1 bg-red-800/30 px-3 py-1 rounded-full">Sistema de Prioridad Alta</p>
+                    <h2 class="text-xl font-black uppercase tracking-wider text-center leading-tight">Llamado Urgente</h2>
                 </div>
 
-                <div class="space-y-5 px-2">
-                    <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5 ml-1">Destinatario</label>
-                        <select id="alert-target-user" name="targetUserId" required class="w-full">
+                <div class="space-y-4 px-2">
+                    
+                    <div class="flex items-center justify-between p-3 bg-red-50 border border-red-100 rounded-lg">
+                        <div class="flex items-center gap-2">
+                            <div class="bg-white p-1.5 rounded text-red-500 shadow-sm"><i class="fa-solid fa-users"></i></div>
+                            <span class="text-sm font-bold text-gray-700">Enviar a todo el personal</span>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="alert-send-all-toggle" class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                        </label>
+                    </div>
+
+                    <div id="alert-target-container" class="transition-all duration-300">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Destinatarios Específicos</label>
+                        <select id="alert-target-user" name="targetUserId" multiple class="w-full">
                             <option value="" placeholder>Cargando lista...</option>
                         </select>
                     </div>
 
                     <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5 ml-1">Instrucción</label>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Adjunto (Foto o PDF)</label>
+                        <div class="relative group">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-hover:text-red-500 transition-colors">
+                                <i class="fa-solid fa-paperclip"></i>
+                            </div>
+                            <input type="file" id="alert-image-input" accept="image/*,.pdf" 
+                                class="block w-full pl-10 text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 cursor-pointer border rounded-lg py-2 border-gray-200 hover:border-red-300 transition-colors"/>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Instrucción</label>
                         <div class="relative group">
                              <div class="absolute top-3.5 left-3 text-gray-400 group-focus-within:text-red-500 transition-colors">
                                 <i class="fa-regular fa-comment-dots"></i>
@@ -5357,27 +5357,42 @@ case 'send-admin-alert':
                 </div>
             `;
 
-            // Lógica de inicialización (Choices y Botón Cerrar)
+            // Inicialización Interactiva
             setTimeout(() => {
-                // 1. Activar Choices.js
+                // 1. Choices.js Configurado para Múltiple
                 const selectElement = document.getElementById('alert-target-user');
+                let choicesInstance = null;
                 if (selectElement) {
-                    new Choices(selectElement, {
+                    choicesInstance = new Choices(selectElement, {
                         choices: activeUsersData,
                         searchEnabled: true,
-                        searchPlaceholderValue: 'Buscar...',
                         placeholder: true,
-                        placeholderValue: 'Seleccionar colaborador...',
+                        placeholderValue: 'Seleccionar colaboradores...',
                         itemSelectText: '',
                         allowHTML: false,
+                        removeItemButton: true, // <-- AÑADIDO: Permite borrar seleccionados con una X
                     });
                 }
 
-                // 2. Activar botón de cerrar personalizado
-                const closeBtn = document.getElementById('custom-close-alert');
-                if(closeBtn) {
-                    closeBtn.addEventListener('click', closeMainModal);
+                // 2. Lógica del Toggle "Enviar a Todos"
+                const toggle = document.getElementById('alert-send-all-toggle');
+                const targetContainer = document.getElementById('alert-target-container');
+
+                if (toggle) {
+                    toggle.addEventListener('change', (e) => {
+                        if (e.target.checked) {
+                            targetContainer.classList.add('opacity-50', 'pointer-events-none');
+                            if (choicesInstance) choicesInstance.disable();
+                        } else {
+                            targetContainer.classList.remove('opacity-50', 'pointer-events-none');
+                            if (choicesInstance) choicesInstance.enable();
+                        }
+                    });
                 }
+
+                // 3. Botón cerrar custom
+                const closeBtn = document.getElementById('custom-close-alert');
+                if (closeBtn) closeBtn.addEventListener('click', closeMainModal);
             }, 100);
             break;
 
@@ -5635,36 +5650,153 @@ case 'send-admin-alert':
             }, 100);
             break;
         case 'new-purchase-order': {
-            title = 'Crear Nueva Orden de Compra';
-            btnText = 'Guardar Orden';
-            btnClass = 'bg-blue-500 hover:bg-blue-600';
-
-            // --- INICIO DE MODIFICACIÓN (Ancho de 75%) ---
-            if (modalContentDiv) {
-                // 1. Quitamos la clase de ancho máximo por defecto
-                modalContentDiv.classList.remove('max-w-2xl');
-
-                // 2. ¡NUEVO! Aplicamos estilos en línea (máxima prioridad)
-                // 75vw = 75% del ancho de la ventana (viewport width)
-                modalContentDiv.style.width = '75vw';
-                modalContentDiv.style.maxWidth = '75vw';
+            // 1. Configuración Visual
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
             }
 
+            title = 'Nueva Orden de Compra';
+            btnText = 'Generar Orden';
+            btnClass = 'bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white shadow-lg transform hover:-translate-y-0.5 transition-all';
 
+            if (modalContentDiv) {
+                modalContentDiv.classList.remove('max-w-2xl');
+                modalContentDiv.style.width = '90vw';
+                modalContentDiv.style.maxWidth = '1200px';
+            }
+
+            // 2. HTML Estructurado (Con correcciones de Z-INDEX y Contenedor de Alerta)
             bodyHtml = `
-                <div id="material-request-loader" class="text-center py-8">
-                    <div class="loader mx-auto"></div>
-                    <p class="mt-2 text-sm text-gray-500">Cargando catálogos y proveedores...</p>
+                <div id="material-request-loader" class="text-center py-12">
+                    <div class="loader mx-auto mb-4"></div>
+                    <p class="text-sm text-gray-500 animate-pulse">Cargando catálogo y proveedores...</p>
                 </div>
-                <div id="material-request-form-content" class="hidden h-full flex-1 flex flex-col min-h-0"></div>
+
+                <div id="material-request-form-content" class="hidden flex flex-col h-full max-h-[80vh]">
+                    
+                    <div class="-mx-6 -mt-6 bg-gradient-to-r from-blue-600 to-indigo-700 px-8 py-6 rounded-t-lg text-white shadow-md mb-6 flex justify-between items-center">
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-2xl backdrop-blur-sm border border-white/10">
+                                <i class="fa-solid fa-cart-flatbed"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-2xl font-bold tracking-tight">Nueva Orden de Compra</h2>
+                                <p class="text-blue-100 text-xs font-medium">Gestión de Abastecimiento</p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white hover:bg-white/10 p-2 rounded-full transition-colors">
+                            <i class="fa-solid fa-xmark text-2xl"></i>
+                        </button>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm mb-6 grid grid-cols-1 md:grid-cols-3 gap-6 relative z-40">
+                        
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5 ml-1">Proveedor</label>
+                            <select id="po-supplier-select" class="w-full" required></select>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5 ml-1">Condición de Pago</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                    <i class="fa-solid fa-credit-card"></i>
+                                </div>
+                                <select name="paymentMethod" class="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white appearance-none cursor-pointer">
+                                    <option value="pendiente" selected>Crédito / Pendiente</option>
+                                    <option value="transferencia">Transferencia Inmediata</option>
+                                    <option value="efectivo">Efectivo</option>
+                                    <option value="tarjeta">Tarjeta Corporativa</option>
+                                </select>
+                                <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-gray-500">
+                                    <i class="fa-solid fa-chevron-down text-xs"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5 ml-1">Fecha de Emisión</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                    <i class="fa-regular fa-calendar"></i>
+                                </div>
+                                <input type="date" name="poDate" 
+                                    class="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
+                                    value="${new Date().toISOString().split('T')[0]}">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col flex-grow bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden relative z-0">
+                        
+                    <div class="bg-gray-50 p-4 border-b border-gray-200 relative z-50">
+                            
+                            <div class="flex flex-col lg:flex-row gap-3 items-end"> <div class="flex-grow w-full lg:w-auto">
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Buscar Ítem</label>
+                                    <select id="po-add-item-select" class="w-full"></select>
+                                </div>
+                                
+                                <div class="w-full lg:w-32">
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cantidad</label>
+                                    <input type="number" id="po-add-quantity" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-blue-500 outline-none text-center font-bold" min="1" placeholder="0">
+                                </div>
+                                
+                                <div class="w-full lg:w-48">
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Costo Unitario</label>
+                                    <div class="relative">
+                                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</span>
+                                        <input type="text" id="po-add-cost" class="currency-input w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-blue-500 outline-none font-mono text-right" placeholder="0">
+                                    </div>
+                                </div>
+
+                                <button type="button" id="po-add-item-btn" class="w-full lg:w-auto bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center justify-center h-[38px] mb-[1px]">
+                                    <i class="fa-solid fa-plus mr-2"></i> Añadir
+                                </button>
+                            </div>
+
+                            <div id="po-price-info-card" class="hidden mt-4 p-3 rounded-lg border-l-4 text-sm shadow-sm flex items-start gap-3 transition-all duration-300"></div>
+
+                        </div>
+
+                        <div class="flex-grow overflow-y-auto bg-white relative min-h-[250px] z-0">
+                            <table class="w-full text-sm text-left border-collapse">
+                                <thead class="text-xs text-gray-500 uppercase bg-white border-b border-gray-100 sticky top-0 z-10 shadow-sm">
+                                    <tr>
+                                        <th class="px-6 py-3 bg-gray-50/95 backdrop-blur">Descripción</th>
+                                        <th class="px-6 py-3 text-center bg-gray-50/95 backdrop-blur">Cant.</th>
+                                        <th class="px-6 py-3 text-right bg-gray-50/95 backdrop-blur">Unitario</th>
+                                        <th class="px-6 py-3 text-right bg-gray-50/95 backdrop-blur">Subtotal</th>
+                                        <th class="px-6 py-3 text-center bg-gray-50/95 backdrop-blur w-16"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="po-items-table-body" class="divide-y divide-gray-50 text-gray-700">
+                                    </tbody>
+                            </table>
+                            
+                            <div id="po-empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-gray-300 pointer-events-none">
+                                <i class="fa-solid fa-basket-shopping text-6xl mb-4 opacity-20"></i>
+                                <p class="text-sm font-medium">La orden está vacía</p>
+                                <p class="text-xs">Usa la barra superior para agregar ítems</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-gray-50 p-4 border-t border-gray-200 flex justify-end items-center gap-4 relative z-20">
+                            <div class="text-right">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Orden</p>
+                                <p id="po-total-display" class="text-3xl font-black text-gray-800 leading-none tracking-tight">$ 0</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             `;
 
+            // 3. Lógica de Carga y Eventos
             const loadDataAndBuildForm = async () => {
                 try {
                     const loader = document.getElementById('material-request-loader');
                     const formContent = document.getElementById('material-request-form-content');
 
-                    // 1. Cargar TODOS los catálogos (Sin cambios)
+                    // Carga inicial de datos
                     const [materialSnap, dotacionSnap, toolsSnap, suppliersSnapshot] = await Promise.all([
                         getDocs(query(collection(db, "materialCatalog"), orderBy("name"))),
                         getDocs(query(collection(db, "dotacionCatalog"), orderBy("itemName"))),
@@ -5672,269 +5804,276 @@ case 'send-admin-alert':
                         getDocs(query(collection(db, "suppliers"), orderBy("name")))
                     ]);
 
-                    // 2. Mapear Proveedores (Sin cambios)
-                    const suppliers = suppliersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    const supplierOptions = suppliers.map(sup => `<option value="${sup.id}">${sup.name}</option>`).join('');
-
-
-                    // 3. Unificar todos los ítems comprables
-                    const unifiedItemOptions = [];
-
-                    materialSnap.docs.forEach(doc => {
-                        const mat = doc.data();
-                        unifiedItemOptions.push({
-                            value: doc.id,
-                            label: `[MAT] ${mat.name} (${mat.reference || 'N/A'})`,
-                            customProperties: { type: 'material', unit: mat.unit || 'Und' }
-                        });
-                    });
-
-                    dotacionSnap.docs.forEach(doc => {
-                        const dot = doc.data();
-                        unifiedItemOptions.push({
-                            value: doc.id,
-                            label: `[DOT] ${dot.itemName} (${dot.talla || 'N/A'})`,
-                            customProperties: { type: 'dotacion', unit: 'Und' }
-                        });
-                    });
-
-                    toolsSnap.docs.forEach(doc => {
-                        const tool = doc.data();
-                        // Solo mostramos herramientas "disponibles" o "en mantenimiento" como plantillas
-                        if (tool.status === 'disponible' || tool.status === 'mantenimiento') {
-                            unifiedItemOptions.push({
-                                value: doc.id, // Usamos el ID de la herramienta como "plantilla"
-                                label: `[HER] ${tool.name} (${tool.reference || 'N/A'})`,
-                                customProperties: { type: 'herramienta', unit: 'Und' }
-                            });
-                        }
-                    });
-
-                    // Ordenamos la lista unificada
-                    unifiedItemOptions.sort((a, b) => a.label.localeCompare(b.label));
-
-
-                    // 4. Construir el NUEVO HTML del formulario (Layout de 2 Columnas con Z-INDEX)
-                    formContent.innerHTML = `
-                        <div class="flex-1 flex flex-col min-h-0 space-y-6">
-
-                            <div class="relative z-20 space-y-4 bg-gray-50 p-4 rounded-lg border">
-                                <h4 class="text-lg font-semibold text-gray-800 border-b pb-2">Detalles de la Orden</h4>
-                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <div>
-                                        <label class="block text-sm font-medium">Proveedor</label>
-                                        <select id="po-supplier-select" required>${supplierOptions}</select>
-                                    </div>
-                                    <div>
-                                        <label class="block text-sm font-medium">Forma de Pago</label>
-                                        <select name="paymentMethod" class="w-full border p-2 rounded-md bg-white">
-                                            <option value="pendiente">Pendiente</option>
-                                            <option value="efectivo">Efectivo</option>
-                                            <option value="tarjeta">Tarjeta</option>
-                                            <option value="transferencia">Transferencia</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label class="block text-sm font-medium">Fecha de Creación</label>
-                                        <input type="date" name="poDate" class="w-full border p-2 rounded-md bg-gray-100" value="${new Date().toISOString().split('T')[0]}" readonly>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <fieldset class="relative z-10 border rounded-lg p-4">
-                                <legend class="text-md font-semibold text-gray-700 px-2">Añadir Ítem</legend>
-                                <div class="grid grid-cols-12 gap-3 items-end">
-                                    <div class="col-span-12 md:col-span-5">
-                                        <label class="block text-sm font-medium">Ítem (Material, Dotación o Herramienta)</label>
-                                        <select id="po-add-item-select"></select>
-                                    </div>
-                                    <div class="col-span-4 md:col-span-2">
-                                        <label class="block text-sm font-medium">Cantidad</label>
-                                        <input type="number" id="po-add-quantity" class="w-full border p-2 rounded-md" min="1" placeholder="0">
-                                    </div>
-                                    <div class="col-span-5 md:col-span-3">
-                                        <label class="block text-sm font-medium">Costo Unitario</Tlabel>
-                                        <input type="text" id="po-add-cost" class="currency-input w-full border p-2 rounded-md" placeholder="$ 0">
-                                    </div>
-                                    <div class="col-span-3 md:col-span-2">
-                                        <button type="button" id="po-add-item-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">
-                                            Añadir
-                                        </button>
-                                    </div>
-                                </div>
-                            </fieldset>
-
-                            <div class="flex-1 flex flex-col min-h-0 border rounded-lg overflow-hidden">
-                                <h4 class="text-lg font-semibold text-gray-800 p-4 pb-2">Ítems en la Orden</h4>
-                                <div class="flex-1 overflow-y-auto">
-                                    <table class="w-full text-sm">
-                                        <thead class="bg-gray-100 sticky top-0">
-                                            <tr>
-                                                <th class="px-4 py-2 text-left font-semibold text-gray-600">Ítem</th>
-                                                <th class="px-4 py-2 text-center font-semibold text-gray-600">Cantidad</th>
-                                                <th class="px-4 py-2 text-right font-semibold text-gray-600">Costo Unit.</th>
-                                                <th class="px-4 py-2 text-right font-semibold text-gray-600">Subtotal</th>
-                                                <th class="px-4 py-2 text-center font-semibold text-gray-600">Acción</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="po-items-table-body" class="divide-y divide-gray-200">
-                                            </tbody>
-                                    </table>
-                                </div>
-                                <div class="p-4 bg-gray-50 border-t flex justify-end">
-                                    <div class="text-right">
-                                        <p class="text-sm font-medium text-gray-600">Total Orden:</p>
-                                        <p id="po-total-display" class="text-2xl font-bold text-gray-900">$ 0</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                        </div>`;
-
-                    loader.classList.add('hidden');
-                    formContent.classList.remove('hidden');
-
-                    // 5. Inicializar Choices.js (Proveedor)
-                    new Choices('#po-supplier-select', {
-                        itemSelectText: 'Seleccionar',
+                    // Configurar Selector de Proveedor
+                    const supplierSelect = document.getElementById('po-supplier-select');
+                    const suppliers = suppliersSnapshot.docs.map(doc => ({ value: doc.id, label: doc.data().name }));
+                    new Choices(supplierSelect, {
+                        choices: suppliers,
+                        itemSelectText: '',
                         searchPlaceholderValue: 'Buscar proveedor...',
                         placeholder: true,
                         placeholderValue: 'Selecciona un proveedor',
-                        searchResultLimit: 5
+                        shouldSort: false
                     });
 
-                    // 6. ¡NUEVA LÓGICA! Manejar el nuevo formulario
+                    // Unificar Ítems y Clasificar
+                    const unifiedItemOptions = [];
 
-                    // Inicializar Choices para el ÚNICO selector de ítems
-                    const itemSelectEl = document.getElementById('po-add-item-select');
-                    const itemChoices = new Choices(itemSelectEl, {
+                    materialSnap.forEach(doc => {
+                        const m = doc.data();
+                        unifiedItemOptions.push({ value: doc.id, label: `${m.name} (${m.reference || '-'})`, customProperties: { type: 'material', unit: m.unit } });
+                    });
+                    dotacionSnap.forEach(doc => {
+                        const d = doc.data();
+                        unifiedItemOptions.push({ value: doc.id, label: `[DOT] ${d.itemName} (T: ${d.talla})`, customProperties: { type: 'dotacion', unit: 'Und' } });
+                    });
+                    toolsSnap.forEach(doc => {
+                        const t = doc.data();
+                        if (t.status === 'disponible' || t.status === 'mantenimiento') {
+                            unifiedItemOptions.push({ value: doc.id, label: `[HER] ${t.name}`, customProperties: { type: 'herramienta', unit: 'Und' } });
+                        }
+                    });
+
+                    // Ordenamiento Personalizado (1.Material, 2.Dotación, 3.Herramienta)
+                    const typePriority = { 'material': 1, 'dotacion': 2, 'herramienta': 3 };
+                    unifiedItemOptions.sort((a, b) => {
+                        const priorityA = typePriority[a.customProperties.type] || 99;
+                        const priorityB = typePriority[b.customProperties.type] || 99;
+                        if (priorityA !== priorityB) return priorityA - priorityB;
+                        return a.label.localeCompare(b.label);
+                    });
+
+                    // Inicializar Selector de Ítems
+                    const itemSelect = document.getElementById('po-add-item-select');
+                    const itemChoices = new Choices(itemSelect, {
                         choices: unifiedItemOptions,
                         itemSelectText: 'Seleccionar',
-                        searchPlaceholderValue: 'Buscar ítem...',
-                        searchResultLimit: 7,
+                        searchPlaceholderValue: 'Buscar material...',
                         placeholder: true,
                         placeholderValue: 'Escribe para buscar...',
+                        searchResultLimit: 8,
+                        shouldSort: false
                     });
 
-                    // Referencias a los elementos del formulario y la tabla
+                    // Mostrar formulario
+                    loader.classList.add('hidden');
+                    formContent.classList.remove('hidden');
+
+                    // --- Lógica Interactiva ---
                     const addBtn = document.getElementById('po-add-item-btn');
                     const tableBody = document.getElementById('po-items-table-body');
                     const totalDisplay = document.getElementById('po-total-display');
                     const quantityInput = document.getElementById('po-add-quantity');
                     const costInput = document.getElementById('po-add-cost');
+                    const emptyState = document.getElementById('po-empty-state');
 
-                    // Aplicar formato de moneda al input de costo
                     setupCurrencyInput(costInput);
 
-                    // Función para actualizar el total
                     const updatePOTotal = () => {
                         let total = 0;
-                        tableBody.querySelectorAll('tr').forEach(row => {
-                            total += parseFloat(row.dataset.subtotal) || 0;
-                        });
+                        const rows = tableBody.querySelectorAll('tr');
+                        rows.forEach(row => total += parseFloat(row.dataset.subtotal) || 0);
                         totalDisplay.textContent = currencyFormatter.format(total);
+                        if (rows.length === 0) emptyState.classList.remove('hidden');
+                        else emptyState.classList.add('hidden');
                     };
 
-                    // Lógica para auto-rellenar el precio
-                    itemSelectEl.addEventListener('change', async () => {
-                        const selectedItem = itemChoices.getValue(true);
-                        if (!selectedItem) return;
+                    // Lógica Inteligente de Precios y Tarjeta Informativa
+                    itemSelect.addEventListener('change', async () => {
+                        const item = itemChoices.getValue();
+                        const currentSupplierId = supplierSelect.value;
 
-                        const materialId = selectedItem.value;
-                        const supplierId = document.getElementById('po-supplier-select').value;
-                        if (!supplierId || !materialId) return;
+                        // Referencia a la nueva tarjeta fija
+                        const infoCard = document.getElementById('po-price-info-card');
 
-                        const lastPrice = await findLastPurchasePrice(supplierId, materialId);
-                        if (lastPrice !== null) {
-                            costInput.value = currencyFormatter.format(lastPrice).replace(/\s/g, ' ');
+                        // 1. Resetear interfaz
+                        if (infoCard) {
+                            infoCard.classList.add('hidden');
+                            infoCard.className = "hidden mt-4 p-3 rounded-lg border-l-4 text-sm shadow-sm flex items-start gap-3 transition-all duration-300";
+                            infoCard.innerHTML = '';
+                        }
+                        costInput.classList.remove('border-green-500', 'text-green-700', 'border-yellow-500', 'bg-green-50');
+                        costInput.placeholder = "0";
+
+                        if (!item || !currentSupplierId) return;
+
+                        costInput.placeholder = "Buscando...";
+
+                        // 2. Consultar precios
+                        const [myPrice, bestMarketOption] = await Promise.all([
+                            findLastPurchasePrice(currentSupplierId, item.value),
+                            findBestMarketPrice(item.value)
+                        ]);
+
+                        // 3. Rellenar input
+                        let currentPriceVal = 0;
+                        if (myPrice) {
+                            currentPriceVal = myPrice;
+                            costInput.value = currencyFormatter.format(myPrice).replace(/\s/g, ' ');
                         } else {
                             costInput.value = '';
                         }
+
+                        // 4. Lógica de la Tarjeta Informativa
+                        if (bestMarketOption) {
+                            const marketPrice = bestMarketOption.price;
+                            const marketSupplier = bestMarketOption.supplierName;
+                            const marketDate = bestMarketOption.date ? new Date(bestMarketOption.date).toLocaleDateString() : 'Reciente';
+
+                            if (currentPriceVal > 0 && marketPrice < currentPriceVal) {
+                                // CASO A: MÁS CARO (Tarjeta Roja/Amarilla de Advertencia)
+                                const diff = currentPriceVal - marketPrice;
+                                const percent = Math.round((diff / marketPrice) * 100);
+
+                                infoCard.className = "mt-4 p-3 rounded-lg border border-red-200 border-l-4 border-l-red-500 bg-red-50 text-red-800 flex items-start gap-3 animate-pulse-slow";
+                                infoCard.innerHTML = `
+                                    <div class="mt-0.5 text-red-600 text-lg"><i class="fa-solid fa-circle-exclamation"></i></div>
+                                    <div class="flex-grow">
+                                        <p class="font-bold">¡Opción más económica disponible!</p>
+                                        <p class="mt-1">
+                                            El proveedor <strong>${marketSupplier}</strong> vendió este ítem a 
+                                            <span class="font-black bg-white px-1 rounded border border-red-200">${currencyFormatter.format(marketPrice)}</span> 
+                                            (${marketDate}).
+                                        </p>
+                                        <p class="mt-1 text-xs font-semibold text-red-700">
+                                            <i class="fa-solid fa-chart-line"></i> Estás pagando un 
+                                            <span class="underline">${percent}% más caro</span> (${currencyFormatter.format(diff)} extra/und).
+                                        </p>
+                                    </div>
+                                `;
+                                infoCard.classList.remove('hidden');
+                                costInput.classList.add('border-yellow-500');
+
+                            } else if (currentPriceVal === 0) {
+                                // CASO B: NUEVO (Tarjeta Azul de Referencia)
+                                infoCard.className = "mt-4 p-3 rounded-lg border border-blue-200 border-l-4 border-l-blue-500 bg-blue-50 text-blue-800 flex items-start gap-3";
+                                infoCard.innerHTML = `
+                                    <div class="mt-0.5 text-blue-600 text-lg"><i class="fa-solid fa-circle-info"></i></div>
+                                    <div class="flex-grow">
+                                        <p class="font-bold">Referencia de Mercado</p>
+                                        <p class="mt-1">
+                                            No tienes historial con este proveedor. El mejor precio registrado es 
+                                            <span class="font-bold text-blue-700">${currencyFormatter.format(marketPrice)}</span> 
+                                            (por ${marketSupplier}).
+                                        </p>
+                                    </div>
+                                `;
+                                infoCard.classList.remove('hidden');
+
+                            } else {
+                                // CASO C: MEJOR PRECIO (Tarjeta Verde de Confirmación)
+                                infoCard.className = "mt-4 p-3 rounded-lg border border-green-200 border-l-4 border-l-green-500 bg-green-50 text-green-800 flex items-start gap-3";
+                                infoCard.innerHTML = `
+                                    <div class="mt-0.5 text-green-600 text-lg"><i class="fa-solid fa-circle-check"></i></div>
+                                    <div>
+                                        <p class="font-bold">¡Excelente Precio!</p>
+                                        <p class="text-xs mt-0.5">Este es el precio más bajo del mercado registrado en tu historial.</p>
+                                    </div>
+                                `;
+                                infoCard.classList.remove('hidden');
+                                costInput.classList.add('border-green-500', 'text-green-700', 'bg-green-50');
+                            }
+                        } else {
+                            // CASO D: Ítem totalmente nuevo (nunca comprado)
+                            infoCard.className = "mt-4 p-3 rounded-lg border border-gray-200 border-l-4 border-l-gray-400 bg-white text-gray-600 flex items-start gap-3";
+                            infoCard.innerHTML = `
+                                <div class="mt-0.5 text-gray-400 text-lg"><i class="fa-solid fa-asterisk"></i></div>
+                                <div>
+                                    <p class="font-bold">Primer Registro</p>
+                                    <p class="text-xs mt-0.5">Este ítem no tiene historial de compra previo en el sistema.</p>
+                                </div>
+                            `;
+                            infoCard.classList.remove('hidden');
+                        }
+
                         quantityInput.focus();
                     });
 
-                    // Lógica del botón "Añadir"
+                    // Ocultar alerta al escribir manual
+                    costInput.addEventListener('input', () => {
+                        const alert = document.getElementById('price-alert-container');
+                        if (alert) alert.classList.add('hidden');
+                    });
+
+                    // Agregar a la tabla
                     addBtn.addEventListener('click', () => {
+                        const item = itemChoices.getValue();
+                        const qty = parseInt(quantityInput.value);
+                        const cost = parseFloat(costInput.value.replace(/[$. ]/g, '')) || 0;
 
-                        // --- INICIO DE LA CORRECCIÓN ---
-                        // Cambiamos getValue(true) por getValue()
-                        const selectedItem = itemChoices.getValue();
-                        // --- FIN DE LA CORRECCIÓN ---
-
-                        const quantity = parseInt(quantityInput.value);
-                        const unitCost = parseFloat(costInput.value.replace(/[$. ]/g, '')) || 0;
-
-                        if (!selectedItem || !quantity || quantity <= 0 || unitCost <= 0) {
-                            alert("Completa el Ítem, Cantidad y Costo Unitario (mayor a 0).");
+                        if (!item || !qty || qty <= 0 || cost <= 0) {
+                            alert("Por favor completa el ítem, cantidad y costo.");
                             return;
                         }
 
-                        // Verificar si ya existe (por ID y Costo)
-                        const existingRow = tableBody.querySelector(`tr[data-item-id="${selectedItem.value}"][data-cost="${unitCost}"]`);
-
+                        // Verificar duplicado para sumar
+                        const existingRow = tableBody.querySelector(`tr[data-item-id="${item.value}"][data-cost="${cost}"]`);
                         if (existingRow) {
-                            // Si ya existe, solo actualiza la cantidad
-                            const currentQty = parseInt(existingRow.dataset.quantity) || 0;
-                            const newQty = currentQty + quantity;
-                            const newSubtotal = newQty * unitCost;
-
+                            const oldQty = parseInt(existingRow.dataset.quantity);
+                            const newQty = oldQty + qty;
+                            const newSub = newQty * cost;
                             existingRow.dataset.quantity = newQty;
-                            existingRow.dataset.subtotal = newSubtotal;
-                            existingRow.cells[1].textContent = newQty;
-                            existingRow.cells[3].textContent = currencyFormatter.format(newSubtotal);
+                            existingRow.dataset.subtotal = newSub;
+                            existingRow.classList.add('bg-blue-50');
+                            setTimeout(() => existingRow.classList.remove('bg-blue-50'), 300);
+                            existingRow.cells[1].innerHTML = `<span class="font-bold text-blue-600">${newQty}</span>`;
+                            existingRow.cells[3].textContent = currencyFormatter.format(newSub);
                         } else {
-                            // Si es nuevo, crea la fila
-                            const subtotal = quantity * unitCost;
-                            const newRow = document.createElement('tr');
-                            newRow.dataset.itemId = selectedItem.value;
-                            newRow.dataset.itemType = selectedItem.customProperties.type;
-                            newRow.dataset.quantity = quantity;
-                            newRow.dataset.cost = unitCost;
-                            newRow.dataset.subtotal = subtotal;
+                            const subtotal = qty * cost;
+                            const tr = document.createElement('tr');
+                            tr.className = "hover:bg-gray-50 group transition-colors";
+                            tr.dataset.itemId = item.value;
+                            tr.dataset.itemType = item.customProperties.type;
+                            tr.dataset.quantity = qty;
+                            tr.dataset.cost = cost;
+                            tr.dataset.subtotal = subtotal;
 
-                            newRow.innerHTML = `
-                                <td class="px-4 py-2 align-top">
-                                    <p class="font-medium text-gray-900">${selectedItem.label}</p>
-                                    <p class="text-xs text-gray-500">${selectedItem.customProperties.unit}</p>
+                            tr.innerHTML = `
+                                <td class="px-6 py-3">
+                                    <p class="font-bold text-gray-800 text-sm">${item.label}</p>
+                                    <p class="text-[10px] text-gray-400 uppercase">${item.customProperties.type}</p>
                                 </td>
-                                <td class="px-4 py-2 align-top text-center">${quantity}</td>
-                                <td class="px-4 py-2 align-top text-right">${currencyFormatter.format(unitCost)}</td>
-                                <td class="px-4 py-2 align-top text-right font-medium">${currencyFormatter.format(subtotal)}</td>
-                                <td class="px-4 py-2 align-top text-center">
-                                    <button type="button" class="remove-po-item-btn text-red-500 hover:text-red-700 p-1">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                <td class="px-6 py-3 text-center font-bold text-gray-700">${qty}</td>
+                                <td class="px-6 py-3 text-right text-gray-600 font-mono text-xs">${currencyFormatter.format(cost)}</td>
+                                <td class="px-6 py-3 text-right font-bold text-gray-800">${currencyFormatter.format(subtotal)}</td>
+                                <td class="px-6 py-3 text-center">
+                                    <button type="button" class="remove-row-btn text-gray-300 hover:text-red-500 transition-colors p-2">
+                                        <i class="fa-solid fa-trash-can"></i>
                                     </button>
                                 </td>
                             `;
-                            tableBody.appendChild(newRow);
+                            tableBody.appendChild(tr);
+                            tableBody.parentElement.scrollTop = tableBody.parentElement.scrollHeight;
                         }
-
-                        // Limpiar y actualizar
-                        updatePOTotal();
-                        itemChoices.setChoiceByValue('');
+                        // Reset
                         quantityInput.value = '';
                         costInput.value = '';
+                        itemChoices.setChoiceByValue('');
+                        updatePOTotal();
+
+
+                        const infoCard = document.getElementById('po-price-info-card');
+                        if (infoCard) infoCard.classList.add('hidden'); // Ocultar tarjeta al agregar
+                        costInput.classList.remove('border-green-500', 'text-green-700', 'border-yellow-500', 'bg-green-50'); // Reset inputs
+
                     });
 
-                    // Lógica para el botón "Quitar" (delegación de eventos)
+                    // Borrar fila
                     tableBody.addEventListener('click', (e) => {
-                        const removeBtn = e.target.closest('.remove-po-item-btn');
-                        if (removeBtn) {
-                            removeBtn.closest('tr').remove();
+                        const btn = e.target.closest('.remove-row-btn');
+                        if (btn) {
+                            btn.closest('tr').remove();
                             updatePOTotal();
                         }
                     });
 
                 } catch (error) {
-                    console.error("Error al cargar datos para PO:", error);
-                    const loader = document.getElementById('material-request-loader');
-                    if (loader) {
-                        loader.innerHTML = `<p class="text-red-500">Error al cargar datos: ${error.message}</p>`;
-                    }
+                    console.error(error);
+                    document.getElementById('material-request-form-content').innerHTML = `<p class="text-red-500 text-center p-4">Error al cargar: ${error.message}</p>`;
                 }
             };
 
-            setTimeout(loadDataAndBuildForm, 50);
+            setTimeout(loadDataAndBuildForm, 100);
             break;
         }
 
@@ -7444,7 +7583,6 @@ case 'send-admin-alert':
             btnText = isEditing ? 'Guardar Cambios' : 'Crear Proveedor';
             btnClass = isEditing ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-blue-600 hover:bg-blue-700';
 
-            // Aumentamos un poco el ancho del modal para que se vea mejor
             if (modalContentDiv) {
                 modalContentDiv.classList.remove('max-w-2xl');
                 modalContentDiv.classList.add('max-w-3xl');
@@ -7461,11 +7599,11 @@ case 'send-admin-alert':
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-xs font-bold text-gray-500 mb-1">Razón Social / Nombre</label>
-                                <input type="text" name="name" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="Ej: Ferretería El Tornillo" value="${isEditing ? data.name || '' : ''}">
+                                <input type="text" name="name" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej: Ferretería El Tornillo" value="${isEditing ? data.name || '' : ''}">
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-gray-500 mb-1">NIT / Cédula</label>
-                                <input type="text" name="nit" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="Ej: 900.123.456-7" value="${isEditing ? data.nit || '' : ''}">
+                                <input type="text" name="nit" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej: 900.123.456-7" value="${isEditing ? data.nit || '' : ''}">
                             </div>
                         </div>
                     </div>
@@ -7478,31 +7616,19 @@ case 'send-admin-alert':
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-xs font-bold text-gray-500 mb-1">Nombre Contacto</label>
-                                <div class="relative">
-                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-user"></i></div>
-                                    <input type="text" name="contactName" class="pl-9 w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-green-500 outline-none" placeholder="Persona encargada" value="${isEditing ? data.contactName || '' : ''}">
-                                </div>
+                                <input type="text" name="contactName" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Persona encargada" value="${isEditing ? data.contactName || '' : ''}">
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-gray-500 mb-1">Teléfono / Celular</label>
-                                <div class="relative">
-                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-phone"></i></div>
-                                    <input type="tel" name="contactPhone" class="pl-9 w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-green-500 outline-none" placeholder="300 123 4567" value="${isEditing ? data.contactPhone || '' : ''}">
-                                </div>
+                                <input type="tel" name="contactPhone" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="300 123 4567" value="${isEditing ? data.contactPhone || '' : ''}">
                             </div>
                              <div>
                                 <label class="block text-xs font-bold text-gray-500 mb-1">Correo Electrónico</label>
-                                <div class="relative">
-                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-envelope"></i></div>
-                                    <input type="email" name="email" class="pl-9 w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-green-500 outline-none" placeholder="contacto@empresa.com" value="${isEditing ? data.email || '' : ''}">
-                                </div>
+                                <input type="email" name="email" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="contacto@empresa.com" value="${isEditing ? data.email || '' : ''}">
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-gray-500 mb-1">Dirección Física</label>
-                                <div class="relative">
-                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-location-dot"></i></div>
-                                    <input type="text" name="address" class="pl-9 w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-green-500 outline-none" placeholder="Calle 123 # 45-67" value="${isEditing ? data.address || '' : ''}">
-                                </div>
+                                <input type="text" name="address" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Calle 123 # 45-67" value="${isEditing ? data.address || '' : ''}">
                             </div>
                         </div>
                     </div>
@@ -7512,7 +7638,7 @@ case 'send-admin-alert':
                             <div class="p-1.5 bg-indigo-100 text-indigo-600 rounded-md mr-2"><i class="fa-solid fa-building-columns"></i></div>
                             Información Bancaria
                         </h4>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                             <div>
                                 <label class="block text-xs font-bold text-gray-500 mb-1">Banco</label>
                                 <input type="text" name="bankName" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Ej: Bancolombia" value="${isEditing ? data.bankName || '' : ''}">
@@ -7529,9 +7655,59 @@ case 'send-admin-alert':
                                 <input type="text" name="accountNumber" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm font-mono" placeholder="000-00000-00" value="${isEditing ? data.accountNumber || '' : ''}">
                             </div>
                         </div>
+
+                        <div class="border-t border-gray-200 pt-4">
+                            <label class="block text-xs font-bold text-gray-500 mb-2">Código QR Interbancario (Opcional)</label>
+                            <div class="flex items-center gap-4">
+                                <div id="qr-preview-container" class="w-24 h-24 bg-white border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center overflow-hidden relative cursor-pointer hover:border-indigo-400 transition-colors">
+                                    <img id="qr-img-preview" src="${isEditing ? data.qrCodeURL || '' : ''}" class="w-full h-full object-cover ${isEditing && data.qrCodeURL ? '' : 'hidden'}">
+                                    <div id="qr-placeholder-icon" class="text-center ${isEditing && data.qrCodeURL ? 'hidden' : ''}">
+                                        <i class="fa-solid fa-qrcode text-2xl text-gray-300"></i>
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <input type="file" id="supplier-qr-input" name="qrFile" accept="image/*" class="hidden">
+                                    <button type="button" id="btn-select-qr" class="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded-md text-xs font-bold shadow-sm transition-all mb-2">
+                                        <i class="fa-solid fa-upload mr-1"></i> Subir QR
+                                    </button>
+                                    <p class="text-[10px] text-gray-400">Formatos: JPG, PNG, WebP.</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             `;
+
+            // Lógica JS para la previsualización
+            setTimeout(() => {
+                const btnSelect = document.getElementById('btn-select-qr');
+                const fileInput = document.getElementById('supplier-qr-input');
+                const previewContainer = document.getElementById('qr-preview-container');
+                const imgPreview = document.getElementById('qr-img-preview');
+                const iconPlaceholder = document.getElementById('qr-placeholder-icon');
+
+                if (btnSelect && fileInput) {
+                    // Al hacer clic en el botón o en el cuadro, abrir selector
+                    btnSelect.onclick = () => fileInput.click();
+                    previewContainer.onclick = () => fileInput.click();
+
+                    fileInput.onchange = (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (evt) => {
+                                imgPreview.src = evt.target.result;
+                                imgPreview.classList.remove('hidden');
+                                iconPlaceholder.classList.add('hidden');
+                                previewContainer.classList.remove('border-dashed');
+                                previewContainer.classList.add('border-indigo-500');
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                    };
+                }
+            }, 100);
             break;
         }
         case 'request-material': {
@@ -8012,6 +8188,10 @@ case 'send-admin-alert':
     mainModal.style.display = 'flex';
 }
 
+// --- EXPOSICIÓN DE FUNCIONES GLOBALES ---
+window.openMainModal = openMainModal;   // <--- ESTO HACE QUE EL BOTÓN DE LOGS FUNCIONE
+window.closeMainModal = closeMainModal; // (Recomendado para evitar futuros errores de cierre)
+
 /**
  * Configura la lógica para añadir nuevos ítems a la PO y buscar precios.
  * (VERSIÓN CORREGIDA: Crea el HTML de la fila en lugar de clonarlo)
@@ -8152,40 +8332,103 @@ modalForm.addEventListener('submit', async (e) => {
     }
 
     if (type === 'send-admin-alert') {
-        const targetUserId = data.targetUserId;
         const message = data.alertMessage;
-        
-        if(!targetUserId || !message) {
-            alert("Faltan datos.");
+        const sendToAll = document.getElementById('alert-send-all-toggle').checked;
+
+        // --- INICIO CAMBIO: Leer múltiples valores ---
+        const selectElement = document.getElementById('alert-target-user');
+        let selectedUserIds = [];
+
+        if (!sendToAll && selectElement) {
+            // Convertimos las opciones seleccionadas a un array de valores (IDs)
+            selectedUserIds = Array.from(selectElement.selectedOptions).map(option => option.value);
+        }
+        // --- FIN CAMBIO ---
+
+        const fileInput = document.getElementById('alert-image-input');
+        const file = fileInput ? fileInput.files[0] : null;
+
+        // Validación Actualizada
+        if (!sendToAll && selectedUserIds.length === 0) {
+            alert("Por favor selecciona al menos un destinatario o activa 'Enviar a todos'.");
+            return;
+        }
+        if (!message) {
+            alert("Escribe un mensaje.");
             return;
         }
 
         modalConfirmBtn.disabled = true;
-        modalConfirmBtn.textContent = "Enviando Alerta...";
+        modalConfirmBtn.textContent = "Enviando...";
 
         try {
-            // Crear la notificación especial
-            await addDoc(collection(db, "notifications"), {
-                userId: targetUserId,
-                title: "LLAMADO URGENTE DE ADMINISTRACIÓN",
-                message: message,
-                senderId: currentUser.uid,
-                senderName: usersMap.get(currentUser.uid)?.firstName || "Administrador",
-                read: false,
-                createdAt: serverTimestamp(),
-                type: 'admin_urgent_alert', // <--- TIPO CLAVE
-                priority: 'high'
+            let attachmentURL = null;
+            let attachmentType = null;
+
+            // 1. Subir Archivo (Lógica existente)
+            if (file) {
+                const isPDF = file.type === 'application/pdf';
+                modalConfirmBtn.textContent = isPDF ? "Subiendo documento..." : "Subiendo imagen...";
+
+                const storagePath = `admin_alerts/${Date.now()}_${file.name}`;
+                const storageRef = ref(storage, storagePath);
+
+                if (isPDF) {
+                    await uploadBytes(storageRef, file);
+                    attachmentType = 'pdf';
+                } else {
+                    const resizedImage = await resizeImage(file, 1024);
+                    await uploadBytes(storageRef, resizedImage);
+                    attachmentType = 'image';
+                }
+
+                attachmentURL = await getDownloadURL(storageRef);
+            }
+
+            // 2. Preparar lista de destinatarios
+            let recipients = [];
+            if (sendToAll) {
+                usersMap.forEach((user, uid) => {
+                    if (user.status === 'active') recipients.push(uid);
+                });
+            } else {
+                recipients = selectedUserIds; // <-- Usamos el array de IDs seleccionados
+            }
+
+            modalConfirmBtn.textContent = `Enviando a ${recipients.length} usuarios...`;
+
+            // 3. Enviar Notificaciones en Batch
+            const batch = writeBatch(db);
+
+            recipients.forEach(uid => {
+                const notifRef = doc(collection(db, "notifications"));
+                batch.set(notifRef, {
+                    userId: uid,
+                    title: "📢 LLAMADO URGENTE",
+                    message: message,
+                    photoURL: attachmentURL,
+                    attachmentType: attachmentType || 'image',
+                    senderId: currentUser.uid,
+                    senderName: usersMap.get(currentUser.uid)?.firstName || "Administrador",
+                    read: false,
+                    createdAt: serverTimestamp(),
+                    type: 'admin_urgent_alert',
+                    link: window.location.href
+                });
             });
-            
-            showToast("Alerta enviada correctamente", "success");
+
+            await batch.commit();
+
+            showToast(`Alerta enviada a ${recipients.length} usuarios.`, "success");
             closeMainModal();
+
         } catch (error) {
             console.error(error);
-            alert("Error al enviar alerta.");
+            alert("Error al enviar alerta: " + error.message);
         } finally {
-             modalConfirmBtn.disabled = false;
+            modalConfirmBtn.disabled = false;
         }
-        return; // Salir para evitar otros switch
+        return;
     }
 
     // --- AÑADE ESTE CASE COMPLETO ---
@@ -8483,68 +8726,77 @@ modalForm.addEventListener('submit', async (e) => {
                 const supplierId = selectedSupplierOption.value;
                 const supplierName = selectedSupplierOption.text;
                 const paymentMethod = modalForm.querySelector('select[name="paymentMethod"]').value;
+                const poDate = modalForm.querySelector('input[name="poDate"]').value; // Fecha seleccionada
+
                 if (!supplierId) throw new Error("Debes seleccionar un proveedor.");
 
                 const items = [];
                 let totalCost = 0;
 
-                // --- INICIO DE MODIFICACIÓN (Leer desde la TABLA) ---
+                // Recolectar ítems de la tabla
                 document.querySelectorAll('#po-items-table-body tr').forEach(row => {
                     const materialId = row.dataset.itemId;
-                    const itemType = row.dataset.itemType; // 'material', 'dotacion' o 'herramienta'
+                    const itemType = row.dataset.itemType;
                     const quantity = parseInt(row.dataset.quantity);
                     const unitCost = parseFloat(row.dataset.cost);
                     const subtotal = parseFloat(row.dataset.subtotal);
 
                     if (materialId && quantity > 0 && itemType) {
-                        items.push({
-                            materialId: materialId,
-                            itemType: itemType,
-                            quantity: quantity,
-                            unitCost: unitCost
-                        });
+                        items.push({ materialId, itemType, quantity, unitCost });
                         totalCost += subtotal;
                     }
                 });
 
+                if (items.length === 0) throw new Error("Debes añadir al menos un ítem.");
 
-                if (items.length === 0) {
-                    throw new Error("Debes añadir al menos un ítem válido a la orden.");
-                }
-
-                // (Lógica de 'runTransaction' para guardar la PO - sin cambios)
+                // 1. Crear la Orden de Compra (Transacción)
                 const counterRef = doc(db, "counters", "purchaseOrders");
                 const newPoRef = doc(collection(db, "purchaseOrders"));
+                let newPoNumber = '';
 
                 await runTransaction(db, async (transaction) => {
                     const counterDoc = await transaction.get(counterRef);
-                    if (!counterDoc.exists()) {
-                        throw "El documento contador de órdenes de compra no existe.";
-                    }
-                    const newCount = (counterDoc.data().count || 0) + 1;
-                    const poNumber = `PO-${String(newCount).padStart(4, '0')}`;
+                    const newCount = (counterDoc.exists() ? counterDoc.data().count : 0) + 1;
+                    newPoNumber = `PO-${String(newCount).padStart(4, '0')}`;
+
                     const poData = {
-                        poNumber: poNumber,
+                        poNumber: newPoNumber,
                         supplierId: supplierId,
                         supplierName: supplierName,
                         provider: supplierName,
-                        paymentMethod: paymentMethod,
-                        createdAt: new Date(),
+                        paymentMethod: paymentMethod, // Guardamos el método elegido
+                        createdAt: new Date(poDate),
                         createdBy: currentUser.uid,
-                        status: 'pendiente',
-                        items: items, // 'items' ahora contiene el 'itemType'
-                        totalCost: totalCost
+                        status: 'pendiente', // Nace pendiente, el pago la actualizará si aplica
+                        items: items,
+                        totalCost: totalCost,
+                        paidAmount: 0 // Inicializamos en 0
                     };
                     transaction.set(newPoRef, poData);
                     transaction.update(counterRef, { count: newCount });
                 });
 
-                alert("¡Orden de compra creada con éxito!");
+                // 2. LÓGICA DE PAGO AUTOMÁTICO
+                // Si eligió un método de pago real (no 'pendiente'), registramos el pago inmediatamente
+                if (paymentMethod !== 'pendiente') {
+                    modalConfirmBtn.textContent = 'Registrando pago...';
+                    await registerSupplierPayment(
+                        supplierId,
+                        totalCost, // Pagamos el valor total de la orden
+                        paymentMethod,
+                        poDate,
+                        `Pago Inmediato PO #${newPoNumber}`
+                    );
+                    alert(`¡Orden #${newPoNumber} creada y PAGO registrado correctamente!`);
+                } else {
+                    alert(`¡Orden #${newPoNumber} creada con éxito (Pendiente de pago)!`);
+                }
+
                 closeMainModal();
 
             } catch (error) {
-                console.error("Fallo al guardar la orden de compra:", error);
-                alert("No se pudo guardar la orden de compra: " + error.message);
+                console.error("Fallo al guardar PO:", error);
+                alert("Error: " + error.message);
             } finally {
                 modalConfirmBtn.disabled = false;
             }
@@ -8564,69 +8816,21 @@ modalForm.addEventListener('submit', async (e) => {
                 const amountToPay = parseFloat(data.amount.replace(/[$. ]/g, '')) || 0;
                 if (amountToPay <= 0) throw new Error("Monto inválido.");
 
-                let remainingMoney = amountToPay;
-                let billsPaidCount = 0;
-                const method = data.paymentMethod;
-                const noteText = data.note ? ` - ${data.note}` : '';
-
-                // 1. Buscar órdenes pendientes de este proveedor (FIFO)
-                const q = query(
-                    collection(db, "purchaseOrders"),
-                    where("supplierId", "==", currentSupplierId),
-                    orderBy("createdAt", "asc")
+                // Usamos la función centralizada
+                const billsPaid = await registerSupplierPayment(
+                    currentSupplierId,
+                    amountToPay,
+                    data.paymentMethod,
+                    data.date,
+                    data.note || 'Abono Manual'
                 );
 
-                const snapshot = await getDocs(q);
-
-                // 2. Distribuir pago entre las órdenes
-                for (const docSnap of snapshot.docs) {
-                    if (remainingMoney <= 0) break;
-
-                    const po = docSnap.data();
-                    const total = po.totalCost || 0;
-                    const paid = po.paidAmount || 0;
-                    const debt = total - paid;
-
-                    if (debt <= 100) continue; // Ya pagada
-
-                    const paymentForThisBill = Math.min(remainingMoney, debt);
-
-                    // A. Guardar el pago en la orden
-                    await addDoc(collection(db, "purchaseOrders", docSnap.id, "payments"), {
-                        amount: paymentForThisBill,
-                        date: data.date,
-                        paymentMethod: method,
-                        note: `${method}${noteText} (Desde Perfil)`,
-                        createdAt: serverTimestamp(),
-                        createdBy: currentUser.uid
-                    });
-
-                    // B. Actualizar el saldo de la orden
-                    await updateDoc(doc(db, "purchaseOrders", docSnap.id), {
-                        paidAmount: increment(paymentForThisBill),
-                        status: (Math.abs(debt - paymentForThisBill) < 100) ? 'recibida' : 'pendiente' // Ojo: Ajusta tus estados si usas 'pagada'/'parcial'
-                    });
-
-                    remainingMoney -= paymentForThisBill;
-                    billsPaidCount++;
-                }
-
-                // 3. Guardar TAMBIÉN en el historial general del proveedor (para la tabla visual de esta vista)
-                // Esto mantiene la tabla "Historial de Pagos" actualizada inmediatamente
-                await addDoc(collection(db, "suppliers", currentSupplierId, "payments"), {
-                    amount: amountToPay,
-                    paymentMethod: method,
-                    note: data.note || '',
-                    date: data.date,
-                    createdAt: new Date(),
-                    distributedTo: billsPaidCount // Dato útil para saber que fue automático
-                });
-
                 let msg = `Pago registrado exitosamente.`;
-                if (billsPaidCount > 0) msg += ` Se aplicó a ${billsPaidCount} orden(es) pendiente(s).`;
-                else msg += ` (No se encontraron órdenes pendientes para cruzar, quedó como saldo a favor).`;
+                if (billsPaid > 0) msg += ` Se aplicó a ${billsPaid} orden(es) pendiente(s).`;
+                else msg += ` (Quedó como saldo a favor o no había deudas pendientes).`;
 
                 alert(msg);
+                closeMainModal();
 
             } catch (error) {
                 console.error("Error al guardar pago:", error);
@@ -8831,35 +9035,82 @@ modalForm.addEventListener('submit', async (e) => {
             break;
         }
         case 'new-supplier': {
-            const newSupplierData = {
-                name: data.name,
-                nit: data.nit || '',
-                email: data.email || '',
-                address: data.address || '',
-                contactName: data.contactName || '',
-                contactPhone: data.contactPhone || '',
-                bankName: data.bankName || '',
-                accountType: data.accountType || 'Ahorros',
-                accountNumber: data.accountNumber || '',
-                createdAt: new Date()
-            };
-            await addDoc(collection(db, "suppliers"), newSupplierData);
+            modalConfirmBtn.disabled = true;
+            modalConfirmBtn.textContent = 'Creando...';
+
+            try {
+                let qrURL = null;
+                const qrFile = document.getElementById('supplier-qr-input').files[0];
+
+                // Si hay archivo, lo subimos
+                if (qrFile) {
+                    const storagePath = `suppliers/qr/${Date.now()}_${qrFile.name}`;
+                    const storageRef = ref(storage, storagePath);
+                    const snapshot = await uploadBytes(storageRef, qrFile);
+                    qrURL = await getDownloadURL(snapshot.ref);
+                }
+
+                const newSupplierData = {
+                    name: data.name,
+                    nit: data.nit || '',
+                    email: data.email || '',
+                    address: data.address || '',
+                    contactName: data.contactName || '',
+                    contactPhone: data.contactPhone || '',
+                    bankName: data.bankName || '',
+                    accountType: data.accountType || 'Ahorros',
+                    accountNumber: data.accountNumber || '',
+                    qrCodeURL: qrURL, // <--- GUARDAMOS LA URL AQUÍ
+                    createdAt: new Date()
+                };
+                await addDoc(collection(db, "suppliers"), newSupplierData);
+
+            } catch (error) {
+                console.error(error);
+                alert("Error al crear proveedor: " + error.message);
+            } finally {
+                modalConfirmBtn.disabled = false;
+            }
             break;
         }
 
         case 'edit-supplier': {
-            const supplierRef = doc(db, "suppliers", id);
-            await updateDoc(supplierRef, {
-                name: data.name,
-                nit: data.nit || '',
-                email: data.email || '',
-                address: data.address || '',
-                contactName: data.contactName || '',
-                contactPhone: data.contactPhone || '',
-                bankName: data.bankName || '',
-                accountType: data.accountType || 'Ahorros',
-                accountNumber: data.accountNumber || ''
-            });
+            modalConfirmBtn.disabled = true;
+            modalConfirmBtn.textContent = 'Guardando...';
+
+            try {
+                const supplierRef = doc(db, "suppliers", id);
+                const qrFile = document.getElementById('supplier-qr-input').files[0];
+
+                const updateData = {
+                    name: data.name,
+                    nit: data.nit || '',
+                    email: data.email || '',
+                    address: data.address || '',
+                    contactName: data.contactName || '',
+                    contactPhone: data.contactPhone || '',
+                    bankName: data.bankName || '',
+                    accountType: data.accountType || 'Ahorros',
+                    accountNumber: data.accountNumber || ''
+                };
+
+                // Solo subimos y actualizamos si el usuario seleccionó un archivo nuevo
+                if (qrFile) {
+                    const storagePath = `suppliers/qr/${Date.now()}_${qrFile.name}`;
+                    const storageRef = ref(storage, storagePath);
+                    const snapshot = await uploadBytes(storageRef, qrFile);
+                    const qrURL = await getDownloadURL(snapshot.ref);
+                    updateData.qrCodeURL = qrURL;
+                }
+
+                await updateDoc(supplierRef, updateData);
+
+            } catch (error) {
+                console.error(error);
+                alert("Error al actualizar proveedor.");
+            } finally {
+                modalConfirmBtn.disabled = false;
+            }
             break;
         }
         case 'addItem': { // Se usan llaves para crear un bloque de alcance
@@ -9809,6 +10060,8 @@ function openImageModal(imageUrl) {
     imageModal.style.display = 'flex';
 }
 
+window.openImageModal = openImageModal;
+
 function closeImageModal() {
     imageModal.style.display = 'none';
     modalImage.src = '';
@@ -10361,11 +10614,11 @@ function loadNotifications() {
     const personalQuery = query(collection(db, "notifications"), where("userId", "==", currentUser.uid), where("read", "==", false));
     const unsubscribePersonal = onSnapshot(personalQuery, (snapshot) => {
         console.log(`DEBUG: 'personalQuery' obtuvo ${snapshot.docs.length} docs.`);
-personalNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
+        personalNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
         // --- INICIO CÓDIGO MEJORADO: ALERTA URGENTE CON SONIDO ---
         const urgentAlert = personalNotifs.find(n => n.type === 'admin_urgent_alert' && !n.read);
-        
+
         if (urgentAlert) {
             const overlay = document.getElementById('admin-alert-overlay');
             const msgEl = document.getElementById('admin-alert-message');
@@ -10374,18 +10627,77 @@ personalNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             const dismissBtn = document.getElementById('dismiss-alert-btn');
 
             if (overlay && overlay.classList.contains('hidden')) {
-                // Rellenar datos visuales
+                // Rellenar textos
                 msgEl.textContent = urgentAlert.message;
                 senderEl.textContent = urgentAlert.senderName || "Administración";
                 timeEl.textContent = formatTimeAgo(urgentAlert.createdAt?.toDate ? urgentAlert.createdAt.toDate().getTime() : Date.now());
-                
+
+                // --- LÓGICA MEJORADA DE ADJUNTO ---
+                let imgContainer = document.getElementById('admin-alert-img-container');
+                if (!imgContainer) {
+                    // Crear contenedor si no existe
+                    imgContainer = document.createElement('div');
+                    imgContainer.id = 'admin-alert-img-container';
+                    imgContainer.className = "mb-6 w-full rounded-xl overflow-hidden hidden shadow-lg border-2 border-white/30";
+                    msgEl.parentElement.after(imgContainer);
+                }
+
+                if (urgentAlert.photoURL) {
+                    imgContainer.classList.remove('hidden');
+
+                    // Detectar si es PDF (por el campo nuevo o por la extensión si es antiguo)
+                    const isPDF = urgentAlert.attachmentType === 'pdf' || urgentAlert.photoURL.toLowerCase().includes('.pdf');
+
+                    if (isPDF) {
+                        // MODO PDF: Botón grande
+                        imgContainer.className = "mb-6 w-full hidden"; // Quitamos estilos de imagen, dejamos margen
+                        imgContainer.classList.remove('hidden');
+
+                        imgContainer.innerHTML = `
+                            <button type="button" id="btn-view-pdf-alert" class="w-full bg-white/10 border-2 border-white/40 hover:bg-white/20 text-white py-4 rounded-xl flex flex-col items-center transition-all group">
+                                <i class="fa-solid fa-file-pdf text-4xl mb-2 text-red-100 group-hover:scale-110 transition-transform"></i>
+                                <span class="font-bold underline">Ver Documento PDF Adjunto</span>
+                            </button>
+                        `;
+
+                        // Listener para abrir PDF
+                        setTimeout(() => {
+                            document.getElementById('btn-view-pdf-alert').onclick = () => {
+                                viewDocument(urgentAlert.photoURL, "Documento de Alerta");
+                            };
+                        }, 0);
+
+                    } else {
+                        // MODO IMAGEN: Clicable para Zoom
+                        imgContainer.className = "mb-6 w-full rounded-xl overflow-hidden shadow-lg border-2 border-white/30 relative group cursor-zoom-in";
+                        imgContainer.classList.remove('hidden');
+
+                        imgContainer.innerHTML = `
+                            <img src="${urgentAlert.photoURL}" class="w-full h-48 object-cover" alt="Evidencia">
+                            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center pointer-events-none">
+                                <i class="fa-solid fa-magnifying-glass-plus text-white opacity-0 group-hover:opacity-100 text-3xl drop-shadow-lg transform scale-50 group-hover:scale-100 transition-all"></i>
+                            </div>
+                        `;
+
+                        // Listener para abrir Modal de Imagen (Zoom)
+                        imgContainer.onclick = () => {
+                            openImageModal(urgentAlert.photoURL);
+                        };
+                    }
+
+                } else {
+                    imgContainer.classList.add('hidden');
+                    imgContainer.innerHTML = '';
+                }
+                // --------------------------------
+
                 // Mostrar Overlay
                 overlay.classList.remove('hidden');
                 overlay.classList.add('flex');
 
                 // --- LÓGICA DE SONIDO DE ALARMA ---
                 // Usamos un sonido de "Sonar/Alarma" (puedes cambiar esta URL por un archivo local)
-                const alertSound = new Audio('https://assets.mixkit.co/active_storage/sfx/995/995-preview.mp3'); 
+                const alertSound = new Audio('https://assets.mixkit.co/active_storage/sfx/995/995-preview.mp3');
                 alertSound.volume = 1.0; // Volumen máximo
 
                 // Función para reproducir 3 veces
@@ -15841,3 +16153,111 @@ window.logAuditAction = async function (action, description, targetId, previousD
     }
 };
 
+/**
+ * Registra un pago a un proveedor y lo distribuye entre sus deudas más antiguas (FIFO).
+ */
+async function registerSupplierPayment(supplierId, amount, method, date, note) {
+    // 1. Buscar órdenes pendientes de este proveedor (Ordenadas por fecha: más viejas primero)
+    const q = query(
+        collection(db, "purchaseOrders"),
+        where("supplierId", "==", supplierId),
+        orderBy("createdAt", "asc")
+    );
+
+    const snapshot = await getDocs(q);
+
+    let remainingMoney = amount;
+    let billsPaidCount = 0;
+
+    // 2. Recorrer y pagar deudas
+    for (const docSnap of snapshot.docs) {
+        if (remainingMoney <= 0) break;
+
+        const po = docSnap.data();
+        const total = po.totalCost || 0;
+        const paid = po.paidAmount || 0;
+        const debt = total - paid;
+
+        if (debt <= 100) continue; // Si la deuda es despreciable (por redondeo), saltar
+
+        const paymentForThisBill = Math.min(remainingMoney, debt);
+
+        // A. Guardar el pago dentro de la orden
+        await addDoc(collection(db, "purchaseOrders", docSnap.id, "payments"), {
+            amount: paymentForThisBill,
+            date: date,
+            paymentMethod: method,
+            note: `${note} (Automático)`,
+            createdAt: serverTimestamp(),
+            createdBy: currentUser.uid
+        });
+
+        // B. Actualizar saldo y estado de la orden
+        // Si la deuda queda en 0 (o casi 0), marcamos como 'recibida' (pagada)
+        // Nota: Según tu lógica actual, 'recibida' funciona como 'pagada' en este contexto.
+        const newStatus = (Math.abs(debt - paymentForThisBill) < 100) ? 'recibida' : 'pendiente';
+
+        await updateDoc(doc(db, "purchaseOrders", docSnap.id), {
+            paidAmount: increment(paymentForThisBill),
+            status: newStatus
+        });
+
+        remainingMoney -= paymentForThisBill;
+        billsPaidCount++;
+    }
+
+    // 3. Guardar en el historial general del proveedor
+    await addDoc(collection(db, "suppliers", supplierId, "payments"), {
+        amount: amount,
+        paymentMethod: method,
+        note: note,
+        date: date,
+        createdAt: new Date(),
+        distributedTo: billsPaidCount
+    });
+
+    return billsPaidCount;
+}
+
+/**
+ * Busca el precio unitario más bajo registrado históricamente para un ítem.
+ * Retorna: { price, supplierName, date } o null.
+ */
+async function findBestMarketPrice(materialId) {
+    try {
+        // Buscamos en las últimas 100 órdenes recibidas para tener una muestra relevante
+        const q = query(
+            collection(db, "purchaseOrders"),
+            where("status", "==", "recibida"),
+            orderBy("createdAt", "desc"),
+            limit(100)
+        );
+
+        const snapshot = await getDocs(q);
+        let bestOffer = null;
+
+        snapshot.forEach(doc => {
+            const po = doc.data();
+            if (po.items && Array.isArray(po.items)) {
+                // Buscamos el ítem específico dentro de la orden
+                const item = po.items.find(i => i.materialId === materialId);
+
+                if (item && item.unitCost > 0) {
+                    // Si encontramos un precio menor, lo guardamos
+                    if (!bestOffer || item.unitCost < bestOffer.price) {
+                        bestOffer = {
+                            price: item.unitCost,
+                            supplierName: po.supplierName || po.provider || 'Desconocido',
+                            date: po.createdAt ? po.createdAt.toDate() : new Date()
+                        };
+                    }
+                }
+            }
+        });
+
+        return bestOffer;
+    } catch (e) {
+        console.error("Error buscando mejor precio de mercado:", e);
+        return null;
+    }
+}

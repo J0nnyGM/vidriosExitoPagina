@@ -35,19 +35,20 @@ messaging.onBackgroundMessage((payload) => {
 self.addEventListener('notificationclick', function(event) {
     event.notification.close(); // Cerrar la notificación
     
-    // Intentar abrir la ventana o enfocarla si ya existe
+    const urlToOpen = event.notification.data?.url || '/App/'; // <--- CAMBIO AQUÍ: Redirigir a /App/ por defecto
+
     event.waitUntil(
         clients.matchAll({type: 'window', includeUncontrolled: true}).then(function(windowClients) {
-            // Si hay una ventana abierta, enfocarla
+            // Si ya hay una ventana abierta en esa URL, enfocarla
             for (var i = 0; i < windowClients.length; i++) {
                 var client = windowClients[i];
-                if (client.url.includes('index.html') && 'focus' in client) {
+                if (client.url.includes('App') && 'focus' in client) { // Buscamos que esté en la App
                     return client.focus();
                 }
             }
-            // Si no, abrir una nueva (ajusta la URL según tu dominio)
+            // Si no, abrir una nueva
             if (clients.openWindow) {
-                return clients.openWindow('/index.html'); 
+                return clients.openWindow(urlToOpen); 
             }
         })
     );

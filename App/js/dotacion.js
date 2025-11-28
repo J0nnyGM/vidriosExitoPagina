@@ -533,242 +533,186 @@ function loadDotacionCatalog() {
 }
 
 /**
- * Carga la pestaña "Asignaciones" (Nivel 1: Resumen o Nivel 2: Detalle).
- * (VERSIÓN MEJORADA CON REAL-TIME Y FOTO DE ENTREGA)
- *
- * @param {string} userIdFilter - 'all' (para resumen) o un ID de usuario específico (para detalle).
- * @param {string | null} containerId - El ID del div donde se renderizará el historial. Si es null, usa el ID por defecto.
+ * Carga el reporte de dotación de un empleado en el contenedor especificado.
  */
-export async function loadDotacionAsignaciones(userIdFilter = 'all', containerId = null) { // <-- PARÁMETRO AÑADIDO
-    const role = getCurrentUserRole();
-
-    // --- INICIO DE MODIFICACIÓN ---
-    // IDs de contenedor dinámicos. Si containerId es null, usa los IDs por defecto.
-    const historyContainerId = containerId || 'dotacion-history-container';
-    const summaryContainerId = 'dotacion-summary-table-container';
-    const detailGridId = 'dotacion-detail-grid-container';
-    const backBtnId = 'dotacion-back-to-summary-btn';
-    const summaryTableBodyId = 'dotacion-summary-table-body';
-
-    const historyContainer = document.getElementById(historyContainerId);
-    if (!historyContainer) {
-        console.error(`Contenedor de historial '${historyContainerId}' no encontrado.`);
+export async function loadDotacionAsignaciones(userId, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) {
+        console.error(`[Dotacion] Contenedor ${containerId} no encontrado.`);
         return;
     }
 
-    // Si estamos en modo "widget", inyectamos la estructura HTML necesaria
-    if (containerId && userIdFilter !== 'all') {
-        // Esta es la vista Nivel 2 (detalle) para el operario en el dashboard
-        historyContainer.innerHTML = `
-            <div id="${detailGridId}" class="grid grid-cols-1 gap-4"></div>
-            `;
-    } else if (containerId) {
-        // Esto es por si un admin ve el resumen en un widget (no implementado, pero por seguridad)
-        historyContainer.innerHTML = `
-             <div id="${summaryContainerId}" class="bg-white p-6 rounded-lg shadow-md">
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm text-left">
-                        <thead class="text-xs text-gray-700 uppercase bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3">Empleado</th>
-                                <th class="px-6 py-3 text-center">Total Ítems Entregados</th>
-                                <th class="px-6 py-3 text-center">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="${summaryTableBodyId}"></tbody>
-                    </table>
-                </div>
-            </div>
-            <div id="${detailGridId}" class="hidden grid grid-cols-1 md:grid-cols-2 gap-6"></div>
-        `;
-    }
-    
-    // Contenedores
-    const summaryContainer = document.getElementById(summaryContainerId);
-    const detailGrid = document.getElementById(detailGridId);
-    const backBtn = document.getElementById(backBtnId);
-    const summaryTableBody = document.getElementById(summaryTableBodyId);
-    // --- FIN DE MODIFICACIÓN ---
+    // 1. Estado de Carga
+    container.innerHTML = `
+        <div class="flex flex-col items-center justify-center py-12">
+            <div class="loader mx-auto mb-4"></div>
+            <p class="text-gray-500 text-sm animate-pulse">Cargando inventario asignado...</p>
+        </div>
+    `;
 
+    try {
+        // --- CORRECCIÓN: Usamos 'db' (la variable global del módulo) ---
+        if (!db) throw new Error("La base de datos no está inicializada en dotacion.js");
 
-    if (unsubscribeDotacion) unsubscribeDotacion();
+        // 2. Consultar Historial de Asignaciones
+        const qHistory = query(
+            collection(db, "dotacionHistory"),
+            where("userId", "==", userId),
+            where("action", "==", "asignada"),
+            orderBy("fechaEntrega", "desc")
+        );
 
-    const usersMap = getUsersMap();
+        const snapshot = await getDocs(qHistory);
 
-    if (userIdFilter === 'all') {
-        // --- 1. VISTA RESUMEN (NIVEL 1: POR EMPLEADO) ---
-        // (Esta parte SÍ usa onSnapshot y ya funciona en tiempo real)
-        if (!summaryContainer || !detailGrid || !summaryTableBody) {
-            console.error("Faltan contenedores para la vista Nivel 1 (Resumen).");
+        if (snapshot.empty) {
+            container.innerHTML = `
+                <div class="bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 p-10 text-center mt-4">
+                    <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+                        <i class="fa-solid fa-shirt text-gray-300 text-3xl"></i>
+                    </div>
+                    <h4 class="text-gray-600 font-bold">Sin dotación registrada</h4>
+                    <p class="text-gray-400 text-xs mt-1">Este colaborador no tiene historial de entregas.</p>
+                </div>`;
             return;
         }
-        
-        summaryContainer.classList.remove('hidden');
-        detailGrid.classList.add('hidden');
-        if (backBtn) backBtn.classList.add('hidden'); // backBtn es opcional
-        summaryTableBody.innerHTML = '<tr><td colspan="3" class="text-center py-6"><div class="loader mx-auto"></div></td></tr>';
 
-        let historyQuery = query(collection(db, "dotacionHistory"), where("action", "==", "asignada"));
-        unsubscribeDotacion = onSnapshot(historyQuery, (snapshot) => {
-            // ... (Toda la lógica de summaryMap sigue igual)
-            const summaryMap = new Map();
-            snapshot.forEach(doc => {
-                const entry = doc.data();
-                if (entry.userId) {
-                    const current = summaryMap.get(entry.userId) || { count: 0 };
-                    current.count += (entry.quantity || 0);
-                    summaryMap.set(entry.userId, current);
+        // 3. Procesar Datos
+        let totalItemsDelivered = 0;
+        let activeItemsCount = 0;
+        let lastDeliveryDate = null;
+        const activeItems = [];
+        
+        // Recolectar IDs para cargar catálogo
+        const uniqueItemIds = new Set();
+        snapshot.docs.forEach(doc => uniqueItemIds.add(doc.data().itemId));
+
+        const catalogMap = new Map();
+        for (const itemId of uniqueItemIds) {
+            try {
+                const catSnap = await getDoc(doc(db, "dotacionCatalog", itemId));
+                if (catSnap.exists()) catalogMap.set(itemId, catSnap.data());
+            } catch (e) { console.warn("Ítem catálogo no encontrado", itemId); }
+        }
+
+        snapshot.forEach(doc => {
+            const data = { id: doc.id, ...doc.data() };
+            const catalogItem = catalogMap.get(data.itemId) || {};
+            
+            totalItemsDelivered += (data.quantity || 0);
+
+            if (!lastDeliveryDate) lastDeliveryDate = data.fechaEntrega;
+
+            // Solo mostramos en la tabla los que están ACTIVOS
+            if (data.status === 'activo') {
+                activeItemsCount += (data.quantity || 0);
+                
+                // Calcular Vencimiento
+                let statusHtml = '<span class="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded">Indefinido</span>';
+                let expirationText = '---';
+
+                if (catalogItem.vidaUtilDias && data.fechaEntrega) {
+                    const deliveryDate = new Date(data.fechaEntrega + 'T00:00:00');
+                    const expDate = new Date(deliveryDate);
+                    expDate.setDate(expDate.getDate() + catalogItem.vidaUtilDias);
+                    
+                    const today = new Date(); today.setHours(0,0,0,0);
+                    const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
+                    expirationText = expDate.toLocaleDateString('es-CO');
+
+                    if (diffDays < 0) statusHtml = `<span class="bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded whitespace-nowrap">Vencido (${Math.abs(diffDays)}d)</span>`;
+                    else if (diffDays <= 30) statusHtml = `<span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-1 rounded whitespace-nowrap">Vence en ${diffDays}d</span>`;
+                    else statusHtml = `<span class="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded">Vigente</span>`;
                 }
-            });
-            summaryTableBody.innerHTML = '';
-            if (summaryMap.size === 0) {
-                summaryTableBody.innerHTML = '<tr><td colspan="3" class="text-center py-6 text-gray-500">No hay asignaciones registradas.</td></tr>';
-                return;
+
+                activeItems.push({
+                    name: data.itemName || catalogItem.itemName || 'Ítem',
+                    category: catalogItem.category || 'General',
+                    talla: data.talla || catalogItem.talla || 'N/A',
+                    quantity: data.quantity,
+                    deliveryDate: data.fechaEntrega,
+                    expirationText: expirationText,
+                    statusHtml: statusHtml,
+                    photoURL: data.photoURL
+                });
             }
-            summaryMap.forEach((data, userId) => {
-                const user = usersMap.get(userId);
-                const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido';
-                const row = document.createElement('tr');
-                row.className = 'bg-white border-b hover:bg-gray-50 dotacion-summary-row';
-                row.innerHTML = `
-                    <td class="px-6 py-4 font-medium text-gray-900">${userName}</td>
-                    <td class="px-6 py-4 text-center font-bold text-lg text-blue-600">${data.count}</td>
-                    <td class="px-6 py-4 text-center">
-                        <button data-action="view-user-history" data-userid="${userId}" data-username="${userName}" class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-2 px-3 rounded-lg">
-                            Ver Dotación
-                        </button>
-                    </td>
-                `;
-                summaryTableBody.appendChild(row);
-            });
-        }, (error) => {
-            console.error("Error al cargar resumen de dotación:", error);
-            summaryTableBody.innerHTML = '<tr><td colspan="3" class="text-center py-6 text-red-500">Error al cargar el resumen.</td></tr>';
         });
 
-    } else {
-        // --- 2. VISTA DETALLADA (NIVEL 2: AHORA CON REAL-TIME) ---
-        if (summaryContainer) summaryContainer.classList.add('hidden'); // summaryContainer es opcional
-        if (detailGrid) detailGrid.classList.remove('hidden');
-        if (backBtn) backBtn.classList.toggle('hidden', role === 'operario' || containerId); // Ocultar si es operario O si es un widget
-        
-        if (!detailGrid) {
-            console.error("Contenedor de detalle (detailGrid) no encontrado.");
-            return;
-        }
-        detailGrid.innerHTML = '<div class="loader-container col-span-full"><div class="loader mx-auto"></div></div>';
+        // 4. Renderizar HTML
+        const lastDateStr = lastDeliveryDate ? new Date(lastDeliveryDate + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A';
 
-        try {
-            // 1. Cargar el Catálogo UNA VEZ
-            const catalogSnapshot = await getDocs(query(collection(db, "dotacionCatalog"), orderBy("itemName")));
-            const catalogMap = new Map();
-            catalogSnapshot.forEach(doc => {
-                catalogMap.set(doc.id, { id: doc.id, ...doc.data() });
-            });
+        const itemsRows = activeItems.map(item => `
+            <tr class="hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0">
+                <td class="px-4 py-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-500 text-xs">
+                            <i class="fa-solid ${item.category === 'EPP' ? 'fa-helmet-safety' : 'fa-shirt'}"></i>
+                        </div>
+                        <div>
+                            <p class="font-bold text-gray-800 text-sm">${item.name}</p>
+                            <p class="text-[10px] text-gray-500 uppercase">${item.category}</p>
+                        </div>
+                    </div>
+                </td>
+                <td class="px-4 py-3 text-center text-sm">${item.talla}</td>
+                <td class="px-4 py-3 text-center font-bold text-gray-700">${item.quantity}</td>
+                <td class="px-4 py-3 text-center text-xs text-gray-600">
+                    <div>${item.deliveryDate}</div>
+                    ${item.expirationText !== '---' ? `<div class="text-[10px] text-gray-400 mt-0.5">Vence: ${item.expirationText}</div>` : ''}
+                </td>
+                <td class="px-4 py-3 text-center">${item.statusHtml}</td>
+                <td class="px-4 py-3 text-center">
+                     ${item.photoURL ? 
+                        `<button onclick="window.openImageModal('${item.photoURL}')" class="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors" title="Ver Evidencia"><i class="fa-regular fa-image"></i></button>` 
+                        : '<span class="text-gray-300">-</span>'}
+                </td>
+            </tr>
+        `).join('');
 
-            // 2. Definir la consulta de HISTORIAL
-            const historyQuery = query(
-                collection(db, "dotacionHistory"),
-                where("action", "==", "asignada"),
-                where("userId", "==", userIdFilter),
-                orderBy("fechaEntrega", "desc")
-            );
+        container.innerHTML = `
+            <div class="space-y-6 mt-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-full bg-white text-blue-600 flex items-center justify-center shadow-sm"><i class="fa-solid fa-boxes-packing"></i></div>
+                        <div><p class="text-xs font-bold text-blue-400 uppercase">Total Histórico</p><p class="text-xl font-bold text-blue-900">${totalItemsDelivered}</p></div>
+                    </div>
+                    <div class="bg-green-50 p-4 rounded-xl border border-green-100 flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-full bg-white text-green-600 flex items-center justify-center shadow-sm"><i class="fa-solid fa-user-shield"></i></div>
+                        <div><p class="text-xs font-bold text-green-400 uppercase">En Poder (Activo)</p><p class="text-xl font-bold text-green-900">${activeItemsCount}</p></div>
+                    </div>
+                    <div class="bg-purple-50 p-4 rounded-xl border border-purple-100 flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-full bg-white text-purple-600 flex items-center justify-center shadow-sm"><i class="fa-solid fa-calendar-check"></i></div>
+                        <div><p class="text-xs font-bold text-purple-400 uppercase">Última Entrega</p><p class="text-sm font-bold text-purple-900">${lastDateStr}</p></div>
+                    </div>
+                </div>
 
-            // 3. Crear el listener REAL-TIME para el HISTORIAL
-            if (unsubscribeDotacion) unsubscribeDotacion();
-            unsubscribeDotacion = onSnapshot(historyQuery, (historySnapshot) => {
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-6 py-3 border-b border-gray-100 bg-gray-50"><h4 class="font-bold text-gray-700 text-sm">Inventario Activo</h4></div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+                                <tr>
+                                    <th class="px-4 py-3">Ítem</th>
+                                    <th class="px-4 py-3 text-center">Talla</th>
+                                    <th class="px-4 py-3 text-center">Cant.</th>
+                                    <th class="px-4 py-3 text-center">Entrega / Vencimiento</th>
+                                    <th class="px-4 py-3 text-center">Estado</th>
+                                    <th class="px-4 py-3 text-center">Foto</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50">
+                                ${itemsRows || '<tr><td colspan="6" class="text-center py-4 text-gray-400">No hay ítems activos.</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
 
-                const userHistoryMap = new Map();
-                const activeItemFound = new Set();
-
-                historySnapshot.forEach(doc => {
-                    const entry = { id: doc.id, ...doc.data() };
-                    const key = entry.itemId;
-
-                    if (!userHistoryMap.has(key)) {
-                        userHistoryMap.set(key, {
-                            itemId: entry.itemId,
-                            itemName: entry.itemName,
-                            talla: entry.talla,
-                            totalConsumido: 0,
-                            lastDeliveryDate: null,
-                            lastHistoryId: null,
-                            status: 'ninguno',
-                            deliveryPhotoURL: null // <-- Añadido el campo por defecto
-                        });
-                    }
-
-                    const summary = userHistoryMap.get(key);
-                    summary.totalConsumido += (entry.quantity || 0);
-
-                    if (activeItemFound.has(key)) return;
-
-                    const entryStatus = entry.status || 'activo';
-
-                    if (entryStatus === 'activo') {
-                        summary.lastDeliveryDate = entry.fechaEntrega;
-                        summary.lastHistoryId = entry.id;
-                        summary.status = 'activo';
-                        // --- INICIO DE MODIFICACIÓN ---
-                        summary.deliveryPhotoURL = entry.deliveryPhotoURL || null; // <-- LÍNEA AÑADIDA
-                        // --- FIN DE MODIFICACIÓN ---
-                        activeItemFound.add(key);
-                    } else if (summary.status === 'ninguno') {
-                        summary.lastDeliveryDate = entry.fechaEntrega;
-                        summary.lastHistoryId = entry.id;
-                        summary.status = entryStatus;
-                        // --- INICIO DE MODIFICACIÓN ---
-                        summary.deliveryPhotoURL = entry.deliveryPhotoURL || null; // <-- LÍNEA AÑADIDA
-                        // --- FIN DE MODIFICACIÓN ---
-                    }
-                });
-
-                // 4. Renderizar (la lógica de 'role === operario' va AQUI DENTRO)
-                detailGrid.innerHTML = '';
-
-                if (role === 'operario') {
-                    // ... (VISTA OPERARIO)
-                    if (userHistoryMap.size === 0) {
-                        detailGrid.innerHTML = '<p class="text-gray-500 text-center col-span-full">Aún no tienes dotación asignada.</p>';
-                        return;
-                    }
-                    userHistoryMap.forEach((historySummary, itemId) => {
-                        const catalogItem = catalogMap.get(itemId);
-                        if (!catalogItem) return;
-                        const card = createDotacionDetailCard(catalogItem, historySummary, userIdFilter, role);
-                        detailGrid.appendChild(card);
-                    });
-
-                } else {
-                    // ... (VISTA ADMIN)
-                    if (catalogMap.size === 0) {
-                        detailGrid.innerHTML = '<p class="text-gray-500 text-center col-span-full">No hay ítems de dotación en el catálogo.</p>';
-                        return;
-                    }
-                    catalogMap.forEach((catalogItem, catalogId) => {
-                        const historySummary = userHistoryMap.get(catalogId) || {
-                            totalConsumido: 0,
-                            lastDeliveryDate: null,
-                            lastHistoryId: null,
-                            status: 'ninguno',
-                            deliveryPhotoURL: null // <-- Añadido por si acaso
-                        };
-                        const card = createDotacionDetailCard(catalogItem, historySummary, userIdFilter, role);
-                        detailGrid.appendChild(card);
-                    });
-                }
-            }, (error) => {
-                console.error("Error al escuchar historial de dotación (real-time):", error);
-                detailGrid.innerHTML = '<p class="text-red-500 text-center col-span-full">Error al cargar datos en tiempo real.</p>';
-            });
-
-        } catch (error) {
-            console.error("Error al cargar el catálogo de dotación:", error);
-            detailGrid.innerHTML = '<p class="text-red-500 text-center col-span-full">Error fatal al cargar el catálogo.</p>';
-        }
+    } catch (error) {
+        console.error("Error cargando dotación:", error);
+        container.innerHTML = `<div class="p-4 text-center text-red-500 text-sm">Error: ${error.message}</div>`;
     }
 }
-
 
 /**
  * Crea el HTML para una TARJETA de ítem del catálogo de dotación.

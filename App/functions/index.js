@@ -271,7 +271,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
         // Si los M² son 0, no calculamos (esto es correcto, no hay nada que sumar)
         if (m2_total === 0) {
             console.log(`Cálculo omitido: M² es 0 para subItem ${event.params.subItemId}.`);
-            return; 
+            return;
         }
 
         // --- LÓGICA CLAVE: Obtener Instaladores desde la Tarea ---
@@ -279,17 +279,17 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
             console.warn(`Estadísticas omitidas: El subItem ${event.params.subItemId} fue instalado sin un ID de Tarea (assignedTaskId).`);
             return; // No podemos asignar M² si no sabemos de qué tarea es.
         }
-        
+
         const taskDoc = await db.doc(`tasks/${taskId}`).get();
         if (!taskDoc.exists) {
             console.error(`Estadísticas omitidas: No se encontró la Tarea ${taskId} (asociada al subItem ${event.params.subItemId}).`);
             return;
         }
-        
+
         const taskData = taskDoc.data();
         // Construimos el array de instaladores desde la Tarea (como solicitaste)
         const installerIds = [taskData.assigneeId, ...(taskData.additionalAssigneeIds || [])].filter(Boolean);
-        
+
         if (installerIds.length === 0) {
             console.warn(`Estadísticas omitidas: La Tarea ${taskId} no tiene instaladores asignados.`);
             return;
@@ -304,12 +304,12 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
                 onTime = false; // Marcamos como "fuera de tiempo"
             }
         }
-        
+
         const installDate = new Date(installDateStr + 'T12:00:00Z');
         const year = installDate.getFullYear();
         const month = String(installDate.getMonth() + 1).padStart(2, '0');
         const statDocId = `${year}_${month}`;
-        
+
         const statsRefGlobal = db.doc("system/dashboardStats");
         const batch = db.batch();
 
@@ -322,10 +322,10 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
                 console.error(`Estadísticas: No se encontró al Usuario ${installerId}. Omitiendo.`);
                 continue; // Saltamos a la siguiente persona
             }
-            
+
             const userData = userDoc.data();
             const level = userData.commissionLevel || "principiante";
-            
+
             // Cálculo de Bonificación (individual)
             let bonificacion_individual = 0;
             if (config && config[level]) {
@@ -348,7 +348,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
 
             console.log(`Estadísticas de ${installerId} para ${statDocId} actualizadas: ${m2_total * operationType}m², $${bonificacion_individual} (A tiempo: ${onTime})`);
         }
-        
+
         // Actualización Global (sumamos los M² UNA SOLA VEZ, pero la bonificación TOTAL)
         const statsUpdateGlobal = {
             productivity: {
@@ -359,7 +359,7 @@ exports.onSubItemChange = onDocumentWritten("projects/{projectId}/items/{itemId}
             }
         };
         batch.set(statsRefGlobal, statsUpdateGlobal, { merge: true });
-        
+
         await batch.commit();
 
     } catch (statError) {
@@ -2087,11 +2087,11 @@ exports.checkLateEntries = onSchedule({
     timeZone: "America/Bogota",
 }, async (event) => {
     console.log("Iniciando verificación de llegadas tarde (8:30 AM) - PARA TODOS...");
-    
+
     const now = new Date();
     // Definimos el inicio del turno operativo de hoy (1:00 AM)
     const startOfDay = new Date(now);
-    startOfDay.setHours(1, 0, 0, 0); 
+    startOfDay.setHours(1, 0, 0, 0);
 
     try {
         // 1. Obtener TODOS los usuarios activos (SIN importar el rol)
@@ -2176,7 +2176,7 @@ exports.checkLateEntries = onSchedule({
 exports.sendPushOnNotificationCreate = onDocumentWritten("notifications/{notificationId}", async (event) => {
     // 1. Validar que sea un documento NUEVO (Creación)
     if (!event.data.after.exists) return null; // Si se borró, no hacer nada
-    
+
     // Si es una edición (before existe), solo notificar si NO estaba leída y sigue sin leerse
     // (Opcional: aquí simplificamos para solo notificar creaciones nuevas)
     if (event.data.before.exists) return null;
@@ -2189,7 +2189,7 @@ exports.sendPushOnNotificationCreate = onDocumentWritten("notifications/{notific
     try {
         // 2. Obtener el Token FCM del usuario destinatario
         const userDoc = await db.doc(`users/${userId}`).get();
-        
+
         if (!userDoc.exists) return null;
 
         const userData = userDoc.data();
@@ -2206,35 +2206,44 @@ exports.sendPushOnNotificationCreate = onDocumentWritten("notifications/{notific
             title = "🚨 ¡ATENCIÓN REQUERIDA!";
         }
 
-        // 4. Construir el mensaje Push MEJORADO
+        // 4. Construir el mensaje Push (CORREGIDO PARA iOS)
         const messagePayload = {
             notification: {
                 title: title,
                 body: notifData.message,
+                image: notifData.photoURL || null // <--- AGREGAR ESTA LÍNEA
             },
-            // Configuración específica para Android para intentar hacer ruido
+            // Android: Vibración y Prioridad
             android: {
                 notification: {
                     sound: 'default',
-                    priority: 'high', // Máxima prioridad
-                    channelId: 'urgent_alerts', // Canal sugerido (requiere config extra en service worker, pero ayuda)
-                    vibrateTimingsMillis: [0, 500, 200, 500] // Patrón de vibración: Vrr... Vrr...
+                    priority: 'high',
+                    channelId: 'urgent_alerts',
+                    vibrateTimingsMillis: [0, 500, 200, 500]
                 },
-                priority: 'high' 
+                priority: 'high'
             },
-            // Configuración para Apple (APNS)
+            // iOS (Apple): ESTA ES LA PARTE CLAVE QUE FALTABA
             apns: {
+                headers: {
+                    "apns-priority": "10", // 10 = Envío inmediato (necesario para alertas)
+                    "apns-push-type": "alert" // Obligatorio para que se muestre el banner
+                },
                 payload: {
                     aps: {
+                        alert: {
+                            title: title,
+                            body: notifData.message
+                        },
                         sound: 'default',
-                        contentAvailable: true
+                        badge: 1,
+                        "content-available": 1
                     }
                 }
             },
             data: {
-                url: notifData.link || "/", 
+                url: notifData.link || "/",
                 type: notifData.type || 'general',
-                // Enviamos una bandera para que el Service Worker sepa que es urgente
                 isUrgent: notifData.type === 'admin_urgent_alert' ? 'true' : 'false'
             },
             token: fcmToken

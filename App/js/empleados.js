@@ -1556,9 +1556,13 @@ async function loadGlobalHistoryTab(container) {
     fetchGlobalPayments();
 }
 
+/**
+ * Carga el contenido de la pestaña "Productividad" (TABLA ACTUALIZADA).
+ * Corrección: Ahora muestra el ROL real del usuario en lugar de un texto fijo.
+ */
 async function loadProductividadTab(container) {
 
-    // 1. Renderizar el "Shell" (SOLO la tabla)
+    // 1. Renderizar el "Shell"
     container.innerHTML = `
         <div class="bg-white p-6 rounded-lg shadow-md">
             <div class="overflow-x-auto">
@@ -1569,63 +1573,106 @@ async function loadProductividadTab(container) {
                             <th class="px-6 py-3 text-center">Nivel Comisión</th>
                             <th class="px-6 py-3 text-right">M² Asignados</th>
                             <th class="px-6 py-3 text-right">M² Completados</th>
-                            <th class="px-6 py-3 text-right text-green-600">M² a Tiempo</th>
-                            <th class="px-6 py-3 text-right text-red-600">M² Fuera de Tiempo</th>
+                            <th class="px-6 py-3 text-center text-red-600">Días No Reportados</th>
                             <th class="px-6 py-3 text-right text-blue-600">Bonificación (Mes)</th>
                         </tr>
                     </thead>
                     <tbody id="empleados-prod-table-body">
-                        </tbody>
+                    </tbody>
                 </table>
             </div>
+            <p class="text-xs text-gray-400 mt-2 text-right">* Días no reportados calcula días hábiles (Lun-Sáb) sin registro de ingreso.</p>
         </div>
     `;
 
-    // 2. Obtener el selector de mes (que ya existe)
+    // 2. Referencias
     const monthSelector = document.getElementById('empleado-month-selector');
     const tableBody = document.getElementById('empleados-prod-table-body');
 
-    // Función interna para cargar la tabla
+    // Función auxiliar días hábiles
+    const countBusinessDays = (year, month) => {
+        let count = 0;
+        const startDate = new Date(year, month - 1, 1);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+
+        let endDate = new Date(year, month, 0);
+        if (year === today.getFullYear() && (month - 1) === today.getMonth()) {
+            endDate = today; 
+        } else if (endDate > today) {
+            return 0;
+        }
+
+        let curDate = new Date(startDate);
+        while (curDate <= endDate) {
+            const dayOfWeek = curDate.getDay();
+            if (dayOfWeek !== 0) { // Excluir Domingo
+                count++;
+            }
+            curDate.setDate(curDate.getDate() + 1);
+        }
+        return count;
+    };
+
+    // Carga de datos
     const loadTableData = async () => {
-        // Lee el selector, consulta Firestore, y renderiza las filas.
         const selectedMonthYear = monthSelector.value;
+        const [selYear, selMonth] = selectedMonthYear.split('-').map(Number);
         const currentStatDocId = selectedMonthYear.replace('-', '_');
 
-        tableBody.innerHTML = `<tr><td colspan="7" class="text-center py-10"><div class="loader mx-auto"></div><p class="mt-2 text-gray-500">Cargando reporte para ${selectedMonthYear}...</p></td></tr>`;
+        const startOfMonth = new Date(selYear, selMonth - 1, 1);
+        const endOfMonth = new Date(selYear, selMonth, 0, 23, 59, 59);
+        const businessDays = countBusinessDays(selYear, selMonth);
+
+        tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10"><div class="loader mx-auto"></div><p class="mt-2 text-gray-500">Calculando reporte...</p></td></tr>`;
 
         try {
             const usersMap = _getUsersMap();
-            const activeUsers = []; // <-- Variable renombrada
+            const activeUsers = [];
             usersMap.forEach((user, id) => {
-                // --- INICIO DE LA MODIFICACIÓN ---
-                // Ahora incluye a todos los usuarios activos
                 if (user.status === 'active') {
-                    // --- FIN DE LA MODIFICACIÓN ---
-                    activeUsers.push({ id, ...user }); // <-- Variable renombrada
+                    activeUsers.push({ id, ...user });
                 }
             });
 
-            if (activeUsers.length === 0) { // <-- Variable renombrada
-                tableBody.innerHTML = `<tr><td colspan="7" class="text-center py-10 text-gray-500">No se encontraron operarios activos.</td></tr>`;
+            if (activeUsers.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-gray-500">No se encontraron operarios activos.</td></tr>`;
                 return;
             }
 
-            const statPromises = activeUsers.map(op => getDoc(doc(_db, "employeeStats", op.id, "monthlyStats", currentStatDocId))); // <-- Variable renombrada
-            const statSnapshots = await Promise.all(statPromises);
+            const statPromises = activeUsers.map(op => getDoc(doc(_db, "employeeStats", op.id, "monthlyStats", currentStatDocId)));
+            
+            const attendancePromises = activeUsers.map(op => {
+                const q = query(
+                    collection(_db, "users", op.id, "attendance_reports"),
+                    where("type", "==", "ingreso"),
+                    where("timestamp", ">=", startOfMonth),
+                    where("timestamp", "<=", endOfMonth)
+                );
+                return getDocs(q);
+            });
 
-            const empleadoData = activeUsers.map((operario, index) => { // <-- Variable renombrada
+            const [statSnapshots, attendanceSnapshots] = await Promise.all([
+                Promise.all(statPromises),
+                Promise.all(attendancePromises)
+            ]);
+
+            const empleadoData = activeUsers.map((operario, index) => {
                 const statDoc = statSnapshots[index];
                 const stats = statDoc.exists() ? statDoc.data() : {
-                    metrosAsignados: 0, metrosCompletados: 0, metrosEnTiempo: 0, metrosFueraDeTiempo: 0, totalBonificacion: 0
+                    metrosAsignados: 0, metrosCompletados: 0, totalBonificacion: 0
                 };
-                return { ...operario, stats: stats };
+                const attendanceCount = attendanceSnapshots[index].size;
+                const missingDays = Math.max(0, businessDays - attendanceCount);
+
+                return { ...operario, stats, missingDays };
             });
 
             empleadoData.sort((a, b) => b.stats.metrosCompletados - a.stats.metrosCompletados);
 
             tableBody.innerHTML = '';
             if (empleadoData.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="7" class="text-center py-10 text-gray-500">No hay datos de productividad para ${selectedMonthYear}.</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-gray-500">No hay datos para ${selectedMonthYear}.</td></tr>`;
             }
 
             empleadoData.forEach(data => {
@@ -1636,28 +1683,40 @@ async function loadProductividadTab(container) {
 
                 const level = data.commissionLevel || 'principiante';
                 const levelText = level.charAt(0).toUpperCase() + level.slice(1);
+                
+                // --- CORRECCIÓN AQUÍ: Usamos data.role ---
+                const roleRaw = data.role || 'operario';
+                // Capitalizar primera letra (ej: "admin" -> "Admin")
+                const roleDisplay = roleRaw.charAt(0).toUpperCase() + roleRaw.slice(1);
+
+                // Estilo visual de días no reportados
+                let missingDaysHtml = `<span class="text-gray-400 font-bold">-</span>`;
+                if (data.missingDays > 0) {
+                    missingDaysHtml = `<span class="bg-red-100 text-red-700 px-2 py-1 rounded-full font-bold text-xs">${data.missingDays} días</span>`;
+                } else {
+                    missingDaysHtml = `<span class="text-green-600 font-bold text-xs"><i class="fa-solid fa-check"></i> Completo</span>`;
+                }
 
                 row.innerHTML = `
-                    <td class="px-6 py-4 font-medium text-gray-900">${data.firstName} ${data.lastName}</td>
+                    <td class="px-6 py-4 font-medium text-gray-900">
+                        ${data.firstName} ${data.lastName}
+                        <div class="text-[10px] text-gray-400 uppercase tracking-wide">${roleDisplay}</div>
+                    </td>
                     <td class="px-6 py-4 text-center text-gray-600">${levelText}</td>
-                    <td class="px-6 py-4 text-right font-medium">${(data.stats.metrosAsignados || 0).toFixed(2)}</td>
-                    <td class="px-6 py-4 text-right font-bold text-blue-700">${(data.stats.metrosCompletados || 0).toFixed(2)}</td>
-                    <td class="px-6 py-4 text-right font-medium text-green-600">${(data.stats.metrosEnTiempo || 0).toFixed(2)}</td>
-                    <td class="px-6 py-4 text-right font-medium text-red-600">${(data.stats.metrosFueraDeTiempo || 0).toFixed(2)}</td>
-                    <td class="px-6 py-4 text-right font-bold text-blue-700">${currencyFormatter.format(data.stats.totalBonificacion || 0)}</td>
+                    <td class="px-6 py-4 text-right font-medium text-gray-500">${(data.stats.metrosAsignados || 0).toFixed(2)}</td>
+                    <td class="px-6 py-4 text-right font-bold text-indigo-700 text-base">${(data.stats.metrosCompletados || 0).toFixed(2)}</td>
+                    <td class="px-6 py-4 text-center">${missingDaysHtml}</td>
+                    <td class="px-6 py-4 text-right font-bold text-green-600">${currencyFormatter.format(data.stats.totalBonificacion || 0)}</td>
                 `;
                 tableBody.appendChild(row);
             });
 
         } catch (error) {
-            console.error("Error al cargar el reporte de productividad:", error);
-            tableBody.innerHTML = `<tr><td colspan="7" class="text-center py-10 text-red-500">Error al cargar el reporte: ${error.message}</td></tr>`;
+            console.error("Error al cargar reporte:", error);
+            tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-red-500">Error: ${error.message}</td></tr>`;
         }
     };
 
-    // 3. (Eliminamos el 'addEventListener' de aquí, porque ya está en loadEmpleadosView)
-
-    // 4. Cargar los datos de la tabla por primera vez
     loadTableData();
 }
 
@@ -1937,7 +1996,7 @@ async function loadNominaTab(container) {
 
 /**
  * Muestra la vista de detalle de un empleado específico.
- * (ACTUALIZADO: Solo muestra Resumen/Perfil. Se eliminaron Dotación, Documentos y Pagos)
+ * VERSIÓN SEGURA: No se rompe si faltan elementos en el HTML.
  */
 export async function showEmpleadoDetails(userId) {
     _showView('empleado-details');
@@ -1949,120 +2008,272 @@ export async function showEmpleadoDetails(userId) {
     const usersMap = _getUsersMap();
     const user = usersMap.get(userId);
 
+    // Helper para evitar el error "Cannot set properties of null"
+    const safeSetText = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.textContent = text;
+        } else {
+            console.warn(`Elemento faltante en HTML: ${id}`); // Aviso en consola para depurar
+        }
+    };
+
     if (!user) {
-        document.getElementById('empleado-details-name').textContent = 'Error: Usuario no encontrado';
+        safeSetText('empleado-details-name', 'Error: Usuario no encontrado');
         return;
     }
 
-    // --- 1. Renderizar Encabezado (Datos Personales) ---
+    // --- 1. RENDERIZAR ENCABEZADO ---
     const level = user.commissionLevel || 'principiante';
     const levelText = level.charAt(0).toUpperCase() + level.slice(1);
 
+    // Nombre y ID
+    safeSetText('empleado-details-name', `${user.firstName} ${user.lastName}`);
     const nameEl = document.getElementById('empleado-details-name');
-    nameEl.textContent = `${user.firstName} ${user.lastName}`;
-    nameEl.dataset.userId = userId;
+    if (nameEl) nameEl.dataset.userId = userId;
 
-    // Botón Logs
-    const headerContainer = nameEl.parentElement;
-    let btnAudit = headerContainer.querySelector('.btn-audit-log');
-    if (!btnAudit) {
-        btnAudit = document.createElement('button');
-        btnAudit.className = "btn-audit-log ml-3 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded border border-gray-300 transition-colors align-middle";
-        btnAudit.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-1"></i> Logs';
-        nameEl.insertAdjacentElement('afterend', btnAudit);
-    }
-    btnAudit.onclick = () => {
-        if (typeof window.openMainModal === 'function') window.openMainModal('view-audit-logs', { userId: userId });
-    };
-
-    document.getElementById('empleado-details-level').textContent = `Nivel: ${levelText}`;
-    document.getElementById('empleado-details-idNumber').textContent = user.idNumber || 'N/A';
-    document.getElementById('empleado-details-email').textContent = user.email || 'N/A';
-    document.getElementById('empleado-details-phone').textContent = user.phone || 'N/A';
-    document.getElementById('empleado-details-address').textContent = user.address || 'N/A';
-    document.getElementById('empleado-details-bank').textContent = user.bankName || 'No registrado';
-    document.getElementById('empleado-details-account-type').textContent = user.accountType || 'N/A';
-    document.getElementById('empleado-details-account-number').textContent = user.accountNumber || '---';
-
-    // --- 2. Configuración de Pestañas (LIMPIEZA TOTAL) ---
-    const tabsNav = document.getElementById('empleado-details-tabs-nav');
-    const newTabsNav = tabsNav.cloneNode(false);
-    tabsNav.parentNode.replaceChild(newTabsNav, tabsNav);
-
-    // SOLO DEJAMOS "RESUMEN" (PERFIL)
-    newTabsNav.innerHTML = `
-        <button data-tab="resumen" class="empleado-details-tab-button active whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-blue-600 border-blue-500 cursor-default">
-            <i class="fa-solid fa-id-card-clip mr-2"></i> Perfil y Productividad
-        </button>
-    `;
-
-    // (Opcional: Eliminamos el listener de click porque solo hay una pestaña y ya está activa)
-    // Pero lo dejamos por si en el futuro agregas algo más específico del perfil.
-    newTabsNav.addEventListener('click', (e) => {
-        const button = e.target.closest('.empleado-details-tab-button');
-        if (button && !button.classList.contains('active')) {
-            // Lógica para futuras pestañas...
+    // Botón Logs (Solo se agrega si existe el nombre)
+    if (nameEl) {
+        const headerContainer = nameEl.parentElement;
+        let btnAudit = headerContainer.querySelector('.btn-audit-log');
+        if (!btnAudit) {
+            btnAudit = document.createElement('button');
+            btnAudit.className = "btn-audit-log ml-3 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded border border-gray-300 transition-colors align-middle";
+            btnAudit.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-1"></i> Logs';
+            nameEl.insertAdjacentElement('afterend', btnAudit);
+            btnAudit.onclick = () => {
+                if (typeof window.openMainModal === 'function') window.openMainModal('view-audit-logs', { userId: userId });
+            };
         }
-    });
+    }
 
-    // Cargar la única vista disponible
+    // Datos Personales
+    safeSetText('empleado-details-level', `Nivel: ${levelText}`);
+    safeSetText('empleado-details-idNumber', user.idNumber || 'N/A');
+    safeSetText('empleado-details-email', user.email || 'N/A');
+    safeSetText('empleado-details-phone', user.phone || 'N/A');
+    safeSetText('empleado-details-address', user.address || 'N/A');
+    
+    // Datos Bancarios (Estos son los que probablemente causaban el error)
+    safeSetText('empleado-details-bank', user.bankName || 'No registrado');
+    safeSetText('empleado-details-account-type', user.accountType || 'N/A');
+    safeSetText('empleado-details-account-number', user.accountNumber || '---');
+
+    // --- 2. CONFIGURACIÓN DE PESTAÑAS ---
+    const tabsNav = document.getElementById('empleado-details-tabs-nav');
+    if (tabsNav) {
+        const newTabsNav = tabsNav.cloneNode(false); 
+        tabsNav.parentNode.replaceChild(newTabsNav, tabsNav);
+
+        newTabsNav.innerHTML = `
+            <button data-tab="resumen" class="empleado-details-tab-button active whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm text-blue-600 border-blue-500 hover:text-blue-800 transition-colors">
+                <i class="fa-solid fa-chart-pie mr-2"></i> Resumen
+            </button>
+            
+            <button data-tab="asistencia" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
+                <i class="fa-solid fa-location-dot mr-2"></i> Reporte de Ingreso
+            </button>
+
+            <button data-tab="documentos" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
+                <i class="fa-solid fa-folder-open mr-2"></i> Expediente
+            </button>
+
+            <button data-tab="dotacion" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
+                <i class="fa-solid fa-helmet-safety mr-2"></i> Dotación
+            </button>
+        `;
+
+        newTabsNav.addEventListener('click', (e) => {
+            const button = e.target.closest('.empleado-details-tab-button');
+            if (!button) return;
+
+            newTabsNav.querySelectorAll('.empleado-details-tab-button').forEach(btn => {
+                btn.classList.remove('active', 'border-blue-500', 'text-blue-600');
+                btn.classList.add('border-transparent', 'text-gray-500');
+            });
+            
+            button.classList.add('active', 'border-blue-500', 'text-blue-600');
+            button.classList.remove('border-transparent', 'text-gray-500');
+
+            const tabName = button.dataset.tab;
+            switchEmpleadoDetailsTab(tabName, userId);
+        });
+    }
+
+    // --- 3. CONFIGURAR BOTONES DE RANGO ---
+    // Usamos un timeout pequeño para asegurar que el DOM se actualizó si acabamos de crear la pestaña
+    setTimeout(() => {
+        const rangeContainer = document.querySelector('#empleado-tab-asistencia .flex.gap-2');
+        if (rangeContainer) {
+            const newRangeContainer = rangeContainer.cloneNode(true);
+            rangeContainer.parentNode.replaceChild(newRangeContainer, rangeContainer);
+
+            newRangeContainer.addEventListener('click', (e) => {
+                const btn = e.target.closest('.range-btn');
+                if (!btn) return;
+
+                newRangeContainer.querySelectorAll('.range-btn').forEach(b => {
+                    b.classList.remove('bg-blue-100', 'text-blue-700', 'border-blue-200');
+                    b.classList.add('bg-gray-100', 'text-gray-600', 'border-gray-200');
+                });
+                
+                btn.classList.remove('bg-gray-100', 'text-gray-600', 'border-gray-200');
+                btn.classList.add('bg-blue-100', 'text-blue-700', 'border-blue-200');
+
+                const days = parseInt(btn.dataset.range);
+                loadAttendanceTab(userId, days);
+            });
+        }
+    }, 500);
+
+    // --- 4. CARGA INICIAL ---
     switchEmpleadoDetailsTab('resumen', userId);
 }
 
 
 /**
- * Cambia la pestaña activa del PERFIL DE EMPLEADO.
- * (Esta función está correcta, no necesita cambios)
+ * Cambia el contenido visible en el detalle del empleado.
+ * Crea dinámicamente los contenedores de las pestañas si no existen.
  */
 function switchEmpleadoDetailsTab(tabName, userId) {
-    if (unsubscribeEmpleadosTab) {
-        unsubscribeEmpleadosTab();
-        unsubscribeEmpleadosTab = null;
-    }
-
+    // 1. Ocultar todos los contenidos
     document.querySelectorAll('.empleado-details-tab-content').forEach(content => {
         content.classList.add('hidden');
     });
 
-    // Buscar o Crear Contenedor
+    // 2. Buscar o Crear Contenedor
     let activeContent = document.getElementById(`empleado-tab-${tabName}`);
+    
+    // Si no existe el div de la pestaña, lo creamos dinámicamente
     if (!activeContent) {
-        const tabsNav = document.getElementById('empleado-details-tabs-nav');
-        let parentView = document.getElementById('empleado-details');
-
-        if (!parentView && tabsNav) {
-            parentView = tabsNav.parentElement;
-        }
-
-        if (parentView) {
+        const parentContainer = document.getElementById('empleado-details-content-container') || 
+                                document.getElementById('empleado-details'); 
+        if (parentContainer) {
             activeContent = document.createElement('div');
             activeContent.id = `empleado-tab-${tabName}`;
-            activeContent.className = 'empleado-details-tab-content mt-6';
-            parentView.appendChild(activeContent);
-        } else {
-            console.error("Error crítico: No se pudo encontrar dónde renderizar la pestaña.");
-            return;
+            activeContent.className = 'empleado-details-tab-content mt-6 space-y-6';
+            parentContainer.appendChild(activeContent);
         }
     }
 
-    activeContent.classList.remove('hidden');
+    // 3. Mostrar el contenedor
+    if(activeContent) activeContent.classList.remove('hidden');
 
+    // 4. Lógica por pestaña
     switch (tabName) {
-        case 'resumen':
+case 'resumen':
+            // --- CORRECCIÓN: Verificamos si falta la NUEVA sección específica ---
+            // Si no encuentra el ID 'resumen-asistencia-kpi', sobrescribe todo el HTML
+            // para asegurar que tengamos la estructura completa (Gráfica + Reporte).
+            if (!activeContent.querySelector('#resumen-asistencia-kpi')) {
+                 activeContent.innerHTML = `
+                    <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+                        <h4 class="text-sm font-bold text-gray-500 uppercase mb-4">Productividad (Últimos 6 Meses)</h4>
+                        <div class="relative h-64">
+                            <canvas id="empleado-productivity-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200 mt-6">
+                        <h4 class="text-sm font-bold text-gray-500 uppercase mb-4 flex items-center">
+                            <i class="fa-solid fa-clock-rotate-left mr-2 text-blue-500"></i>
+                            Reporte de Ingreso (Mes Actual)
+                        </h4>
+
+                        <div id="resumen-asistencia-kpi" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <div class="text-center py-4"><div class="loader-small mx-auto"></div></div>
+                        </div>
+
+                        <div class="overflow-hidden rounded-lg border border-gray-100">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-gray-50 text-xs text-gray-500 uppercase font-semibold">
+                                    <tr>
+                                        <th class="px-4 py-2">Fecha</th>
+                                        <th class="px-4 py-2">Hora Llegada</th>
+                                        <th class="px-4 py-2 text-center">Evidencia</th>
+                                        <th class="px-4 py-2 text-center">Ubicación</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="resumen-asistencia-tbody" class="divide-y divide-gray-50">
+                                    </tbody>
+                            </table>
+                        </div>
+                        
+                        <div class="mt-3 text-right">
+                            <button class="text-xs text-blue-600 hover:text-blue-800 font-bold hover:underline transition-colors" 
+                                onclick="document.querySelector('[data-tab=asistencia]').click()">
+                                Ver historial completo →
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Cargar los datos (Ahora sí encontrará los contenedores)
             loadEmpleadoResumenTab(userId);
             break;
+            
+        case 'asistencia':
+            // Inyectamos la estructura de la pestaña completa de asistencia
+            if (!activeContent.innerHTML.trim()) {
+                 activeContent.innerHTML = `
+                    <div class="flex justify-between items-center bg-white p-4 rounded-lg shadow border border-gray-200 mb-6">
+                        <h3 class="text-lg font-bold text-gray-800">Historial de Asistencia</h3>
+                        <div class="flex gap-2">
+                            <button data-range="7" class="range-btn bg-blue-100 text-blue-700 px-3 py-1 rounded-md text-sm font-bold border border-blue-200">7 Días</button>
+                            <button data-range="15" class="range-btn bg-gray-100 text-gray-600 px-3 py-1 rounded-md text-sm font-bold border border-gray-200">15 Días</button>
+                            <button data-range="30" class="range-btn bg-gray-100 text-gray-600 px-3 py-1 rounded-md text-sm font-bold border border-gray-200">30 Días</button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                        <div class="bg-white p-4 rounded-lg shadow border border-gray-200">
+                            <h4 class="text-sm font-bold text-gray-500 uppercase mb-4">Tendencia</h4>
+                            <div class="relative h-64"><canvas id="attendance-chart"></canvas></div>
+                        </div>
+                        <div class="bg-white p-4 rounded-lg shadow border border-gray-200 flex flex-col">
+                            <h4 class="text-sm font-bold text-gray-500 uppercase mb-4">Mapa</h4>
+                            <div id="attendance-map" class="flex-grow w-full h-64 rounded-lg border border-gray-300 z-0"></div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50"><h4 class="text-sm font-bold text-gray-700">Bitácora</h4></div>
+                        <div class="overflow-x-auto max-h-80">
+                            <table class="w-full text-sm text-left">
+                                <thead class="text-xs text-gray-700 uppercase bg-gray-100 sticky top-0 z-10">
+                                    <tr><th class="px-6 py-3">Fecha</th><th class="px-6 py-3">Hora</th><th class="px-6 py-3 text-center">Evidencia</th><th class="px-6 py-3 text-center">Mapa</th><th class="px-6 py-3">Disp.</th></tr>
+                                </thead>
+                                <tbody id="attendance-list-body" class="divide-y divide-gray-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+            loadAttendanceTab(userId, 7);
+            setTimeout(() => { if(attendanceMapInstance) attendanceMapInstance.invalidateSize(); }, 200);
+            break;
 
-        // ELIMINADOS: 'pagos', 'dotacion', 'documentos'
-        // Ahora cada uno tiene su propia pestaña principal en el módulo.
+        case 'documentos':
+            loadEmpleadoDocumentosTab(userId, activeContent);
+            break;
+
+        case 'dotacion':
+            if (typeof window.loadDotacionAsignaciones === 'function') {
+                window.loadDotacionAsignaciones(userId, `empleado-tab-dotacion`);
+            } else {
+                console.error("Función de dotación no encontrada.");
+            }
+            break;
     }
 }
 
 
 /**
- * Carga el contenido de la pestaña "Resumen" (Gráfico de Productividad).
- * (Esta función está correcta, no necesita cambios)
+ * Carga el contenido de la pestaña "Resumen":
+ * 1. Gráfico de Productividad.
+ * 2. Resumen de Asistencia (KPIs y Mini Tabla).
  */
 async function loadEmpleadoResumenTab(userId) {
+    // --- PARTE 1: GRÁFICO DE PRODUCTIVIDAD (Lógica existente) ---
     try {
         const labels = [];
         const dataBonificacion = [];
@@ -2098,12 +2309,125 @@ async function loadEmpleadoResumenTab(userId) {
             }
         });
 
-        const ctx = document.getElementById('empleado-productivity-chart').getContext('2d');
-        createProductivityChart(ctx, labels, dataBonificacion, dataEnTiempo, dataFueraTiempo);
+        const ctx = document.getElementById('empleado-productivity-chart');
+        if (ctx) {
+            createProductivityChart(ctx.getContext('2d'), labels, dataBonificacion, dataEnTiempo, dataFueraTiempo);
+        }
 
     } catch (error) {
         console.error("Error al cargar gráfico de productividad:", error);
-        document.getElementById('empleado-productivity-chart').innerHTML = '<p class="text-red-500">Error al cargar gráfico.</p>';
+    }
+
+    // --- PARTE 2: RESUMEN DE ASISTENCIA (NUEVA LÓGICA) ---
+    const kpiContainer = document.getElementById('resumen-asistencia-kpi');
+    const tableBody = document.getElementById('resumen-asistencia-tbody');
+
+    if (!kpiContainer || !tableBody) return;
+
+    try {
+        // Consultar los últimos 30 registros de ingreso
+        const q = query(
+            collection(_db, "users", userId, "attendance_reports"),
+            where("type", "==", "ingreso"),
+            orderBy("timestamp", "desc"),
+            limit(30)
+        );
+
+        const snapshot = await getDocs(q);
+        
+        if (snapshot.empty) {
+            kpiContainer.innerHTML = `<div class="col-span-3 text-center text-gray-400 text-sm italic">Sin registros de ingreso recientes.</div>`;
+            tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-400 text-xs">No hay datos.</td></tr>`;
+            return;
+        }
+
+        const reports = snapshot.docs.map(d => d.data());
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+
+        // A. Calcular KPIs del Mes Actual
+        let daysWorked = 0;
+        let totalMinutes = 0;
+        let countForAvg = 0;
+
+        const currentMonthReports = reports.filter(r => {
+            const d = r.timestamp.toDate();
+            return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+        });
+
+        daysWorked = currentMonthReports.length;
+
+        currentMonthReports.forEach(r => {
+            const d = r.timestamp.toDate();
+            // Convertir hora a minutos desde medianoche (ej: 8:30 = 510 min)
+            totalMinutes += (d.getHours() * 60) + d.getMinutes();
+            countForAvg++;
+        });
+
+        let avgTimeStr = "---";
+        if (countForAvg > 0) {
+            const avgTotalMinutes = Math.round(totalMinutes / countForAvg);
+            const avgH = Math.floor(avgTotalMinutes / 60);
+            const avgM = avgTotalMinutes % 60;
+            const ampm = avgH >= 12 ? 'PM' : 'AM';
+            const displayH = avgH > 12 ? avgH - 12 : avgH;
+            avgTimeStr = `${displayH}:${avgM.toString().padStart(2, '0')} ${ampm}`;
+        }
+
+        const lastReport = reports[0]; // El primero es el más reciente por el orderBy desc
+        const lastDateStr = lastReport.timestamp.toDate().toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+        const lastTimeStr = lastReport.timestamp.toDate().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+
+        // Renderizar KPIs
+        kpiContainer.innerHTML = `
+            <div class="bg-blue-50 p-3 rounded-lg border border-blue-100 text-center">
+                <p class="text-xs text-blue-500 font-bold uppercase">Días Trabajados</p>
+                <p class="text-2xl font-bold text-blue-800">${daysWorked}</p>
+                <p class="text-[10px] text-blue-400">Mes Actual</p>
+            </div>
+            <div class="bg-indigo-50 p-3 rounded-lg border border-indigo-100 text-center">
+                <p class="text-xs text-indigo-500 font-bold uppercase">Promedio Llegada</p>
+                <p class="text-2xl font-bold text-indigo-800">${avgTimeStr}</p>
+                <p class="text-[10px] text-indigo-400">Hora estimada</p>
+            </div>
+            <div class="bg-green-50 p-3 rounded-lg border border-green-100 text-center">
+                <p class="text-xs text-green-600 font-bold uppercase">Último Ingreso</p>
+                <p class="text-lg font-bold text-green-800">${lastDateStr}</p>
+                <p class="text-sm font-bold text-green-600">${lastTimeStr}</p>
+            </div>
+        `;
+
+        // B. Renderizar Mini Tabla (Últimos 5)
+        const last5 = reports.slice(0, 5);
+        tableBody.innerHTML = last5.map(r => {
+            const dateObj = r.timestamp.toDate();
+            const dateStr = dateObj.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+            const timeStr = dateObj.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+            const lat = r.location?.lat;
+            const lng = r.location?.lng;
+
+            return `
+                <tr class="border-b border-gray-50 hover:bg-gray-50">
+                    <td class="px-4 py-2 font-medium text-gray-700">${dateStr}</td>
+                    <td class="px-4 py-2 text-blue-600 font-bold">${timeStr}</td>
+                    <td class="px-4 py-2 text-center">
+                        ${r.photoURL ? 
+                        `<button onclick="window.openImageModal('${r.photoURL}')" class="text-gray-400 hover:text-indigo-600 transition-colors" title="Ver Evidencia"><i class="fa-regular fa-image"></i></button>` 
+                        : '<span class="text-gray-300">-</span>'}
+                    </td>
+                    <td class="px-4 py-2 text-center">
+                        ${lat && lng ? 
+                        `<a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" target="_blank" class="text-gray-400 hover:text-green-600 transition-colors" title="Ver Mapa"><i class="fa-solid fa-map-location-dot"></i></a>` 
+                        : '<span class="text-gray-300">-</span>'}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+    } catch (error) {
+        console.error("Error al cargar resumen de asistencia:", error);
+        kpiContainer.innerHTML = `<div class="col-span-3 text-center text-red-500 text-xs">Error cargando datos.</div>`;
     }
 }
 
@@ -3499,5 +3823,222 @@ async function openBatchDownloadModal(user) {
     } catch (error) {
         console.error("Error loading for zip:", error);
         document.getElementById('zip-modal-content').innerHTML = `<p class="text-red-500 text-center">Error cargando documentos.</p>`;
+    }
+}
+
+// --- VARIABLES GLOBALES PARA ASISTENCIA ---
+let attendanceChartInstance = null;
+let attendanceMapInstance = null;
+let attendanceMarkersLayer = null;
+
+/**
+ * Carga la pestaña de Asistencia / Reporte de Ingreso.
+ * @param {string} userId - ID del empleado.
+ * @param {number} days - Días a consultar (7, 15, 30).
+ */
+async function loadAttendanceTab(userId, days = 7) {
+    const listBody = document.getElementById('attendance-list-body');
+    const chartCanvas = document.getElementById('attendance-chart');
+    
+    if(!listBody || !chartCanvas) return;
+
+    // 1. Calcular rango de fechas
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    startDate.setHours(0, 0, 0, 0); // Aseguramos inicio del día
+    
+    // Limpiar UI
+    listBody.innerHTML = '<tr><td colspan="5" class="text-center py-4"><div class="loader mx-auto"></div></td></tr>';
+
+    try {
+        // 2. Consultar Firestore (CORREGIDO: Usamos _db en lugar de db)
+        const q = query(
+            collection(_db, "users", userId, "attendance_reports"),
+            where("type", "==", "ingreso"),
+            where("timestamp", ">=", startDate),
+            orderBy("timestamp", "desc")
+        );
+
+        const snapshot = await getDocs(q);
+        const reports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // 3. Procesar datos para Grafica y Mapa
+        const chartLabels = [];
+        const chartData = [];
+        const mapPoints = [];
+
+        listBody.innerHTML = ''; // Limpiar loader
+
+        if (reports.length === 0) {
+            listBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">No hay registros en este periodo.</td></tr>';
+            if(attendanceChartInstance) attendanceChartInstance.destroy();
+            
+            // Limpiar mapa si existe
+            if (attendanceMarkersLayer) attendanceMarkersLayer.clearLayers();
+            return;
+        }
+
+        // Recorremos en orden inverso (cronológico para la gráfica)
+        const reportsForChart = [...reports].reverse();
+
+        reportsForChart.forEach(report => {
+            const dateObj = report.timestamp.toDate();
+            const dateStr = dateObj.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+            
+            // Convertir hora a decimal para la gráfica (Ej: 8:30 -> 8.5)
+            const hours = dateObj.getHours();
+            const minutes = dateObj.getMinutes();
+            const timeDecimal = hours + (minutes / 60);
+            
+            chartLabels.push(dateStr);
+            chartData.push(timeDecimal);
+        });
+
+        // Llenar Tabla (El más reciente primero)
+        reports.forEach(report => {
+            const dateObj = report.timestamp.toDate();
+            const dateStr = dateObj.toLocaleDateString('es-CO');
+            const timeStr = dateObj.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true });
+            
+            const lat = report.location?.lat;
+            const lng = report.location?.lng;
+            const hasLocation = lat && lng;
+
+            if (hasLocation) {
+                mapPoints.push({ lat, lng, date: `${dateStr} - ${timeStr}` });
+            }
+
+            // Detectar dispositivo simplificado
+            let deviceName = "Móvil";
+            if (report.device && report.device.includes("Windows")) deviceName = "PC";
+            if (report.device && report.device.includes("Macintosh")) deviceName = "Mac";
+            if (report.device && report.device.includes("Linux")) deviceName = "Linux";
+
+            const row = document.createElement('tr');
+            row.className = "bg-white border-b hover:bg-gray-50";
+            row.innerHTML = `
+                <td class="px-6 py-4 font-medium text-gray-900">${dateStr}</td>
+                <td class="px-6 py-4 font-bold text-blue-600">${timeStr}</td>
+                <td class="px-6 py-4 text-center">
+                    ${report.photoURL ? 
+                        `<button onclick="window.openImageModal('${report.photoURL}')" class="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded border border-indigo-100 hover:bg-indigo-100 transition-colors">Ver Foto</button>` 
+                        : '<span class="text-gray-400">-</span>'}
+                </td>
+                <td class="px-6 py-4 text-center">
+                    ${hasLocation ? 
+                        `<a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" target="_blank" class="text-green-500 hover:text-green-700" title="Abrir en Google Maps"><i class="fa-solid fa-map-location-dot text-xl"></i></a>` 
+                        : '<span class="text-gray-300"><i class="fa-solid fa-location-slash"></i></span>'}
+                </td>
+                <td class="px-6 py-4 text-xs text-gray-500 truncate max-w-[150px]" title="${report.device || ''}">${deviceName}</td>
+            `;
+            listBody.appendChild(row);
+        });
+
+        // 4. Renderizar Gráfica
+        renderAttendanceChart(chartCanvas, chartLabels, chartData);
+
+        // 5. Renderizar Mapa (con pequeño delay para asegurar que el div es visible)
+        setTimeout(() => {
+            renderAttendanceMap(mapPoints);
+        }, 200);
+
+    } catch (error) {
+        console.error("Error cargando asistencia:", error);
+        listBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-red-500">Error cargando datos: ${error.message}</td></tr>`;
+    }
+}
+
+function renderAttendanceChart(canvas, labels, data) {
+    if (attendanceChartInstance) {
+        attendanceChartInstance.destroy();
+    }
+
+    attendanceChartInstance = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Hora de Ingreso',
+                data: data,
+                borderColor: '#2563eb', // Blue 600
+                backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                borderWidth: 2,
+                pointBackgroundColor: '#fff',
+                pointBorderColor: '#2563eb',
+                pointRadius: 4,
+                fill: true,
+                tension: 0.3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    min: 6, // 6:00 AM
+                    max: 12, // 12:00 PM (ajustable)
+                    ticks: {
+                        callback: function(value) {
+                            const hours = Math.floor(value);
+                            const minutes = Math.round((value - hours) * 60);
+                            const ampm = hours >= 12 ? 'PM' : 'AM';
+                            const displayHour = hours > 12 ? hours - 12 : hours;
+                            return `${displayHour}:${minutes.toString().padStart(2, '0')} ${ampm}`;
+                        }
+                    },
+                    title: { display: true, text: 'Hora (AM)' }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.raw;
+                            const hours = Math.floor(value);
+                            const minutes = Math.round((value - hours) * 60);
+                            return `Llegada: ${hours}:${minutes.toString().padStart(2, '0')}`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderAttendanceMap(points) {
+    const mapContainer = document.getElementById('attendance-map');
+    if (!mapContainer) return;
+
+    // Si el mapa no está inicializado, crearlo
+    if (!attendanceMapInstance) {
+        // Coordenadas por defecto (Colombia) o la primera del punto
+        const center = points.length > 0 ? [points[0].lat, points[0].lng] : [4.6097, -74.0817];
+        attendanceMapInstance = L.map('attendance-map').setView(center, 12);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(attendanceMapInstance);
+
+        attendanceMarkersLayer = L.layerGroup().addTo(attendanceMapInstance);
+    } else {
+        // Si ya existe, invalidar tamaño (fix común de Leaflet en pestañas ocultas)
+        attendanceMapInstance.invalidateSize();
+    }
+
+    // Limpiar marcadores anteriores
+    if (attendanceMarkersLayer) attendanceMarkersLayer.clearLayers();
+
+    if (points.length > 0) {
+        const group = new L.featureGroup();
+        
+        points.forEach(p => {
+            const marker = L.marker([p.lat, p.lng])
+                .bindPopup(`<b>${p.date}</b>`)
+                .addTo(attendanceMarkersLayer);
+            group.addLayer(marker);
+        });
+
+        // Ajustar zoom para ver todos los puntos
+        attendanceMapInstance.fitBounds(group.getBounds().pad(0.1));
     }
 }
