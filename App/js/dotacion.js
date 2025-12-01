@@ -386,7 +386,6 @@ export function initDotacion(
 export function loadDotacionView() {
     const role = getCurrentUserRole();
 
-    // 1. Definimos TODAS las variables de elementos aquí arriba
     const titleElement = document.getElementById('dotacion-view-title');
     const newDotacionBtn = document.getElementById('new-dotacion-item-btn');
     const tabsNav = document.getElementById('dotacion-tabs-nav');
@@ -396,92 +395,84 @@ export function loadDotacionView() {
     const categoryContainer = document.getElementById('dotacion-category-container');
     const gridContainer = document.getElementById('dotacion-grid-container');
     const dashboardContainer = document.getElementById('dotacion-dashboard-container');
-    const historyContainer = document.getElementById('dotacion-history-container'); // Contenedor padre de Asignaciones
+    const historyContainer = document.getElementById('dotacion-history-container');
 
-    // 2. Salida de seguridad
-    if (!titleElement || !newDotacionBtn || !tabsNav || !filterBar || !assigneeContainer || !searchContainer || !categoryContainer || !gridContainer || !dashboardContainer || !historyContainer) {
-        console.error("loadDotacionView: Faltan elementos esenciales del DOM.");
-        return;
-    }
+    const inventarioActions = document.getElementById('dotacion-inventario-actions');
+    const asignacionesActions = document.getElementById('dotacion-asignaciones-actions');
 
-    // 3. Ocultar todos los contenedores principales
+    if (!titleElement || !filterBar) return;
+
+    // 1. RESET TOTAL (Ocultar todo)
     gridContainer.classList.add('hidden');
     dashboardContainer.classList.add('hidden');
     historyContainer.classList.add('hidden');
 
-    // 4. Lógica de UI para Admin/Bodega vs Operario
+    // --- CORRECCIÓN CLAVE AQUÍ ---
+    filterBar.classList.add('hidden');
+    filterBar.classList.remove('md:grid'); // <--- ESTO ELIMINA LA LÍNEA BLANCA
+    // -----------------------------
+
+    if (inventarioActions) inventarioActions.classList.add('hidden');
+    if (asignacionesActions) asignacionesActions.classList.add('hidden');
+
+    // 2. Lógica según Rol
     const isAdminView = (role === 'admin' || role === 'bodega' || role === 'sst');
     newDotacionBtn.classList.toggle('hidden', !isAdminView);
     tabsNav.classList.toggle('hidden', !isAdminView);
-    filterBar.classList.toggle('hidden', !isAdminView);
 
     if (role === 'operario') {
-        // --- VISTA DE OPERARIO ---
         const currentUser = getCurrentUser();
-        const userName = getUsersMap().get(currentUser.uid)?.firstName || 'Usuario';
-        titleElement.textContent = `Mi Dotación (${userName})`;
-
-        // --- INICIO DE MODIFICACIÓN DEFINITIVA ---
-        // Ocultamos explícitamente la barra Y todo su contenido
-        filterBar.classList.add('hidden');
-        if (assigneeContainer) assigneeContainer.classList.add('hidden');
-        if (searchContainer) searchContainer.classList.add('hidden');
-        if (categoryContainer) categoryContainer.classList.add('hidden');
-
-        // Removemos las clases de layout que pueden estar causando el conflicto
-        filterBar.classList.remove('md:grid', 'md:grid-cols-4', 'md:grid-cols-1');
-        // --- FIN DE MODIFICACIÓN DEFINITIVA ---
-
-        historyContainer.classList.remove('hidden'); // Mostrar el contenedor de Asignaciones
-
-        // El operario solo ve su historial detallado (Nivel 2)
-        loadDotacionAsignaciones(currentUser.uid, 'dotacion-history-container'); // <-- ID AÑADIDO
+        titleElement.textContent = `Mi Dotación`;
+        historyContainer.classList.remove('hidden');
+        loadDotacionAsignaciones(currentUser.uid, 'dotacion-history-container');
 
     } else {
-        // --- VISTA DE ADMIN/BODEGA ---
         titleElement.textContent = 'Gestión de Dotación';
         const activeTab = document.querySelector('#dotacion-tabs-nav .active')?.dataset.statusFilter || 'resumen';
 
-        // Mostrar/Ocultar filtros
-        filterBar.classList.remove('hidden');
-        const isAsignacionesTab = (activeTab === 'asignaciones');
-        const isInventarioTab = (activeTab === 'inventario');
-
-        searchContainer.classList.toggle('hidden', !isInventarioTab);
-        categoryContainer.classList.toggle('hidden', !isInventarioTab);
-        assigneeContainer.classList.toggle('hidden', !isAsignacionesTab);
-
-        if (isAsignacionesTab) {
-            filterBar.classList.remove('md:grid-cols-4');
-            filterBar.classList.add('md:grid-cols-1');
-            assigneeContainer.classList.remove('md:col-span-1');
-            assigneeContainer.classList.add('md:col-span-1'); // Ocupará 1 de 1
-        } else {
-            filterBar.classList.remove('md:grid-cols-1');
-            filterBar.classList.add('md:grid-cols-4');
-            searchContainer.classList.remove('md:col-span-2');
-            searchContainer.classList.add('md:col-span-3'); // 3 columnas
-            categoryContainer.classList.add('md:col-span-1'); // 1 columna
-        }
-
-        const inventarioActions = document.getElementById('dotacion-inventario-actions');
-        const asignacionesActions = document.getElementById('dotacion-asignaciones-actions');
-
-        if (inventarioActions) inventarioActions.classList.toggle('hidden', !isInventarioTab);
-        if (asignacionesActions) asignacionesActions.classList.toggle('hidden', !isAsignacionesTab);
-
-        // Cargar la vista de la pestaña activa
         if (activeTab === 'resumen') {
-            filterBar.classList.add('hidden');
+            // Pestaña Resumen: 
+            // No tocamos filterBar, así que se queda oculto y sin 'md:grid' (gracias al Reset)
             dashboardContainer.classList.remove('hidden');
             loadDotacionDashboard(dashboardContainer);
+
         } else if (activeTab === 'inventario') {
+            // Pestaña Inventario: Restauramos la visibilidad y la rejilla
+            filterBar.classList.remove('hidden');
+            // Forzamos las clases de diseño específicas para esta vista
+            filterBar.className = "md:grid md:grid-cols-4 gap-4 items-center p-4 bg-white border border-gray-200 rounded-lg mb-6 shadow-sm";
+
+            searchContainer.classList.remove('hidden');
+            searchContainer.className = "md:col-span-3";
+
+            categoryContainer.classList.remove('hidden');
+            categoryContainer.className = "md:col-span-1";
+
+            assigneeContainer.classList.add('hidden');
+
+            if (inventarioActions) inventarioActions.classList.remove('hidden');
+
             gridContainer.classList.remove('hidden');
             loadDotacionCatalog();
+
         } else if (activeTab === 'asignaciones') {
+            // Pestaña Asignaciones: Restauramos la visibilidad
+            filterBar.classList.remove('hidden');
+
+            // --- CORRECCIÓN: 1 Columna para que ocupe todo el ancho ---
+            filterBar.className = "md:grid md:grid-cols-1 gap-4 items-center p-4 bg-white border border-gray-200 rounded-lg mb-6 shadow-sm";
+
+            searchContainer.classList.add('hidden');
+            categoryContainer.classList.add('hidden');
+
+            assigneeContainer.classList.remove('hidden');
+            assigneeContainer.className = "md:col-span-1 w-full"; // Forzamos ancho total
+
+            if (asignacionesActions) asignacionesActions.classList.remove('hidden');
+
             historyContainer.classList.remove('hidden');
             const assigneeFilter = (dotacionAssigneeChoices && dotacionAssigneeChoices.getValue(true)) ? dotacionAssigneeChoices.getValue(true) : 'all';
-            loadDotacionAsignaciones(assigneeFilter, 'dotacion-history-container'); // <-- ID AÑADIDO
+            loadDotacionAsignaciones(assigneeFilter, 'dotacion-history-container');
         }
     }
 }
@@ -581,7 +572,7 @@ export async function loadDotacionAsignaciones(userId, containerId) {
         let activeItemsCount = 0;
         let lastDeliveryDate = null;
         const activeItems = [];
-        
+
         // Recolectar IDs para cargar catálogo
         const uniqueItemIds = new Set();
         snapshot.docs.forEach(doc => uniqueItemIds.add(doc.data().itemId));
@@ -597,7 +588,7 @@ export async function loadDotacionAsignaciones(userId, containerId) {
         snapshot.forEach(doc => {
             const data = { id: doc.id, ...doc.data() };
             const catalogItem = catalogMap.get(data.itemId) || {};
-            
+
             totalItemsDelivered += (data.quantity || 0);
 
             if (!lastDeliveryDate) lastDeliveryDate = data.fechaEntrega;
@@ -605,7 +596,7 @@ export async function loadDotacionAsignaciones(userId, containerId) {
             // Solo mostramos en la tabla los que están ACTIVOS
             if (data.status === 'activo') {
                 activeItemsCount += (data.quantity || 0);
-                
+
                 // Calcular Vencimiento
                 let statusHtml = '<span class="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded">Indefinido</span>';
                 let expirationText = '---';
@@ -614,8 +605,8 @@ export async function loadDotacionAsignaciones(userId, containerId) {
                     const deliveryDate = new Date(data.fechaEntrega + 'T00:00:00');
                     const expDate = new Date(deliveryDate);
                     expDate.setDate(expDate.getDate() + catalogItem.vidaUtilDias);
-                    
-                    const today = new Date(); today.setHours(0,0,0,0);
+
+                    const today = new Date(); today.setHours(0, 0, 0, 0);
                     const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
                     expirationText = expDate.toLocaleDateString('es-CO');
 
@@ -661,9 +652,9 @@ export async function loadDotacionAsignaciones(userId, containerId) {
                 </td>
                 <td class="px-4 py-3 text-center">${item.statusHtml}</td>
                 <td class="px-4 py-3 text-center">
-                     ${item.photoURL ? 
-                        `<button onclick="window.openImageModal('${item.photoURL}')" class="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors" title="Ver Evidencia"><i class="fa-regular fa-image"></i></button>` 
-                        : '<span class="text-gray-300">-</span>'}
+                     ${item.photoURL ?
+                `<button onclick="window.openImageModal('${item.photoURL}')" class="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors" title="Ver Evidencia"><i class="fa-regular fa-image"></i></button>`
+                : '<span class="text-gray-300">-</span>'}
                 </td>
             </tr>
         `).join('');
@@ -714,64 +705,88 @@ export async function loadDotacionAsignaciones(userId, containerId) {
     }
 }
 
-/**
- * Crea el HTML para una TARJETA de ítem del catálogo de dotación.
- */
 function createDotacionCatalogCard(item) {
     const card = document.createElement('div');
-    card.className = 'bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden flex flex-col dotacion-catalog-card'; // Clase
+    // Diseño moderno con hover effect
+    card.className = 'bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col hover:shadow-md transition-shadow duration-300 group dotacion-catalog-card';
+
+    // Datasets para eventos
     card.dataset.id = item.id;
     card.dataset.name = item.itemName;
     card.dataset.talla = item.talla || 'N/A';
     card.dataset.photourl = item.itemPhotoURL || '';
     card.dataset.stock = item.quantityInStock || 0;
-    // --- INICIO DE MODIFICACIÓN ---
     card.dataset.reference = item.reference || '';
     card.dataset.category = item.category || '';
-    card.dataset.vidautil = item.vidaUtilDias || ''; // Usamos vidautil para el dataset
-    // --- FIN DE MODIFICACIÓN ---
+    card.dataset.vidautil = item.vidaUtilDias || '';
 
     const stock = item.quantityInStock || 0;
-    const stockColor = stock > 5 ? 'text-green-600' : (stock > 0 ? 'text-yellow-600' : 'text-red-600');
+    let stockBadge = '';
+
+    if (stock === 0) {
+        stockBadge = '<span class="bg-red-100 text-red-700 text-xs font-bold px-2.5 py-1 rounded-full border border-red-200">Agotado</span>';
+    } else if (stock <= 5) {
+        stockBadge = `<span class="bg-amber-100 text-amber-700 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-200">Bajo Stock: ${stock}</span>`;
+    } else {
+        stockBadge = `<span class="bg-emerald-100 text-emerald-700 text-xs font-bold px-2.5 py-1 rounded-full border border-emerald-200">En Stock: ${stock}</span>`;
+    }
+
+    const vidaUtilText = item.vidaUtilDias ? `${item.vidaUtilDias} días` : 'Indefinida';
+    const tallaText = item.talla && item.talla !== 'N/A' ? item.talla : 'Única';
 
     card.innerHTML = `
-        <div class="flex-grow flex">
-            <div class="w-1/3 flex-shrink-0 aspect-square bg-gray-100"> 
-                <img 
-                    src="${item.itemPhotoURL || 'https://via.placeholder.com/300'}" 
-                    alt="${item.itemName}" 
-                    class="w-full h-full object-contain cursor-pointer" 
-                    data-action="view-dotacion-item-image"
-                >
+        <div class="p-4 flex gap-4 items-start">
+            <div class="w-24 h-24 flex-shrink-0 bg-slate-50 rounded-lg border border-slate-100 overflow-hidden relative group-hover:border-blue-200 transition-colors cursor-pointer" data-action="view-dotacion-item-image">
+                ${item.itemPhotoURL
+            ? `<img src="${item.itemPhotoURL}" alt="${item.itemName}" class="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500">`
+            : `<div class="w-full h-full flex items-center justify-center text-slate-300"><i class="fa-solid fa-image text-3xl"></i></div>`
+        }
             </div>
-            <div class="w-2/3 flex-grow p-4 flex flex-col">
-                <div class="flex-grow">
-                    <h3 class="text-lg font-bold text-gray-900">${item.itemName}</h3>
-                    <p class="text-sm text-gray-500">${item.reference || 'Sin referencia'}</p>
-                    <div class="mt-3 text-sm space-y-1">
-                        <p><strong>Categoría:</strong> ${item.category}</p>
-                        <p><strong>Talla:</strong> ${item.talla || 'N/A'}</p>
-                        <p><strong>Vida Útil:</strong> ${item.vidaUtilDias ? `${item.vidaUtilDias} días` : 'N/A'}</p>
+
+            <div class="flex-grow min-w-0">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-0.5">${item.category}</p>
+                        <h3 class="text-base font-bold text-slate-800 leading-tight truncate pr-2" title="${item.itemName}">${item.itemName}</h3>
                     </div>
                 </div>
-                <div class="text-sm space-y-2 mt-4 pt-2 border-t">
-                    <div class="flex justify-between items-center">
-                        <span class="font-medium text-gray-600">Stock Actual:</span>
-                        <span class="font-bold text-2xl ${stockColor}">${stock}</span>
-                    </div>
+                
+                <p class="text-xs text-slate-500 mt-1 font-mono truncate">${item.reference || 'Sin Ref'}</p>
+
+                <div class="flex flex-wrap gap-2 mt-3">
+                    <span class="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200 font-medium">
+                        <i class="fa-solid fa-ruler-horizontal mr-1 text-slate-400"></i> ${tallaText}
+                    </span>
+                    <span class="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200 font-medium">
+                        <i class="fa-regular fa-clock mr-1 text-slate-400"></i> ${vidaUtilText}
+                    </span>
                 </div>
             </div>
         </div>
-        
-        <div class="bg-gray-50 p-3 border-t grid grid-cols-4 gap-2">
-            <button data-action="register-dotacion-delivery" class="bg-green-500 hover:bg-green-600 text-white text-xs font-semibold py-2 px-2 rounded-lg w-full">Entrega</button>
-            <button data-action="add-dotacion-stock" class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold py-2 px-2 rounded-lg w-full">Stock</button>
+
+        <div class="mt-auto px-4 pb-3 pt-0">
+            <div class="flex justify-between items-center mb-3">
+                ${stockBadge}
+            </div>
             
-            <button data-action="edit-dotacion-catalog-item" class="bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-semibold py-2 px-2 rounded-lg w-full">Editar</button>
-            
-            <button data-action="view-dotacion-catalog-history" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-semibold py-2 px-2 rounded-lg w-full">Historial</button>
+            <div class="grid grid-cols-2 gap-2">
+                <button data-action="register-dotacion-delivery" class="col-span-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded-lg shadow-sm transition-all flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-hand-holding-box"></i> Entregar
+                </button>
+                <button data-action="add-dotacion-stock" class="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 text-xs font-bold py-2 px-3 rounded-lg transition-colors">
+                    + Stock
+                </button>
+                <div class="flex gap-2">
+                     <button data-action="edit-dotacion-catalog-item" class="flex-1 bg-white border border-slate-300 text-amber-600 hover:bg-amber-50 hover:border-amber-300 text-xs font-bold py-2 rounded-lg transition-colors" title="Editar">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    <button data-action="view-dotacion-catalog-history" class="flex-1 bg-white border border-slate-300 text-slate-500 hover:bg-slate-50 hover:text-slate-800 text-xs font-bold py-2 rounded-lg transition-colors" title="Historial">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </button>
+                </div>
+            </div>
         </div>
-        `;
+    `;
     return card;
 }
 
@@ -890,144 +905,190 @@ export async function loadDotacionDashboard(container) {
 
 
         // HTML para KPIs (Sin cambios)
+        // HTML para KPIs (Tarjetas modernas con iconos)
         const kpiHtml = `
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
-                <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 text-center">
-                    <p class="text-sm font-medium text-blue-800">Tipos de Ítems</p>
-                    <p class="text-3xl font-bold text-blue-900">${kpi.totalTipos}</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 text-xl">
+                        <i class="fa-solid fa-tags"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Referencias</p>
+                        <p class="text-2xl font-black text-slate-800">${kpi.totalTipos}</p>
+                    </div>
                 </div>
-                <div class="bg-green-50 p-4 rounded-lg border border-green-200 text-center">
-                    <p class="text-sm font-medium text-green-800">Total en Stock</p>
-                    <p class="text-3xl font-bold text-green-900">${kpi.totalStock}</p>
+
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 text-xl">
+                        <i class="fa-solid fa-boxes-stacked"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">En Bodega</p>
+                        <p class="text-2xl font-black text-slate-800">${kpi.totalStock}</p>
+                    </div>
                 </div>
-                <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200 text-center">
-                    <p class="text-sm font-medium text-yellow-800">Total Asignado (Activo)</p>
-                    <p class="text-3xl font-bold text-yellow-900">${kpi.totalAsignado}</p>
+
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 text-xl">
+                        <i class="fa-solid fa-user-shield"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Asignado</p>
+                        <p class="text-2xl font-black text-slate-800">${kpi.totalAsignado}</p>
+                    </div>
                 </div>
-                <div class="bg-gray-100 p-4 rounded-lg border border-gray-300 text-center">
-                    <p class="text-sm font-medium text-gray-700">Total General</p>
-                    <p class="text-3xl font-bold text-gray-800">${kpi.totalStock + kpi.totalAsignado}</p>
+
+                <div class="bg-slate-800 p-5 rounded-xl shadow-md border border-slate-700 flex items-center gap-4 text-white">
+                    <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white text-xl">
+                        <i class="fa-solid fa-layer-group"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Activos</p>
+                        <p class="text-2xl font-black">${kpi.totalStock + kpi.totalAsignado}</p>
+                    </div>
                 </div>
             </div>
         `;
 
-        // --- INICIO DE MODIFICACIÓN: HTML para Nuevos Reportes ---
-
-        // Reporte 1: Top Consumo (Histórico)
-        let consumoHtml = '<p class="text-sm text-gray-500">No hay historial de consumo.</p>';
+        // Reporte 1: Top Consumo (Mejorado visualmente)
+        let consumoHtml = '<div class="flex flex-col items-center justify-center h-40 text-slate-400"><i class="fa-solid fa-chart-bar mb-2 text-2xl opacity-20"></i><span class="text-xs">Sin datos de consumo</span></div>';
         if (consumoMap.size > 0) {
-            consumoHtml = '<ul class="divide-y divide-gray-200">';
-            const sortedConsumo = [...consumoMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10); // Top 10
-            sortedConsumo.forEach(([userId, count]) => {
+            consumoHtml = '<ul class="divide-y divide-slate-100">';
+            const sortedConsumo = [...consumoMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+            sortedConsumo.forEach(([userId, count], index) => {
                 const user = usersMap.get(userId);
                 const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido';
+                const rankColor = index < 3 ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500';
 
-                // --- INICIO DE MODIFICACIÓN ---
-                consumoHtml += `<li class="py-2 flex justify-between items-center">
-                    <button data-action="view-user-report-details" data-userid="${userId}" data-username="${userName}" data-type="consumo" class="font-medium text-blue-600 hover:text-blue-800 hover:underline text-left">
-                        ${userName}
+                consumoHtml += `
+                <li class="py-3 flex justify-between items-center hover:bg-slate-50 transition-colors px-2 rounded-lg">
+                    <button data-action="view-user-report-details" data-userid="${userId}" data-username="${userName}" data-type="consumo" class="flex items-center gap-3 text-left group w-full">
+                        <span class="w-6 h-6 rounded-full ${rankColor} text-xs font-bold flex items-center justify-center">${index + 1}</span>
+                        <span class="font-medium text-slate-700 group-hover:text-blue-600 transition-colors text-sm">${userName}</span>
                     </button>
-                    <span class="font-bold text-lg text-blue-600">${count}</span>
+                    <span class="font-bold text-sm bg-blue-50 text-blue-700 px-2 py-1 rounded-md">${count}</span>
                 </li>`;
-                // --- FIN DE MODIFICACIÓN ---
             });
             consumoHtml += '</ul>';
         }
 
-        // Reporte 2: Top Descarte (Histórico)
-        let descarteHtml = '<p class="text-sm text-gray-500">No hay historial de descartes.</p>';
+        // Reporte 2: Top Descarte (Mejorado visualmente)
+        let descarteHtml = '<div class="flex flex-col items-center justify-center h-40 text-slate-400"><i class="fa-solid fa-recycle mb-2 text-2xl opacity-20"></i><span class="text-xs">Sin datos de descarte</span></div>';
         if (descarteMap.size > 0) {
-            descarteHtml = '<ul class="divide-y divide-gray-200">';
-            const sortedDescarte = [...descarteMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10); // Top 10
-            sortedDescarte.forEach(([userId, count]) => {
+            descarteHtml = '<ul class="divide-y divide-slate-100">';
+            const sortedDescarte = [...descarteMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+            sortedDescarte.forEach(([userId, count], index) => {
                 const user = usersMap.get(userId);
                 const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido';
+                const rankColor = index < 3 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500';
 
-                // --- INICIO DE MODIFICACIÓN ---
-                descarteHtml += `<li class="py-2 flex justify-between items-center">
-                    <button data-action="view-user-report-details" data-userid="${userId}" data-username="${userName}" data-type="descarte" class="font-medium text-blue-600 hover:text-blue-800 hover:underline text-left">
-                        ${userName}
+                descarteHtml += `
+                <li class="py-3 flex justify-between items-center hover:bg-slate-50 transition-colors px-2 rounded-lg">
+                    <button data-action="view-user-report-details" data-userid="${userId}" data-username="${userName}" data-type="descarte" class="flex items-center gap-3 text-left group w-full">
+                        <span class="w-6 h-6 rounded-full ${rankColor} text-xs font-bold flex items-center justify-center">${index + 1}</span>
+                        <span class="font-medium text-slate-700 group-hover:text-red-600 transition-colors text-sm">${userName}</span>
                     </button>
-                    <span class="font-bold text-lg text-red-600">${count}</span>
+                    <span class="font-bold text-sm bg-red-50 text-red-700 px-2 py-1 rounded-md">${count}</span>
                 </li>`;
-                // --- FIN DE MODIFICACIÓN ---
             });
             descarteHtml += '</ul>';
         }
 
-        // Reporte 3: Tallas (Sin cambios)
-        let tallasHtml = '<p class="text-sm text-gray-500">No hay stock detallado para mostrar.</p>';
-        if (tallaStockMap.size > 0) {
-            tallasHtml = '<ul class="divide-y divide-gray-200">';
-            const sortedTallaGroups = [...tallaStockMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-            for (const [baseName, group] of sortedTallaGroups) {
-                tallasHtml += `<li class="py-3">
-                    <div class="flex justify-between items-center mb-2">
-                        <span class="font-semibold text-gray-800">${baseName}</span>
-                        <span class="font-bold text-lg text-blue-600">Total: ${group.total}</span>
-                    </div>
-                    <ul class="pl-4 space-y-1">`;
-                group.tallas.sort((a, b) => a.talla.localeCompare(b.talla, undefined, { numeric: true, sensitivity: 'base' }));
-                for (const item of group.tallas) {
-                    tallasHtml += `
-                        <li class="text-sm flex justify-between">
-                            <span class="text-gray-600">Talla ${item.talla}:</span>
-                            <span class="font-medium text-gray-900">Stock: ${item.stock}</span>
-                        </li>`;
-                }
-                tallasHtml += `</ul></li>`;
-            }
-            tallasHtml += '</ul>';
-        }
-
-        // Reporte 4: Vencimiento (Sin cambios)
-        let vencimientoReportHtml = '<p class="text-sm text-gray-500">No hay ítems próximos a vencer.</p>';
+        // Reporte 3: Vencimiento (Estilo alerta)
+        let vencimientoReportHtml = '<div class="flex flex-col items-center justify-center h-40 text-slate-400"><i class="fa-solid fa-calendar-check mb-2 text-2xl opacity-20"></i><span class="text-xs">Todo al día</span></div>';
         if (vencimientoList.length > 0) {
             vencimientoList.sort((a, b) => a.diffDays - b.diffDays);
-            vencimientoReportHtml = '<ul class="divide-y divide-gray-200">';
+            vencimientoReportHtml = '<ul class="space-y-2">';
             vencimientoList.forEach(item => {
-                const color = item.diffDays <= 0 ? 'text-red-600 font-bold' : 'text-yellow-700 font-semibold';
-                const status = item.diffDays <= 0 ? `(Vencido hace ${Math.abs(item.diffDays)} días)` : `(Vence en ${item.diffDays} días)`;
+                const isExpired = item.diffDays <= 0;
+                const bgClass = isExpired ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100';
+                const iconClass = isExpired ? 'text-red-500 fa-triangle-exclamation' : 'text-amber-500 fa-clock';
+                const textClass = isExpired ? 'text-red-800' : 'text-amber-800';
+                const statusText = isExpired ? `Vencido hace ${Math.abs(item.diffDays)} días` : `Vence en ${item.diffDays} días`;
+
                 vencimientoReportHtml += `
-                    <li class="py-2">
-                        <p class="${color}">${item.itemName} (Talla: ${item.talla}) ${status}</p>
-                        <p class="text-xs text-gray-600">Empleado: ${item.userName} - Vence: ${item.expirationDate}</p>
+                    <li class="p-3 rounded-lg border ${bgClass} flex items-start gap-3">
+                        <i class="fa-solid ${iconClass} mt-1"></i>
+                        <div>
+                            <p class="text-sm font-bold ${textClass}">${item.itemName} <span class="font-normal opacity-75">(${item.talla})</span></p>
+                            <p class="text-xs ${textClass} mt-0.5">${statusText}</p>
+                            <p class="text-[10px] uppercase tracking-wide text-slate-500 mt-1 bg-white/50 px-1 rounded inline-block"><i class="fa-solid fa-user mr-1"></i> ${item.userName}</p>
+                        </div>
                     </li>`;
             });
             vencimientoReportHtml += '</ul>';
         }
 
-        // --- FIN DE MODIFICACIÓN ---
+        // Reporte 4: Tallas (Acordeón visual)
+        let tallasHtml = '<div class="flex flex-col items-center justify-center h-40 text-slate-400"><i class="fa-solid fa-ruler-combined mb-2 text-2xl opacity-20"></i><span class="text-xs">Sin detalle de tallas</span></div>';
+        if (tallaStockMap.size > 0) {
+            tallasHtml = '<div class="space-y-3">';
+            const sortedTallaGroups = [...tallaStockMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+            for (const [baseName, group] of sortedTallaGroups) {
+                tallasHtml += `
+                <div class="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">
+                    <div class="px-3 py-2 bg-white border-b border-slate-100 flex justify-between items-center">
+                        <span class="text-xs font-bold text-slate-700 uppercase">${baseName}</span>
+                        <span class="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">${group.total} total</span>
+                    </div>
+                    <div class="p-2 flex flex-wrap gap-2">`;
 
+                group.tallas.sort((a, b) => a.talla.localeCompare(b.talla, undefined, { numeric: true, sensitivity: 'base' }));
+                for (const item of group.tallas) {
+                    // Barra de progreso visual para el stock de la talla
+                    const stockLevel = Math.min(item.stock, 20) * 5; // Max 100%
+                    const stockColor = item.stock < 3 ? 'bg-red-500' : 'bg-blue-500';
 
-        // --- INICIO DE MODIFICACIÓN DEL LAYOUT ---
-        // 7. Reordenar el grid 2x2
+                    tallasHtml += `
+                        <div class="flex-1 min-w-[80px] bg-white border border-slate-200 rounded p-1.5 text-center relative overflow-hidden group" title="Stock: ${item.stock}">
+                            <div class="absolute bottom-0 left-0 h-1 ${stockColor} opacity-20 w-full"></div>
+                            <div class="absolute bottom-0 left-0 h-1 ${stockColor} transition-all duration-500" style="width: ${stockLevel}%"></div>
+                            <p class="text-[10px] text-slate-400 uppercase font-bold">Talla ${item.talla}</p>
+                            <p class="text-sm font-bold text-slate-700">${item.stock}</p>
+                        </div>`;
+                }
+                tallasHtml += `</div></div>`;
+            }
+            tallasHtml += '</div>';
+        }
+
+        // Renderizar Grid de Reportes
         const reportsHtml = `
-            <div class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-                
-                <div class="bg-white p-4 rounded-lg shadow-md border">
-                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Top 10 - Consumo Histórico (Entregas)</h3>
-                    <div class="max-h-60 overflow-y-auto pr-2">${consumoHtml}</div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="space-y-6">
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 h-full">
+                        <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
+                            <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-box-open text-blue-500"></i> Más Solicitados</h3>
+                        </div>
+                        <div class="max-h-80 overflow-y-auto custom-scrollbar pr-1">${consumoHtml}</div>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 h-full">
+                        <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
+                            <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-arrow-rotate-left text-red-500"></i> Mayor Rotación (Descarte)</h3>
+                        </div>
+                        <div class="max-h-80 overflow-y-auto custom-scrollbar pr-1">${descarteHtml}</div>
+                    </div>
                 </div>
 
-                <div class="bg-white p-4 rounded-lg shadow-md border border-red-200">
-                    <h3 class="text-lg font-semibold text-red-800 border-b border-red-200 pb-2 mb-3">Top 10 - Descarte/Desgaste (Devoluciones)</h3>
-                    <div class="max-h-60 overflow-y-auto pr-2">${descarteHtml}</div>
-                </div>
+                <div class="space-y-6">
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
+                            <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-bell text-amber-500"></i> Alertas de Vencimiento</h3>
+                            <span class="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-bold">Próximos 30 días</span>
+                        </div>
+                        <div class="max-h-60 overflow-y-auto custom-scrollbar pr-1">${vencimientoReportHtml}</div>
+                    </div>
 
-                <div class="bg-white p-4 rounded-lg shadow-md border">
-                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Dotación Vencida o por Vencer (30 días)</h3>
-                    <div class="max-h-60 overflow-y-auto pr-2">${vencimientoReportHtml}</div>
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
+                            <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-ruler text-slate-500"></i> Stock por Tallas</h3>
+                        </div>
+                        <div class="max-h-80 overflow-y-auto custom-scrollbar pr-1">${tallasHtml}</div>
+                    </div>
                 </div>
-
-                <div class="bg-white p-4 rounded-lg shadow-md border">
-                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Stock Detallado (por Talla)</h3>
-                    <div class="max-h-60 overflow-y-auto pr-2">${tallasHtml}</div>
-                </div>
-
             </div>
         `;
-        // --- FIN DE MODIFICACIÓN DEL LAYOUT ---
 
         container.innerHTML = kpiHtml + reportsHtml;
 
@@ -1401,146 +1462,129 @@ async function logDotacionReturnToStock(batch, historyRef, itemId, itemName, adm
  */
 function createDotacionDetailCard(catalogItem, historySummary, userId, role) {
     const card = document.createElement('div');
-
     const canAdmin = (role === 'admin' || role === 'bodega' || role === 'sst');
 
-    // --- LÓGICA DE VENCIMIENTO (Sin cambios) ---
-    let statusBorder = 'border-gray-200';
-    let vencimientoHtml = '<p class="font-semibold text-gray-800">N/A</p>';
+    // --- LÓGICA VISUAL DE ESTADO ---
+    let statusColor = 'border-slate-200'; // Borde por defecto
+    let statusBg = 'bg-white';
+    let statusIcon = '<i class="fa-solid fa-circle-check text-slate-300"></i>';
+    let statusText = 'Inactivo';
+    let statusBadgeClass = 'bg-slate-100 text-slate-500';
+
+    // Datos
     const vidaUtilDias = catalogItem.vidaUtilDias;
     const lastDeliveryDateStr = historySummary.lastDeliveryDate;
-    if (historySummary.status === 'activo' && vidaUtilDias && lastDeliveryDateStr) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const deliveryDate = new Date(lastDeliveryDateStr + 'T00:00:00');
-        const expirationDate = new Date(deliveryDate.getTime());
-        expirationDate.setDate(expirationDate.getDate() + vidaUtilDias);
-        const diffTime = expirationDate.getTime() - today.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        const expirationDateString = expirationDate.toLocaleDateString('es-CO');
-        if (diffDays <= 0) {
-            statusBorder = 'border-red-500 border-2';
-            vencimientoHtml = `<p class="font-bold text-lg text-red-600">${expirationDateString} (VENCIDO)</p>`;
-        } else if (diffDays <= 30) {
-            statusBorder = 'border-yellow-500 border-2';
-            vencimientoHtml = `<p class="font-bold text-lg text-yellow-600">${expirationDateString} (Vence en ${diffDays} días)</p>`;
-        } else {
-            statusBorder = 'border-green-500 border-2';
-            vencimientoHtml = `<p class="font-semibold text-gray-800">${expirationDateString}</p>`;
+    let durationText = "---";
+
+    if (historySummary.status === 'activo') {
+        // Estado: ACTIVO (En poder del empleado)
+        statusColor = 'border-l-4 border-l-blue-500 border-y border-r border-slate-200';
+        statusIcon = '<i class="fa-solid fa-shirt text-blue-500"></i>';
+        statusText = 'En Uso';
+        statusBadgeClass = 'bg-blue-50 text-blue-700 border-blue-100';
+
+        if (lastDeliveryDateStr) {
+            const lastDate = new Date(lastDeliveryDateStr + 'T00:00:00');
+            const today = new Date();
+            const diffTime = Math.abs(today - lastDate);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            durationText = `${diffDays} días`;
+
+            // Verificar Vencimiento
+            if (vidaUtilDias) {
+                const expirationDate = new Date(lastDate.getTime());
+                expirationDate.setDate(expirationDate.getDate() + vidaUtilDias);
+                const daysLeft = Math.ceil((expirationDate - today) / (1000 * 60 * 60 * 24));
+
+                if (daysLeft <= 0) {
+                    statusColor = 'border-l-4 border-l-red-500 border-y border-r border-red-100 bg-red-50/30';
+                    statusText = 'Vencido';
+                    statusBadgeClass = 'bg-red-100 text-red-700 border-red-200 font-bold';
+                    durationText = `<span class="text-red-600 font-bold">Venció hace ${Math.abs(daysLeft)} días</span>`;
+                } else if (daysLeft <= 30) {
+                    statusColor = 'border-l-4 border-l-amber-500 border-y border-r border-amber-100 bg-amber-50/30';
+                    statusText = 'Vence Pronto';
+                    statusBadgeClass = 'bg-amber-100 text-amber-700 border-amber-200 font-bold';
+                    durationText = `<span class="text-amber-600 font-bold">Quedan ${daysLeft} días</span>`;
+                }
+            }
         }
-    } else if (historySummary.status === 'activo') {
-        statusBorder = 'border-green-500 border-2';
     } else if (historySummary.status === 'devuelto' || historySummary.status === 'devuelto_stock') {
-        statusBorder = 'border-gray-400';
-    }
-    // --- FIN LÓGICA VENCIMIENTO ---
-
-    card.className = `bg-white rounded-lg shadow ${statusBorder} p-4 flex flex-col dotacion-detail-card`;
-
-    // --- Calcular duración (Sin cambios) ---
-    let durationText = "N/A";
-    if (historySummary.lastDeliveryDate) {
-        const lastDate = new Date(historySummary.lastDeliveryDate + 'T00:00:00');
-        const today = new Date();
-        const diffTime = Math.abs(today - lastDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        durationText = `Hace ${diffDays} día(s)`;
+        // Estado: DEVUELTO
+        statusColor = 'border border-slate-200 bg-slate-50 opacity-75';
+        statusIcon = '<i class="fa-solid fa-rotate-left text-slate-400"></i>';
+        statusText = 'Devuelto';
+        statusBadgeClass = 'bg-slate-200 text-slate-600';
+    } else {
+        // Estado: NUNCA ENTREGADO
+        statusColor = 'border border-dashed border-slate-300';
+        statusText = 'No Asignado';
     }
 
-    // --- LÓGICA DE BOTONES DE DEVOLUCIÓN (Sin cambios) ---
-    let returnButtonHtml = '';
+    card.className = `rounded-xl shadow-sm overflow-hidden flex flex-col relative ${statusColor} ${statusBg}`;
+
+    // Botón de acción principal (Devolución)
+    let actionButton = '';
     if (canAdmin && historySummary.status === 'activo' && historySummary.lastHistoryId) {
-        returnButtonHtml = `
+        actionButton = `
             <button data-action="return-dotacion-item" 
                     data-lasthistoryid="${historySummary.lastHistoryId}" 
                     data-itemname="${catalogItem.itemName}"
                     data-itemid="${catalogItem.id}"
-                    class="bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">
-                Registrar Devolución
-            </button>`;
-    } else if (historySummary.status === 'devuelto' || historySummary.status === 'devuelto_stock') {
-        returnButtonHtml = `
-            <button class="bg-gray-400 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full" disabled>
-                Devuelto
-            </button>`;
-    } else {
-        let disabledText = 'N/A';
-        if (role === 'operario') {
-            disabledText = 'Devolver (Admin)';
-        } else if (historySummary.status === 'ninguno') {
-            disabledText = 'No Entregado';
-        } else if (canAdmin && historySummary.status === 'activo' && !historySummary.lastHistoryId) {
-            disabledText = 'Error (Sin ID)';
-        }
-        returnButtonHtml = `
-            <button class="bg-gray-400 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full" disabled>
-                ${disabledText}
+                    class="w-full mt-3 bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 text-xs font-bold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-2">
+                <i class="fa-solid fa-arrow-right-from-bracket"></i> Registrar Devolución
             </button>`;
     }
-    // --- FIN LÓGICA DE BOTONES DE DEVOLUCIÓN ---
 
-
-    // --- INICIO DE MODIFICACIÓN (Botón de Foto Entrega) ---
-    let fotoEntregaHtml = '';
-
-    // CORRECCIÓN: Mostramos el botón si la URL existe, SIN importar el 'status'
+    // Link a Foto de Entrega
+    let photoLink = '';
     if (historySummary.deliveryPhotoURL) {
-        fotoEntregaHtml = `
-            <button data-action="view-dotacion-delivery-image" data-photourl="${historySummary.deliveryPhotoURL}" class="text-sm text-blue-600 hover:underline mt-2 inline-block font-medium">
-                Ver Foto de Entrega (Recibo)
-            </button>
-        `;
+        photoLink = `
+            <button data-action="view-dotacion-delivery-image" data-photourl="${historySummary.deliveryPhotoURL}" class="text-xs text-blue-500 hover:text-blue-700 hover:underline flex items-center gap-1 mt-1">
+                <i class="fa-solid fa-paperclip"></i> Ver constancia entrega
+            </button>`;
     }
-    // --- FIN DE MODIFICACIÓN ---
 
-
-    // --- HTML de la tarjeta (Sin cambios, solo recibe la variable 'fotoEntregaHtml') ---
     card.innerHTML = `
-        <div class="flex-grow flex">
-            <div class="w-1/3 flex-shrink-0 aspect-square bg-gray-100 rounded-lg overflow-hidden"> 
-                <img 
-                    src="${catalogItem.itemPhotoURL || 'https://via.placeholder.com/300'}" 
-                    alt="${catalogItem.itemName}" 
-                    class="w-full h-full object-contain"
-                >
+        <div class="p-4 flex gap-4">
+            <div class="w-16 h-16 flex-shrink-0 bg-white rounded-lg border border-slate-100 p-1 shadow-sm">
+                <img src="${catalogItem.itemPhotoURL || 'https://via.placeholder.com/100'}" class="w-full h-full object-contain rounded">
             </div>
-            
-            <div class="w-2/3 flex-grow p-4 flex flex-col">
-                <div class="flex-grow">
-                    <h3 class="text-lg font-bold text-gray-900">${catalogItem.itemName}</h3>
-                    <p class="text-sm text-gray-500">Talla: ${catalogItem.talla || 'N/A'}</p>
-                    
-                    ${fotoEntregaHtml} <div class="mt-4 text-sm space-y-3"> <div>
-                            <p class="font-medium text-gray-600">Total Consumido:</p>
-                            <p class="font-bold text-2xl text-blue-600">${historySummary.totalConsumido}</p>
-                        </div>
-                        <div>
-                            <p class="font-medium text-gray-600">Asignado hace:</p>
-                            <p class="font-semibold text-gray-800">${durationText}</p>
-                        </div>
-                        
-                        <div>
-                            <p class="font-medium text-gray-600">Fecha Vencimiento:</p>
-                            ${vencimientoHtml}
-                        </div>
+
+            <div class="flex-grow min-w-0">
+                <div class="flex justify-between items-start">
+                    <h4 class="font-bold text-slate-800 text-sm truncate pr-2" title="${catalogItem.itemName}">${catalogItem.itemName}</h4>
+                    <span class="text-[10px] px-2 py-0.5 rounded-full border ${statusBadgeClass} whitespace-nowrap">${statusText}</span>
+                </div>
+                
+                <p class="text-xs text-slate-500 mt-0.5 mb-2">Ref: ${catalogItem.reference || '---'} | Talla: <strong>${catalogItem.talla || 'U'}</strong></p>
+                
+                <div class="flex items-center gap-4 text-xs text-slate-600 bg-white/50 p-1.5 rounded border border-slate-100/50">
+                    <div title="Total entregado históricamente">
+                        <i class="fa-solid fa-boxes-packing text-slate-400 mr-1"></i> <span class="font-bold">${historySummary.totalConsumido}</span>
+                    </div>
+                    <div title="Tiempo de uso actual">
+                        <i class="fa-regular fa-clock text-slate-400 mr-1"></i> ${durationText}
                     </div>
                 </div>
+                
+                ${photoLink}
             </div>
         </div>
-        
-        <div class="bg-gray-50 p-3 border-t mt-4 rounded-b-lg grid grid-cols-2 gap-2">
-            <button data-action="view-item-detail-history" 
+
+        <div class="px-4 pb-4 pt-0 mt-auto">
+             ${actionButton}
+             <button data-action="view-item-detail-history" 
                     data-itemid="${catalogItem.id}" 
                     data-itemname="${catalogItem.itemName}" 
                     data-talla="${catalogItem.talla || 'N/A'}" 
                     data-userid="${userId}"
-                    class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-semibold py-2 px-3 rounded-lg w-full">
-                Ver Historial
+                    class="w-full mt-2 text-xs text-slate-500 hover:text-slate-800 font-medium flex items-center justify-center gap-1 transition-colors">
+                <i class="fa-solid fa-history"></i> Ver historial completo
             </button>
-            
-            ${returnButtonHtml}
         </div>
     `;
+
     return card;
 }
 

@@ -1,16 +1,18 @@
-// App/js/dashboard.js
 
 // --- Importaciones de Firebase ---
 import {
-    doc,
-    onSnapshot,
     collection,
     query,
     where,
+    getDocs,
     orderBy,
     limit,
-    getDocs,
-    collectionGroup
+    startAfter,
+    collectionGroup,
+    doc,     // <--- AGREGAR ESTO
+    getDoc,
+    onSnapshot   // <--- AGREGAR ESTO (Probablemente también lo necesites)
+
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
 // --- Variables del Módulo (Dependencias de app.js) ---
@@ -34,15 +36,14 @@ export function initDashboard(db, showView, getUsersMap, getCurrentUserRole, get
     _getCurrentUserRole = getCurrentUserRole;
     _getCurrentUserId = getCurrentUserId;
 }
+// Variable global para controlar las gráficas de este módulo
+let activeModuleCharts = [];
 
-/**
- * Muestra el dashboard general y activa el listener de estadísticas
- */
 export function showGeneralDashboard() {
     _showView('dashboard-general');
     const widgetsContainer = document.getElementById('dashboard-widgets-container');
-    // Limpiamos clases de grid por defecto para permitir nuestro propio layout flexible
-    widgetsContainer.className = 'space-y-6';
+    
+    widgetsContainer.className = 'space-y-8';
     widgetsContainer.innerHTML = `
         <div class="flex flex-col items-center justify-center h-64 text-gray-400">
             <div class="loader mb-4"></div>
@@ -50,23 +51,34 @@ export function showGeneralDashboard() {
         </div>
     `;
 
-    // 1. Destruir gráficos anteriores
-    destroyExistingCharts();
+    // 1. Limpieza de Gráficas previas
+    if (activeModuleCharts.length > 0) {
+        activeModuleCharts.forEach(chart => chart.destroy());
+        activeModuleCharts = [];
+    }
 
     // 2. Cancelar listeners anteriores
-    if (unsubscribeDashboard) {
+    if (typeof unsubscribeDashboard === 'function' && unsubscribeDashboard) {
         unsubscribeDashboard();
         unsubscribeDashboard = null;
     }
 
     const userRole = _getCurrentUserRole();
 
-    // 3. Cargar dashboard según rol
-    if (userRole === 'admin' || userRole === 'bodega' || userRole === 'sst') {
+    // 3. Renderizado por Rol
+    if (userRole === 'admin') {
         loadAdminDashboard(widgetsContainer);
-    } else if (userRole === 'operario') {
+    } 
+    else if (userRole === 'bodega') {
+        renderBodegaDashboard(widgetsContainer);
+    } 
+    else if (userRole === 'sst') {
+        renderSSTDashboard(widgetsContainer);
+    } 
+    else if (userRole === 'operario') {
         loadOperarioDashboard(widgetsContainer, _getCurrentUserId());
-    } else {
+    } 
+    else {
         widgetsContainer.innerHTML = `
             <div class="p-8 text-center bg-white rounded-2xl shadow-sm border border-gray-200">
                 <i class="fa-solid fa-user-lock text-4xl text-gray-300 mb-3"></i>
@@ -374,7 +386,7 @@ function renderAdminDashboard(stats, container) {
             </div>
         </div>
     `;
-    
+
 }
 
 /**
@@ -1015,5 +1027,417 @@ function createDashboardCharts(stats) {
             ['Stock', 'Asig.'],
             ['#3B82F6', '#F59E0B']
         );
+    }
+}
+
+/**
+ * Renderiza el Dashboard para BODEGA con KPIs INTERACTIVOS.
+ */
+async function renderBodegaDashboard(container) {
+    const dateStr = new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const capitalizedDate = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+
+    container.innerHTML = `
+        <div class="col-span-full flex flex-col items-center justify-center py-12 h-96">
+            <div class="loader mb-4"></div>
+            <p class="text-gray-400 font-medium animate-pulse">Sincronizando inventario...</p>
+        </div>`;
+
+    try {
+        // 1. Consultas de Datos
+        const [requestsSnap, poSnap, catalogSnap] = await Promise.all([
+            getDocs(query(collectionGroup(_db, 'materialRequests'), where("status", "==", "pendiente"))),
+            getDocs(query(collection(_db, "purchaseOrders"), where("status", "==", "pendiente"))),
+            getDocs(collection(_db, "materialCatalog"))
+        ]);
+
+        const pendingRequests = requestsSnap.size;
+        const pendingPO = poSnap.size;
+        let lowStockCount = 0;
+        let healthyStockCount = 0;
+        let totalRefs = 0;
+        
+        catalogSnap.forEach(doc => {
+            totalRefs++;
+            const item = doc.data();
+            if ((item.quantityInStock || 0) <= (item.minStockThreshold || 5)) {
+                lowStockCount++;
+            } else {
+                healthyStockCount++;
+            }
+        });
+
+        // 2. Renderizado HTML Estructurado
+        container.innerHTML = `
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                <div>
+                    <h1 class="text-3xl font-extrabold text-slate-800 tracking-tight">Panel de Bodega</h1>
+                    <p class="text-slate-500 mt-1 text-sm">Gestión logística e inventario.</p>
+                </div>
+                <div class="bg-white px-5 py-2.5 rounded-xl shadow-sm border border-slate-200 text-sm text-slate-600 font-medium flex items-center gap-3">
+                    <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                    <i class="fa-regular fa-calendar text-slate-400"></i> ${capitalizedDate}
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                
+                <div class="lg:col-span-9 space-y-6">
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-6">
+                        
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between relative overflow-hidden group hover:shadow-md transition-all cursor-pointer" data-action="go-to-proyectos">
+                            <div class="absolute right-0 top-0 p-4 opacity-5 transform group-hover:scale-110 transition-transform"><i class="fa-solid fa-dolly text-8xl text-blue-600"></i></div>
+                            <div>
+                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-blue-600 transition-colors">Por Despachar</p>
+                                <h3 class="text-4xl font-black text-slate-800">${pendingRequests}</h3>
+                                <p class="text-xs text-blue-600 font-medium mt-2 flex items-center gap-1">
+                                    Solicitudes pendientes <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                </p>
+                            </div>
+                            <div class="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-clipboard-list"></i>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-catalog">
+                            <div>
+                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-amber-600 transition-colors">Stock Crítico</p>
+                                <h3 class="text-4xl font-black text-slate-800">${lowStockCount}</h3>
+                                <p class="text-xs text-amber-600 font-medium mt-2 flex items-center gap-1">
+                                    Ítems bajo mínimo <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                </p>
+                            </div>
+                            <div class="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-compras">
+                            <div>
+                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-emerald-600 transition-colors">Entradas</p>
+                                <h3 class="text-4xl font-black text-slate-800">${pendingPO}</h3>
+                                <p class="text-xs text-emerald-600 font-medium mt-2 flex items-center gap-1">
+                                    Órdenes por recibir <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                </p>
+                            </div>
+                            <div class="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-truck-ramp-box"></i>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-catalog">
+                            <div>
+                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-indigo-600 transition-colors">Total Referencias</p>
+                                <h3 class="text-4xl font-black text-slate-800">${totalRefs}</h3>
+                                <p class="text-xs text-indigo-600 font-medium mt-2 flex items-center gap-1">
+                                    Catálogo activo <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                </p>
+                            </div>
+                            <div class="w-16 h-16 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-tags"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-8 items-center">
+                        <div class="flex-1 w-full">
+                            <h4 class="text-lg font-bold text-slate-700 mb-2">Salud del Inventario</h4>
+                            <p class="text-sm text-slate-500 mb-6">Proporción de ítems con stock suficiente vs crítico.</p>
+                            
+                            <div class="flex gap-4 mb-4">
+                                <div class="flex-1 bg-green-50 border border-green-100 p-3 rounded-xl">
+                                    <p class="text-xs text-green-600 font-bold uppercase">Saludable</p>
+                                    <p class="text-2xl font-black text-green-800">${healthyStockCount}</p>
+                                </div>
+                                <div class="flex-1 bg-amber-50 border border-amber-100 p-3 rounded-xl">
+                                    <p class="text-xs text-amber-600 font-bold uppercase">Crítico</p>
+                                    <p class="text-2xl font-black text-amber-800">${lowStockCount}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="w-full md:w-64 h-64 relative flex items-center justify-center">
+                            <canvas id="bodega-stock-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-3 space-y-6">
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 h-full">
+                        <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2 uppercase tracking-wide border-b pb-3">
+                            <i class="fa-solid fa-bolt text-yellow-500"></i> Acciones Rápidas
+                        </h3>
+                        
+                        <div class="space-y-3">
+                            <button data-action="send-admin-alert" class="w-full flex items-center gap-3 p-3 rounded-xl bg-red-50 text-red-700 hover:bg-red-100 hover:shadow-md transition-all text-left group border border-red-100">
+                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-red-500"><i class="fa-solid fa-bullhorn"></i></div>
+                                <div><p class="font-bold text-sm">Llamado Urgente</p><p class="text-[10px] opacity-75">Alerta</p></div>
+                            </button>
+
+                            <button data-action="go-to-proyectos" class="w-full flex items-center gap-3 p-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 hover:shadow-md transition-all text-left group border border-blue-100">
+                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-blue-500"><i class="fa-solid fa-dolly"></i></div>
+                                <div><p class="font-bold text-sm">Despachar Material</p><p class="text-[10px] opacity-75">Solicitudes</p></div>
+                            </button>
+
+                            <button data-action="go-to-catalog" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
+                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-indigo-500"><i class="fa-solid fa-boxes-stacked"></i></div>
+                                <div><p class="font-bold text-sm">Inventario</p><p class="text-[10px] opacity-75">Stock</p></div>
+                            </button>
+
+                            <button data-action="go-to-compras" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
+                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-emerald-500"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+                                <div><p class="font-bold text-sm">Compras</p><p class="text-[10px] opacity-75">Proveedores</p></div>
+                            </button>
+
+                            <button data-action="go-to-herramientas" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
+                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-orange-500"><i class="fa-solid fa-screwdriver-wrench"></i></div>
+                                <div><p class="font-bold text-sm">Herramientas</p><p class="text-[10px] opacity-75">Préstamos</p></div>
+                            </button>
+                            
+                            <button data-action="request-loan" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
+                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-gray-500"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                                <div><p class="font-bold text-sm">Préstamo</p><p class="text-[10px] opacity-75">Personal</p></div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // 3. Crear Gráfica
+        const ctx = document.getElementById('bodega-stock-chart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Stock Saludable', 'Stock Bajo'],
+                datasets: [{
+                    data: [healthyStockCount, lowStockCount],
+                    backgroundColor: ['#10b981', '#f59e0b'], 
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                cutout: '70%'
+            }
+        });
+        activeModuleCharts.push(chart);
+
+    } catch (error) {
+        console.error("Error Dashboard Bodega:", error);
+        container.innerHTML = `<p class="text-red-500 text-center">Error cargando datos: ${error.message}</p>`;
+    }
+}
+
+/**
+ * Renderiza el Dashboard para SST con diseño de columnas y Gráfica de Herramientas CORREGIDA.
+ */
+async function renderSSTDashboard(container) {
+    const dateStr = new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const capitalizedDate = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+
+    container.innerHTML = `
+        <div class="col-span-full flex flex-col items-center justify-center py-12 h-96">
+            <div class="loader mb-4"></div>
+            <p class="text-gray-400 font-medium animate-pulse">Verificando seguridad...</p>
+        </div>`;
+
+    try {
+        // 1. CONSULTAS (Recuperamos la consulta de estadísticas globales para la gráfica)
+        const [statsDoc, dotacionSnap, usersSnap, catalogSnap] = await Promise.all([
+            getDoc(doc(_db, "system/dashboardStats")), // <--- ESTA FALTABA
+            getDocs(query(collection(_db, "dotacionHistory"), where("status", "==", "activo"))),
+            getDocs(query(collection(_db, "users"), where("status", "==", "active"))),
+            getDocs(collection(_db, "dotacionCatalog"))
+        ]);
+
+        // 2. PROCESAR DATOS
+        // Extraer estadísticas de herramientas para la GRÁFICA y el KPI
+        const statsData = statsDoc.exists() ? statsDoc.data() : {};
+        const toolStats = statsData.tools || { disponible: 0, asignada: 0, en_reparacion: 0, dada_de_baja: 0 };
+        
+        // KPI: Equipos en Riesgo (Reparación + Baja)
+        const toolsIssues = (toolStats.en_reparacion || 0) + (toolStats.dada_de_baja || 0);
+        
+        const activePersonnel = usersSnap.size;
+
+        // Calcular Dotación Vencida (KPI)
+        let expiredDotacionCount = 0;
+        const vidaUtilMap = new Map();
+        catalogSnap.forEach(d => vidaUtilMap.set(d.id, d.data().vidaUtilDias || 0));
+
+        const today = new Date();
+        dotacionSnap.forEach(doc => {
+            const entry = doc.data();
+            const vidaUtil = vidaUtilMap.get(entry.itemId);
+            if (vidaUtil && entry.fechaEntrega) {
+                const deliveryDate = new Date(entry.fechaEntrega + 'T00:00:00');
+                const expDate = new Date(deliveryDate);
+                expDate.setDate(expDate.getDate() + vidaUtil);
+                const daysLeft = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
+                if (daysLeft <= 15) expiredDotacionCount++;
+            }
+        });
+
+        // 3. RENDERIZADO HTML
+        container.innerHTML = `
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                <div>
+                    <h1 class="text-3xl font-extrabold text-slate-800 tracking-tight">Panel SST</h1>
+                    <p class="text-slate-500 mt-1 text-sm">Seguridad y Salud en el Trabajo.</p>
+                </div>
+                <div class="bg-white px-5 py-2.5 rounded-xl shadow-sm border border-slate-200 text-sm text-slate-600 font-medium flex items-center gap-3">
+                    <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                    <i class="fa-regular fa-calendar text-slate-400"></i> ${capitalizedDate}
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                
+                <div class="lg:col-span-9 space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                        
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border ${expiredDotacionCount > 0 ? 'border-red-100 bg-red-50/30' : 'border-slate-100'} flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-dotacion">
+                            <div>
+                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-blue-600 transition-colors">Alertas EPP</p>
+                                <h3 class="text-4xl font-black ${expiredDotacionCount > 0 ? 'text-red-700' : 'text-slate-800'}">${expiredDotacionCount}</h3>
+                                <p class="text-xs text-slate-500 mt-2 flex items-center gap-1 group-hover:text-blue-500">
+                                    Dotación por vencer <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                </p>
+                            </div>
+                            <div class="w-16 h-16 rounded-2xl ${expiredDotacionCount > 0 ? 'bg-red-100 text-red-600' : 'bg-blue-50 text-blue-600'} flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-helmet-safety"></i>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-herramientas">
+                            <div>
+                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-orange-600 transition-colors">Equipos Riesgo</p>
+                                <h3 class="text-4xl font-black text-slate-800">${toolsIssues}</h3>
+                                <p class="text-xs text-orange-600 font-medium mt-2 flex items-center gap-1">
+                                    Reparación / Baja <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                </p>
+                            </div>
+                            <div class="w-16 h-16 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-screwdriver-wrench"></i>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="back-to-empleados">
+                            <div>
+                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-emerald-600 transition-colors">Personal Activo</p>
+                                <h3 class="text-4xl font-black text-slate-800">${activePersonnel}</h3>
+                                <p class="text-xs text-emerald-600 font-medium mt-2 flex items-center gap-1">
+                                    En operación hoy <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                </p>
+                            </div>
+                            <div class="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-users"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-8 items-center">
+                        <div class="flex-1 w-full">
+                            <h4 class="text-lg font-bold text-slate-700 mb-2">Estado del Parque de Herramientas</h4>
+                            <p class="text-sm text-slate-500 mb-6">Distribución actual de equipos y maquinaria.</p>
+                            
+                            <ul class="space-y-3 text-sm">
+                                <li class="flex justify-between items-center p-2 bg-green-50 rounded-lg border border-green-100">
+                                    <span class="flex items-center text-green-700 font-medium"><span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>Disponibles</span> 
+                                    <span class="font-bold text-green-800 text-lg">${toolStats.disponible || 0}</span>
+                                </li>
+                                <li class="flex justify-between items-center p-2 bg-blue-50 rounded-lg border border-blue-100">
+                                    <span class="flex items-center text-blue-700 font-medium"><span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>Asignadas</span> 
+                                    <span class="font-bold text-blue-800 text-lg">${toolStats.asignada || 0}</span>
+                                </li>
+                                <li class="flex justify-between items-center p-2 bg-orange-50 rounded-lg border border-orange-100">
+                                    <span class="flex items-center text-orange-700 font-medium"><span class="w-2 h-2 rounded-full bg-orange-500 mr-2"></span>En Reparación</span> 
+                                    <span class="font-bold text-orange-800 text-lg">${toolStats.en_reparacion || 0}</span>
+                                </li>
+                                <li class="flex justify-between items-center p-2 bg-red-50 rounded-lg border border-red-100">
+                                    <span class="flex items-center text-red-700 font-medium"><span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span>Dada de Baja</span> 
+                                    <span class="font-bold text-red-800 text-lg">${toolStats.dada_de_baja || 0}</span>
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="w-full md:w-64 h-64 relative flex items-center justify-center">
+                            <canvas id="sst-tools-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-3 space-y-6">
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 h-full">
+                        <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2 uppercase tracking-wide border-b pb-3">
+                            <i class="fa-solid fa-bolt text-yellow-500"></i> Acciones Rápidas
+                        </h3>
+
+                        <div class="space-y-3">
+                            <button data-action="send-admin-alert" class="w-full flex items-center gap-3 p-3 rounded-xl bg-red-50 text-red-700 hover:bg-red-100 hover:shadow-md transition-all text-left group border border-red-100">
+                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-red-500 shadow-sm"><i class="fa-solid fa-bullhorn"></i></div>
+                                <div><p class="font-bold text-sm">Alerta SST</p><p class="text-[10px] opacity-75">Emergencia</p></div>
+                            </button>
+
+                            <button data-action="go-to-dotacion" class="w-full flex items-center gap-3 p-3 rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-100 hover:shadow-md transition-all text-left group border border-amber-100">
+                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-amber-500 shadow-sm"><i class="fa-solid fa-vest"></i></div>
+                                <div><p class="font-bold text-sm">Gestión EPP</p><p class="text-[10px] opacity-75">Entregas y control</p></div>
+                            </button>
+
+                            <button data-action="back-to-empleados" class="w-full flex items-center gap-3 p-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 hover:shadow-md transition-all text-left group border border-blue-100">
+                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-blue-500 shadow-sm"><i class="fa-solid fa-id-card"></i></div>
+                                <div><p class="font-bold text-sm">Personal</p><p class="text-[10px] opacity-75">Documentos</p></div>
+                            </button>
+
+                            <button data-action="go-to-herramientas" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
+                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-slate-500 shadow-sm"><i class="fa-solid fa-clipboard-check"></i></div>
+                                <div><p class="font-bold text-sm">Inspección</p><p class="text-[10px] opacity-75">Equipos</p></div>
+                            </button>
+
+                             <button data-action="request-loan" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
+                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-gray-500 shadow-sm"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                                <div><p class="font-bold text-sm">Préstamo</p><p class="text-[10px] opacity-75">Personal</p></div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // 4. CREAR GRÁFICA
+        const ctx = document.getElementById('sst-tools-chart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Disponible', 'Asignada', 'Reparación', 'Baja'],
+                datasets: [{
+                    data: [toolStats.disponible || 0, toolStats.asignada || 0, toolStats.en_reparacion || 0, toolStats.dada_de_baja || 0],
+                    backgroundColor: ['#22c55e', '#3b82f6', '#f97316', '#ef4444'], // Colores brillantes
+                    borderWidth: 0,
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false } // Ocultamos leyenda por defecto (ya hicimos una custom)
+                },
+                cutout: '70%',
+                animation: {
+                    animateScale: true,
+                    animateRotate: true
+                }
+            }
+        });
+        activeModuleCharts.push(chart);
+
+    } catch (error) {
+        console.error("Error Dashboard SST:", error);
+        container.innerHTML = `<p class="text-red-500 text-center p-10">Error cargando datos: ${error.message}</p>`;
     }
 }

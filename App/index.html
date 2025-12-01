@@ -28,7 +28,7 @@
     <link href="css/output.css" rel="stylesheet">
 </head>
 
-<body class="text-gray-800">
+<body class="text-gray-800 bg-gray-100 dark:bg-slate-900 dark:text-slate-300 transition-colors duration-300">
 
     <div id="loading-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-white">
         <div class="loader"></div>
@@ -538,140 +538,100 @@
                 </div>
             </div>
 
-            <div id="dotacion-view" class="hidden">
-                <div class="flex flex-col md:flex-row justify-between md:items-center mb-4">
+<div id="dotacion-view" class="hidden">
+    
+    <div class="flex flex-col md:flex-row justify-between items-end mb-6 gap-4">
+        <div>
+            <h1 id="dotacion-view-title" class="text-3xl font-bold text-gray-700 tracking-tight">
+                Gestión de Dotación
+            </h1>
+            <p class="text-gray-500 text-sm mt-1">Control de inventario EPP, uniformes y asignaciones.</p>
+        </div>
 
-                    <h1 id="dotacion-view-title" class="text-3xl font-bold text-gray-800">Gestión de Dotación</h1>
-
-                    <div class="flex flex-col md:flex-row items-stretch md:items-center gap-2 mt-4 md:mt-0">
-
-                        <div id="dotacion-inventario-actions" class="flex flex-col sm:flex-row gap-2 hidden">
-                            <button data-action="export-dotacion-inventario-csv"
-                                class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center justify-center">
-                                <i class="fa-solid fa-file-arrow-down w-4 h-4 inline-block mr-1"></i>
-                                Exportar <span class="hidden sm:inline">Inventario</span> (CSV)
-                            </button>
-                            <button data-action="export-dotacion-inventario-pdf"
-                                class="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center justify-center">
-                                <i class="fa-solid fa-file-arrow-down w-4 h-4 inline-block mr-1"></i>
-                                Exportar <span class="hidden sm:inline">Inventario</span> (PDF)
-                            </button>
-                        </div>
-
-                        <div id="dotacion-asignaciones-actions" class="flex flex-col sm:flex-row gap-2 hidden">
-                            <button data-action="export-dotacion-asignaciones-csv"
-                                class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center justify-center">
-                                <i class="fa-solid fa-file-arrow-down w-4 h-4 inline-block mr-1"></i>
-                                Exportar <span class="hidden sm:inline">Asignaciones</span> (CSV)
-                            </button>
-                            <button data-action="export-dotacion-asignaciones-pdf"
-                                class="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center justify-center">
-                                <i class="fa-solid fa-file-arrow-down w-4 h-4 inline-block mr-1"></i>
-                                Exportar <span class="hidden sm:inline">Asignaciones</span> (PDF)
-                            </button>
-                        </div>
-
-                        <button id="new-dotacion-item-btn" data-action="new-dotacion-catalog-item"
-                            class="w-full md:w-auto bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hidden">
-                            + Nuevo Ítem
-                        </button>
-                    </div>
-                </div>
-
-                <div class="border-b border-gray-200">
-                    <nav id="dotacion-tabs-nav" class="-mb-px flex space-x-8" aria-label="Tabs">
-                        <button data-status-filter="resumen"
-                            class="dotacion-tab-button active whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm border-blue-500 text-blue-600">
-                            Resumen
-                        </button>
-                        <button data-status-filter="inventario"
-                            class="dotacion-tab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
-                            Inventario (Stock)
-                        </button>
-                        <button data-status-filter="asignaciones"
-                            class="dotacion-tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
-                            Asignaciones (Historial)
-                        </button>
-                    </nav>
-                </div>
-
-                <div id="dotacion-filter-bar"
-                    class="md:grid md:grid-cols-4 gap-4 items-center p-4 bg-gray-50 rounded-lg hidden">
-                    <div id="dotacion-search-container" class="md:col-span-2">
-                        <label for="dotacion-search-input" class="block text-sm font-medium text-gray-700">Buscar por
-                            Nombre o Referencia</label>
-                        <input type="search" id="dotacion-search-input" class="mt-1 w-full border rounded-md p-2"
-                            placeholder="Ej: Casco, Guante...">
-                    </div>
-                    <div id="dotacion-category-container" class="md:col-span-1">
-                        <label for="dotacion-category-filter"
-                            class="block text-sm font-medium text-gray-700">Categoría</label>
-                        <select id="dotacion-category-filter" class="mt-1 w-full border rounded-md p-2"></select>
-                    </div>
-                    <div id="dotacion-assignee-container" class="md:col-span-1">
-                        <label for="dotacion-assignee-filter"
-                            class="block text-sm font-medium text-gray-700">Empleado</label>
-                        <select id="dotacion-assignee-filter" class="mt-1 w-full border rounded-md p-2"></select>
-                    </div>
-                </div>
-
-                <div id="dotacion-inventario-actions" class="flex gap-2 p-4 justify-end hidden">
-                    <button data-action="export-dotacion-inventario-csv"
-                        class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded-lg">
-                        Exportar Inventario (CSV)
-                    </button>
-                    <button data-action="export-dotacion-inventario-pdf"
-                        class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-4 rounded-lg">
-                        Exportar Inventario (PDF)
-                    </button>
-                </div>
-
-                <div id="dotacion-asignaciones-actions" class="flex gap-2 p-4 justify-end hidden">
-                    <button data-action="export-dotacion-asignaciones-csv"
-                        class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded-lg">
-                        Exportar Asignaciones (CSV)
-                    </button>
-                    <button data-action="export-dotacion-asignaciones-pdf"
-                        class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-4 rounded-lg">
-                        Exportar Asignaciones (PDF)
-                    </button>
-                </div>
-
-                <div id="dotacion-grid-container" class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                </div>
-
-                <div id="dotacion-dashboard-container" class="mt-6 hidden">
-                </div>
-
-                <div id="dotacion-history-container" class="mt-6 hidden">
-
-                    <button id="dotacion-back-to-summary-btn" data-action="dotacion-back-to-summary"
-                        class=".hidden bg-gray-500 hover:bg-gray-600 text-white text-sm font-semibold py-2 px-4 rounded-lg mb-4 flex items-center">
-                        <i class="fa-solid fa-arrow-left h-5 w-5 mr-1"></i>
-                        Volver al Resumen de Empleados
-                    </button>
-
-                    <div id="dotacion-summary-table-container" class="bg-white p-6 rounded-lg shadow-md">
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-sm text-left">
-                                <thead class="text-xs text-gray-700 uppercase bg-gray-50">
-                                    <tr>
-                                        <th class="px-6 py-3">Empleado</th>
-                                        <th class="px-6 py-3 text-center">Total Ítems Entregados</th>
-                                        <th class="px-6 py-3 text-center">Acciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="dotacion-summary-table-body">
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div id="dotacion-detail-grid-container" class=".hidden grid grid-cols-1 md:grid-cols-2 gap-6">
-                    </div>
-
-                </div>
+        <div class="flex flex-wrap items-center gap-2">
+            <div id="dotacion-inventario-actions" class="hidden flex gap-2">
+                <button data-action="export-dotacion-inventario-csv" class="bg-white border border-gray-300 text-gray-600 hover:text-green-600 hover:border-green-400 text-xs font-bold py-2 px-3 rounded-lg shadow-sm transition-colors flex items-center" title="Descargar CSV">
+                    <i class="fa-solid fa-file-csv mr-2 text-base"></i> CSV
+                </button>
+                <button data-action="export-dotacion-inventario-pdf" class="bg-white border border-gray-300 text-gray-600 hover:text-red-600 hover:border-red-400 text-xs font-bold py-2 px-3 rounded-lg shadow-sm transition-colors flex items-center" title="Descargar PDF">
+                    <i class="fa-solid fa-file-pdf mr-2 text-base"></i> PDF
+                </button>
             </div>
+
+            <div id="dotacion-asignaciones-actions" class="hidden flex gap-2">
+                <button data-action="export-dotacion-asignaciones-csv" class="bg-white border border-gray-300 text-gray-600 hover:text-green-600 hover:border-green-400 text-xs font-bold py-2 px-3 rounded-lg shadow-sm transition-colors flex items-center">
+                    <i class="fa-solid fa-file-csv mr-2 text-base"></i> CSV
+                </button>
+                <button data-action="export-dotacion-asignaciones-pdf" class="bg-white border border-gray-300 text-gray-600 hover:text-red-600 hover:border-red-400 text-xs font-bold py-2 px-3 rounded-lg shadow-sm transition-colors flex items-center">
+                    <i class="fa-solid fa-file-pdf mr-2 text-base"></i> PDF
+                </button>
+            </div>
+
+            <button id="new-dotacion-item-btn" data-action="new-dotacion-catalog-item" 
+                class="hidden bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-5 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center gap-2">
+                <i class="fa-solid fa-plus"></i> 
+                <span>Nuevo Ítem</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="mb-6 border-b border-gray-200">
+        <nav id="dotacion-tabs-nav" class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
+            <button data-status-filter="resumen" class="dotacion-tab-button active whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm border-blue-500 text-blue-600 transition-colors focus:outline-none">
+                Resumen
+            </button>
+            <button data-status-filter="inventario" class="dotacion-tab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors focus:outline-none">
+                Inventario
+            </button>
+            <button data-status-filter="asignaciones" class="dotacion-tab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors focus:outline-none">
+                Asignaciones
+            </button>
+        </nav>
+    </div>
+
+    <div id="dotacion-filter-bar" class="hidden gap-4 items-center p-4 bg-white border border-gray-200 rounded-lg mb-6 shadow-sm">
+        <div id="dotacion-search-container" class="md:col-span-2">
+            <label for="dotacion-search-input" class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Buscar Ítem</label>
+            <div class="relative">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-magnifying-glass"></i></div>
+                <input type="search" id="dotacion-search-input" class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="Nombre, referencia...">
+            </div>
+        </div>
+        <div id="dotacion-category-container" class="md:col-span-1">
+            <label for="dotacion-category-filter" class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Categoría</label>
+            <select id="dotacion-category-filter" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 bg-white"></select>
+        </div>
+        <div id="dotacion-assignee-container" class="md:col-span-1">
+            <label for="dotacion-assignee-filter" class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">Filtrar por Empleado</label>
+            <select id="dotacion-assignee-filter" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"></select>
+        </div>
+    </div>
+
+    <div id="dotacion-grid-container" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in"></div>
+    <div id="dotacion-dashboard-container" class="hidden animate-fade-in"></div>
+    
+    <div id="dotacion-history-container" class="hidden animate-fade-in space-y-4">
+        <button id="dotacion-back-to-summary-btn" data-action="dotacion-back-to-summary" 
+            class="hidden bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-bold py-2 px-4 rounded-lg shadow-sm mb-2">
+            &larr; Volver
+        </button>
+        <div id="dotacion-summary-table-container" class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left">
+                    <thead class="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+                        <tr>
+                            <th class="px-6 py-4 font-bold tracking-wide">Empleado</th>
+                            <th class="px-6 py-4 text-center font-bold tracking-wide">Total Entregado</th>
+                            <th class="px-6 py-4 text-center font-bold tracking-wide">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dotacion-summary-table-body" class="divide-y divide-gray-100"></tbody>
+                </table>
+            </div>
+        </div>
+        <div id="dotacion-detail-grid-container" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    </div>
+</div>
 
             <div id="solicitud-view" class="hidden">
                 <h1 class="text-3xl font-bold text-gray-700">Solicitud de Material</h1>

@@ -2136,19 +2136,54 @@ exports.checkLateEntries = onSchedule({
                     link: "/dashboard-general"
                 });
 
-                // B. Enviar Notificación Push al celular (si tiene token)
+                // B. Enviar Notificación Push al celular (MEJORADA)
                 if (userData.fcmToken) {
                     const message = {
                         notification: {
                             title: "⚠️ Reporte Pendiente",
                             body: "Son las 8:30 AM y no has registrado tu ingreso. Toca aquí para reportar."
                         },
+                        // Configuración para Android (Prioridad Alta)
+                        android: {
+                            notification: {
+                                sound: 'default',
+                                priority: 'high',
+                                channelId: 'urgent_alerts',
+                                clickAction: 'FLUTTER_NOTIFICATION_CLICK' // Estándar para abrir app
+                            },
+                            priority: 'high'
+                        },
+                        // Configuración para iOS (Apple requiere esto para alertas)
+                        apns: {
+                            headers: {
+                                "apns-priority": "10", // 10 = Envío inmediato
+                            },
+                            payload: {
+                                aps: {
+                                    sound: 'default',
+                                    contentAvailable: true // Despierta la app en segundo plano
+                                }
+                            }
+                        },
                         token: userData.fcmToken,
                         data: {
-                            url: "/dashboard-general"
+                            url: "/dashboard-general",
+                            type: "late_entry_alert"
                         }
                     };
-                    messagingPromises.push(getMessaging().send(message).catch(e => console.error(`Error push a ${userId}:`, e.message)));
+
+                    // Añadimos al array de promesas para enviar
+                    messagingPromises.push(
+                        getMessaging().send(message)
+                            .then(() => console.log(`Push enviado a ${userId}`))
+                            .catch(e => {
+                                console.error(`Error push a ${userId}:`, e.message);
+                                // Si el token no sirve, lo borramos para mantener limpia la DB
+                                if (e.code === 'messaging/registration-token-not-registered') {
+                                    return db.doc(`users/${userId}`).update({ fcmToken: FieldValue.delete() });
+                                }
+                            })
+                    );
                 }
             }
         }
@@ -2170,64 +2205,69 @@ exports.checkLateEntries = onSchedule({
 
 
 /**
- * Trigger AUTOMÁTICO: Escucha cuando se crea una notificación en la base de datos
+ * Trigger AUTOMÁTICO: Escucha cuando se crea una notificación en Firestore
  * y la envía como Push Notification al celular del usuario (si tiene token).
  */
 exports.sendPushOnNotificationCreate = onDocumentWritten("notifications/{notificationId}", async (event) => {
     // 1. Validar que sea un documento NUEVO (Creación)
-    if (!event.data.after.exists) return null; // Si se borró, no hacer nada
-
-    // Si es una edición (before existe), solo notificar si NO estaba leída y sigue sin leerse
-    // (Opcional: aquí simplificamos para solo notificar creaciones nuevas)
-    if (event.data.before.exists) return null;
+    if (!event.data.after.exists || event.data.before.exists) {
+        return null; // Si se borró o se editó, no enviamos push
+    }
 
     const notifData = event.data.after.data();
     const userId = notifData.userId;
 
+    // Validar datos mínimos
     if (!userId || !notifData.message) return null;
+
+    // Evitar bucles: Si es una notificación de sistema interna sin usuario, ignorar
+    if (notifData.type === 'system_log') return null; 
 
     try {
         // 2. Obtener el Token FCM del usuario destinatario
         const userDoc = await db.doc(`users/${userId}`).get();
-
+        
         if (!userDoc.exists) return null;
 
         const userData = userDoc.data();
         const fcmToken = userData.fcmToken;
 
         if (!fcmToken) {
-            console.log(`El usuario ${userData.firstName} no tiene token FCM (no ha activado notificaciones).`);
+            console.log(`El usuario ${userData.firstName || userId} no tiene token FCM (no recibirá push).`);
             return null;
         }
 
-        // 3. Personalizar el Título
+        // 3. Personalizar Título según el tipo
         let title = notifData.title || "Nueva Notificación";
-        if (notifData.type === 'admin_urgent_alert') {
+        
+        if (notifData.type === 'task_comment') {
+            title = "💬 Nuevo Comentario en Tarea";
+        } else if (notifData.type === 'admin_urgent_alert') {
             title = "🚨 ¡ATENCIÓN REQUERIDA!";
+        } else if (notifData.type === 'new_task_assignment') {
+            title = "📋 Nueva Tarea Asignada";
         }
 
-        // 4. Construir el mensaje Push (CORREGIDO PARA iOS)
+        // 4. Construir el mensaje Push con Prioridad Alta
         const messagePayload = {
             notification: {
                 title: title,
-                body: notifData.message,
-                image: notifData.photoURL || null // <--- AGREGAR ESTA LÍNEA
+                body: notifData.message, // El cuerpo del comentario o mensaje
             },
-            // Android: Vibración y Prioridad
+            // Configuración Android
             android: {
                 notification: {
                     sound: 'default',
                     priority: 'high',
                     channelId: 'urgent_alerts',
-                    vibrateTimingsMillis: [0, 500, 200, 500]
+                    clickAction: 'FLUTTER_NOTIFICATION_CLICK'
                 },
-                priority: 'high'
+                priority: 'high' 
             },
-            // iOS (Apple): ESTA ES LA PARTE CLAVE QUE FALTABA
+            // Configuración iOS (Apple)
             apns: {
                 headers: {
-                    "apns-priority": "10", // 10 = Envío inmediato (necesario para alertas)
-                    "apns-push-type": "alert" // Obligatorio para que se muestre el banner
+                    "apns-priority": "10"
                 },
                 payload: {
                     aps: {
@@ -2241,23 +2281,68 @@ exports.sendPushOnNotificationCreate = onDocumentWritten("notifications/{notific
                     }
                 }
             },
+            token: fcmToken,
+            // Datos para que al tocar la notificación se abra la vista correcta
             data: {
-                url: notifData.link || "/",
-                type: notifData.type || 'general',
-                isUrgent: notifData.type === 'admin_urgent_alert' ? 'true' : 'false'
-            },
-            token: fcmToken
+                url: notifData.link || "/dashboard-general", 
+                projectId: notifData.projectId || "",
+                taskId: notifData.taskId || "",
+                type: notifData.type || 'general'
+            }
         };
 
         // 5. Enviar
         await getMessaging().send(messagePayload);
-        console.log(`Push enviado a ${userData.firstName}`);
+        console.log(`Push enviado a ${userData.firstName} (${notifData.type})`);
 
     } catch (error) {
         console.error("Error enviando Push:", error);
-        // Si el token no sirve, lo borramos
+        // Si el token es inválido (app desinstalada), lo borramos
         if (error.code === 'messaging/registration-token-not-registered') {
             await db.doc(`users/${userId}`).update({ fcmToken: FieldValue.delete() });
         }
+    }
+});
+
+// --- IMPORTACIONES NECESARIAS PARA BACKUPS ---
+// Nota: Asegúrate de haber instalado: npm install @google-cloud/firestore
+const { Firestore } = require('@google-cloud/firestore');
+const client = new Firestore.v1.FirestoreAdminClient();
+
+/**
+ * BACKUPS AUTOMATIZADOS
+ * Exporta toda la base de datos a Google Cloud Storage.
+ * Frecuencia: Todos los domingos a las 3:00 AM.
+ */
+exports.scheduledFirestoreExport = onSchedule({
+    schedule: 'every sunday 03:00',
+    timeZone: 'America/Bogota',
+    timeoutSeconds: 540, // 9 minutos máximo para operaciones largas
+    memory: '512MiB'
+}, async (event) => {
+    const projectId = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT;
+    
+    // 1. CONFIGURACIÓN
+    // ¡IMPORTANTE! Reemplaza esto con el nombre exacto del bucket que creaste en el Paso 1
+    // Ejemplo: 'gs://vidriosexito-backups'
+    const BUCKET_NAME = `gs://${projectId}-backups`; 
+
+    const databaseName = client.databasePath(projectId, '(default)');
+
+    try {
+        console.log(`Iniciando exportación de base de datos para: ${projectId}`);
+        
+        // 2. Ejecutar la exportación
+        const [response] = await client.exportDocuments({
+            name: databaseName,
+            outputUriPrefix: BUCKET_NAME,
+            // Dejar collectionIds vacío exporta TODAS las colecciones
+            collectionIds: [] 
+        });
+
+        console.log(`Operación de backup iniciada exitosamente: ${response.name}`);
+    } catch (err) {
+        console.error("Error crítico en el backup automático:", err);
+        throw new Error('Falló la exportación de la base de datos');
     }
 });

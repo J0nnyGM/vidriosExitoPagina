@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: 'class', // <--- AGREGAR ESTA LÍNEA
   content: [
     "./index.html",
     "./js/app.js",
@@ -12,6 +13,9 @@ module.exports = {
     "./js/ingresopersonal.js",
     "./js/herramientas.js" // <-- Asegúrate que esta línea esté
   ],
+
+
+
   theme: {
     extend: {
       // --- INICIO DE MODIFICACIÓN ---

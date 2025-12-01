@@ -982,7 +982,7 @@ async function checkUserSSTStatus(userId) {
 async function loadSSTUserProfile(userId, container) {
     const usersMap = _getUsersMap();
     const user = usersMap.get(userId);
-    
+
     const SST_USER_CATS = [
         { id: 'sst_alturas', label: 'Curso de Alturas', icon: 'fa-person-falling', color: 'text-orange-600', requiresDate: true, dateLabel: 'Realización', validityMonths: 18 },
         { id: 'sst_aptitud', label: 'Certificado de Aptitud', icon: 'fa-clipboard-check', color: 'text-emerald-600', requiresDate: true, dateLabel: 'Realización', validityMonths: 12 },
@@ -990,7 +990,7 @@ async function loadSSTUserProfile(userId, container) {
         { id: 'sst_otros', label: 'Otros (SST)', icon: 'fa-folder-plus', color: 'text-gray-600', requiresDate: false }
     ];
 
-container.innerHTML = `
+    container.innerHTML = `
         <div class="max-w-4xl mx-auto space-y-6">
             
             <div class="flex justify-between items-center mb-4">
@@ -1032,7 +1032,7 @@ container.innerHTML = `
 
     document.getElementById('btn-back-sst-table').addEventListener('click', () => {
         // Recargamos la tabla en el MISMO contenedor para no borrar el menú superior
-        loadSSTColaboradoresSubTab(container); 
+        loadSSTColaboradoresSubTab(container);
     });
 
     // --- NUEVO LISTENER PARA EL BOTÓN ZIP ---
@@ -1043,7 +1043,7 @@ container.innerHTML = `
     const cardsContainer = document.getElementById('sst-user-cards');
     const othersContainer = document.getElementById('sst-others-grid');
     const fileInput = document.getElementById('sst-user-upload-input');
-    
+
     let activeCatConfig = null;
 
     const renderCards = async () => {
@@ -1063,18 +1063,18 @@ container.innerHTML = `
         SST_USER_CATS.filter(c => c.id !== 'sst_otros').forEach(cat => {
             const docData = docsMap.get(cat.id);
             const card = document.createElement('div');
-            
+
             if (docData) {
                 let statusHtml = '<span class="text-xs font-bold text-green-600 bg-green-100 px-2 py-1 rounded">Vigente</span>';
                 let dateInfo = '';
-                
+
                 if (docData.expiresAt) {
                     const expDate = docData.expiresAt.toDate();
-                    const today = new Date(); today.setHours(0,0,0,0);
+                    const today = new Date(); today.setHours(0, 0, 0, 0);
                     const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
-                    
+
                     dateInfo = `<p class="text-xs text-gray-500 mt-1">Vence: <strong>${expDate.toLocaleDateString('es-CO')}</strong></p>`;
-                    
+
                     if (diffDays < 0) statusHtml = '<span class="text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded">VENCIDO</span>';
                     else if (diffDays <= 30) statusHtml = '<span class="text-xs font-bold text-yellow-700 bg-yellow-100 px-2 py-1 rounded">Vence Pronto</span>';
                 }
@@ -1101,16 +1101,16 @@ container.innerHTML = `
                         </button>
                     </div>
                 `;
-                
-                card.querySelector('.btn-delete-sst').addEventListener('click', function() {
-                     if(_openConfirmModal) _openConfirmModal("¿Eliminar este certificado? Se perderá el historial.", async () => {
+
+                card.querySelector('.btn-delete-sst').addEventListener('click', function () {
+                    if (_openConfirmModal) _openConfirmModal("¿Eliminar este certificado? Se perderá el historial.", async () => {
                         try {
                             await deleteObject(ref(_storage, this.dataset.path));
                             await deleteDoc(doc(_db, "users", userId, "documents", this.dataset.id));
                             window.showToast("Certificado eliminado.", "success");
                             renderCards();
                         } catch (e) { console.error(e); window.showToast("Error al borrar.", "error"); }
-                     });
+                    });
                 });
 
             } else {
@@ -1133,7 +1133,7 @@ container.innerHTML = `
 
         // Renderizar Otros
         if (otherDocs.length === 0) othersContainer.innerHTML = '<p class="col-span-3 text-center text-xs text-gray-400 italic">No hay otros documentos.</p>';
-        
+
         otherDocs.forEach(doc => {
             const card = document.createElement('div');
             card.className = "bg-white p-3 rounded border border-gray-200 shadow-sm flex justify-between items-center";
@@ -1143,16 +1143,18 @@ container.innerHTML = `
                     <p class="text-[10px] text-gray-400">${doc.uploadedAt ? doc.uploadedAt.toDate().toLocaleDateString() : ''}</p>
                 </div>
                 <div class="flex gap-1">
-                    <a href="${doc.url}" target="_blank" class="p-1.5 text-blue-600 bg-blue-50 rounded"><i class="fa-solid fa-eye"></i></a>
+                    <button type="button" onclick="window.viewDocument('${doc.url}', '${doc.name}')" class="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded transition-colors" title="Ver documento">
+                        <i class="fa-solid fa-eye"></i>
+                    </button>
                     <button class="btn-del p-1.5 text-red-600 bg-red-50 rounded" data-path="${doc.storagePath}" data-id="${doc.id}"><i class="fa-solid fa-trash"></i></button>
                 </div>
             `;
-             card.querySelector('.btn-del').addEventListener('click', function() {
-                 if(_openConfirmModal) _openConfirmModal("¿Borrar?", async () => {
+            card.querySelector('.btn-del').addEventListener('click', function () {
+                if (_openConfirmModal) _openConfirmModal("¿Borrar?", async () => {
                     await deleteObject(ref(_storage, this.dataset.path));
                     await deleteDoc(doc(_db, "users", userId, "documents", this.dataset.id));
                     renderCards();
-                 });
+                });
             });
             othersContainer.appendChild(card);
         });
@@ -1174,32 +1176,32 @@ container.innerHTML = `
         let desc = activeCatConfig.label;
 
         if (activeCatConfig.requiresDate) {
-             // USAMOS EL MODAL TIPO FECHA
-             const dStr = await openCustomInputModal(
-                `Registrar ${activeCatConfig.label}`, 
-                `Fecha de ${activeCatConfig.dateLabel || 'Realización'} (AAAA-MM-DD):`, 
+            // USAMOS EL MODAL TIPO FECHA
+            const dStr = await openCustomInputModal(
+                `Registrar ${activeCatConfig.label}`,
+                `Fecha de ${activeCatConfig.dateLabel || 'Realización'} (AAAA-MM-DD):`,
                 "date"
             );
 
             if (!dStr) { resetInput(); return; }
-            
+
             executedDate = new Date(dStr + 'T00:00:00');
             if (isNaN(executedDate.getTime())) {
                 window.showToast("Fecha inválida.", "error");
-                resetInput(); 
-                return; 
+                resetInput();
+                return;
             }
 
             expDate = new Date(executedDate);
             expDate.setMonth(expDate.getMonth() + activeCatConfig.validityMonths);
-            
+
             window.showToast(`Vencimiento calculado: ${expDate.toLocaleDateString()}`, "info");
-        
+
         } else if (activeCatConfig.id === 'sst_otros') {
-             desc = await openCustomInputModal(
-                "Nuevo Documento SST", 
-                "Descripción del documento:", 
-                "text", 
+            desc = await openCustomInputModal(
+                "Nuevo Documento SST",
+                "Descripción del documento:",
+                "text",
                 "Ej: Entrega de EPP especial..."
             );
             if (!desc) { resetInput(); return; }
@@ -1211,7 +1213,7 @@ container.innerHTML = `
             const path = `expedientes/${userId}/SST/${activeCatConfig.id}_${Date.now()}_${file.name}`;
             const snap = await uploadBytes(ref(_storage, path), file);
             const url = await getDownloadURL(snap.ref);
-            
+
             const data = {
                 name: file.name, category: activeCatConfig.id, description: desc,
                 url: url, storagePath: path, uploadedAt: serverTimestamp(), uploadedBy: _getCurrentUserId()
@@ -1221,11 +1223,11 @@ container.innerHTML = `
             await addDoc(collection(_db, "users", userId, "documents"), data);
             window.showToast("Guardado.", "success");
             renderCards();
-        } catch (e) { 
-            console.error(e); 
-            window.showToast("Error en la subida.", "error"); 
-        } finally { 
-            resetInput(); 
+        } catch (e) {
+            console.error(e);
+            window.showToast("Error en la subida.", "error");
+        } finally {
+            resetInput();
         }
     });
 
@@ -1594,11 +1596,11 @@ async function loadProductividadTab(container) {
         let count = 0;
         const startDate = new Date(year, month - 1, 1);
         const today = new Date();
-        today.setHours(0,0,0,0);
+        today.setHours(0, 0, 0, 0);
 
         let endDate = new Date(year, month, 0);
         if (year === today.getFullYear() && (month - 1) === today.getMonth()) {
-            endDate = today; 
+            endDate = today;
         } else if (endDate > today) {
             return 0;
         }
@@ -1641,7 +1643,7 @@ async function loadProductividadTab(container) {
             }
 
             const statPromises = activeUsers.map(op => getDoc(doc(_db, "employeeStats", op.id, "monthlyStats", currentStatDocId)));
-            
+
             const attendancePromises = activeUsers.map(op => {
                 const q = query(
                     collection(_db, "users", op.id, "attendance_reports"),
@@ -1683,7 +1685,7 @@ async function loadProductividadTab(container) {
 
                 const level = data.commissionLevel || 'principiante';
                 const levelText = level.charAt(0).toUpperCase() + level.slice(1);
-                
+
                 // --- CORRECCIÓN AQUÍ: Usamos data.role ---
                 const roleRaw = data.role || 'operario';
                 // Capitalizar primera letra (ej: "admin" -> "Admin")
@@ -2053,7 +2055,7 @@ export async function showEmpleadoDetails(userId) {
     safeSetText('empleado-details-email', user.email || 'N/A');
     safeSetText('empleado-details-phone', user.phone || 'N/A');
     safeSetText('empleado-details-address', user.address || 'N/A');
-    
+
     // Datos Bancarios (Estos son los que probablemente causaban el error)
     safeSetText('empleado-details-bank', user.bankName || 'No registrado');
     safeSetText('empleado-details-account-type', user.accountType || 'N/A');
@@ -2062,7 +2064,7 @@ export async function showEmpleadoDetails(userId) {
     // --- 2. CONFIGURACIÓN DE PESTAÑAS ---
     const tabsNav = document.getElementById('empleado-details-tabs-nav');
     if (tabsNav) {
-        const newTabsNav = tabsNav.cloneNode(false); 
+        const newTabsNav = tabsNav.cloneNode(false);
         tabsNav.parentNode.replaceChild(newTabsNav, tabsNav);
 
         newTabsNav.innerHTML = `
@@ -2091,7 +2093,7 @@ export async function showEmpleadoDetails(userId) {
                 btn.classList.remove('active', 'border-blue-500', 'text-blue-600');
                 btn.classList.add('border-transparent', 'text-gray-500');
             });
-            
+
             button.classList.add('active', 'border-blue-500', 'text-blue-600');
             button.classList.remove('border-transparent', 'text-gray-500');
 
@@ -2116,7 +2118,7 @@ export async function showEmpleadoDetails(userId) {
                     b.classList.remove('bg-blue-100', 'text-blue-700', 'border-blue-200');
                     b.classList.add('bg-gray-100', 'text-gray-600', 'border-gray-200');
                 });
-                
+
                 btn.classList.remove('bg-gray-100', 'text-gray-600', 'border-gray-200');
                 btn.classList.add('bg-blue-100', 'text-blue-700', 'border-blue-200');
 
@@ -2143,11 +2145,11 @@ function switchEmpleadoDetailsTab(tabName, userId) {
 
     // 2. Buscar o Crear Contenedor
     let activeContent = document.getElementById(`empleado-tab-${tabName}`);
-    
+
     // Si no existe el div de la pestaña, lo creamos dinámicamente
     if (!activeContent) {
-        const parentContainer = document.getElementById('empleado-details-content-container') || 
-                                document.getElementById('empleado-details'); 
+        const parentContainer = document.getElementById('empleado-details-content-container') ||
+            document.getElementById('empleado-details');
         if (parentContainer) {
             activeContent = document.createElement('div');
             activeContent.id = `empleado-tab-${tabName}`;
@@ -2157,16 +2159,16 @@ function switchEmpleadoDetailsTab(tabName, userId) {
     }
 
     // 3. Mostrar el contenedor
-    if(activeContent) activeContent.classList.remove('hidden');
+    if (activeContent) activeContent.classList.remove('hidden');
 
     // 4. Lógica por pestaña
     switch (tabName) {
-case 'resumen':
+        case 'resumen':
             // --- CORRECCIÓN: Verificamos si falta la NUEVA sección específica ---
             // Si no encuentra el ID 'resumen-asistencia-kpi', sobrescribe todo el HTML
             // para asegurar que tengamos la estructura completa (Gráfica + Reporte).
             if (!activeContent.querySelector('#resumen-asistencia-kpi')) {
-                 activeContent.innerHTML = `
+                activeContent.innerHTML = `
                     <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
                         <h4 class="text-sm font-bold text-gray-500 uppercase mb-4">Productividad (Últimos 6 Meses)</h4>
                         <div class="relative h-64">
@@ -2208,15 +2210,15 @@ case 'resumen':
                     </div>
                 `;
             }
-            
+
             // Cargar los datos (Ahora sí encontrará los contenedores)
             loadEmpleadoResumenTab(userId);
             break;
-            
+
         case 'asistencia':
             // Inyectamos la estructura de la pestaña completa de asistencia
             if (!activeContent.innerHTML.trim()) {
-                 activeContent.innerHTML = `
+                activeContent.innerHTML = `
                     <div class="flex justify-between items-center bg-white p-4 rounded-lg shadow border border-gray-200 mb-6">
                         <h3 class="text-lg font-bold text-gray-800">Historial de Asistencia</h3>
                         <div class="flex gap-2">
@@ -2249,7 +2251,7 @@ case 'resumen':
                 `;
             }
             loadAttendanceTab(userId, 7);
-            setTimeout(() => { if(attendanceMapInstance) attendanceMapInstance.invalidateSize(); }, 200);
+            setTimeout(() => { if (attendanceMapInstance) attendanceMapInstance.invalidateSize(); }, 200);
             break;
 
         case 'documentos':
@@ -2334,7 +2336,7 @@ async function loadEmpleadoResumenTab(userId) {
         );
 
         const snapshot = await getDocs(q);
-        
+
         if (snapshot.empty) {
             kpiContainer.innerHTML = `<div class="col-span-3 text-center text-gray-400 text-sm italic">Sin registros de ingreso recientes.</div>`;
             tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-400 text-xs">No hay datos.</td></tr>`;
@@ -2412,14 +2414,14 @@ async function loadEmpleadoResumenTab(userId) {
                     <td class="px-4 py-2 font-medium text-gray-700">${dateStr}</td>
                     <td class="px-4 py-2 text-blue-600 font-bold">${timeStr}</td>
                     <td class="px-4 py-2 text-center">
-                        ${r.photoURL ? 
-                        `<button onclick="window.openImageModal('${r.photoURL}')" class="text-gray-400 hover:text-indigo-600 transition-colors" title="Ver Evidencia"><i class="fa-regular fa-image"></i></button>` 
-                        : '<span class="text-gray-300">-</span>'}
+                        ${r.photoURL ?
+                    `<button onclick="window.openImageModal('${r.photoURL}')" class="text-gray-400 hover:text-indigo-600 transition-colors" title="Ver Evidencia"><i class="fa-regular fa-image"></i></button>`
+                    : '<span class="text-gray-300">-</span>'}
                     </td>
                     <td class="px-4 py-2 text-center">
-                        ${lat && lng ? 
-                        `<a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" target="_blank" class="text-gray-400 hover:text-green-600 transition-colors" title="Ver Mapa"><i class="fa-solid fa-map-location-dot"></i></a>` 
-                        : '<span class="text-gray-300">-</span>'}
+                        ${lat && lng ?
+                    `<a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" target="_blank" class="text-gray-400 hover:text-green-600 transition-colors" title="Ver Mapa"><i class="fa-solid fa-map-location-dot"></i></a>`
+                    : '<span class="text-gray-300">-</span>'}
                     </td>
                 </tr>
             `;
@@ -3776,7 +3778,7 @@ async function openBatchDownloadModal(user) {
             // UI Loading state
             btnDownload.disabled = true;
             btnDownload.innerHTML = `<div class="loader-small-white mr-2"></div> Comprimiendo...`;
-            
+
             const zip = new JSZip();
             const folderName = `Documentos_${userName}`;
             const folder = zip.folder(folderName);
@@ -3787,7 +3789,7 @@ async function openBatchDownloadModal(user) {
                     const url = checkbox.dataset.url;
                     const originalName = checkbox.dataset.name;
                     const category = checkbox.dataset.cat;
-                    
+
                     // Limpiar nombre para evitar errores en el zip
                     const safeName = originalName.replace(/[^a-z0-9.\-_]/gi, '_');
                     // Opcional: Prefijo de categoría para ordenar carpeta
@@ -3805,10 +3807,10 @@ async function openBatchDownloadModal(user) {
 
                 // Generar ZIP
                 const content = await zip.generateAsync({ type: "blob" });
-                
+
                 // Guardar
                 saveAs(content, `${folderName}.zip`);
-                
+
                 window.showToast("Archivo descargado correctamente.", "success");
                 document.getElementById(modalId).remove();
 
@@ -3839,14 +3841,14 @@ let attendanceMarkersLayer = null;
 async function loadAttendanceTab(userId, days = 7) {
     const listBody = document.getElementById('attendance-list-body');
     const chartCanvas = document.getElementById('attendance-chart');
-    
-    if(!listBody || !chartCanvas) return;
+
+    if (!listBody || !chartCanvas) return;
 
     // 1. Calcular rango de fechas
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
     startDate.setHours(0, 0, 0, 0); // Aseguramos inicio del día
-    
+
     // Limpiar UI
     listBody.innerHTML = '<tr><td colspan="5" class="text-center py-4"><div class="loader mx-auto"></div></td></tr>';
 
@@ -3871,8 +3873,8 @@ async function loadAttendanceTab(userId, days = 7) {
 
         if (reports.length === 0) {
             listBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">No hay registros en este periodo.</td></tr>';
-            if(attendanceChartInstance) attendanceChartInstance.destroy();
-            
+            if (attendanceChartInstance) attendanceChartInstance.destroy();
+
             // Limpiar mapa si existe
             if (attendanceMarkersLayer) attendanceMarkersLayer.clearLayers();
             return;
@@ -3884,12 +3886,12 @@ async function loadAttendanceTab(userId, days = 7) {
         reportsForChart.forEach(report => {
             const dateObj = report.timestamp.toDate();
             const dateStr = dateObj.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
-            
+
             // Convertir hora a decimal para la gráfica (Ej: 8:30 -> 8.5)
             const hours = dateObj.getHours();
             const minutes = dateObj.getMinutes();
             const timeDecimal = hours + (minutes / 60);
-            
+
             chartLabels.push(dateStr);
             chartData.push(timeDecimal);
         });
@@ -3899,7 +3901,7 @@ async function loadAttendanceTab(userId, days = 7) {
             const dateObj = report.timestamp.toDate();
             const dateStr = dateObj.toLocaleDateString('es-CO');
             const timeStr = dateObj.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true });
-            
+
             const lat = report.location?.lat;
             const lng = report.location?.lng;
             const hasLocation = lat && lng;
@@ -3920,14 +3922,14 @@ async function loadAttendanceTab(userId, days = 7) {
                 <td class="px-6 py-4 font-medium text-gray-900">${dateStr}</td>
                 <td class="px-6 py-4 font-bold text-blue-600">${timeStr}</td>
                 <td class="px-6 py-4 text-center">
-                    ${report.photoURL ? 
-                        `<button onclick="window.openImageModal('${report.photoURL}')" class="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded border border-indigo-100 hover:bg-indigo-100 transition-colors">Ver Foto</button>` 
-                        : '<span class="text-gray-400">-</span>'}
+                    ${report.photoURL ?
+                    `<button onclick="window.openImageModal('${report.photoURL}')" class="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded border border-indigo-100 hover:bg-indigo-100 transition-colors">Ver Foto</button>`
+                    : '<span class="text-gray-400">-</span>'}
                 </td>
                 <td class="px-6 py-4 text-center">
-                    ${hasLocation ? 
-                        `<a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" target="_blank" class="text-green-500 hover:text-green-700" title="Abrir en Google Maps"><i class="fa-solid fa-map-location-dot text-xl"></i></a>` 
-                        : '<span class="text-gray-300"><i class="fa-solid fa-location-slash"></i></span>'}
+                    ${hasLocation ?
+                    `<a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" target="_blank" class="text-green-500 hover:text-green-700" title="Abrir en Google Maps"><i class="fa-solid fa-map-location-dot text-xl"></i></a>`
+                    : '<span class="text-gray-300"><i class="fa-solid fa-location-slash"></i></span>'}
                 </td>
                 <td class="px-6 py-4 text-xs text-gray-500 truncate max-w-[150px]" title="${report.device || ''}">${deviceName}</td>
             `;
@@ -3978,7 +3980,7 @@ function renderAttendanceChart(canvas, labels, data) {
                     min: 6, // 6:00 AM
                     max: 12, // 12:00 PM (ajustable)
                     ticks: {
-                        callback: function(value) {
+                        callback: function (value) {
                             const hours = Math.floor(value);
                             const minutes = Math.round((value - hours) * 60);
                             const ampm = hours >= 12 ? 'PM' : 'AM';
@@ -3992,7 +3994,7 @@ function renderAttendanceChart(canvas, labels, data) {
             plugins: {
                 tooltip: {
                     callbacks: {
-                        label: function(context) {
+                        label: function (context) {
                             const value = context.raw;
                             const hours = Math.floor(value);
                             const minutes = Math.round((value - hours) * 60);
@@ -4014,7 +4016,7 @@ function renderAttendanceMap(points) {
         // Coordenadas por defecto (Colombia) o la primera del punto
         const center = points.length > 0 ? [points[0].lat, points[0].lng] : [4.6097, -74.0817];
         attendanceMapInstance = L.map('attendance-map').setView(center, 12);
-        
+
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(attendanceMapInstance);
@@ -4030,7 +4032,7 @@ function renderAttendanceMap(points) {
 
     if (points.length > 0) {
         const group = new L.featureGroup();
-        
+
         points.forEach(p => {
             const marker = L.marker([p.lat, p.lng])
                 .bindPopup(`<b>${p.date}</b>`)

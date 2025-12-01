@@ -1,7 +1,7 @@
 // Importaciones de Firebase
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment, limit, serverTimestamp, arrayRemove, documentId } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js"; // <-- AÑADIDO documentId
+import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment, limit, serverTimestamp, arrayRemove, documentId,enableIndexedDbPersistence,CACHE_SIZE_UNLIMITED } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js"; // <-- AÑADIDO documentId
 import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app-check.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
@@ -42,6 +42,20 @@ const auth = getAuth(app);
 const storage = getStorage(app);
 const messaging = getMessaging(app);
 const functions = getFunctions(app, 'us-central1'); // ASEGÚRATE DE QUE ESTA LÍNEA EXISTA
+
+
+// --- INICIO CONFIGURACIÓN OFFLINE ---
+enableIndexedDbPersistence(db)
+  .catch((err) => {
+      if (err.code == 'failed-precondition') {
+          // Falló porque hay múltiples pestañas abiertas a la vez
+          console.warn("La persistencia offline solo funciona con una pestaña abierta a la vez.");
+      } else if (err.code == 'unimplemented') {
+          // El navegador no soporta esta característica
+          console.warn("El navegador no soporta persistencia offline.");
+      }
+  });
+// --- FIN CONFIGURACIÓN OFFLINE ---
 
 let unsubscribeTasks = null; // <-- AÑADE ESTA LÍNEA
 let unsubscribeReports = null;
@@ -235,6 +249,7 @@ function showAuthView(viewName) {
 // --- INICIO: FUNCIÓN DE HELPER (Copiada de dotacion.js) ---
 function resizeImage(file, maxWidth = 800) {
     return new Promise((resolve, reject) => {
+        
         const reader = new FileReader();
         reader.onload = (event) => {
             const img = new Image();
@@ -260,10 +275,13 @@ function resizeImage(file, maxWidth = 800) {
             img.onerror = reject;
             img.src = event.target.result;
         };
-        reader.onerror = reject;
+        reader.onerror = reject;    
         reader.readAsDataURL(file);
     });
 }
+
+window.resizeImage = resizeImage;
+
 // --- FIN: FUNCIÓN DE HELPER ---
 
 // --- INICIO DE NUEVO CÓDIGO (FACE-API) ---
@@ -3848,25 +3866,47 @@ function isMobileDevice() {
 }
 
 /**
- * Abre un documento, ya sea en un modal (escritorio) or en una nueva pestaña (móvil).
- * @param {string} url - La URL del documento a mostrar.
- * @param {string} name - El nombre del documento para mostrarlo en el título.
+ * Abre un documento (PDF o Imagen) en el visor integrado.
+ * @param {string} url - URL del archivo.
+ * @param {string} title - Título para la ventana.
  */
-function viewDocument(url, name = 'Documento') {
-    if (isMobileDevice()) {
-        // En móvil, abre una nueva pestaña.
-        window.open(url, '_blank');
-    } else {
-        // En escritorio, abre el modal.
-        const modal = document.getElementById('document-display-modal');
-        const iframe = document.getElementById('document-iframe');
-        const title = document.getElementById('document-display-title');
+function viewDocument(url, title = 'Visor de Documentos') {
+    const modal = document.getElementById('document-display-modal');
+    const iframe = document.getElementById('document-iframe');
+    const titleEl = document.getElementById('document-display-title');
+    const closeBtn = document.getElementById('document-display-close-btn');
 
-        iframe.src = url;
-        title.textContent = name;
-        modal.style.display = 'flex';
-    }
+    if (!modal || !iframe) return;
+
+    // 1. Configurar Modal
+    titleEl.textContent = title;
+    
+    // 2. Detectar tipo de archivo para mejor visualización
+    // Si es PDF, usamos el visor nativo del navegador dentro del iframe
+    iframe.src = url;
+
+    // 3. Mostrar
+    modal.classList.remove('hidden');
+    modal.classList.add('flex'); // Aseguramos display flex para centrado
+
+    // 4. Configurar Cierre
+    const closeModal = () => {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        iframe.src = 'about:blank'; // Limpiar para detener carga/audio/video
+    };
+
+    closeBtn.onclick = closeModal;
+    
+    // Cerrar al hacer clic fuera (backdrop)
+    modal.onclick = (e) => {
+        if (e.target === modal) closeModal();
+    };
 }
+
+// Exponer globalmente
+window.viewDocument = viewDocument;
+
 
 function openDocumentViewerModal(docType, docs) {
     const modal = document.getElementById('document-viewer-modal');
@@ -7349,11 +7389,11 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
         }
-        case 'editUser':
+  case 'editUser':
             title = 'Editar Usuario';
             btnText = 'Guardar Cambios';
             btnClass = 'bg-yellow-500 hover:bg-yellow-600';
-            modalContentDiv.classList.add('max-w-2xl'); // Aseguramos el ancho
+            modalContentDiv.classList.add('max-w-2xl');
 
             bodyHtml = `
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -7449,8 +7489,18 @@ async function openMainModal(type, data = {}) {
                     </div>
 
                     <div class="md:col-span-3 border-t pt-4">
-                        <h4 class="text-md font-semibold text-gray-700 mb-2">Compensación</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <h4 class="text-md font-semibold text-gray-700 mb-2">Rol y Compensación</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label for="user-role-select" class="block text-sm font-medium text-gray-700">Rol de Usuario</label>
+                                <select id="user-role-select" name="role" class="mt-1 block w-full px-3 py-2 border rounded-md bg-white font-bold text-gray-700">
+                                    <option value="operario" ${data.role === 'operario' ? 'selected' : ''}>Operario</option>
+                                    <option value="admin" ${data.role === 'admin' ? 'selected' : ''}>Administrador</option>
+                                    <option value="bodega" ${data.role === 'bodega' ? 'selected' : ''}>Bodega</option>
+                                    <option value="sst" ${data.role === 'sst' ? 'selected' : ''}>SST</option>
+                                </select>
+                            </div>
+
                             <div>
                                 <label for="user-commissionLevel" class="block text-sm font-medium text-gray-700">Nivel de Comisión</label>
                                 <select id="user-commissionLevel" name="commissionLevel" class="mt-1 block w-full px-3 py-2 border rounded-md bg-white">
@@ -7459,13 +7509,11 @@ async function openMainModal(type, data = {}) {
                                     <option value="avanzado" ${data.commissionLevel === 'avanzado' ? 'selected' : ''}>Avanzado</option>
                                     <option value="" ${!data.commissionLevel ? 'selected' : ''}>Ninguno (No comisiona)</option>
                                 </select>
-                                <p class="text-xs text-gray-500 mt-1">Define la tarifa por M².</p>
                             </div>
                             
                             <div>
                                 <label for="user-salarioBasico" class="block text-sm font-medium text-gray-700">Salario Básico</label>
                                 <input type="text" id="user-salarioBasico" name="salarioBasico" class="currency-input mt-1 block w-full px-3 py-2 border rounded-md" value="${data.salarioBasico || 0}">
-                                <p class="text-xs text-gray-500 mt-1">Valor base mensual.</p>
                             </div>
                         </div>
 
@@ -7475,7 +7523,6 @@ async function openMainModal(type, data = {}) {
                                 Aplicar deducciones (Salud/Pensión) sobre el Salario Mínimo
                             </label>
                         </div>
-                        <p class="text-xs text-gray-500 mt-1 ml-6">Si no se marca, las deducciones se calculan sobre el total devengado (Básico + Bonos + Horas Extra).</p>
                     </div>
 
                     <div class="md:col-span-3 border-t pt-4 mt-2">
@@ -7486,20 +7533,17 @@ async function openMainModal(type, data = {}) {
                         
                         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200 max-h-60 overflow-y-auto custom-scrollbar">
                             ${(() => {
-                    // Obtenemos los defaults del rol actual del usuario
+                    // Generación inicial basada en el rol actual
                     const roleDefaults = getRoleDefaultPermissions(data.role || 'operario');
 
                     return SIDEBAR_CONFIG.map(mod => {
                         const currentPerm = (data.customPermissions && data.customPermissions[mod.key]);
-
-                        // Lógica para saber si el checkbox debe estar marcado:
-                        // Está marcado SI (Tiene permiso Custom 'show') O (Es Default True Y NO tiene 'hide')
+                        // Lógica inicial de marcado
                         const isChecked = (currentPerm === 'show') || (roleDefaults[mod.key] && currentPerm !== 'hide');
 
-                        // Estilo visual para indicar si es un permiso heredado o modificado (opcional, para feedback visual)
                         let labelClass = "text-gray-700";
-                        if (currentPerm === 'show') labelClass = "text-green-700 font-bold"; // Forzado a mostrar
-                        if (currentPerm === 'hide') labelClass = "text-red-500 line-through"; // Forzado a ocultar (aunque el checkbox estará desmarcado)
+                        if (currentPerm === 'show') labelClass = "text-green-700 font-bold";
+                        if (currentPerm === 'hide') labelClass = "text-red-500 line-through";
 
                         return `
                                     <label class="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-1 rounded">
@@ -7507,14 +7551,14 @@ async function openMainModal(type, data = {}) {
                                             class="permission-checkbox h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
                                             ${isChecked ? 'checked' : ''}
                                             data-key="${mod.key}">
-                                        <span class="text-xs ${labelClass}">${mod.label}</span>
+                                        <span class="text-xs ${labelClass} permission-label">${mod.label}</span>
                                     </label>
                                     `;
                     }).join('');
                 })()}
                         </div>
                         <p class="text-[10px] text-gray-500 mt-2">
-                            * Marca las casillas para dar acceso. Desmarca para restringir. El sistema guardará automáticamente la excepción según el rol.
+                            * Al cambiar el rol, los permisos se reiniciarán a los valores por defecto del nuevo rol.
                         </p>
                     </div>
 
@@ -7526,38 +7570,54 @@ async function openMainModal(type, data = {}) {
                 </div>
             `;
 
-            // Lógica JS para inicializar el modal (Fotos y Moneda)
+            // Lógica JS para inicializar el modal
             setTimeout(() => {
                 // 1. Moneda
                 const salarioInput = document.getElementById('user-salarioBasico');
                 if (salarioInput) setupCurrencyInput(salarioInput);
 
-                // 2. Fotos (Cámara y Upload)
+                // 2. Fotos
                 processedPhotoFile = null;
                 const fileInput = document.getElementById('editUser-photo-input');
                 const uploadBtn = document.getElementById('editUser-upload-btn');
                 const cameraBtn = document.getElementById('editUser-camera-btn');
 
-                if (uploadBtn && fileInput) {
-                    uploadBtn.addEventListener('click', () => fileInput.click());
-                }
-
+                if (uploadBtn && fileInput) uploadBtn.addEventListener('click', () => fileInput.click());
                 if (fileInput) {
                     fileInput.addEventListener('change', (e) => {
                         const file = e.target.files[0];
-                        if (file) {
-                            handlePhotoFile(file, 'editUser-photo-input', 'editUser-img-preview');
-                        }
+                        if (file) handlePhotoFile(file, 'editUser-photo-input', 'editUser-img-preview');
                     });
                 }
-
                 if (cameraBtn) {
-                    cameraBtn.addEventListener('click', () => {
-                        openCameraModal('editUser-photo-input', 'editUser-img-preview');
+                    cameraBtn.addEventListener('click', () => openCameraModal('editUser-photo-input', 'editUser-img-preview'));
+                }
+
+                // 3. ACTUALIZACIÓN DINÁMICA DE MÓDULOS AL CAMBIAR ROL (NUEVO)
+                const roleSelect = document.getElementById('user-role-select');
+                const permissionCheckboxes = document.querySelectorAll('.permission-checkbox');
+                const permissionLabels = document.querySelectorAll('.permission-label');
+
+                if (roleSelect) {
+                    roleSelect.addEventListener('change', (e) => {
+                        const newRole = e.target.value;
+                        const newDefaults = getRoleDefaultPermissions(newRole);
+
+                        // Reiniciamos todos los checkboxes según el nuevo rol
+                        permissionCheckboxes.forEach((chk, index) => {
+                            const key = chk.dataset.key;
+                            // Forzamos el estado según el default del nuevo rol
+                            chk.checked = !!newDefaults[key];
+                            
+                            // Reseteamos estilos visuales (quitamos tachado o negrita de permisos custom previos)
+                            if(permissionLabels[index]) {
+                                permissionLabels[index].className = "text-xs text-gray-700 permission-label";
+                            }
+                        });
                     });
                 }
-            }, 100);
 
+            }, 100);
             break;
 
 
@@ -11132,9 +11192,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const checkinModal = target.closest('#safety-checkin-modal');
         if (checkinModal) {
 
-  // 1. DETECTAR EL BOTÓN CORRECTAMENTE (Corrección aquí)
+            // 1. DETECTAR EL BOTÓN CORRECTAMENTE (Corrección aquí)
             const scanBtn = target.closest('#checkin-take-photo-btn');
-            
+
             // Botón: ESCANEAR ROSTRO
             if (scanBtn) {
                 const faceStatus = document.getElementById('checkin-face-status');
@@ -11145,11 +11205,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 scanBtn.disabled = true;
                 // Guardamos el contenido original por si falla
-                const originalContent = scanBtn.innerHTML; 
+                const originalContent = scanBtn.innerHTML;
                 scanBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> <span>Procesando...</span>';
-                
+
                 // Activar efecto láser
-                if(scannerLine) {
+                if (scannerLine) {
                     scannerLine.classList.remove('hidden');
                     scannerLine.classList.add('animate-scan');
                 }
@@ -11169,7 +11229,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
                     // 2. Pausar video para efecto de "captura"
-                    videoEl.pause(); 
+                    videoEl.pause();
 
                     // 3. Detección Facial
                     faceStatus.textContent = 'Analizando biometría...';
@@ -11180,7 +11240,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // 4. Comparación
                     if (!currentUserFaceDescriptor) {
-                         faceStatus.textContent = "⚠️ Sin huella registrada. (Paso autorizado)";
+                        faceStatus.textContent = "⚠️ Sin huella registrada. (Paso autorizado)";
                     } else {
                         const distance = faceapi.euclideanDistance(currentUserFaceDescriptor, detection.descriptor);
                         // Umbral de similitud (0.55)
@@ -11190,14 +11250,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     // --- ÉXITO ---
                     faceStatus.innerHTML = '<span class="flex items-center justify-center gap-2"><i class="fa-solid fa-circle-check"></i> Identidad Confirmada</span>';
                     faceStatus.className = "text-sm font-bold text-green-600";
-                    
+
                     // Detener animación
-                    if(scannerLine) scannerLine.classList.add('hidden');
+                    if (scannerLine) scannerLine.classList.add('hidden');
 
                     verifiedCanvas = canvasEl;
-                    
+
                     // Cambio de Botones: Ocultar "Escanear", Mostrar "Autorizar"
-                    scanBtn.classList.add('hidden'); 
+                    scanBtn.classList.add('hidden');
                     confirmBtn.classList.remove('hidden');
                     confirmBtn.disabled = false;
 
@@ -11205,21 +11265,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     // --- ERROR ---
                     console.error(err);
                     videoEl.play(); // Reanudar video
-                    if(scannerLine) scannerLine.classList.add('hidden'); // Parar láser
-                    
+                    if (scannerLine) scannerLine.classList.add('hidden'); // Parar láser
+
                     faceStatus.textContent = err.message;
                     faceStatus.className = "text-sm font-bold text-red-500";
-                    
+
                     scanBtn.disabled = false;
                     scanBtn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> <span>Reintentar</span>';
                     verifiedCanvas = null;
                 }
             }
 
- // Botón: Confirmar Check-in (AUTORIZAR AVANCE)
+            // Botón: Confirmar Check-in (AUTORIZAR AVANCE)
             if (target.id === 'checkin-confirm-btn') {
                 const taskId = target.dataset.taskId; // Recuperamos el ID de la tarea
-                
+
                 // 1. Validación de Seguridad
                 if (!verifiedCanvas) {
                     alert("Error de seguridad: No se ha verificado el rostro. Por favor, repite el escaneo.");
@@ -11243,7 +11303,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const timestamp = Date.now();
                         const selfiePath = `checkin_evidence/${taskId}/${currentUser.uid}_${timestamp}.jpg`;
                         const selfieStorageRef = ref(storage, selfiePath);
-                        
+
                         await uploadBytes(selfieStorageRef, selfieBlob);
                         const downloadURL = await getDownloadURL(selfieStorageRef);
 
@@ -11256,10 +11316,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             userName: `${usersMap.get(currentUser.uid)?.firstName || 'Usuario'} ${usersMap.get(currentUser.uid)?.lastName || ''}`,
                             createdAt: new Date() // Timestamp del servidor
                         });
-                        
+
                         console.log("Evidencia biométrica guardada correctamente.");
                     }
-                    
+
                     // CASO B: Check-in de PERFIL (Sin taskId, solo validación)
                     else {
                         console.log("Validación de perfil exitosa. Procediendo...");
@@ -11281,7 +11341,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (err) {
                     console.error("Error crítico en autorización:", err);
                     alert("Error al autorizar: " + err.message);
-                    
+
                     // Restaurar botón
                     target.disabled = false;
                     target.innerHTML = originalText;
@@ -12074,6 +12134,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadCatalogView();
                 break;
 
+            case 'go-to-compras':
+                showView('compras');
+                if (typeof loadPurchaseOrders === 'function') loadPurchaseOrders();
+                break;
+
             case 'go-to-tareas':
                 showView('tareas');
                 loadTasksView();
@@ -12089,6 +12154,11 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'go-to-dotacion':
                 showView('dotacion');
                 loadDotacionView();
+                break;
+
+            case 'go-to-empleados':
+                showView('empleados');
+                // Cargar resumen de empleados si es necesario
                 break;
 
             case 'view-pending-loans':
@@ -15831,15 +15901,15 @@ async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
     step1.classList.remove('hidden');     // Mostrar botón de escanear
     confirmBtn.classList.add('hidden');   // Ocultar botón de confirmar
     confirmBtn.disabled = true;
-    
+
     takePhotoButton.disabled = false;
     takePhotoButton.innerHTML = '<i class="fa-solid fa-camera"></i> <span>Iniciar Escaneo</span>';
     takePhotoButton.classList.remove('hidden');
 
     faceStatus.textContent = 'Listo para validar';
     faceStatus.className = 'text-sm font-bold text-slate-600';
-    
-    if(scannerLine) scannerLine.classList.add('hidden'); // Ocultar láser al inicio
+
+    if (scannerLine) scannerLine.classList.add('hidden'); // Ocultar láser al inicio
 
     // Guardamos el taskId
     confirmBtn.dataset.taskId = taskId;
@@ -16143,3 +16213,41 @@ async function findBestMarketPrice(materialId) {
         return null;
     }
 }
+
+// --- LÓGICA DE MODO OSCURO ---
+function initThemeToggle() {
+    const themeToggleBtn = document.getElementById('theme-toggle-btn');
+    const darkIcon = document.getElementById('theme-toggle-dark-icon');
+    const lightIcon = document.getElementById('theme-toggle-light-icon');
+
+    if (!themeToggleBtn) return;
+
+    // 1. Verificar preferencia guardada o del sistema
+    if (localStorage.getItem('color-theme') === 'dark' || 
+        (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+        lightIcon.classList.remove('hidden');
+    } else {
+        document.documentElement.classList.remove('dark');
+        darkIcon.classList.remove('hidden');
+    }
+
+    // 2. Evento Click
+    themeToggleBtn.addEventListener('click', function() {
+        // Alternar iconos
+        darkIcon.classList.toggle('hidden');
+        lightIcon.classList.toggle('hidden');
+
+        // Alternar clase en HTML
+        if (document.documentElement.classList.contains('dark')) {
+            document.documentElement.classList.remove('dark');
+            localStorage.setItem('color-theme', 'light');
+        } else {
+            document.documentElement.classList.add('dark');
+            localStorage.setItem('color-theme', 'dark');
+        }
+    });
+}
+
+// Llamar a la inicialización
+initThemeToggle();
