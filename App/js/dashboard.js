@@ -139,6 +139,7 @@ function loadAdminDashboard(container) {
     unsubscribeDashboard = unsubStats;
 }
 
+
 /**
  * Renderiza el HTML moderno para Admin/Bodega.
  */
