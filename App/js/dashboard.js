@@ -11,7 +11,8 @@ import {
     collectionGroup,
     doc,     // <--- AGREGAR ESTO
     getDoc,
-    onSnapshot   // <--- AGREGAR ESTO (Probablemente también lo necesites)
+    onSnapshot,
+    setDoc  
 
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
@@ -93,23 +94,52 @@ export function showGeneralDashboard() {
 function loadAdminDashboard(container) {
     const statsRef = doc(_db, "system", "dashboardStats");
 
-    const unsubStats = onSnapshot(statsRef, (docSnap) => {
+    const unsubStats = onSnapshot(statsRef, async (docSnap) => {
+        
+        // --- LÓGICA DE AUTO-REPARACIÓN ---
         if (!docSnap.exists()) {
+            console.warn("⚠️ Dashboard no inicializado. Ejecutando auto-corrección...");
+            
+            // Mostramos un estado de carga temporal en lugar del error
             container.innerHTML = `
-                <div class="p-6 bg-yellow-50 border border-yellow-100 rounded-xl flex items-start gap-4">
-                    <i class="fa-solid fa-triangle-exclamation text-yellow-600 mt-1"></i>
-                    <div>
-                        <h4 class="font-bold text-yellow-800">Sin estadísticas generadas</h4>
-                        <p class="text-sm text-yellow-700 mt-1">Ve a la sección "Proyectos" y presiona el botón <strong>"Sincronizar Progreso"</strong> para inicializar el dashboard.</p>
-                    </div>
-                </div>`;
-            return;
+                <div class="flex flex-col items-center justify-center h-64 text-gray-400">
+                    <div class="loader mb-4"></div>
+                    <p class="animate-pulse text-blue-600 font-medium">Inicializando estructura de datos...</p>
+                </div>
+            `;
+
+            try {
+                // Intentamos crear el documento automáticamente
+                // Usamos merge: true para no borrar nada si por casualidad ya existía algo parcial
+                await setDoc(statsRef, { 
+                    _status: "initialized", 
+                    lastAutoRepair: new Date(),
+                    projects: { active: 0, archived: 0 } // Estructura base mínima
+                }, { merge: true });
+                
+                console.log("✅ Auto-corrección enviada. El dashboard se recargará automáticamente.");
+                // No hacemos nada más, el listener se volverá a ejecutar solo
+                return;
+
+            } catch (error) {
+                console.error("❌ Falló la auto-reparación:", error);
+                // Solo mostramos error si la auto-reparación falla (ej. permisos)
+                container.innerHTML = `
+                    <div class="p-6 bg-red-50 border border-red-200 rounded-xl text-center">
+                        <i class="fa-solid fa-bug text-red-500 text-2xl mb-2"></i>
+                        <h4 class="font-bold text-red-800">Error de Inicialización</h4>
+                        <p class="text-sm text-red-600">El sistema intentó repararse automáticamente pero falló.</p>
+                        <p class="text-xs text-gray-500 mt-2 font-mono">${error.message}</p>
+                    </div>`;
+                return;
+            }
         }
+        // ---------------------------------
 
         const stats = docSnap.data();
 
         destroyExistingCharts();
-        renderAdminDashboard(stats, container); // Pasamos container para renderizar
+        renderAdminDashboard(stats, container);
         createDashboardCharts(stats);
 
         // Listener de préstamos pendientes
@@ -124,16 +154,9 @@ function loadAdminDashboard(container) {
         }
 
     }, (error) => {
-        // --- INICIO CORRECCIÓN ---
-        // Si el error es por falta de permisos (pasa al cerrar sesión), lo ignoramos
-        if (error.code === 'permission-denied') {
-            console.log("Listener de Dashboard detenido por cierre de sesión.");
-            return;
-        }
-        // --- FIN CORRECCIÓN ---
-
+        if (error.code === 'permission-denied') return;
         console.error("Error dashboard:", error);
-        container.innerHTML = `<p class="text-red-500 bg-red-50 p-4 rounded-lg">Error al cargar estadísticas: ${error.message}</p>`;
+        container.innerHTML = `<p class="text-red-500 bg-red-50 p-4 rounded-lg">Error de conexión: ${error.message}</p>`;
     });
 
     unsubscribeDashboard = unsubStats;

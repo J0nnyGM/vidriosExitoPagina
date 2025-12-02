@@ -314,108 +314,108 @@
 
 
         <div id="main-content" class="md:ml-64 transition-all p-4 md:p-8">
-            <header class="flex justify-between items-center mb-8">
+        <header class="flex justify-between items-center mb-6 md:mb-8">
 
-                <div class="flex items-center">
-                    <button id="menu-toggle-btn" data-action="toggle-menu"
-                        class="md:hidden text-gray-500 hover:text-gray-700 focus:outline-none p-2 rounded-md hover:bg-gray-100 transition-colors">
-                        <i class="fa-solid fa-bars h-6 w-6"></i>
+            <div class="flex items-center">
+                <button id="menu-toggle-btn" data-action="toggle-menu"
+                    class="md:hidden text-gray-500 hover:text-gray-700 focus:outline-none p-2 rounded-md hover:bg-gray-100 transition-colors mr-2">
+                    <i class="fa-solid fa-bars h-6 w-6"></i>
+                </button>
+            </div>
+
+            <div class="flex items-center gap-2 md:gap-6">
+
+                <button data-action="report-entry"
+                    class="flex items-center bg-white text-emerald-600 hover:bg-emerald-50 border border-emerald-200 font-bold py-2 px-3 md:px-4 rounded-full shadow-sm hover:shadow-md transition-all text-sm">
+                    <i class="fa-solid fa-id-badge text-xl md:text-lg md:mr-2"></i>
+                    <span class="hidden md:inline">Ingreso</span>
+                </button>
+
+                <button data-action="create-daily-report"
+                    class="flex items-center bg-white text-indigo-600 hover:bg-indigo-50 border border-indigo-200 font-bold py-2 px-3 md:px-4 rounded-full shadow-sm hover:shadow-md transition-all text-sm">
+                    <i class="fa-solid fa-microphone-lines text-xl md:text-lg md:mr-2"></i>
+                    <span class="hidden md:inline">Reporte Diario</span>
+                </button>
+
+                <div class="relative">
+                    <button id="notifications-btn"
+                        class="relative p-2 text-gray-400 hover:text-blue-600 transition-colors focus:outline-none">
+                        <i class="fa-solid fa-bell h-6 w-6"></i>
+                        <span id="notification-badge"
+                            class="absolute top-1 right-1 h-2.5 w-2.5 bg-red-500 border-2 border-gray-50 rounded-full hidden"></span>
                     </button>
-                </div>
 
-                <div class="flex items-center gap-3 md:gap-6">
-
-                    <button data-action="report-entry"
-                        class="flex items-center bg-white text-emerald-600 hover:bg-emerald-50 border border-emerald-200 font-bold py-2 px-4 rounded-full shadow-sm hover:shadow-md transition-all text-sm">
-                        <i class="fa-solid fa-id-badge text-lg mr-2"></i>
-                        <span>Ingreso</span>
-                    </button>
-
-                    <button data-action="create-daily-report"
-                        class="hidden md:flex items-center bg-white text-indigo-600 hover:bg-indigo-50 border border-indigo-200 font-bold py-2 px-4 rounded-full shadow-sm hover:shadow-md transition-all text-sm ml-2">
-                        <i class="fa-solid fa-microphone-lines text-lg mr-2"></i>
-                        <span>Reporte Diario</span>
-                    </button>
-
-                    <div class="relative">
-                        <button id="notifications-btn"
-                            class="relative p-2 text-gray-400 hover:text-blue-600 transition-colors focus:outline-none">
-                            <i class="fa-solid fa-bell h-6 w-6"></i>
-                            <span id="notification-badge"
-                                class="absolute top-1 right-1 h-2.5 w-2.5 bg-red-500 border-2 border-gray-50 rounded-full hidden"></span>
-                        </button>
-
-                        <div id="notifications-dropdown"
-                            class="hidden absolute top-full right-0 mt-3 w-80 sm:w-96 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden origin-top-right transform transition-all">
-                            <div class="px-5 py-4 bg-white border-b border-gray-50 flex justify-between items-center">
-                                <p class="text-sm font-bold text-gray-800">Tus Notificaciones</p>
-                            </div>
-                            <ul id="notifications-list" class="divide-y divide-gray-50 max-h-[60vh] overflow-y-auto">
-                            </ul>
+                    <div id="notifications-dropdown"
+                        class="hidden absolute top-full right-0 mt-3 w-80 sm:w-96 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden origin-top-right transform transition-all">
+                        <div class="px-5 py-4 bg-white border-b border-gray-50 flex justify-between items-center">
+                            <p class="text-sm font-bold text-gray-800">Tus Notificaciones</p>
                         </div>
-                    </div>
-
-                    <div class="h-6 w-px bg-gray-300 hidden md:block opacity-50"></div>
-
-                    <div class="relative" id="user-menu-container">
-                        <button id="user-menu-btn" class="flex items-center gap-3 focus:outline-none group">
-                            <div class="text-right hidden md:block">
-                                <p id="header-user-name"
-                                    class="text-sm font-bold text-gray-700 group-hover:text-blue-600 transition-colors">
-                                    Cargando...</p>
-                                <p id="header-user-role"
-                                    class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">...</p>
-                            </div>
-
-                            <div class="relative">
-                                <div
-                                    class="h-10 w-10 md:h-11 md:w-11 rounded-full bg-white border-2 border-gray-200 shadow-sm overflow-hidden flex items-center justify-center text-gray-400 text-lg font-bold group-hover:border-blue-400 transition-all">
-                                    <img id="header-profile-photo" src="" alt="Perfil"
-                                        class="hidden h-full w-full object-cover">
-                                    <span id="header-profile-initials">U</span>
-                                </div>
-                                <div
-                                    class="absolute bottom-0.5 right-0.5 h-3 w-3 bg-green-500 border-2 border-white rounded-full">
-                                </div>
-                            </div>
-
-                            <i
-                                class="fa-solid fa-chevron-down text-gray-300 text-xs group-hover:text-gray-500 transition-colors ml-1"></i>
-                        </button>
-
-                        <div id="user-dropdown"
-                            class="hidden absolute top-full right-0 mt-3 w-60 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 py-2 origin-top-right">
-
-                            <div class="px-5 py-4 border-b border-gray-50 md:hidden bg-gray-50 mb-2">
-                                <p class="text-sm font-bold text-gray-800" id="mobile-user-name">Usuario</p>
-                                <p class="text-xs text-gray-500 truncate" id="mobile-user-email">...</p>
-                            </div>
-
-                            <div class="px-2 space-y-1">
-                                <button id="profile-btn" data-action="edit-profile"
-                                    class="w-full text-left px-3 py-2.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors flex items-center gap-3 font-medium">
-                                    <div
-                                        class="w-8 h-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center">
-                                        <i class="fa-solid fa-user-gear"></i></div>
-                                    Mi Perfil
-                                </button>
-                            </div>
-
-                            <div class="border-t border-gray-100 my-2 mx-2"></div>
-
-                            <div class="px-2 pb-1">
-                                <button data-action="logout"
-                                    class="w-full text-left px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-3 font-bold">
-                                    <div
-                                        class="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
-                                        <i class="fa-solid fa-power-off"></i></div>
-                                    Cerrar Sesión
-                                </button>
-                            </div>
-                        </div>
+                        <ul id="notifications-list" class="divide-y divide-gray-50 max-h-[60vh] overflow-y-auto">
+                        </ul>
                     </div>
                 </div>
-            </header>
+
+                <div class="h-6 w-px bg-gray-300 hidden md:block opacity-50"></div>
+
+                <div class="relative" id="user-menu-container">
+                    <button id="user-menu-btn" class="flex items-center gap-3 focus:outline-none group">
+                        <div class="text-right hidden md:block">
+                            <p id="header-user-name"
+                                class="text-sm font-bold text-gray-700 group-hover:text-blue-600 transition-colors">
+                                Cargando...</p>
+                            <p id="header-user-role"
+                                class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">...</p>
+                        </div>
+
+                        <div class="relative">
+                            <div
+                                class="h-10 w-10 md:h-11 md:w-11 rounded-full bg-white border-2 border-gray-200 shadow-sm overflow-hidden flex items-center justify-center text-gray-400 text-lg font-bold group-hover:border-blue-400 transition-all">
+                                <img id="header-profile-photo" src="" alt="Perfil"
+                                    class="hidden h-full w-full object-cover">
+                                <span id="header-profile-initials">U</span>
+                            </div>
+                            <div
+                                class="absolute bottom-0.5 right-0.5 h-3 w-3 bg-green-500 border-2 border-white rounded-full">
+                            </div>
+                        </div>
+
+                        <i
+                            class="fa-solid fa-chevron-down text-gray-300 text-xs group-hover:text-gray-500 transition-colors ml-1 hidden md:block"></i>
+                    </button>
+
+                    <div id="user-dropdown"
+                        class="hidden absolute top-full right-0 mt-3 w-60 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 py-2 origin-top-right">
+
+                        <div class="px-5 py-4 border-b border-gray-50 md:hidden bg-gray-50 mb-2">
+                            <p class="text-sm font-bold text-gray-800" id="mobile-user-name">Usuario</p>
+                            <p class="text-xs text-gray-500 truncate" id="mobile-user-email">...</p>
+                        </div>
+
+                        <div class="px-2 space-y-1">
+                            <button id="profile-btn" data-action="edit-profile"
+                                class="w-full text-left px-3 py-2.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors flex items-center gap-3 font-medium">
+                                <div
+                                    class="w-8 h-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center">
+                                    <i class="fa-solid fa-user-gear"></i></div>
+                                Mi Perfil
+                            </button>
+                        </div>
+
+                        <div class="border-t border-gray-100 my-2 mx-2"></div>
+
+                        <div class="px-2 pb-1">
+                            <button data-action="logout"
+                                class="w-full text-left px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-3 font-bold">
+                                <div
+                                    class="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
+                                    <i class="fa-solid fa-power-off"></i></div>
+                                Cerrar Sesión
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
 
 
             <div id="dashboard-general-view" class="hidden">
