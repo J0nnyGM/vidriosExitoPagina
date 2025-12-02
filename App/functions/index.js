@@ -496,14 +496,25 @@ const recalculateProjectStats = async () => {
     projectsSnapshot.forEach(doc => {
         const project = doc.data();
         stats.total++;
-        if (project.status === 'active') {
+        
+        // --- LÓGICA ROBUSTA DE CONTEO ---
+        // 1. Si no tiene status, asumimos 'active' por defecto.
+        // 2. Convertimos a minúsculas y quitamos espacios para comparar.
+        const rawStatus = project.status || 'active';
+        const status = String(rawStatus).toLowerCase().trim();
+
+        if (status === 'active' || status === 'activo') {
             stats.active++;
-        } else if (project.status === 'archived') {
+        } else if (status === 'archived' || status === 'archivado') {
             stats.archived++;
+        } else {
+            // Si el estado es desconocido (ej: 'pendiente'), lo contamos como activo para no perderlo
+            console.log(`Proyecto ${doc.id} tiene estado desconocido: "${status}". Contando como activo.`);
+            stats.active++;
         }
     });
 
-    console.log("Estadísticas de proyectos calculadas:", stats);
+    console.log("Estadísticas de proyectos calculadas (Corregido):", stats);
     return statsRef.set({ projects: stats }, { merge: true });
 };
 

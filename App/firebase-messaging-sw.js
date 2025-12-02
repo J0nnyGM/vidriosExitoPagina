@@ -96,42 +96,73 @@ self.addEventListener('install', (event) => {
     self.skipWaiting(); 
 });
 
-// B. ACTIVACIÓN (Sin cambios)
+// B. ACTIVACIÓN
 self.addEventListener('activate', (event) => {
     event.waitUntil(
-        caches.keys().then((keyList) => {
-            return Promise.all(keyList.map((key) => {
+        (async () => {
+            // Habilitar navegación precargada si es compatible
+            if (self.registration.navigationPreload) {
+                await self.registration.navigationPreload.enable();
+            }
+            
+            // Limpiar caché antiguo
+            const keyList = await caches.keys();
+            await Promise.all(keyList.map((key) => {
                 if (key !== CACHE_NAME) {
                     console.log('[Service Worker] Borrando caché antiguo:', key);
                     return caches.delete(key);
                 }
             }));
-        })
+        })()
     );
     self.clients.claim();
 });
 
-// C. INTERCEPTOR (Sin cambios)
+// C. INTERCEPTOR (Optimizado para Navigation Preload)
 self.addEventListener('fetch', (event) => {
     const url = event.request.url;
+
+    // Ignorar peticiones a la base de datos o storage de Firebase
     if (url.includes('firestore.googleapis.com') || url.includes('firebasestorage')) {
         return; 
     }
 
-    event.respondWith(
-        caches.match(event.request).then((cachedResponse) => {
-            const fetchPromise = fetch(event.request).then((networkResponse) => {
-                if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-                    const responseToCache = networkResponse.clone();
-                    caches.open(CACHE_NAME).then((cache) => {
-                        cache.put(event.request, responseToCache);
-                    });
-                }
-                return networkResponse;
-            }).catch(() => {
-                // Si estamos offline y no hay caché, retornamos algo (opcional)
-            });
-            return cachedResponse || fetchPromise;
-        })
-    );
+    event.respondWith(async function() {
+        // 1. Intentar obtener del caché primero
+        const cachedResponse = await caches.match(event.request);
+        if (cachedResponse) {
+            // Si está en caché, lo devolvemos rápido.
+            // Opcional: Aquí podrías actualizar el caché en segundo plano (stale-while-revalidate)
+            // pero para evitar la advertencia, simplificamos el flujo principal.
+            return cachedResponse;
+        }
+
+        // 2. Si no está en caché, intentar usar la respuesta precargada (PreloadResponse)
+        // ESTO SOLUCIONA LA ADVERTENCIA
+        const preloadResponse = await event.preloadResponse;
+        if (preloadResponse) {
+            // Si existe la precarga, la usamos y la guardamos en caché
+            const responseToCache = preloadResponse.clone();
+            const cache = await caches.open(CACHE_NAME);
+            cache.put(event.request, responseToCache);
+            return preloadResponse;
+        }
+
+        // 3. Si no hay caché ni precarga, ir a la red normalmente
+        try {
+            const networkResponse = await fetch(event.request);
+            
+            // Solo cacheamos peticiones válidas (status 200) y de tipo basic (del mismo origen)
+            if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+                const responseToCache = networkResponse.clone();
+                const cache = await caches.open(CACHE_NAME);
+                cache.put(event.request, responseToCache);
+            }
+            
+            return networkResponse;
+        } catch (error) {
+            console.log('[Service Worker] Error en fetch:', error);
+            // Aquí podrías retornar una página offline.html si quisieras
+        }
+    }());
 });

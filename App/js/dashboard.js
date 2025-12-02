@@ -1,5 +1,5 @@
-
-// --- Importaciones de Firebase ---
+import { initializeApp, getApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js"; // <--- Necesario para llamar al backend
 import {
     collection,
     query,
@@ -9,12 +9,12 @@ import {
     limit,
     startAfter,
     collectionGroup,
-    doc,     // <--- AGREGAR ESTO
+    doc,
     getDoc,
-    onSnapshot,
-    setDoc  
-
+    onSnapshot
+    // setDoc Eliminado: El frontend solo lee, no escribe en system.
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+
 
 // --- Variables del Módulo (Dependencias de app.js) ---
 let _db;
@@ -94,47 +94,39 @@ export function showGeneralDashboard() {
 function loadAdminDashboard(container) {
     const statsRef = doc(_db, "system", "dashboardStats");
 
-    const unsubStats = onSnapshot(statsRef, async (docSnap) => {
+    const unsubStats = onSnapshot(statsRef, (docSnap) => {
         
-        // --- LÓGICA DE AUTO-REPARACIÓN ---
+        // --- LÓGICA DE AUTO-INICIALIZACIÓN VÍA BACKEND ---
         if (!docSnap.exists()) {
-            console.warn("⚠️ Dashboard no inicializado. Ejecutando auto-corrección...");
+            console.warn("⚠️ Dashboard sin datos. Solicitando recálculo al servidor...");
             
-            // Mostramos un estado de carga temporal en lugar del error
             container.innerHTML = `
                 <div class="flex flex-col items-center justify-center h-64 text-gray-400">
                     <div class="loader mb-4"></div>
-                    <p class="animate-pulse text-blue-600 font-medium">Inicializando estructura de datos...</p>
+                    <p class="animate-pulse text-blue-600 font-medium">Obteniendo datos del servidor...</p>
+                    <p class="text-xs text-gray-400 mt-2">(Calculando estadísticas reales)</p>
                 </div>
             `;
 
-            try {
-                // Intentamos crear el documento automáticamente
-                // Usamos merge: true para no borrar nada si por casualidad ya existía algo parcial
-                await setDoc(statsRef, { 
-                    _status: "initialized", 
-                    lastAutoRepair: new Date(),
-                    projects: { active: 0, archived: 0 } // Estructura base mínima
-                }, { merge: true });
-                
-                console.log("✅ Auto-corrección enviada. El dashboard se recargará automáticamente.");
-                // No hacemos nada más, el listener se volverá a ejecutar solo
-                return;
+            // En lugar de crear datos falsos/vacíos aquí, llamamos a la función del backend
+            // que cuenta los datos REALES y crea el documento.
+            const functions = getFunctions(getApp(), 'us-central1');
+            const runRecalculation = httpsCallable(functions, 'runFullRecalculation');
 
-            } catch (error) {
-                console.error("❌ Falló la auto-reparación:", error);
-                // Solo mostramos error si la auto-reparación falla (ej. permisos)
-                container.innerHTML = `
-                    <div class="p-6 bg-red-50 border border-red-200 rounded-xl text-center">
-                        <i class="fa-solid fa-bug text-red-500 text-2xl mb-2"></i>
-                        <h4 class="font-bold text-red-800">Error de Inicialización</h4>
-                        <p class="text-sm text-red-600">El sistema intentó repararse automáticamente pero falló.</p>
-                        <p class="text-xs text-gray-500 mt-2 font-mono">${error.message}</p>
-                    </div>`;
-                return;
-            }
+            runRecalculation()
+                .then(() => console.log("✅ Servidor completó la inicialización."))
+                .catch((error) => {
+                    console.error("❌ Error al solicitar inicialización:", error);
+                    container.innerHTML = `
+                        <div class="p-6 bg-red-50 border border-red-200 rounded-xl text-center">
+                            <p class="text-red-600 font-bold">No se pudo conectar con el servidor.</p>
+                            <p class="text-xs mt-1">${error.message}</p>
+                        </div>`;
+                });
+                
+            return; // Salimos y esperamos a que el onSnapshot se dispare de nuevo con los datos
         }
-        // ---------------------------------
+        // -------------------------------------------------
 
         const stats = docSnap.data();
 
