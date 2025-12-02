@@ -2078,12 +2078,105 @@ exports.updateDotacionHistoryStats = onDocumentWritten("dotacionHistory/{history
 });
 
 /**
- * Función programada para las 8:30 AM hora Colombia.
- * Revisa quién no ha marcado ingreso desde la 1:00 AM y envía alerta.
- * APLICA PARA TODOS LOS USUARIOS ACTIVOS.
+ * NUEVA FUNCIÓN: Alerta preventiva a las 8:25 AM (Lunes a Sábado).
+ * Verifica quién no ha marcado ingreso y envía un recordatorio amable.
+ */
+exports.checkLateEntriesWarning = onSchedule({
+    schedule: "25 8 * * 1-6", // 8:25 AM, Lunes(1) a Sábado(6). Domingo excluido.
+    timeZone: "America/Bogota",
+}, async (event) => {
+    console.log("Iniciando advertencia de llegadas tarde (8:25 AM) - PARA TODOS...");
+
+    const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(1, 0, 0, 0);
+
+    try {
+        const usersSnapshot = await db.collection("users")
+            .where("status", "==", "active")
+            .get();
+
+        const notificationsBatch = db.batch();
+        const messagingPromises = [];
+        let pendingCount = 0;
+
+        for (const userDoc of usersSnapshot.docs) {
+            const userId = userDoc.id;
+            const userData = userDoc.data();
+
+            // Verificar reporte de ingreso hoy
+            const reportsSnapshot = await db.collection("users").doc(userId).collection("attendance_reports")
+                .where("type", "==", "ingreso")
+                .where("timestamp", ">=", startOfDay)
+                .limit(1)
+                .get();
+
+            if (reportsSnapshot.empty) {
+                pendingCount++;
+                console.log(`Usuario ${userData.firstName || userId} pendiente por ingreso (8:25 AM).`);
+
+                // A. Notificación interna (Campanita) - Tono de advertencia
+                const notifRef = db.collection("notifications").doc();
+                notificationsBatch.set(notifRef, {
+                    userId: userId,
+                    title: "⏰ Recordatorio de Ingreso",
+                    message: "Son las 8:25 AM. Recuerda registrar tu ingreso antes del corte de las 8:30 AM.",
+                    type: "late_entry_warning", // Tipo diferenciado para el frontend si se requiere
+                    read: false,
+                    createdAt: FieldValue.serverTimestamp(),
+                    link: "/dashboard-general"
+                });
+
+                // B. Push Notification - Tono amable
+                if (userData.fcmToken) {
+                    const message = {
+                        notification: {
+                            title: "⏰ Ingreso Pendiente",
+                            body: "Son las 8:25 AM. Por favor registra tu ingreso pronto para evitar retardos."
+                        },
+                        android: {
+                            notification: { sound: 'default', priority: 'high', clickAction: 'FLUTTER_NOTIFICATION_CLICK' },
+                            priority: 'high'
+                        },
+                        apns: {
+                            headers: { "apns-priority": "10" },
+                            payload: { aps: { sound: 'default', contentAvailable: true } }
+                        },
+                        token: userData.fcmToken,
+                        data: { url: "/dashboard-general", type: "late_entry_warning" }
+                    };
+                    
+                    messagingPromises.push(
+                        getMessaging().send(message).catch(e => {
+                            if (e.code === 'messaging/registration-token-not-registered') {
+                                return db.doc(`users/${userId}`).update({ fcmToken: FieldValue.delete() });
+                            }
+                        })
+                    );
+                }
+            }
+        }
+
+        if (pendingCount > 0) {
+            await notificationsBatch.commit();
+            await Promise.all(messagingPromises);
+        }
+
+        console.log(`Advertencia 8:25 AM completada. ${pendingCount} usuarios notificados.`);
+        return { success: true, pendingCount };
+
+    } catch (error) {
+        console.error("Error en checkLateEntriesWarning:", error);
+        return { success: false, error: error.message };
+    }
+});
+
+/**
+ * FUNCIÓN EXISTENTE MODIFICADA: Alerta de Falta a las 8:30 AM (Lunes a Sábado).
+ * Se excluye el Domingo cambiando el cronograma a "30 8 * * 1-6".
  */
 exports.checkLateEntries = onSchedule({
-    schedule: "30 8 * * *", // 8:30 AM todos los días
+    schedule: "30 8 * * 1-6", // 8:30 AM, Lunes(1) a Sábado(6). Domingo excluido.
     timeZone: "America/Bogota",
 }, async (event) => {
     console.log("Iniciando verificación de llegadas tarde (8:30 AM) - PARA TODOS...");
@@ -2094,10 +2187,9 @@ exports.checkLateEntries = onSchedule({
     startOfDay.setHours(1, 0, 0, 0);
 
     try {
-        // 1. Obtener TODOS los usuarios activos (SIN importar el rol)
+        // 1. Obtener TODOS los usuarios activos
         const usersSnapshot = await db.collection("users")
             .where("status", "==", "active")
-            // .where("role", "==", "operario") <--- ESTA LÍNEA FUE ELIMINADA
             .get();
 
         const notificationsBatch = db.batch();
@@ -2108,9 +2200,6 @@ exports.checkLateEntries = onSchedule({
         for (const userDoc of usersSnapshot.docs) {
             const userId = userDoc.id;
             const userData = userDoc.data();
-
-            // Opcional: Si en el futuro quieres excluir solo al 'admin' supremo, puedes descomentar esto:
-            // if (userData.role === 'admin') continue; 
 
             // Buscar si tiene un reporte de ingreso DESPUÉS de la 1:00 AM de hoy
             const reportsSnapshot = await db.collection("users").doc(userId).collection("attendance_reports")
@@ -2136,49 +2225,35 @@ exports.checkLateEntries = onSchedule({
                     link: "/dashboard-general"
                 });
 
-                // B. Enviar Notificación Push al celular (MEJORADA)
+                // B. Enviar Notificación Push al celular
                 if (userData.fcmToken) {
                     const message = {
                         notification: {
                             title: "⚠️ Reporte Pendiente",
                             body: "Son las 8:30 AM y no has registrado tu ingreso. Toca aquí para reportar."
                         },
-                        // Configuración para Android (Prioridad Alta)
                         android: {
                             notification: {
                                 sound: 'default',
                                 priority: 'high',
                                 channelId: 'urgent_alerts',
-                                clickAction: 'FLUTTER_NOTIFICATION_CLICK' // Estándar para abrir app
+                                clickAction: 'FLUTTER_NOTIFICATION_CLICK'
                             },
                             priority: 'high'
                         },
-                        // Configuración para iOS (Apple requiere esto para alertas)
                         apns: {
-                            headers: {
-                                "apns-priority": "10", // 10 = Envío inmediato
-                            },
-                            payload: {
-                                aps: {
-                                    sound: 'default',
-                                    contentAvailable: true // Despierta la app en segundo plano
-                                }
-                            }
+                            headers: { "apns-priority": "10" },
+                            payload: { aps: { sound: 'default', contentAvailable: true } }
                         },
                         token: userData.fcmToken,
-                        data: {
-                            url: "/dashboard-general",
-                            type: "late_entry_alert"
-                        }
+                        data: { url: "/dashboard-general", type: "late_entry_alert" }
                     };
 
-                    // Añadimos al array de promesas para enviar
                     messagingPromises.push(
                         getMessaging().send(message)
                             .then(() => console.log(`Push enviado a ${userId}`))
                             .catch(e => {
                                 console.error(`Error push a ${userId}:`, e.message);
-                                // Si el token no sirve, lo borramos para mantener limpia la DB
                                 if (e.code === 'messaging/registration-token-not-registered') {
                                     return db.doc(`users/${userId}`).update({ fcmToken: FieldValue.delete() });
                                 }
@@ -2344,5 +2419,161 @@ exports.scheduledFirestoreExport = onSchedule({
     } catch (err) {
         console.error("Error crítico en el backup automático:", err);
         throw new Error('Falló la exportación de la base de datos');
+    }
+});
+
+/**
+ * ALERTA 1 (18:30 PM): Recordatorio de Reporte Diario.
+ * Verifica quién no ha enviado su 'daily_report' con fecha de hoy.
+ */
+exports.checkDailyReportWarning = onSchedule({
+    schedule: "30 18 * * 1-6", // 6:30 PM, Lunes a Sábado.
+    timeZone: "America/Bogota",
+}, async (event) => {
+    console.log("Iniciando recordatorio de Reporte Diario (6:30 PM)...");
+
+    // Obtener fecha actual en Colombia (YYYY-MM-DD)
+    // Importante: Ajustamos la zona horaria para asegurar que sea el día correcto
+    const now = new Date();
+    const colombiaDate = new Date(now.toLocaleString("en-US", { timeZone: "America/Bogota" }));
+    const todayStr = colombiaDate.toISOString().split('T')[0]; 
+
+    try {
+        const usersSnapshot = await db.collection("users")
+            .where("status", "==", "active")
+            .get();
+
+        const notificationsBatch = db.batch();
+        const messagingPromises = [];
+        let pendingCount = 0;
+
+        for (const userDoc of usersSnapshot.docs) {
+            const userId = userDoc.id;
+            const userData = userDoc.data();
+
+            // Buscar si existe un reporte con la fecha de hoy en la subcolección
+            const reportsSnapshot = await db.collection("users").doc(userId).collection("daily_reports")
+                .where("date", "==", todayStr)
+                .limit(1)
+                .get();
+
+            if (reportsSnapshot.empty) {
+                pendingCount++;
+                
+                // A. Notificación Interna
+                const notifRef = db.collection("notifications").doc();
+                notificationsBatch.set(notifRef, {
+                    userId: userId,
+                    title: "📝 Reporte Diario Pendiente",
+                    message: "Recuerda enviar tu reporte de actividades antes de finalizar la jornada.",
+                    type: "daily_report_alert",
+                    read: false,
+                    createdAt: FieldValue.serverTimestamp(),
+                    link: "/dashboard-general" // O la vista donde tengan el botón
+                });
+
+                // B. Push Notification
+                if (userData.fcmToken) {
+                    const message = {
+                        notification: {
+                            title: "📝 Reporte Pendiente",
+                            body: "Son las 6:30 PM. Por favor reporta tus actividades del día."
+                        },
+                        android: { notification: { sound: 'default', priority: 'high', clickAction: 'FLUTTER_NOTIFICATION_CLICK' } },
+                        apns: { payload: { aps: { sound: 'default', contentAvailable: true } } },
+                        token: userData.fcmToken,
+                        data: { url: "/dashboard-general", type: "daily_report_alert" }
+                    };
+                    messagingPromises.push(getMessaging().send(message).catch(() => {}));
+                }
+            }
+        }
+
+        if (pendingCount > 0) {
+            await notificationsBatch.commit();
+            await Promise.all(messagingPromises);
+        }
+
+        console.log(`Recordatorio 6:30 PM enviado a ${pendingCount} usuarios.`);
+
+    } catch (error) {
+        console.error("Error en checkDailyReportWarning:", error);
+    }
+});
+
+/**
+ * ALERTA 2 (19:00 PM): Aviso Final / Segunda Notificación.
+ * Se envía a quienes SIGAN sin reportar a las 7:00 PM.
+ */
+exports.checkDailyReportFinal = onSchedule({
+    schedule: "00 19 * * 1-6", // 7:00 PM, Lunes a Sábado.
+    timeZone: "America/Bogota",
+}, async (event) => {
+    console.log("Iniciando verificación final de Reporte Diario (7:00 PM)...");
+
+    const now = new Date();
+    const colombiaDate = new Date(now.toLocaleString("en-US", { timeZone: "America/Bogota" }));
+    const todayStr = colombiaDate.toISOString().split('T')[0];
+
+    try {
+        const usersSnapshot = await db.collection("users")
+            .where("status", "==", "active")
+            .get();
+
+        const notificationsBatch = db.batch();
+        const messagingPromises = [];
+        let pendingCount = 0;
+
+        for (const userDoc of usersSnapshot.docs) {
+            const userId = userDoc.id;
+            const userData = userDoc.data();
+
+            // Misma verificación: ¿Ya existe reporte de hoy?
+            const reportsSnapshot = await db.collection("users").doc(userId).collection("daily_reports")
+                .where("date", "==", todayStr)
+                .limit(1)
+                .get();
+
+            if (reportsSnapshot.empty) {
+                pendingCount++;
+
+                // A. Notificación Interna (Tono más urgente)
+                const notifRef = db.collection("notifications").doc();
+                notificationsBatch.set(notifRef, {
+                    userId: userId,
+                    title: "⚠️ Cierre de Jornada - Sin Reporte",
+                    message: "Aún no registras tu actividad diaria. Es necesario para el cierre de nómina/productividad.",
+                    type: "daily_report_urgent",
+                    read: false,
+                    createdAt: FieldValue.serverTimestamp(),
+                    link: "/dashboard-general"
+                });
+
+                // B. Push Notification
+                if (userData.fcmToken) {
+                    const message = {
+                        notification: {
+                            title: "⚠️ Acción Requerida",
+                            body: "7:00 PM: No has enviado tu reporte diario. Toca aquí para hacerlo ahora."
+                        },
+                        android: { notification: { sound: 'default', priority: 'high', clickAction: 'FLUTTER_NOTIFICATION_CLICK' } },
+                        apns: { payload: { aps: { sound: 'default', contentAvailable: true } } },
+                        token: userData.fcmToken,
+                        data: { url: "/dashboard-general", type: "daily_report_urgent" }
+                    };
+                    messagingPromises.push(getMessaging().send(message).catch(() => {}));
+                }
+            }
+        }
+
+        if (pendingCount > 0) {
+            await notificationsBatch.commit();
+            await Promise.all(messagingPromises);
+        }
+
+        console.log(`Alerta Final 7:00 PM enviada a ${pendingCount} usuarios.`);
+
+    } catch (error) {
+        console.error("Error en checkDailyReportFinal:", error);
     }
 });

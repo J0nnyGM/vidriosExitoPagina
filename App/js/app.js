@@ -1,7 +1,7 @@
 // Importaciones de Firebase
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment, limit, serverTimestamp, arrayRemove, documentId,enableIndexedDbPersistence,CACHE_SIZE_UNLIMITED } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js"; // <-- AÑADIDO documentId
+import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment, limit, serverTimestamp, arrayRemove, documentId, enableIndexedDbPersistence, CACHE_SIZE_UNLIMITED } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js"; // <-- AÑADIDO documentId
 import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app-check.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
@@ -46,15 +46,15 @@ const functions = getFunctions(app, 'us-central1'); // ASEGÚRATE DE QUE ESTA L�
 
 // --- INICIO CONFIGURACIÓN OFFLINE ---
 enableIndexedDbPersistence(db)
-  .catch((err) => {
-      if (err.code == 'failed-precondition') {
-          // Falló porque hay múltiples pestañas abiertas a la vez
-          console.warn("La persistencia offline solo funciona con una pestaña abierta a la vez.");
-      } else if (err.code == 'unimplemented') {
-          // El navegador no soporta esta característica
-          console.warn("El navegador no soporta persistencia offline.");
-      }
-  });
+    .catch((err) => {
+        if (err.code == 'failed-precondition') {
+            // Falló porque hay múltiples pestañas abiertas a la vez
+            console.warn("La persistencia offline solo funciona con una pestaña abierta a la vez.");
+        } else if (err.code == 'unimplemented') {
+            // El navegador no soporta esta característica
+            console.warn("El navegador no soporta persistencia offline.");
+        }
+    });
 // --- FIN CONFIGURACIÓN OFFLINE ---
 
 let unsubscribeTasks = null; // <-- AÑADE ESTA LÍNEA
@@ -249,7 +249,7 @@ function showAuthView(viewName) {
 // --- INICIO: FUNCIÓN DE HELPER (Copiada de dotacion.js) ---
 function resizeImage(file, maxWidth = 800) {
     return new Promise((resolve, reject) => {
-        
+
         const reader = new FileReader();
         reader.onload = (event) => {
             const img = new Image();
@@ -275,7 +275,7 @@ function resizeImage(file, maxWidth = 800) {
             img.onerror = reject;
             img.src = event.target.result;
         };
-        reader.onerror = reject;    
+        reader.onerror = reject;
         reader.readAsDataURL(file);
     });
 }
@@ -839,13 +839,22 @@ async function handleLogin(e) {
         const user = userCredential.user;
 
         const userDoc = await getDoc(doc(db, "users", user.uid));
+        
+        // --- CAMBIO AQUÍ ---
+        // Verificamos si el estado es 'pending' (pendiente)
         if (userDoc.exists() && userDoc.data().status === 'pending') {
-            errorP.textContent = "Solicita autorización al administrador.";
-            await signOut(auth);
+            // Mensaje actualizado
+            errorP.innerHTML = `<span class="font-bold">Acceso denegado:</span><br>Esperando respuesta del administrador para activar la cuenta.`;
+            errorP.className = "text-orange-600 text-sm mt-4 text-center bg-orange-50 p-2 rounded border border-orange-200";
+            
+            await signOut(auth); // Cerramos la sesión inmediatamente
+            return;
         }
+        // -------------------
 
     } catch (error) {
         console.error("Error de inicio de sesión:", error.code);
+        errorP.className = "text-red-500 text-sm mt-4 text-center"; // Reset estilo error normal
         errorP.textContent = "Correo o contraseña incorrectos.";
     }
 }
@@ -1753,11 +1762,30 @@ function closePurchaseOrderModal() {
 
 function loadProjects(status = 'active') {
     const projectsContainer = document.getElementById('projects-container');
-    projectsContainer.innerHTML = `<div class="loader-container"><div class="loader"></div></div>`;
+    projectsContainer.innerHTML = `<div class="col-span-full flex justify-center py-12"><div class="loader"></div></div>`;
 
-    // Actualizar el estado visual de las pestañas
-    document.getElementById('active-projects-tab').classList.toggle('active', status === 'active');
-    document.getElementById('archived-projects-tab').classList.toggle('active', status === 'archived');
+    // --- ACTUALIZACIÓN VISUAL DE PESTAÑAS (NUEVO DISEÑO) ---
+    const activeTab = document.getElementById('active-projects-tab');
+    const archivedTab = document.getElementById('archived-projects-tab');
+
+    // Clases para el estado "Seleccionado" (Blanco con sombra)
+    const selectedClasses = ['bg-white', 'text-indigo-600', 'shadow-sm'];
+    // Clases para el estado "No Seleccionado" (Transparente gris)
+    const unselectedClasses = ['text-gray-500', 'hover:text-gray-700', 'bg-transparent', 'shadow-none'];
+
+    // Reseteamos clases base para evitar conflictos
+    const baseClass = "flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-md transition-all duration-200";
+    activeTab.className = baseClass;
+    archivedTab.className = baseClass;
+
+    if (status === 'active') {
+        activeTab.classList.add(...selectedClasses);
+        archivedTab.classList.add(...unselectedClasses);
+    } else {
+        archivedTab.classList.add(...selectedClasses);
+        activeTab.classList.add(...unselectedClasses);
+    }
+    // -------------------------------------------------------
 
     const q = query(collection(db, "projects"), where("status", "==", status));
     if (unsubscribeProjects) unsubscribeProjects();
@@ -1766,14 +1794,20 @@ function loadProjects(status = 'active') {
         projectsContainer.innerHTML = '';
 
         if (querySnapshot.empty) {
-            projectsContainer.innerHTML = '<p class="text-gray-500 text-center">No hay proyectos para mostrar.</p>';
+            // Diseño mejorado para el estado vacío
+            projectsContainer.innerHTML = `
+                <div class="col-span-full flex flex-col items-center justify-center py-16 text-center border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                    <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4 text-gray-400">
+                        <i class="fa-regular fa-folder-open text-3xl"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-gray-700">No hay proyectos ${status === 'active' ? 'activos' : 'archivados'}</h3>
+                    <p class="text-sm text-gray-500 mt-1">Comienza creando uno nuevo o cambia el filtro.</p>
+                </div>`;
             return;
         }
 
         querySnapshot.forEach(doc => {
             const projectData = { id: doc.id, ...doc.data() };
-
-            // Usamos el resumen pre-calculado o valores por defecto si no existe
             const stats = projectData.progressSummary || { totalM2: 0, executedM2: 0, totalItems: 0, executedItems: 0, executedValue: 0 };
             const progress = stats.totalM2 > 0 ? (stats.executedM2 / stats.totalM2) * 100 : 0;
 
@@ -1783,17 +1817,17 @@ function loadProjects(status = 'active') {
 
     }, (error) => {
         console.error("Error cargando proyectos: ", error);
-        projectsContainer.innerHTML = '<p class="text-red-500 text-center">Error al cargar los proyectos.</p>';
+        projectsContainer.innerHTML = '<p class="text-red-500 text-center col-span-full">Error al cargar los proyectos.</p>';
     });
 }
 
+
 /**
- * Crea la tarjeta de proyecto COMPACTA y LEGIBLE.
- * (CORREGIDO: Incluye la Dirección del Proyecto)
+ * Crea la tarjeta de proyecto con diseño mejorado (Dirección y Fechas Claras).
  */
 function createProjectCard(project, progress, stats) {
     const card = document.createElement('div');
-    card.className = "bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-indigo-300 transition-all duration-300 project-card group flex flex-col";
+    card.className = "bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-indigo-300 transition-all duration-300 project-card group flex flex-col h-full overflow-hidden";
     card.dataset.id = project.id;
     card.dataset.name = project.name;
 
@@ -1811,14 +1845,17 @@ function createProjectCard(project, progress, stats) {
     let financialColor = 'bg-indigo-600';
     if (financialPercent >= 100) financialColor = 'bg-emerald-500';
 
-    const formatDate = (dateStr) => dateStr ? new Date(dateStr + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: '2-digit' }) : '--/--';
+    const formatDate = (dateStr) => dateStr ? new Date(dateStr + 'T00:00:00').toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: '2-digit' }) : '--';
 
-    // --- BOTONES ---
+    // --- BOTONES DE ACCIÓN ---
     let actionButtons = '';
-    const btnClass = "p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors";
+    const btnClass = "p-1.5 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors border border-transparent hover:border-slate-200";
 
     if (project.status === 'active') {
         actionButtons = `
+            <button data-action="edit-project-info" class="${btnClass}" title="Editar Info">
+                <i class="fa-solid fa-pen"></i>
+            </button>
             <button data-action="archive" class="${btnClass}" title="Archivar">
                 <i class="fa-solid fa-box-archive"></i>
             </button>
@@ -1835,80 +1872,81 @@ function createProjectCard(project, progress, stats) {
         `;
     }
 
+    // --- HTML TARJETA MEJORADA ---
     card.innerHTML = `
-        <div class="p-5 pb-0">
-            <div class="flex justify-between items-start gap-3">
-                <div class="flex gap-3 overflow-hidden">
-                    <div class="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 border border-slate-200 flex-shrink-0">
-                        <i class="fa-regular fa-building text-xl"></i>
+        <div class="p-5 pb-2 flex-grow">
+            
+            <div class="flex justify-between items-start gap-3 mb-4">
+                <div class="flex gap-3 items-center overflow-hidden">
+                    <div class="w-12 h-12 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl border border-indigo-100 flex-shrink-0">
+                        <i class="fa-regular fa-building"></i>
                     </div>
-                    <div class="min-w-0 flex flex-col justify-center">
-                        <h2 class="text-lg font-bold text-slate-900 truncate group-hover:text-indigo-700 transition-colors leading-tight" title="${project.name}">
+                    <div class="min-w-0">
+                        <h2 class="text-lg font-bold text-slate-800 truncate leading-tight" title="${project.name}">
                             ${project.name}
                         </h2>
-                        <p class="text-xs text-slate-500 truncate flex items-center gap-1 mt-0.5">
+                        <p class="text-xs text-slate-500 truncate flex items-center gap-1 mt-1">
                              <i class="fa-solid fa-hard-hat text-slate-400"></i> ${project.builderName || 'Sin Constructora'}
                         </p>
                     </div>
                 </div>
-                <button data-action="view-details" class="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white flex items-center justify-center transition-all shadow-sm flex-shrink-0">
-                    <i class="fa-solid fa-arrow-right text-sm"></i>
+                <button data-action="view-details" class="text-slate-300 hover:text-indigo-600 transition-colors p-1 transform hover:scale-110" title="Ir al Proyecto">
+                    <i class="fa-solid fa-arrow-right-to-bracket text-xl"></i>
                 </button>
             </div>
             
-            <div class="mt-3 flex items-center gap-3 text-xs text-slate-500 font-medium border-b border-slate-100 pb-3">
-                <span class="flex items-center gap-1 truncate max-w-[60%]" title="${project.location} - ${project.address}">
-                    <i class="fa-solid fa-location-dot text-slate-400"></i> 
-                    ${project.location} ${project.address ? ` - ${project.address}` : ''}
-                </span>
-                <span class="flex items-center gap-1 flex-shrink-0 ml-auto">
-                    <i class="fa-regular fa-calendar text-slate-400"></i> 
-                    ${formatDate(project.startDate)} - ${formatDate(project.endDate)}
-                </span>
+            <div class="mb-4">
+                <p class="text-xs text-slate-400 uppercase font-bold mb-1">Ubicación</p>
+                <div class="flex items-start gap-2 text-xs text-slate-600">
+                    <i class="fa-solid fa-location-dot text-indigo-400 mt-0.5"></i>
+                    <span class="truncate-2-lines leading-snug" title="${project.address || ''}">
+                        <span class="font-semibold text-slate-700">${project.location}</span>
+                        ${project.address ? `<br><span class="text-slate-500">${project.address}</span>` : ''}
+                    </span>
+                </div>
             </div>
+
+            <div class="grid grid-cols-2 gap-2 mb-4 border-t border-b border-slate-50 py-2">
+                <div>
+                    <p class="text-[10px] text-slate-400 uppercase font-bold">Inicio</p>
+                    <p class="text-xs font-medium text-slate-700"><i class="fa-regular fa-calendar text-slate-400 mr-1"></i> ${formatDate(project.startDate)}</p>
+                </div>
+                <div>
+                    <p class="text-[10px] text-slate-400 uppercase font-bold">Fin</p>
+                    <p class="text-xs font-medium text-slate-700"><i class="fa-regular fa-flag text-slate-400 mr-1"></i> ${formatDate(project.endDate)}</p>
+                </div>
+            </div>
+
+            <div class="bg-slate-50 rounded-lg p-3 border border-slate-100 mb-4 space-y-1.5">
+                <div class="flex justify-between items-center">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Contrato</span>
+                    <span class="text-xs font-bold text-slate-700">${currencyFormatter.format(project.value || 0)}</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">Ejecutado</span>
+                    <span class="text-sm font-black text-emerald-600">${currencyFormatter.format(stats.executedValue || 0)}</span>
+                </div>
+                <div class="w-full bg-slate-200 rounded-full h-1.5 mt-1">
+                    <div class="${financialColor} h-1.5 rounded-full transition-all duration-1000" style="width: ${financialPercent}%"></div>
+                </div>
+            </div>
+
+            <div>
+                <div class="flex justify-between items-end mb-1">
+                    <span class="text-xs font-semibold text-slate-600">Avance Físico</span>
+                    <span class="text-xs font-bold text-blue-600">${physicalProgress.toFixed(1)}%</span>
+                </div>
+                <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                    <div class="${physicalColor} h-1.5 rounded-full transition-all duration-1000" style="width: ${physicalProgress}%"></div>
+                </div>
+            </div>
+            
         </div>
 
-        <div class="p-5 space-y-4 flex-grow">
-            
-            <div class="flex justify-between items-end bg-slate-50 p-2 rounded-lg border border-slate-100">
-                <div>
-                    <p class="text-[10px] font-bold text-slate-400 uppercase">Contrato</p>
-                    <p class="text-sm font-bold text-slate-700">${currencyFormatter.format(project.value || 0)}</p>
-                </div>
-                <div class="text-right">
-                    <p class="text-[10px] font-bold text-emerald-600 uppercase">Ejecutado</p>
-                    <p class="text-sm font-bold text-emerald-700">${currencyFormatter.format(stats.executedValue || 0)}</p>
-                </div>
-            </div>
-
-            <div class="space-y-3">
-                <div>
-                    <div class="flex justify-between items-end mb-1">
-                        <span class="text-xs font-semibold text-slate-600">Avance Físico <span class="text-slate-400 font-normal">(${Math.round(stats.executedM2)}/${Math.round(stats.totalM2)} m²)</span></span>
-                        <span class="text-sm font-bold text-blue-600">${physicalProgress.toFixed(1)}%</span>
-                    </div>
-                    <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                        <div class="${physicalColor} h-full rounded-full transition-all duration-1000" style="width: ${physicalProgress}%"></div>
-                    </div>
-                </div>
-
-                <div>
-                    <div class="flex justify-between items-end mb-1">
-                        <span class="text-xs font-semibold text-slate-600">Presupuesto</span>
-                        <span class="text-sm font-bold text-indigo-600">${financialPercent.toFixed(1)}%</span>
-                    </div>
-                    <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                        <div class="${financialColor} h-full rounded-full transition-all duration-1000" style="width: ${financialPercent}%"></div>
-                    </div>
-                </div>
-            </div>
-            
-        </div>
-
-        <div class="px-5 py-2 bg-slate-50 border-t border-slate-100 rounded-b-xl flex justify-between items-center">
-             <div class="text-xs text-slate-500 font-medium flex items-center gap-2">
-                <i class="fa-solid fa-box-open text-slate-400"></i> 
-                <span>${stats.executedItems} / ${stats.totalItems} Ítems</span>
+        <div class="px-4 py-3 bg-slate-50 border-t border-slate-100 mt-auto flex justify-between items-center">
+             <div class="text-xs text-slate-500 font-bold flex items-center gap-1.5">
+                <i class="fa-solid fa-layer-group text-indigo-400"></i> 
+                <span>${stats.executedItems}/${stats.totalItems} Ítems</span>
              </div>
              <div class="flex gap-1">
                 ${actionButtons}
@@ -2850,6 +2888,25 @@ function loadCortes(project) {
     });
 }
 
+// Función auxiliar para obtener datos de empresa
+async function getCompanyData() {
+    try {
+        const docRef = doc(db, "system", "generalConfig");
+        const snapshot = await getDoc(docRef);
+        if (snapshot.exists()) {
+            return snapshot.data().empresa || {};
+        }
+    } catch (error) {
+        console.error("Error cargando datos de empresa:", error);
+    }
+    // Valores por defecto si falla la carga o no hay config
+    return {
+        nombre: "Vidrios Éxito S.A.S", 
+        nit: "",
+        logoURL: null
+    };
+}
+
 
 
 /**
@@ -3145,10 +3202,7 @@ async function denyCorte(projectId, corteId) {
     alert("El corte ha sido denegado y eliminado.");
 }
 
-/**
- * Muestra los detalles de un corte específico, incluyendo los ítems y sus valores.
- * @param {object} corteData - El objeto completo del corte desde Firestore.
- */
+
 /**
  * Muestra los detalles de un corte específico, incluyendo los ítems y sus valores.
  * @param {object} corteData - El objeto completo del corte desde Firestore.
@@ -3161,34 +3215,98 @@ async function showCorteDetails(corteData) {
     const summaryEl = document.getElementById('corte-details-summary');
     const listContainer = document.getElementById('corte-details-list');
 
-    titleEl.textContent = `Detalle del Corte #${corteData.corteNumber}`;
-    // Limpiamos el resumen para añadir el desglose financiero
-    summaryEl.innerHTML = `
-        <div class="text-sm space-y-1 mt-2">
-            <div class="flex justify-between">
-                <span>Valor Bruto:</span>
-                <span class="font-medium">${currencyFormatter.format(corteData.totalValue || 0)}</span>
-            </div>
-            <div class="flex justify-between text-red-600">
-                <span>Amortización:</span>
-                <span class="font-medium">- ${currencyFormatter.format(corteData.amortizacion || 0)}</span>
-            </div>
-            ${(corteData.otrosDescuentos || []).map(d => `
-                <div class="flex justify-between text-red-600">
-                    <span>Descuento (${d.concept}):</span>
-                    <span class="font-medium">- ${currencyFormatter.format(d.value)}</span>
+    // FORMATO DE MONEDA
+    const currencyFormatter = new Intl.NumberFormat('es-CO', {
+        style: 'currency',
+        currency: 'COP',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    });
+
+    // 1. PREPARAR DATOS DEL ENCABEZADO
+    const dateStr = corteData.createdAt ? new Date(corteData.createdAt.seconds * 1000).toLocaleDateString('es-CO') : 'N/A';
+    
+    // Badge de Estado
+    const statusBadge = corteData.status === 'aprobado' 
+        ? '<span class="px-2.5 py-1 text-xs font-bold uppercase rounded-md bg-green-100 text-green-700 border border-green-200 shadow-sm"><i class="fa-solid fa-check-circle mr-1"></i> Aprobado</span>'
+        : '<span class="px-2.5 py-1 text-xs font-bold uppercase rounded-md bg-amber-100 text-amber-700 border border-amber-200 shadow-sm"><i class="fa-solid fa-clock mr-1"></i> Preliminar</span>';
+
+    // Badge de Tipo de Corte (Final o Parcial)
+    const finalBadge = corteData.isFinal 
+        ? '<span class="px-2.5 py-1 text-xs font-bold uppercase rounded-md bg-red-100 text-red-700 border border-red-200 shadow-sm"><i class="fa-solid fa-flag-checkered mr-1"></i> Corte Final</span>' 
+        : '<span class="px-2.5 py-1 text-xs font-bold uppercase rounded-md bg-blue-50 text-blue-600 border border-blue-100 shadow-sm"><i class="fa-solid fa-arrows-rotate mr-1"></i> Corte Parcial</span>';
+
+    // Badge de Medidas (Reales o Contrato)
+    const measureBadge = corteData.usadoMedidaReal
+        ? '<span class="px-2.5 py-1 text-xs font-bold uppercase rounded-md bg-purple-100 text-purple-700 border border-purple-200 shadow-sm"><i class="fa-solid fa-ruler-combined mr-1"></i> Medidas Reales</span>'
+        : '<span class="px-2.5 py-1 text-xs font-bold uppercase rounded-md bg-gray-100 text-gray-600 border border-gray-200 shadow-sm"><i class="fa-solid fa-file-contract mr-1"></i> Medidas Contrato</span>';
+
+    // Badge de Origen (Quién lo hizo) - Opcional si tienes la propiedad 'type'
+    const originBadge = corteData.type === 'obra'
+        ? '<span class="px-2.5 py-1 text-xs font-bold uppercase rounded-md bg-orange-100 text-orange-700 border border-orange-200 shadow-sm"><i class="fa-solid fa-hard-hat mr-1"></i> Reporte de Obra</span>'
+        : '<span class="px-2.5 py-1 text-xs font-bold uppercase rounded-md bg-indigo-50 text-indigo-600 border border-indigo-100 shadow-sm"><i class="fa-solid fa-building-user mr-1"></i> Reporte Interno</span>';
+
+
+    // 2. INYECTAR HTML DEL ENCABEZADO
+    titleEl.innerHTML = `
+        <div class="flex flex-col gap-3">
+            <div class="flex items-center gap-3">
+                <div class="p-3 bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl shadow-md">
+                    <i class="fa-solid fa-file-invoice-dollar text-2xl"></i>
                 </div>
-            `).join('')}
-            <div class="flex justify-between border-t mt-1 pt-1">
-                <span class="font-bold">Neto a Pagar:</span>
-                <span class="font-bold text-green-600">${currencyFormatter.format(corteData.netoAPagar || 0)}</span>
+                <div>
+                    <span class="text-2xl font-black text-gray-900 tracking-tight">Corte de Obra #${corteData.corteNumber}</span>
+                    <p class="text-xs text-gray-500 font-medium flex items-center gap-1 mt-0.5">
+                        <i class="fa-regular fa-calendar"></i> Generado el: ${dateStr}
+                    </p>
+                </div>
+            </div>
+            <div class="flex flex-wrap gap-2 pl-1">
+                ${statusBadge}
+                ${finalBadge}
+                ${measureBadge}
+                ${originBadge}
             </div>
         </div>
     `;
-    listContainer.innerHTML = `<div class="loader-container"><div class="loader"></div></div>`;
+
+    // 3. RESUMEN FINANCIERO (Tarjetas)
+    summaryEl.innerHTML = `
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6 mt-6">
+            <div class="p-4 grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                <div class="flex flex-col justify-center p-4 rounded-xl border border-gray-100 bg-gray-50/50">
+                    <p class="text-xs text-gray-400 uppercase font-bold mb-1">Valor Bruto (Ejecutado)</p>
+                    <p class="text-xl font-bold text-gray-800">${currencyFormatter.format(corteData.totalValue || 0)}</p>
+                </div>
+
+                <div class="space-y-2 p-4 rounded-xl border border-red-100 bg-red-50/30">
+                    <p class="text-xs text-red-800 uppercase font-bold mb-2 flex items-center"><i class="fa-solid fa-minus-circle mr-1"></i> Deducciones y Amortización</p>
+                    <div class="flex justify-between text-sm text-red-700 border-b border-red-100/50 pb-1">
+                        <span>Amortización Anticipo:</span>
+                        <span class="font-medium">${currencyFormatter.format(corteData.amortizacion || 0)}</span>
+                    </div>
+                    ${(corteData.otrosDescuentos || []).map(d => `
+                        <div class="flex justify-between text-sm text-red-600">
+                            <span class="truncate max-w-[150px]" title="${d.concept}">${d.concept}:</span>
+                            <span class="font-medium">${currencyFormatter.format(d.value)}</span>
+                        </div>
+                    `).join('')}
+                </div>
+
+                <div class="flex flex-col justify-center p-4 rounded-xl border border-emerald-200 bg-emerald-50 relative overflow-hidden group">
+                    <div class="absolute right-0 top-0 p-2 text-emerald-200 opacity-40 group-hover:opacity-60 transition-opacity transform group-hover:scale-110"><i class="fa-solid fa-money-bill-1-wave text-5xl"></i></div>
+                    <p class="text-xs text-emerald-800 uppercase font-bold mb-1 relative z-10">Total Neto a Pagar</p>
+                    <p class="text-3xl font-black text-emerald-700 relative z-10 tracking-tight">${currencyFormatter.format(corteData.netoAPagar || 0)}</p>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // 4. CARGA DE ÍTEMS (Lógica existente mejorada con Grid)
+    listContainer.innerHTML = `<div class="loader-container py-10"><div class="loader"></div><p class="text-center text-gray-400 text-sm mt-2">Cargando detalle de ítems...</p></div>`;
 
     try {
-        // --- INICIO DE CAMBIO: Consultas a subcolecciones ---
         const [itemsSnapshot, subItemsSnapshot] = await Promise.all([
             getDocs(query(collection(db, "projects", currentProject.id, "items"))),
             getDocs(query(collectionGroup(db, "subItems"), where("projectId", "==", currentProject.id)))
@@ -3197,6 +3315,21 @@ async function showCorteDetails(corteData) {
         const subItemsMap = new Map(subItemsSnapshot.docs.map(doc => [doc.id, doc.data()]));
 
         listContainer.innerHTML = '';
+
+        if (!corteData.subItemIds || corteData.subItemIds.length === 0) {
+            listContainer.innerHTML = `
+                <div class="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
+                    <div class="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <i class="fa-solid fa-box-open text-gray-300 text-3xl"></i>
+                    </div>
+                    <p class="text-gray-500 font-medium">Este corte no tiene ítems asociados.</p>
+                </div>`;
+            return;
+        }
+
+        const itemsGrid = document.createElement('div');
+        itemsGrid.className = "grid grid-cols-1 lg:grid-cols-2 gap-4";
+        listContainer.appendChild(itemsGrid);
 
         for (const subItemId of corteData.subItemIds) {
             const subItem = subItemsMap.get(subItemId);
@@ -3216,75 +3349,73 @@ async function showCorteDetails(corteData) {
                 }
             }
 
-            const manufacturerData = usersMap.get(subItem.manufacturer);
             const installerData = usersMap.get(subItem.installer);
-            const manufacturerName = manufacturerData ? `${manufacturerData.firstName} ${manufacturerData.lastName}` : 'N/A';
             const installerName = installerData ? `${installerData.firstName} ${installerData.lastName}` : 'N/A';
 
             let statusText = subItem.status || 'Pendiente';
-            let statusColor = 'bg-gray-100 text-gray-800';
-            switch (statusText) {
-                case 'Instalado': statusColor = 'bg-green-100 text-green-800'; break;
-                case 'Pendiente de Instalación': statusColor = 'bg-yellow-100 text-yellow-800'; break;
-                case 'Faltante de Evidencia': statusColor = 'bg-orange-100 text-orange-800'; break;
-            }
-
+            let statusBadgeClass = 'bg-gray-100 text-gray-600 border-gray-200';
+            if(statusText === 'Instalado') statusBadgeClass = 'bg-emerald-100 text-emerald-700 border-emerald-200';
+            
             const itemCard = document.createElement('div');
-            itemCard.className = 'bg-white p-4 rounded-lg shadow-md border';
+            itemCard.className = 'bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col hover:shadow-md transition-shadow';
+            
             itemCard.innerHTML = `
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="md:col-span-1 space-y-4">
-                        <div class="h-48 bg-gray-200 rounded-md flex items-center justify-center">
-                            ${subItem.photoURL ?
-                    `<img src="${subItem.photoURL}" alt="Evidencia" class="w-full h-full object-cover rounded-md cursor-pointer" data-action="view-image">` :
-                    '<span class="text-gray-500 text-sm">Sin evidencia</span>'}
+                <div class="px-4 py-3 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
+                    <div class="min-w-0 pr-2">
+                        <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-0.5 truncate" title="${parentItem.name}">
+                            <i class="fa-solid fa-layer-group mr-1"></i> ${parentItem.name}
+                        </p>
+                        <p class="font-bold text-gray-800 text-sm">Unidad #${subItem.number}</p>
+                    </div>
+                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase rounded border flex-shrink-0 ${statusBadgeClass}">${statusText}</span>
+                </div>
+
+                <div class="p-4 flex gap-4">
+                    <div class="flex-grow space-y-2 text-sm">
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-500 text-xs"><i class="fa-solid fa-location-dot w-4 text-center mr-1"></i> Ubicación:</span>
+                            <span class="font-medium text-gray-800 text-right truncate max-w-[140px]" title="${subItem.location}">${subItem.location || 'N/A'}</span>
                         </div>
-                        <div class="text-center">
-                            <p class="text-sm font-medium text-gray-500">Valor en este Corte</p>
-                            <p class="text-2xl font-bold text-green-600">${currencyFormatter.format(valorSubItemEnCorte)}</p>
+                        
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-500 text-xs"><i class="fa-solid fa-ruler-combined w-4 text-center mr-1"></i> Medidas:</span>
+                            <span class="font-medium text-gray-800 text-right font-mono bg-gray-50 px-1.5 rounded border border-gray-100 text-xs">
+                                ${(subItem.realWidth * 100).toFixed(0)} x ${(subItem.realHeight * 100).toFixed(0)} cm
+                            </span>
+                        </div>
+
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-500 text-xs"><i class="fa-solid fa-user-gear w-4 text-center mr-1"></i> Instalador:</span>
+                            <span class="font-medium text-gray-800 text-right truncate max-w-[140px]" title="${installerName}">${installerName}</span>
+                        </div>
+                        
+                        <div class="pt-2 mt-1 border-t border-dashed border-gray-100 flex justify-between items-end">
+                            <span class="text-xs text-gray-400 font-medium">Valor en Corte</span>
+                            <span class="text-base font-bold text-green-600 leading-none">${currencyFormatter.format(valorSubItemEnCorte)}</span>
                         </div>
                     </div>
-                    <div class="md:col-span-2">
-                        <p class="text-sm text-gray-500">Objeto</p>
-                        <p class="font-bold text-xl text-gray-800 mb-2">${parentItem.name} - Unidad #${subItem.number}</p>
-                        <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                            <div>
-                                <dt class="font-medium text-gray-500">Lugar de Instalación</dt>
-                                <dd class="text-gray-800">${subItem.location || 'N/A'}</dd>
-                            </div>
-                            <div>
-                                <dt class="font-medium text-gray-500">Estado</dt>
-                                <dd><span class="text-xs font-semibold px-2 py-1 rounded-full ${statusColor}">${statusText}</span></dd>
-                            </div>
-                            <div>
-                                <dt class="font-medium text-gray-500">Medidas Contrato</dt>
-                                <dd class="text-gray-800">${parentItem.width * 100}cm x ${parentItem.height * 100}cm</dd>
-                            </div>
-                             <div>
-                                <dt class="font-medium text-gray-500">Medidas Reales</dt>
-                                <dd class="text-gray-800">${(subItem.realWidth * 100) || 'N/A'}cm x ${(subItem.realHeight * 100) || 'N/A'}cm</dd>
-                            </div>
-                            <div>
-                                <dt class="font-medium text-gray-500">Fabricante</dt>
-                                <dd class="text-gray-800">${manufacturerName}</dd>
-                            </div>
-                            <div>
-                                <dt class="font-medium text-gray-500">Instalador</dt>
-                                <dd class="text-gray-800">${installerName}</dd>
-                            </div>
-                             <div>
-                                <dt class="font-medium text-gray-500">Fecha Instalación</dt>
-                                <dd class="text-gray-800">${subItem.installDate || 'N/A'}</dd>
-                            </div>
-                        </dl>
+
+                    <div class="flex-shrink-0 w-20 h-20">
+                        <div class="w-full h-full bg-gray-100 rounded-lg border border-gray-200 overflow-hidden relative group cursor-pointer shadow-inner">
+                            ${subItem.photoURL ? 
+                                `<img src="${subItem.photoURL}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" data-action="view-image">
+                                 <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center pointer-events-none">
+                                    <i class="fa-solid fa-magnifying-glass-plus text-white opacity-0 group-hover:opacity-100 drop-shadow-md"></i>
+                                 </div>` 
+                                : `<div class="w-full h-full flex flex-col items-center justify-center text-gray-300">
+                                     <i class="fa-regular fa-image text-xl"></i>
+                                     <span class="text-[9px] mt-1">Sin Foto</span>
+                                   </div>`
+                            }
+                        </div>
                     </div>
                 </div>
             `;
-            listContainer.appendChild(itemCard);
+            itemsGrid.appendChild(itemCard);
         }
     } catch (error) {
         console.error("Error al cargar detalles del corte:", error);
-        listContainer.innerHTML = '<p class="text-red-500">No se pudieron cargar los detalles.</p>';
+        listContainer.innerHTML = `<p class="text-red-500 text-center py-4">Error al cargar detalles.</p>`;
     }
 }
 
@@ -3313,14 +3444,20 @@ function closeCorteSelectionView() {
  * @param {object} corte - El objeto con los datos del corte a exportar.
  * @param {string} exportType - El tipo de memoria: 'completo', 'suministro', o 'instalacion'.
  */
+/**
+ * Genera una memoria de corte detallada (PDF) corrigiendo la ruta de los datos.
+ */
 async function exportCorteToPDF(proyecto, corte, exportType) {
+    loadingOverlay.classList.remove('hidden');
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'landscape' });
+    
+    // Formateador para enteros (sin decimales)
     const currencyFormatter = new Intl.NumberFormat('es-CO', {
         style: 'currency',
         currency: 'COP',
         minimumFractionDigits: 0,
-        maximumFractionDigits: 0 // <-- AÑADIDO: Fuerza el redondeo a entero
+        maximumFractionDigits: 0 
     });
 
     const calculateTaxDetails = (details, baseValue) => {
@@ -3338,160 +3475,216 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
         return result;
     };
 
-    const [itemsSnapshot, subItemsSnapshot, cortesAnterioresSnapshot] = await Promise.all([
-        getDocs(query(collection(db, "items"), where("projectId", "==", proyecto.id))),
-        getDocs(query(collection(db, "subItems"), where("projectId", "==", proyecto.id))),
-        getDocs(query(collection(db, "projects", proyecto.id, "cortes"), where("status", "==", "aprobado"), where("corteNumber", "<", corte.corteNumber)))
-    ]);
-    const allItems = new Map(itemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
-    const allSubItems = new Map(subItemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
-    const subItemsEjecutadosAntes = new Set();
-    cortesAnterioresSnapshot.forEach(doc => { doc.data().subItemIds.forEach(id => subItemsEjecutadosAntes.add(id)); });
+    try {
+        // --- CORRECCIÓN PRINCIPAL AQUÍ ---
+        // 1. Consultamos la subcolección 'items' DENTRO del proyecto
+        // 2. Usamos 'collectionGroup' para traer todos los 'subItems' de este proyecto
+        const [itemsSnapshot, subItemsSnapshot, cortesAnterioresSnapshot] = await Promise.all([
+            getDocs(query(collection(db, "projects", proyecto.id, "items"))), // <-- Ruta corregida
+            getDocs(query(collectionGroup(db, "subItems"), where("projectId", "==", proyecto.id))), // <-- Ruta corregida
+            getDocs(query(collection(db, "projects", proyecto.id, "cortes"), where("status", "==", "aprobado"), where("corteNumber", "<", corte.corteNumber)))
+        ]);
 
-    // --- Cabecera del PDF (sin cambios) ---
-    let reportTitle = `ACTA DE CORTE DE OBRA`;
-    if (exportType === 'suministro') reportTitle = `ACTA DE CORTE DE SUMINISTRO`;
-    if (exportType === 'instalacion') reportTitle = `ACTA DE CORTE DE INSTALACIÓN`;
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.text(`CONTRATISTA:`, 14, 15); doc.text(`CONTRATANTE:`, 14, 20); doc.text(`PROYECTO:`, 14, 25);
-    doc.setFont("helvetica", "normal");
-    doc.text(`DISTRIBUIDORA ALUMINIO Y VIDRIOS EXITO SAS`, 50, 15);
-    doc.text(proyecto.builderName || 'No especificado', 50, 20);
-    doc.text(proyecto.name, 50, 25);
-    doc.setFont("helvetica", "bold");
-    doc.text(`No Acta:`, 230, 15); doc.text(`FECHA:`, 230, 20);
-    doc.setFont("helvetica", "normal");
-    doc.text(`${corte.corteNumber}`, 250, 15);
-    doc.text(new Date(corte.createdAt.seconds * 1000).toLocaleDateString('es-CO'), 250, 20);
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text(`${reportTitle} - ${proyecto.name}`, doc.internal.pageSize.getWidth() / 2, 35, { align: 'center' });
+        const allItems = new Map(itemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+        const allSubItems = new Map(subItemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+        
+        const subItemsEjecutadosAntes = new Set();
+        cortesAnterioresSnapshot.forEach(doc => { 
+            const d = doc.data();
+            if(d.subItemIds) d.subItemIds.forEach(id => subItemsEjecutadosAntes.add(id)); 
+        });
 
-    const body = [];
-    const subItemsEnCorteSet = new Set(corte.subItemIds);
-    let totalValorContratado = 0, totalValorEjecutadoAcumulado = 0, totalValorEjecutadoCorte = 0, totalValorSaldo = 0;
+        // --- Cabecera del PDF ---
+        // Intentamos cargar datos de la empresa si existen
+        let empresaInfo = { nombre: "VIDRIOS Y ALUMINIOS EXITO", nit: "" };
+        try {
+             // Si tienes la función getCompanyData disponible, úsala aquí
+             // const data = await getCompanyData(); empresaInfo = data;
+        } catch(e) {}
 
-    // ======================================================
-    //      INICIO: LÓGICA DE CÁLCULO DE TOTALES PARA RESUMEN (NUEVO)
-    // ======================================================
-    let subTotalCorteSinImpuestos = 0;
-    let aiuDetailsCorte = { admin: 0, imprev: 0, utilidad: 0, ivaSobreUtilidad: 0, aiuA: 0, aiuI: 0, aiuU: 0 };
-    let totalIvaCorte = 0;
+        let reportTitle = `ACTA DE CORTE DE OBRA`;
+        if (exportType === 'suministro') reportTitle = `ACTA DE CORTE DE SUMINISTRO`;
+        if (exportType === 'instalacion') reportTitle = `ACTA DE CORTE DE INSTALACIÓN`;
 
-    allItems.forEach(item => {
-        const subItemsDeEsteItem = Array.from(allSubItems.values()).filter(si => si.itemId === item.id);
-        const subItemsEnEsteCorte = subItemsDeEsteItem.filter(si => subItemsEnCorteSet.has(si.id));
-        const ejecutadosEnEsteCorte = subItemsEnEsteCorte.length;
-        const ejecutadosAntes = subItemsDeEsteItem.filter(si => subItemsEjecutadosAntes.has(si.id)).length;
-        const ejecutadoAcumulado = ejecutadosAntes + ejecutadosEnEsteCorte;
-        const saldo = item.quantity - ejecutadoAcumulado;
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.text(`CONTRATISTA:`, 14, 15); doc.text(`CONTRATANTE:`, 14, 20); doc.text(`PROYECTO:`, 14, 25);
+        doc.setFont("helvetica", "normal");
+        doc.text(empresaInfo.nombre, 50, 15);
+        doc.text(proyecto.builderName || 'No especificado', 50, 20);
+        doc.text(proyecto.name, 50, 25);
+        
+        doc.setFont("helvetica", "bold");
+        doc.text(`No Acta:`, 230, 15); doc.text(`FECHA:`, 230, 20);
+        doc.setFont("helvetica", "normal");
+        doc.text(`${corte.corteNumber}`, 250, 15);
+        doc.text(new Date(corte.createdAt.seconds * 1000).toLocaleDateString('es-CO'), 250, 20);
+        
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text(`${reportTitle} - ${proyecto.name}`, doc.internal.pageSize.getWidth() / 2, 35, { align: 'center' });
 
-        let valorUnitarioSinImpuestos = 0, valorUnitarioTotalConImpuestos = 0, detallesDePrecio = null;
+        const body = [];
+        const subItemsEnCorteSet = new Set(corte.subItemIds || []);
+        let totalValorContratado = 0, totalValorEjecutadoAcumulado = 0, totalValorEjecutadoCorte = 0, totalValorSaldo = 0;
 
-        if (exportType === 'completo') { detallesDePrecio = item.includedDetails; }
-        else if (exportType === 'suministro') { detallesDePrecio = item.supplyDetails; }
-        else if (exportType === 'instalacion') { detallesDePrecio = item.installationDetails; }
+        // Variables para resumen financiero
+        let subTotalCorteSinImpuestos = 0;
+        let aiuDetailsCorte = { admin: 0, imprev: 0, utilidad: 0, ivaSobreUtilidad: 0, aiuA: 0, aiuI: 0, aiuU: 0 };
+        let totalIvaCorte = 0;
 
-        if (detallesDePrecio) {
-            valorUnitarioSinImpuestos = detallesDePrecio.unitPrice || 0;
-            const tax = calculateTaxDetails(detallesDePrecio, valorUnitarioSinImpuestos);
-            valorUnitarioTotalConImpuestos = valorUnitarioSinImpuestos + tax.iva + tax.aiuTotal;
-        }
+        // Procesamiento de datos
+        allItems.forEach(item => {
+            // Filtramos subItems que pertenecen a este item (usando el mapa global que cargamos correctamente arriba)
+            const subItemsDeEsteItem = Array.from(allSubItems.values()).filter(si => si.itemId === item.id);
+            const subItemsEnEsteCorte = subItemsDeEsteItem.filter(si => subItemsEnCorteSet.has(si.id));
+            const ejecutadosEnEsteCorte = subItemsEnEsteCorte.length;
+            
+            // Solo mostramos ítems que tengan movimiento o saldo, o sean parte del contrato
+            if (ejecutadosEnEsteCorte === 0 && subItemsDeEsteItem.length === 0 && item.quantity === 0) return;
 
-        let valorTotalEjecutadoCorteItem = 0;
+            const ejecutadosAntes = subItemsDeEsteItem.filter(si => subItemsEjecutadosAntes.has(si.id)).length;
+            const ejecutadoAcumulado = ejecutadosAntes + ejecutadosEnEsteCorte;
+            const saldo = item.quantity - ejecutadoAcumulado;
 
-        if (ejecutadosEnEsteCorte > 0) {
-            subItemsEnEsteCorte.forEach(subItem => {
-                let valorSubItemSinImpuestos = valorUnitarioSinImpuestos;
+            let valorUnitarioSinImpuestos = 0, valorUnitarioTotalConImpuestos = 0, detallesDePrecio = null;
 
-                if (corte.usadoMedidaReal && subItem.realWidth > 0 && subItem.realHeight > 0) {
-                    const areaContratada = item.width * item.height;
-                    const areaReal = subItem.realWidth * subItem.realHeight;
-                    if (areaContratada > 0) {
-                        valorSubItemSinImpuestos = (valorUnitarioSinImpuestos / areaContratada) * areaReal;
+            if (exportType === 'completo') { detallesDePrecio = item.includedDetails; }
+            else if (exportType === 'suministro') { detallesDePrecio = item.supplyDetails; }
+            else if (exportType === 'instalacion') { detallesDePrecio = item.installationDetails; }
+
+            // Fallback si no hay detalles específicos pero es modelo incluido
+            if (!detallesDePrecio && proyecto.pricingModel === 'incluido') {
+                 detallesDePrecio = item.includedDetails;
+            }
+
+            if (detallesDePrecio) {
+                valorUnitarioSinImpuestos = detallesDePrecio.unitPrice || 0;
+                const tax = calculateTaxDetails(detallesDePrecio, valorUnitarioSinImpuestos);
+                valorUnitarioTotalConImpuestos = valorUnitarioSinImpuestos + tax.iva + tax.aiuTotal;
+            }
+
+            let valorTotalEjecutadoCorteItem = 0;
+
+            if (ejecutadosEnEsteCorte > 0) {
+                subItemsEnEsteCorte.forEach(subItem => {
+                    let valorSubItemSinImpuestos = valorUnitarioSinImpuestos;
+
+                    if (corte.usadoMedidaReal && subItem.realWidth > 0 && subItem.realHeight > 0) {
+                        const areaContratada = item.width * item.height;
+                        const areaReal = subItem.realWidth * subItem.realHeight;
+                        if (areaContratada > 0) {
+                            valorSubItemSinImpuestos = (valorUnitarioSinImpuestos / areaContratada) * areaReal;
+                        }
                     }
+
+                    subTotalCorteSinImpuestos += valorSubItemSinImpuestos;
+                    const taxSubItem = calculateTaxDetails(detallesDePrecio, valorSubItemSinImpuestos);
+                    totalIvaCorte += taxSubItem.iva;
+                    aiuDetailsCorte.admin += taxSubItem.admin;
+                    aiuDetailsCorte.imprev += taxSubItem.imprev;
+                    aiuDetailsCorte.utilidad += taxSubItem.utilidad;
+                    aiuDetailsCorte.ivaSobreUtilidad += taxSubItem.ivaSobreUtilidad;
+
+                    valorTotalEjecutadoCorteItem += valorSubItemSinImpuestos + taxSubItem.iva + taxSubItem.aiuTotal;
+                });
+                
+                // Guardar porcentajes para el resumen final (tomamos del último ítem procesado)
+                if (detallesDePrecio?.taxType === 'aiu') {
+                    aiuDetailsCorte.aiuA = detallesDePrecio.aiuA || 0;
+                    aiuDetailsCorte.aiuI = detallesDePrecio.aiuI || 0;
+                    aiuDetailsCorte.aiuU = detallesDePrecio.aiuU || 0;
                 }
+            }
 
-                subTotalCorteSinImpuestos += valorSubItemSinImpuestos;
-                const taxSubItem = calculateTaxDetails(detallesDePrecio, valorSubItemSinImpuestos);
-                totalIvaCorte += taxSubItem.iva;
-                aiuDetailsCorte.admin += taxSubItem.admin;
-                aiuDetailsCorte.imprev += taxSubItem.imprev;
-                aiuDetailsCorte.utilidad += taxSubItem.utilidad;
-                aiuDetailsCorte.ivaSobreUtilidad += taxSubItem.ivaSobreUtilidad;
+            const valorTotalContratadoItem = valorUnitarioTotalConImpuestos * item.quantity;
+            const valorTotalEjecutadoAcumuladoItem = valorUnitarioTotalConImpuestos * ejecutadoAcumulado;
+            const valorTotalSaldoItem = valorUnitarioTotalConImpuestos * saldo;
 
-                valorTotalEjecutadoCorteItem += valorSubItemSinImpuestos + taxSubItem.iva + taxSubItem.aiuTotal;
-            });
-            if (detallesDePrecio?.taxType === 'aiu') {
-                aiuDetailsCorte.aiuA = detallesDePrecio.aiuA || 0;
-                aiuDetailsCorte.aiuI = detallesDePrecio.aiuI || 0;
-                aiuDetailsCorte.aiuU = detallesDePrecio.aiuU || 0;
+            totalValorContratado += valorTotalContratadoItem;
+            totalValorEjecutadoAcumulado += valorTotalEjecutadoAcumuladoItem;
+            totalValorEjecutadoCorte += valorTotalEjecutadoCorteItem;
+            totalValorSaldo += valorTotalSaldoItem;
+
+            const descriptionText = (item.description || item.name).substring(0, 80);
+
+            body.push([
+                item.name, descriptionText, item.width, item.height,
+                item.quantity, currencyFormatter.format(valorUnitarioTotalConImpuestos), currencyFormatter.format(valorTotalContratadoItem),
+                ejecutadosEnEsteCorte, currencyFormatter.format(valorTotalEjecutadoCorteItem),
+                ejecutadoAcumulado, currencyFormatter.format(valorTotalEjecutadoAcumuladoItem),
+                saldo, currencyFormatter.format(valorTotalSaldoItem)
+            ]);
+        });
+
+        const headStyles = { fontStyle: 'bold', halign: 'center', valign: 'middle', fillColor: [52, 73, 94], textColor: 255 };
+        const subheadStyles = { fontStyle: 'bold', halign: 'center', valign: 'middle', fillColor: [236, 240, 241], textColor: 0 };
+        
+        doc.autoTable({
+            startY: 45,
+            head: [
+                [{ content: 'CONTRATADO', colSpan: 7, styles: headStyles }, { content: 'EJECUTADO CORTE ACTUAL', colSpan: 2, styles: { ...headStyles, fillColor: [22, 160, 133] } }, { content: 'EJECUTADO ACUMULADO', colSpan: 2, styles: { ...headStyles, fillColor: [41, 128, 185] } }, { content: 'SALDO', colSpan: 2, styles: { ...headStyles, fillColor: [192, 57, 43] } }],
+                [{ content: 'Item', styles: subheadStyles }, { content: 'Descripción', styles: subheadStyles }, { content: 'Ancho', styles: subheadStyles }, { content: 'Alto', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'V. Unit', styles: subheadStyles }, { content: 'V. Total', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles }]
+            ],
+            body: body,
+            foot: [
+                [{ content: 'TOTALES', colSpan: 6, styles: { halign: 'right', fontStyle: 'bold' } }, { content: currencyFormatter.format(totalValorContratado), styles: { fontStyle: 'bold', halign: 'center' } }, '', { content: currencyFormatter.format(totalValorEjecutadoCorte), styles: { fontStyle: 'bold', halign: 'center' } }, '', { content: currencyFormatter.format(totalValorEjecutadoAcumulado), styles: { fontStyle: 'bold', halign: 'center' } }, '', { content: currencyFormatter.format(totalValorSaldo), styles: { fontStyle: 'bold', halign: 'center' } }]
+            ],
+            theme: 'grid',
+            styles: { fontSize: 7, cellPadding: 1, halign: 'center', valign: 'middle' },
+            columnStyles: { 1: { cellWidth: 40, halign: 'left' } }, // Descripción más ancha
+            footStyles: { fillColor: [236, 240, 241], textColor: 0 }
+        });
+
+        // --- Tabla de Resumen Financiero ---
+        let finalY = doc.autoTable.previous.finalY;
+        if (finalY > 160) { doc.addPage(); finalY = 20; } else { finalY += 10; }
+
+        const summaryBody = [];
+        summaryBody.push(['SUB TOTAL (Valor Ejecutado en Corte)', currencyFormatter.format(subTotalCorteSinImpuestos)]);
+        if (totalIvaCorte > 0) summaryBody.push(['IVA (19%)', currencyFormatter.format(totalIvaCorte)]);
+        
+        if (aiuDetailsCorte.admin > 0 || aiuDetailsCorte.imprev > 0) {
+            summaryBody.push([`Administración (${aiuDetailsCorte.aiuA}%)`, currencyFormatter.format(aiuDetailsCorte.admin)]);
+            summaryBody.push([`Imprevistos (${aiuDetailsCorte.aiuI}%)`, currencyFormatter.format(aiuDetailsCorte.imprev)]);
+            summaryBody.push([`Utilidad (${aiuDetailsCorte.aiuU}%)`, currencyFormatter.format(aiuDetailsCorte.utilidad)]);
+            if(aiuDetailsCorte.ivaSobreUtilidad > 0) {
+                summaryBody.push(["IVA (19%) s/Utilidad", currencyFormatter.format(aiuDetailsCorte.ivaSobreUtilidad)]);
             }
         }
+        summaryBody.push([{ content: "TOTAL BRUTO CORTE", styles: { fontStyle: 'bold' } }, { content: currencyFormatter.format(totalValorEjecutadoCorte), styles: { fontStyle: 'bold' } }]);
 
-        const valorTotalContratadoItem = valorUnitarioTotalConImpuestos * item.quantity;
-        const valorTotalEjecutadoAcumuladoItem = valorUnitarioTotalConImpuestos * ejecutadoAcumulado;
-        const valorTotalSaldoItem = valorUnitarioTotalConImpuestos * saldo;
+        let totalAPagar = totalValorEjecutadoCorte;
+        if (corte.amortizacion > 0) { 
+            summaryBody.push(["Amortización Anticipo", `(${currencyFormatter.format(corte.amortizacion)})`]); 
+            totalAPagar -= corte.amortizacion; 
+        }
+        if (corte.otrosDescuentos && corte.otrosDescuentos.length > 0) { 
+            corte.otrosDescuentos.forEach(d => { 
+                summaryBody.push([`Descuento (${d.concept})`, `(${currencyFormatter.format(d.value)})`]); 
+                totalAPagar -= d.value; 
+            }); 
+        }
+        summaryBody.push([{ content: "NETO A PAGAR", styles: { fontStyle: 'bold', fillColor: [46, 204, 113] } }, { content: currencyFormatter.format(totalAPagar), styles: { fontStyle: 'bold', fillColor: [46, 204, 113] } }]);
 
-        totalValorContratado += valorTotalContratadoItem;
-        totalValorEjecutadoAcumulado += valorTotalEjecutadoAcumuladoItem;
-        totalValorEjecutadoCorte += valorTotalEjecutadoCorteItem;
-        totalValorSaldo += valorTotalSaldoItem;
+        doc.autoTable({
+            startY: finalY,
+            body: summaryBody,
+            theme: 'grid',
+            tableWidth: 120,
+            margin: { left: 160 }, // Alineado a la derecha
+            styles: { fontSize: 9, cellPadding: 2 },
+            columnStyles: { 0: { halign: 'right', fontStyle: 'bold' }, 1: { halign: 'right' } }
+        });
 
-        const descriptionText = (item.description || item.name).substring(0, 100);
+        doc.save(`Acta_Corte_${corte.corteNumber}_${proyecto.name}_${exportType}.pdf`);
 
-        body.push([
-            item.name, descriptionText, item.width, item.height,
-            item.quantity, currencyFormatter.format(valorUnitarioTotalConImpuestos), currencyFormatter.format(valorTotalContratadoItem),
-            ejecutadosEnEsteCorte, currencyFormatter.format(valorTotalEjecutadoCorteItem),
-            ejecutadoAcumulado, currencyFormatter.format(valorTotalEjecutadoAcumuladoItem),
-            saldo, currencyFormatter.format(valorTotalSaldoItem)
-        ]);
-    });
-
-    const headStyles = { fontStyle: 'bold', halign: 'center', valign: 'middle', fillColor: [52, 73, 94], textColor: 255 };
-    const subheadStyles = { fontStyle: 'bold', halign: 'center', valign: 'middle', fillColor: [236, 240, 241], textColor: 0 };
-    doc.autoTable({
-        startY: 45,
-        head: [
-            [{ content: 'CONTRATADO', colSpan: 7, styles: headStyles }, { content: 'EJECUTADO CORTE ACTUAL', colSpan: 2, styles: { ...headStyles, fillColor: [22, 160, 133] } }, { content: 'EJECUTADO ACUMULADO', colSpan: 2, styles: { ...headStyles, fillColor: [41, 128, 185] } }, { content: 'SALDO POR EJECUTAR', colSpan: 2, styles: { ...headStyles, fillColor: [192, 57, 43] } }],
-            [{ content: 'Item', styles: subheadStyles }, { content: 'Descripción', styles: subheadStyles }, { content: 'Ancho', styles: subheadStyles }, { content: 'Alto', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'Vlr. Unit', styles: subheadStyles }, { content: 'Vlr. Total', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles }]
-        ],
-        body: body,
-        foot: [
-            [{ content: 'TOTALES', colSpan: 6, styles: { halign: 'right', fontStyle: 'bold' } }, { content: currencyFormatter.format(totalValorContratado), styles: { fontStyle: 'bold', halign: 'center' } }, '', { content: currencyFormatter.format(totalValorEjecutadoCorte), styles: { fontStyle: 'bold', halign: 'center' } }, '', { content: currencyFormatter.format(totalValorEjecutadoAcumulado), styles: { fontStyle: 'bold', halign: 'center' } }, '', { content: currencyFormatter.format(totalValorSaldo), styles: { fontStyle: 'bold', halign: 'center' } }]
-        ],
-        theme: 'grid',
-        styles: { fontSize: 8, cellPadding: 1.5, halign: 'center', valign: 'middle' },
-        footStyles: { fillColor: [236, 240, 241], textColor: 0 }
-    });
-
-    let finalY = doc.autoTable.previous.finalY;
-    if (finalY > 180) { doc.addPage(); finalY = 20; } else { finalY += 7; }
-
-    const summaryBody = [];
-    summaryBody.push(['SUB TOTAL (Valor Ejecutado en Corte)', currencyFormatter.format(subTotalCorteSinImpuestos)]);
-    if (totalIvaCorte > 0) summaryBody.push(['IVA (19%)', currencyFormatter.format(totalIvaCorte)]);
-    if (aiuDetailsCorte.admin > 0 || aiuDetailsCorte.imprev > 0) {
-        summaryBody.push([`Administración (${aiuDetailsCorte.aiuA}%)`, currencyFormatter.format(aiuDetailsCorte.admin)]);
-        summaryBody.push([`Imprevistos (${aiuDetailsCorte.aiuI}%)`, currencyFormatter.format(aiuDetailsCorte.imprev)]);
-        summaryBody.push([`Utilidad (${aiuDetailsCorte.aiuU}%)`, currencyFormatter.format(aiuDetailsCorte.utilidad)]);
-        summaryBody.push(["IVA (19%) s/Utilidad", currencyFormatter.format(aiuDetailsCorte.ivaSobreUtilidad)]);
+    } catch (error) {
+        console.error("Error al exportar acta de corte:", error);
+        alert("Ocurrió un error al generar el PDF del acta. Revisa la consola.");
+    } finally {
+        loadingOverlay.classList.add('hidden');
     }
-    summaryBody.push([{ content: "TOTAL BRUTO CORTE", styles: { fontStyle: 'bold' } }, { content: currencyFormatter.format(totalValorEjecutadoCorte), styles: { fontStyle: 'bold' } }]);
-
-    let totalAPagar = totalValorEjecutadoCorte;
-    if (corte.amortizacion > 0) { summaryBody.push(["Amortización Anticipo", `(${currencyFormatter.format(corte.amortizacion)})`]); totalAPagar -= corte.amortizacion; }
-    if (corte.otrosDescuentos && corte.otrosDescuentos.length > 0) { corte.otrosDescuentos.forEach(d => { summaryBody.push([`Descuento (${d.concept})`, `(${currencyFormatter.format(d.value)})`]); totalAPagar -= d.value; }); }
-    summaryBody.push([{ content: "TOTAL A PAGAR", styles: { fontStyle: 'bold' } }, { content: currencyFormatter.format(totalAPagar), styles: { fontStyle: 'bold' } }]);
-
-    doc.autoTable({
-        startY: finalY, body: summaryBody, theme: 'plain', tableWidth: 100,
-        margin: { left: 180 }, styles: { fontSize: 9 }, columnStyles: { 0: { halign: 'right' }, 1: { halign: 'right' } }
-    });
-
-    doc.save(`Memoria_Corte_${corte.corteNumber}_${proyecto.name}_${exportType}.pdf`);
 }
 // =================== FINALIZA CÓDIGO AÑADIDO ===================
 
@@ -3839,6 +4032,9 @@ async function deleteItem(itemId) {
 // --- LÓGICA DE SUB-ÍTEMS ---
 function showSubItems(item) {
     currentItem = item;
+    
+    materialRequestReturnContext = { view: 'subItems' };
+
     showView('subItems');
     document.getElementById('item-name-header').textContent = `Detalle de: ${item.name}`;
     document.getElementById('item-summary-header').textContent = `Total de ${item.quantity} unidades.`;
@@ -3880,7 +4076,7 @@ function viewDocument(url, title = 'Visor de Documentos') {
 
     // 1. Configurar Modal
     titleEl.textContent = title;
-    
+
     // 2. Detectar tipo de archivo para mejor visualización
     // Si es PDF, usamos el visor nativo del navegador dentro del iframe
     iframe.src = url;
@@ -3897,7 +4093,7 @@ function viewDocument(url, title = 'Visor de Documentos') {
     };
 
     closeBtn.onclick = closeModal;
-    
+
     // Cerrar al hacer clic fuera (backdrop)
     modal.onclick = (e) => {
         if (e.target === modal) closeModal();
@@ -5079,6 +5275,97 @@ async function openMainModal(type, data = {}) {
                         }
                     });
                 });
+            }, 100);
+            break;
+
+        case 'create-daily-report':
+            title = 'Nuevo Reporte de Actividad';
+            btnText = 'Guardar Reporte';
+            btnClass = 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg';
+
+            const todayStr = new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+            bodyHtml = `
+            <div class="space-y-4">
+                <div class="bg-gradient-to-r from-indigo-50 to-blue-50 p-4 rounded-xl border border-indigo-100 flex items-center gap-3">
+                    <div class="p-2 bg-white rounded-full shadow-sm text-indigo-500"><i class="fa-regular fa-calendar-check"></i></div>
+                    <div>
+                        <p class="text-sm text-indigo-900 font-bold capitalize">${todayStr}</p>
+                        <p class="text-xs text-indigo-600">Reporta tus actividades del día.</p>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-end mb-2">
+                        <label class="block text-sm font-bold text-gray-700">Descripción de Actividades</label>
+                        <span id="mic-status" class="text-xs font-bold text-gray-400 italic transition-colors">Listo para escribir</span>
+                    </div>
+                    
+                    <div class="relative">
+                        <textarea id="daily-report-text" name="reportText" rows="6" 
+                            class="w-full p-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none resize-none text-gray-700 leading-relaxed transition-all placeholder-gray-400" 
+                            placeholder="Escribe aquí o presiona el micrófono para dictar..."></textarea>
+                        
+                        <button type="button" id="btn-voice-record" 
+                            class="absolute bottom-3 right-3 bg-gray-100 hover:bg-red-500 hover:text-white text-gray-500 p-3 rounded-xl transition-all shadow-sm border border-gray-200 group">
+                            <i class="fa-solid fa-microphone text-lg group-hover:scale-110 transition-transform"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+            // Lógica del Micrófono (Web Speech API)
+            setTimeout(() => {
+                const btnRecord = document.getElementById('btn-voice-record');
+                const textArea = document.getElementById('daily-report-text');
+                const statusText = document.getElementById('mic-status');
+                let recognition;
+
+                if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                    recognition = new SpeechRecognition();
+                    recognition.lang = 'es-CO';
+                    recognition.interimResults = false;
+                    recognition.continuous = false;
+
+                    recognition.onstart = () => {
+                        btnRecord.classList.add('bg-red-500', 'text-white', 'animate-pulse', 'ring-4', 'ring-red-200');
+                        btnRecord.classList.remove('bg-gray-100', 'text-gray-500');
+                        statusText.textContent = "Escuchando... habla ahora";
+                        statusText.className = "text-xs font-bold text-red-500 italic animate-pulse";
+                        textArea.classList.add('border-red-300');
+                    };
+
+                    recognition.onend = () => {
+                        btnRecord.classList.remove('bg-red-500', 'text-white', 'animate-pulse', 'ring-4', 'ring-red-200');
+                        btnRecord.classList.add('bg-gray-100', 'text-gray-500');
+                        statusText.textContent = "Dictado finalizado";
+                        statusText.className = "text-xs font-bold text-green-600 italic";
+                        textArea.classList.remove('border-red-300');
+                        setTimeout(() => { statusText.textContent = "Listo para escribir"; statusText.className = "text-xs font-bold text-gray-400 italic"; }, 2000);
+                    };
+
+                    recognition.onresult = (event) => {
+                        const transcript = event.results[0][0].transcript;
+                        const currentText = textArea.value.trim();
+                        // Añade el texto dictado con un espacio si ya había texto
+                        textArea.value = currentText + (currentText.length > 0 ? " " : "") + transcript.charAt(0).toUpperCase() + transcript.slice(1) + ".";
+                        textArea.scrollTop = textArea.scrollHeight; // Auto-scroll al final
+                    };
+
+                    recognition.onerror = (event) => {
+                        console.error("Error voz:", event.error);
+                        statusText.textContent = "No te escuché bien. Intenta de nuevo.";
+                        statusText.className = "text-xs font-bold text-orange-500 italic";
+                    };
+
+                    btnRecord.addEventListener('click', () => {
+                        try { recognition.start(); } catch (e) { recognition.stop(); }
+                    });
+                } else {
+                    btnRecord.style.display = 'none'; // Navegador no soporta
+                }
             }, 100);
             break;
 
@@ -7389,7 +7676,7 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
         }
-  case 'editUser':
+        case 'editUser':
             title = 'Editar Usuario';
             btnText = 'Guardar Cambios';
             btnClass = 'bg-yellow-500 hover:bg-yellow-600';
@@ -7608,9 +7895,9 @@ async function openMainModal(type, data = {}) {
                             const key = chk.dataset.key;
                             // Forzamos el estado según el default del nuevo rol
                             chk.checked = !!newDefaults[key];
-                            
+
                             // Reseteamos estilos visuales (quitamos tachado o negrita de permisos custom previos)
-                            if(permissionLabels[index]) {
+                            if (permissionLabels[index]) {
                                 permissionLabels[index].className = "text-xs text-gray-700 permission-label";
                             }
                         });
@@ -8389,6 +8676,39 @@ modalForm.addEventListener('submit', async (e) => {
     if (type === 'new-task') {
         await createTask(data); // Llama a la nueva función para crear la tarea
         return; // Salimos para no ejecutar el switch de abajo
+    }
+
+    if (type === 'create-daily-report') {
+        const text = data.reportText;
+
+        if (!text || text.trim().length < 5) {
+            alert("El reporte está muy corto o vacío.");
+            return;
+        }
+
+        modalConfirmBtn.disabled = true;
+        modalConfirmBtn.textContent = "Guardando...";
+
+        try {
+            // Guardar en subcolección del usuario actual
+            await addDoc(collection(db, "users", currentUser.uid, "daily_reports"), {
+                content: text.trim(),
+                createdAt: serverTimestamp(),
+                createdByName: `${usersMap.get(currentUser.uid)?.firstName} ${usersMap.get(currentUser.uid)?.lastName}`
+            });
+
+            // (Opcional) Crear Log de auditoría
+            if (window.logAuditAction) window.logAuditAction("Reporte Diario", "Creó reporte de actividad", currentUser.uid);
+
+            showToast("Reporte guardado correctamente.", "success");
+            closeMainModal();
+        } catch (error) {
+            console.error("Error:", error);
+            alert("Error al guardar el reporte.");
+        } finally {
+            modalConfirmBtn.disabled = false;
+        }
+        return; // Importante: salir para no ejecutar otros casos
     }
 
     if (type === 'send-admin-alert') {
@@ -10324,18 +10644,17 @@ document.getElementById('import-modal-confirm-btn').addEventListener('click', ()
 });
 
 // ====================================================================
-//      INICIO: FUNCIÓN EXPORTAR A PDF REPLANTEADA COMO "MEMORIA DE PROYECTO"
+//      INICIO: FUNCIÓN EXPORTAR A PDF (MEMORIA DE PROYECTO) CON DATOS DE EMPRESA
 // ====================================================================
 async function exportProjectToPDF() {
     loadingOverlay.classList.remove('hidden');
-    const { jsPDF } = window.jspdf;
-    const docPDF = new jsPDF();
-    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
-    let yPosition = 0;
-
+    
     try {
-        // --- 1. OBTENER TODOS LOS DATOS NECESARIOS ---
+        // 1. OBTENER DATOS
+        const companyData = await getCompanyData(); // <--- NUEVO: Carga datos de empresa
         const projectId = currentProject.id;
+
+        // Cargar datos del proyecto en paralelo
         const [itemsSnapshot, subItemsSnapshot, cortesSnapshot] = await Promise.all([
             getDocs(query(collection(db, "items"), where("projectId", "==", projectId))),
             getDocs(query(collection(db, "subItems"), where("projectId", "==", projectId))),
@@ -10346,13 +10665,81 @@ async function exportProjectToPDF() {
         const subItemsMap = new Map(subItemsSnapshot.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() }]));
         const approvedCortes = cortesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        // --- 2. ENCABEZADO Y RESUMEN DEL CONTRATO ---
-        docPDF.setFontSize(18);
-        docPDF.text(`Memoria de Proyecto: ${currentProject.name}`, 14, 22);
+        // 2. INICIAR PDF
+        const { jsPDF } = window.jspdf;
+        const docPDF = new jsPDF();
+        const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        
+        let yPosition = 20; // Posición inicial vertical
+
+        // --- 3. ENCABEZADO DINÁMICO DE EMPRESA ---
+        const logoUrl = companyData.logoURL;
+        const companyName = companyData.nombre || "Vidrios Éxito S.A.S";
+        const companyNit = companyData.nit ? `NIT: ${companyData.nit}` : "";
+
+        // Intentar agregar logo si existe URL
+        if (logoUrl) {
+            try {
+                // Definir dimensiones del logo en el PDF
+                const logoWidth = 30; 
+                const logoHeight = 30; 
+                
+                // Agregar imagen (X, Y, W, H)
+                // Nota: jsPDF intentará descargar la imagen. Si hay error de CORS, saltará al catch.
+                docPDF.addImage(logoUrl, 'PNG', 14, 10, logoWidth, logoHeight);
+                
+                // Mover texto a la derecha del logo
+                docPDF.setFontSize(16);
+                docPDF.setFont("helvetica", "bold");
+                docPDF.text(companyName, 50, 20);
+                
+                docPDF.setFontSize(10);
+                docPDF.setFont("helvetica", "normal");
+                docPDF.text(companyNit, 50, 26);
+                docPDF.text(`Fecha de Reporte: ${new Date().toLocaleDateString('es-CO')}`, 50, 32);
+                
+                yPosition = 45; // Ajustar posición Y para no solapar el logo
+            } catch (e) {
+                console.warn("No se pudo cargar el logo en el PDF (posible restricción de seguridad/CORS):", e);
+                // Fallback: Encabezado simple sin logo
+                docPDF.setFontSize(18);
+                docPDF.setFont("helvetica", "bold");
+                docPDF.text(companyName, 14, 22);
+                docPDF.setFontSize(10);
+                docPDF.setFont("helvetica", "normal");
+                docPDF.text(companyNit, 14, 28);
+                yPosition = 40;
+            }
+        } else {
+            // Encabezado estándar si no hay logo configurado
+            docPDF.setFontSize(18);
+            docPDF.setFont("helvetica", "bold");
+            docPDF.text(companyName, 14, 22);
+            docPDF.setFontSize(12);
+            docPDF.setTextColor(100);
+            docPDF.text(companyNit, 14, 28);
+            docPDF.text(`Fecha: ${new Date().toLocaleDateString('es-CO')}`, 14, 34);
+            yPosition = 42;
+        }
+
+        // --- DATOS DEL PROYECTO ---
+        docPDF.setDrawColor(200);
+        docPDF.line(14, yPosition, 196, yPosition); // Línea separadora
+        yPosition += 10;
+
+        docPDF.setFontSize(14);
+        docPDF.setTextColor(0);
+        docPDF.setFont("helvetica", "bold");
+        docPDF.text(`Memoria de Proyecto: ${currentProject.name}`, 14, yPosition);
+        yPosition += 6;
+        
         docPDF.setFontSize(11);
         docPDF.setTextColor(100);
-        docPDF.text(`Constructora: ${currentProject.builderName}`, 14, 30);
+        docPDF.setFont("helvetica", "normal");
+        docPDF.text(`Constructora: ${currentProject.builderName || 'No especificada'}`, 14, yPosition);
+        yPosition += 10;
 
+        // --- TABLA RESUMEN CONTRATO ---
         const contractedValue = await calculateProjectContractedValue(projectId);
         const contractDetails = [
             ["Valor del Contrato:", currencyFormatter.format(currentProject.value || 0)],
@@ -10360,89 +10747,119 @@ async function exportProjectToPDF() {
             ["Anticipo:", currencyFormatter.format(currentProject.advance || 0)],
             ["Fecha Inicio:", currentProject.startDate ? new Date(currentProject.startDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A'],
         ];
+
         docPDF.autoTable({
-            startY: 36,
+            startY: yPosition,
             head: [['Detalles del Contrato', '']],
             body: contractDetails,
             theme: 'striped',
-            headStyles: { fillColor: [41, 128, 185] }
+            headStyles: { fillColor: [41, 128, 185] },
+            styles: { fontSize: 10 },
+            columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60 } }
         });
         yPosition = docPDF.autoTable.previous.finalY + 15;
 
-        // --- 3. DETALLE DE CORTES APROBADOS ---
+        // --- DETALLE DE CORTES APROBADOS ---
         docPDF.setFontSize(14);
+        docPDF.setTextColor(0);
+        docPDF.setFont("helvetica", "bold");
         docPDF.text("Detalle de Cortes Aprobados", 14, yPosition);
         yPosition += 8;
 
         if (approvedCortes.length === 0) {
             docPDF.setFontSize(11);
+            docPDF.setFont("helvetica", "italic");
+            docPDF.setTextColor(100);
             docPDF.text("No hay cortes aprobados para mostrar.", 14, yPosition);
         }
 
         for (const corte of approvedCortes) {
             const tableRows = [];
 
-            // Llenamos las filas con el detalle de cada sub-ítem
+            // Listar Sub-ítems del corte
             for (const subItemId of corte.subItemIds) {
                 const subItem = subItemsMap.get(subItemId);
                 if (subItem) {
                     const parentItem = itemsMap.get(subItem.itemId);
-                    const medida = `${parentItem.width}m x ${parentItem.height}m`;
+                    const parentName = parentItem ? parentItem.name : 'Ítem eliminado';
+                    const parentWidth = parentItem ? parentItem.width : 0;
+                    const parentHeight = parentItem ? parentItem.height : 0;
+                    
+                    const medida = `${parentWidth}m x ${parentHeight}m`;
                     const fecha = subItem.installDate ? new Date(subItem.installDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A';
-                    tableRows.push([`${parentItem.name} - #${subItem.number}`, subItem.location || 'Sin ubicación', medida, fecha]);
+                    tableRows.push([`${parentName} - #${subItem.number}`, subItem.location || 'Sin ubicación', medida, fecha]);
                 }
             }
 
-            // Añadimos la tabla detallada de ítems
+            // Tabla de Ítems del Corte
             docPDF.autoTable({
                 startY: yPosition,
-                head: [[{ content: `CORTE #${corte.corteNumber} ${corte.isFinal ? '(FINAL)' : ''}`, colSpan: 4, styles: { fillColor: [39, 174, 96], textColor: [255, 255, 255] } }]],
+                head: [[{ content: `CORTE #${corte.corteNumber} ${corte.isFinal ? '(FINAL)' : ''}`, colSpan: 4, styles: { fillColor: [39, 174, 96], textColor: 255, fontStyle: 'bold', halign: 'center' } }]],
                 body: tableRows,
-                columns: [{ header: 'Ítem' }, { header: 'Ubicación' }, { header: 'Medida' }, { header: 'Fecha Inst.' }],
+                columns: [
+                    { header: 'Ítem', dataKey: 0 }, 
+                    { header: 'Ubicación', dataKey: 1 }, 
+                    { header: 'Medida', dataKey: 2 }, 
+                    { header: 'Fecha Inst.', dataKey: 3 }
+                ],
                 theme: 'grid',
-                didDrawPage: (data) => { yPosition = data.cursor.y; }
+                headStyles: { fillColor: [52, 73, 94], textColor: 255 },
+                styles: { fontSize: 9 },
+                // Controlar salto de página automático
+                pageBreak: 'auto',
             });
+            
+            // Actualizar Y después de la tabla
+            yPosition = docPDF.autoTable.previous.finalY;
 
-            // --- AÑADIMOS LA TABLA DE RESUMEN FINANCIERO DEL CORTE ---
+            // Resumen Financiero del Corte (Pequeña tabla alineada a la derecha)
             const financialSummary = [
-                ['Valor Bruto del Corte:', currencyFormatter.format(corte.totalValue)],
+                ['Valor Bruto:', currencyFormatter.format(corte.totalValue || 0)],
             ];
             if (corte.amortizacion > 0) {
-                financialSummary.push(['Amortización de Anticipo:', `- ${currencyFormatter.format(corte.amortizacion)}`]);
+                financialSummary.push(['Amortización Anticipo:', `- ${currencyFormatter.format(corte.amortizacion)}`]);
             }
-            if (corte.descuento?.valor > 0) {
-                financialSummary.push([`Descuento (${corte.descuento.concepto || 'N/A'}):`, `- ${currencyFormatter.format(corte.descuento.valor)}`]);
+            if (corte.otrosDescuentos && Array.isArray(corte.otrosDescuentos)) {
+                corte.otrosDescuentos.forEach(d => {
+                    financialSummary.push([`Desc. (${d.concept || 'Varios'}):`, `- ${currencyFormatter.format(d.value)}`]);
+                });
             }
-            financialSummary.push(['Neto a Pagar por este Corte:', currencyFormatter.format(corte.netoAPagar)]);
+            financialSummary.push(['Neto a Pagar:', currencyFormatter.format(corte.netoAPagar || 0)]);
 
             docPDF.autoTable({
-                startY: docPDF.autoTable.previous.finalY + 2,
+                startY: yPosition + 2,
                 body: financialSummary,
                 theme: 'plain',
-                styles: { fontSize: 9 },
+                styles: { fontSize: 9, cellPadding: 1 },
                 columnStyles: {
-                    0: { fontStyle: 'bold', halign: 'right' },
-                    1: { halign: 'right' }
-                }
+                    0: { fontStyle: 'bold', halign: 'right', cellWidth: 'auto' },
+                    1: { halign: 'right', cellWidth: 40 }
+                },
+                // Alinear tabla a la derecha
+                margin: { left: 120 } 
             });
+            
             yPosition = docPDF.autoTable.previous.finalY + 15;
+            
+            // Verificar espacio para el siguiente corte
+            if (yPosition > 250) {
+                docPDF.addPage();
+                yPosition = 20;
+            }
         }
 
-        // --- 4. SECCIÓN DE PENDIENTES (SE MANTIENE IGUAL) ---
-        // ... (código existente) ...
-
-        // --- 5. GUARDAR EL PDF ---
+        // --- GUARDAR ---
         docPDF.save(`Memoria_Proyecto_${currentProject.name.replace(/\s/g, '_')}.pdf`);
 
     } catch (error) {
         console.error("Error al exportar a PDF:", error);
-        alert("Ocurrió un error al generar el PDF.");
+        alert("Ocurrió un error al generar el PDF: " + error.message);
     } finally {
         loadingOverlay.classList.add('hidden');
     }
 }
 // ====================================================================
-//      FIN: FUNCIÓN EXPORTAR A PDF MEJORADA
+//      FIN FUNCIÓN EXPORTAR
 // ====================================================================
 
 // --- NOTIFICACIONES ---
@@ -11082,21 +11499,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.getElementById('recalculate-all-btn').addEventListener('click', async () => {
-        openConfirmModal("Esto recalculará las estadísticas de TODOS los proyectos. Puede tardar un momento. ¿Continuar?", async () => {
-            loadingOverlay.classList.remove('hidden');
-            try {
-                const runRecalculation = httpsCallable(functions, 'runFullRecalculation');
-                const result = await runRecalculation();
-                alert(result.data.message);
-            } catch (error) {
-                console.error("Error al ejecutar el recálculo:", error);
-                alert("Error: " + error.message);
-            } finally {
-                loadingOverlay.classList.add('hidden');
-            }
+const recalculateBtn = document.getElementById('recalculate-all-btn');
+    if (recalculateBtn) { // <--- Verificamos si existe antes de usarlo
+        recalculateBtn.addEventListener('click', async () => {
+            openConfirmModal("Esto recalculará las estadísticas de TODOS los proyectos. Puede tardar un momento. ¿Continuar?", async () => {
+                loadingOverlay.classList.remove('hidden');
+                try {
+                    const runRecalculation = httpsCallable(functions, 'runFullRecalculation');
+                    const result = await runRecalculation();
+                    alert(result.data.message);
+                } catch (error) {
+                    console.error("Error al ejecutar el recálculo:", error);
+                    alert("Error: " + error.message);
+                } finally {
+                    loadingOverlay.classList.add('hidden');
+                }
+            });
         });
-    });
+    }
 
     // --- Lógica para el filtro de fecha de Órdenes de Compra ---
     const poStartDateInput = document.getElementById('po-start-date-filter');
@@ -11408,16 +11828,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
         console.log(`Action: ${action}, ElementID: ${elementId}, ProjectID(Task): ${projectIdForTask}, TaskID(Progress): ${taskIdForProgress}`);
 
-        // --- LÓGICA POR CONTEXTO ESPECÍFICO ---
+// --- LÓGICA POR CONTEXTO ESPECÍFICO (Dentro de las tarjetas) ---
         const projectCard = elementWithAction.closest('.project-card');
         if (projectCard) {
             const projectId = projectCard.dataset.id;
             const projectName = projectCard.dataset.name;
+            
             switch (action) {
                 case 'view-details':
                     const docSnap = await getDoc(doc(db, "projects", projectId));
                     if (docSnap.exists()) showProjectDetails({ id: docSnap.id, ...docSnap.data() });
                     break;
+
+                // --- AGREGAR ESTE CASO NUEVO ---
+                case 'edit-project-info':
+                    loadingOverlay.classList.remove('hidden');
+                    try {
+                        const pDoc = await getDoc(doc(db, "projects", projectId));
+                        if (pDoc.exists()) {
+                            // Abrimos el modal con los datos frescos del proyecto
+                            openMainModal('editProjectInfo', { id: pDoc.id, ...pDoc.data() });
+                        }
+                    } catch (error) {
+                        console.error("Error al cargar proyecto para editar:", error);
+                    } finally {
+                        loadingOverlay.classList.add('hidden');
+                    }
+                    break;
+                // -------------------------------
+
                 case 'archive':
                     openConfirmModal(`¿Archivar el proyecto "${projectName}"?`, () => archiveProject(projectId));
                     break;
@@ -11428,7 +11867,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     openConfirmModal(`¿Eliminar el proyecto "${projectName}"?`, () => deleteProject(projectId));
                     break;
             }
-            return;
+            return; // Importante: Detiene la ejecución para que no busque en otros lados
         }
 
         // Este bloque maneja los clics en la tabla de Ítems (Ver, Editar, Eliminar)
@@ -11475,6 +11914,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // --- ACCIONES GENERALES Y DE MODALES (MANEJADAS POR UN SWITCH) ---
         switch (action) {
+
+
+            case 'create-daily-report':
+                openMainModal('create-daily-report');
+                break;
+
 
             case 'send-admin-alert':
                 openMainModal('send-admin-alert');
@@ -11775,26 +12220,30 @@ document.addEventListener('DOMContentLoaded', () => {
             // Acciones dentro de la Vista de un Proyecto
             case 'back-to-dashboard': showDashboard(); break;
 
-            // --- INICIO DE LA MODIFICACIÓN ---
             case 'back-to-project':
                 // Primero, limpia el formulario
                 resetMaterialRequestForm();
 
                 console.log("Botón 'Volver' presionado, regresando a:", materialRequestReturnContext.view);
 
-                // --- INICIO DE LA MODIFICACIÓN ---
-                // Si el origen fue 'tareas' O 'detalle-tarea', volvemos a la lista de tareas.
+                // Lógica de Retorno
                 if (materialRequestReturnContext.view === 'tareas' || materialRequestReturnContext.view === 'detalle-tarea') {
                     showView('tareas');
-                    loadAndDisplayTasks('pendiente'); // Recargamos las tareas pendientes
-                } else {
-                    // Si no, volvemos al proyecto (comportamiento por defecto)
+                    loadAndDisplayTasks('pendiente'); 
+                } 
+                else if (materialRequestReturnContext.view === 'proyectos' || !currentProject) {
+                    showDashboard();
+                }
+                // --- NUEVO: Si venimos de Sub-ítems, volver a la pestaña de Ítems ---
+                else if (materialRequestReturnContext.view === 'subItems') {
+                    showProjectDetails(currentProject, 'items');
+                }
+                // --------------------------------------------------------------------
+                else {
+                    // Por defecto (ej: desde Solicitudes), volver a Materiales
                     showProjectDetails(currentProject, 'materiales');
                 }
-                // *** Eliminamos el reseteo del contexto de aquí ***
-                // --- FIN DE LA MODIFICACIÓN ---
                 break;
-            // --- FIN DE LA MODIFICACIÓN ---
 
             case 'edit-project-info': openMainModal('editProjectInfo', currentProject); break;
             // Pestaña Ítems
@@ -12262,21 +12711,47 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('archived-users-tab').addEventListener('click', () => loadUsers('archived'));
 
     // Modales y otros elementos
-    document.getElementById('modal-cancel-btn').addEventListener('click', closeMainModal);
-    document.getElementById('modal-cancel-btn-footer').addEventListener('click', closeMainModal); // <-- ¡LÍNEA AÑADIDA!
-    document.getElementById('progress-modal-cancel-btn').addEventListener('click', closeProgressModal);
-    document.getElementById('import-modal-cancel-btn').addEventListener('click', () => document.getElementById('import-modal').style.display = 'none');
-    document.getElementById('confirm-modal-cancel-btn').addEventListener('click', closeConfirmModal);
-    document.getElementById('image-modal-close-btn').addEventListener('click', closeImageModal);
-    document.getElementById('register-success-accept-btn').addEventListener('click', () => {
-        closeRegisterSuccessModal();
-        handleLogout();
-        document.getElementById('register-form').reset();
-        showAuthView('login');
-    });
+// --- SECCIÓN CORREGIDA: Asignación Segura de Listeners ---
+    
+    // Función auxiliar para evitar errores si un ID no existe
+    const addSafeListener = (id, event, handler) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener(event, handler);
+        }
+    };
 
-    document.getElementById('document-viewer-close-btn').addEventListener('click', closeDocumentViewerModal);
-    document.getElementById('documents-modal-close-btn').addEventListener('click', closeDocumentsModal);
+    // Asignamos los eventos usando la función segura
+    addSafeListener('modal-cancel-btn', 'click', closeMainModal);
+    addSafeListener('modal-cancel-btn-footer', 'click', closeMainModal); // Ya no dará error si falta
+    addSafeListener('progress-modal-cancel-btn', 'click', closeProgressModal);
+    
+    // Para el modal de importación
+    const importCancelBtn = document.getElementById('import-modal-cancel-btn');
+    if (importCancelBtn) {
+        importCancelBtn.addEventListener('click', () => {
+            const modal = document.getElementById('import-modal');
+            if(modal) modal.style.display = 'none';
+        });
+    }
+
+    addSafeListener('confirm-modal-cancel-btn', 'click', closeConfirmModal);
+    addSafeListener('image-modal-close-btn', 'click', closeImageModal);
+
+    // Para el modal de registro exitoso
+    const registerSuccessBtn = document.getElementById('register-success-accept-btn');
+    if (registerSuccessBtn) {
+        registerSuccessBtn.addEventListener('click', () => {
+            closeRegisterSuccessModal();
+            handleLogout();
+            const regForm = document.getElementById('register-form');
+            if(regForm) regForm.reset();
+            showAuthView('login');
+        });
+    }
+
+    addSafeListener('document-viewer-close-btn', 'click', closeDocumentViewerModal);
+    addSafeListener('documents-modal-close-btn', 'click', closeDocumentsModal);
 
     document.getElementById('documents-modal-body').addEventListener('click', (e) => {
         const button = e.target.closest('button');
@@ -14193,7 +14668,12 @@ async function handleMaterialRequestSubmit(e) {
         if (materialRequestReturnContext.view === 'tareas' || materialRequestReturnContext.view === 'detalle-tarea') {
             showView('tareas');
             loadAndDisplayTasks('pendiente'); // Recargamos las tareas pendientes
-        } else {
+        } 
+        // NUEVO: Si venimos del Dashboard o no hay proyecto, volver al inicio
+        else if (materialRequestReturnContext.view === 'proyectos' || !currentProject) {
+            showDashboard();
+        }
+        else {
             // Si no, volvemos al proyecto (comportamiento por defecto)
             showProjectDetails(currentProject, 'materiales');
         }
@@ -16223,7 +16703,7 @@ function initThemeToggle() {
     if (!themeToggleBtn) return;
 
     // 1. Verificar preferencia guardada o del sistema
-    if (localStorage.getItem('color-theme') === 'dark' || 
+    if (localStorage.getItem('color-theme') === 'dark' ||
         (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
         document.documentElement.classList.add('dark');
         lightIcon.classList.remove('hidden');
@@ -16233,7 +16713,7 @@ function initThemeToggle() {
     }
 
     // 2. Evento Click
-    themeToggleBtn.addEventListener('click', function() {
+    themeToggleBtn.addEventListener('click', function () {
         // Alternar iconos
         darkIcon.classList.toggle('hidden');
         lightIcon.classList.toggle('hidden');

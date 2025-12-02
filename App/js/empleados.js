@@ -305,23 +305,48 @@ async function loadDocumentosTab(container) {
     let selectedUserId = null;
     let activeSlotId = null;
 
-    // --- LÓGICA BUSCADOR ---
+    // --- LÓGICA BUSCADOR (CORREGIDA) ---
     const usersMap = _getUsersMap();
-    const usersArray = Array.from(usersMap.values()).filter(u => u.status === 'active');
+
+    // CORRECCIÓN: Convertimos el Map a un array asegurándonos de incluir el 'id'
+    const usersArray = Array.from(usersMap.entries())
+        .map(([id, data]) => ({ id: id, ...data })) // <-- AQUÍ ESTABA EL PROBLEMA
+        .filter(u => u.status === 'active');
 
     searchInput.addEventListener('input', (e) => {
         const term = e.target.value.toLowerCase();
         resultsBox.innerHTML = '';
         if (term.length < 2) { resultsBox.classList.add('hidden'); return; }
-        const filtered = usersArray.filter(u => `${u.firstName} ${u.lastName}`.toLowerCase().includes(term) || u.idNumber.includes(term));
+
+        const filtered = usersArray.filter(u =>
+            `${u.firstName} ${u.lastName}`.toLowerCase().includes(term) ||
+            (u.idNumber && u.idNumber.includes(term))
+        );
 
         if (filtered.length === 0) resultsBox.innerHTML = '<div class="p-3 text-sm text-gray-500">No encontrado</div>';
         else {
             filtered.forEach(user => {
                 const div = document.createElement('div');
                 div.className = "p-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-100 flex items-center gap-3";
-                div.innerHTML = `<div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 text-xs font-bold">${user.firstName[0]}${user.lastName[0]}</div><div><p class="text-sm font-bold text-gray-800">${user.firstName} ${user.lastName}</p><p class="text-xs text-gray-500">CC: ${user.idNumber}</p></div>`;
+
+                // Validación de iniciales para evitar errores si faltan nombres
+                const initials = (user.firstName?.[0] || '') + (user.lastName?.[0] || '');
+
+                div.innerHTML = `
+                    <div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 text-xs font-bold">${initials}</div>
+                    <div>
+                        <p class="text-sm font-bold text-gray-800">${user.firstName} ${user.lastName}</p>
+                        <p class="text-xs text-gray-500">CC: ${user.idNumber || 'N/A'}</p>
+                    </div>
+                `;
+
                 div.onclick = () => {
+                    // Ahora 'user.id' SÍ existe gracias al mapeo de arriba
+                    if (!user.id) {
+                        console.error("Error: Usuario sin ID", user);
+                        alert("Error al seleccionar usuario.");
+                        return;
+                    }
                     searchInput.value = `${user.firstName} ${user.lastName}`;
                     resultsBox.classList.add('hidden');
                     loadUserExpediente(user.id, user.firstName + ' ' + user.lastName);
@@ -834,7 +859,7 @@ function loadSSTGeneralSubTab(container) {
 }
 
 // ----------------------------------------------------------
-// SUB-MÓDULO 2: SEGUIMIENTO COLABORADORES (SEMÁFORO)
+// SUB-MÓDULO 2: SEGUIMIENTO COLABORADORES (CORREGIDO)
 // ----------------------------------------------------------
 async function loadSSTColaboradoresSubTab(container) {
     // 1. ESTRUCTURA DE LA TABLA
@@ -869,28 +894,44 @@ async function loadSSTColaboradoresSubTab(container) {
     const tableBody = document.getElementById('sst-colab-table-body');
     const searchInput = document.getElementById('sst-colab-search');
 
-    // 2. OBTENER DATOS (Usuarios y sus Documentos SST)
-    const usersMap = _getUsersMap();
-    const activeUsers = Array.from(usersMap.values()).filter(u => u.status === 'active');
+    // --- CAMBIO 1: Cargar Configuración de Alertas ---
+    let diasAlerta = 45; // Valor por defecto
+    try {
+        const configSnap = await getDoc(doc(_db, "system", "generalConfig"));
+        if (configSnap.exists() && configSnap.data().alertas) {
+            diasAlerta = configSnap.data().alertas.diasVencimientoSST || 45;
+        }
+    } catch (e) { console.warn("Usando alerta por defecto (45 días)", e); }
+    // -----------------------------------------------
 
-    // Preparar consulta de documentos SST para todos los usuarios activos
-    // (Optimizacion: Consultamos la colección 'documents' de cada usuario es pesado, 
-    // para MVP iteramos. Para producción masiva se recomienda una collectionGroup o campo en user)
+    const usersMap = _getUsersMap();
+    
+    // Mapeamos entries() para asegurar que el ID vaya dentro del objeto
+    const activeUsers = Array.from(usersMap.entries())
+        .map(([id, data]) => ({ id: id, ...data })) 
+        .filter(u => u.status === 'active');
 
     tableBody.innerHTML = '';
 
-    // Renderizamos fila por fila
+    if (activeUsers.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-400">No hay colaboradores activos.</td></tr>';
+        return;
+    }
+
     for (const user of activeUsers) {
+        if (!user.id) continue;
+
         const tr = document.createElement('tr');
         tr.className = "hover:bg-blue-50 transition-colors group";
-        tr.dataset.name = `${user.firstName} ${user.lastName} ${user.idNumber}`.toLowerCase();
+        tr.dataset.name = `${user.firstName || ''} ${user.lastName || ''} ${user.idNumber || ''}`.toLowerCase();
 
-        // Marcadores de carga inicial
+        const initials = (user.firstName?.[0] || '') + (user.lastName?.[0] || '');
+
         tr.innerHTML = `
             <td class="px-4 py-3 font-medium text-gray-900">
                 <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
-                        ${user.firstName[0]}${user.lastName[0]}
+                        ${initials}
                     </div>
                     <div>
                         <p>${user.firstName} ${user.lastName}</p>
@@ -908,18 +949,16 @@ async function loadSSTColaboradoresSubTab(container) {
             </td>
         `;
 
-        // Listener para abrir detalle
         tr.querySelector('.btn-manage-sst').addEventListener('click', () => {
             loadSSTUserProfile(user.id, container);
         });
 
         tableBody.appendChild(tr);
 
-        // 3. CARGA ASÍNCRONA DE ESTADOS (Lazy Load por fila)
-        checkUserSSTStatus(user.id);
+        // --- CAMBIO 2: Pasamos 'diasAlerta' a la función ---
+        checkUserSSTStatus(user.id, diasAlerta);
     }
 
-    // Buscador Local
     searchInput.addEventListener('input', (e) => {
         const term = e.target.value.toLowerCase();
         const rows = tableBody.querySelectorAll('tr');
@@ -933,9 +972,10 @@ async function loadSSTColaboradoresSubTab(container) {
 /**
  * Verifica los documentos SST de un usuario y actualiza los semáforos en la tabla.
  */
-async function checkUserSSTStatus(userId) {
+async function checkUserSSTStatus(userId, alertDays = 30) {
+    if (!userId) return;
+
     try {
-        // Consultar documentos de categoría SST
         const q = query(collection(_db, "users", userId, "documents"),
             where("category", "in", ["sst_alturas", "sst_medico", "sst_induccion"]));
 
@@ -943,26 +983,26 @@ async function checkUserSSTStatus(userId) {
         const docs = {};
         snapshot.forEach(d => docs[d.data().category] = d.data());
 
-        // Helper para generar el badge HTML
+        // Helper para generar el badge
         const getBadge = (category) => {
             const doc = docs[category];
             if (!doc) return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700"><i class="fa-solid fa-xmark"></i> Falta</span>`;
 
-            // Verificar Vencimiento si aplica
             if (doc.expiresAt) {
                 const today = new Date(); today.setHours(0, 0, 0, 0);
-                const expiration = doc.expiresAt.toDate(); // Firestore Timestamp
+                const expiration = doc.expiresAt.toDate();
                 const diffTime = expiration - today;
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                 if (diffDays < 0) return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700" title="Venció el ${expiration.toLocaleDateString()}"><i class="fa-solid fa-triangle-exclamation"></i> Vencido</span>`;
-                if (diffDays <= 30) return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800" title="Vence en ${diffDays} días"><i class="fa-solid fa-clock"></i> Vence pronto</span>`;
+                
+                // --- USAMOS LA VARIABLE DINÁMICA AQUÍ ---
+                if (diffDays <= alertDays) return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800" title="Vence en ${diffDays} días (Alerta: ${alertDays}d)"><i class="fa-solid fa-clock"></i> Vence pronto</span>`;
             }
 
             return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700"><i class="fa-solid fa-check"></i> Al día</span>`;
         };
 
-        // Actualizar celdas
         const cellAlturas = document.getElementById(`status-alturas-${userId}`);
         const cellMedico = document.getElementById(`status-medico-${userId}`);
         const cellInduccion = document.getElementById(`status-induccion-${userId}`);
@@ -981,7 +1021,17 @@ async function checkUserSSTStatus(userId) {
  */
 async function loadSSTUserProfile(userId, container) {
     const usersMap = _getUsersMap();
-    const user = usersMap.get(userId);
+    const rawUserData = usersMap.get(userId);
+
+    // --- CORRECCIÓN: Validar y construir el objeto con ID explícito ---
+    if (!rawUserData) {
+        container.innerHTML = `<div class="p-10 text-center text-red-500">Error: Usuario no encontrado en el sistema local.</div>`;
+        return;
+    }
+
+    // Aquí fusionamos el ID que viene como parámetro con los datos del mapa
+    const user = { id: userId, ...rawUserData }; 
+    // ----------------------------------------------------------------
 
     const SST_USER_CATS = [
         { id: 'sst_alturas', label: 'Curso de Alturas', icon: 'fa-person-falling', color: 'text-orange-600', requiresDate: true, dateLabel: 'Realización', validityMonths: 18 },
@@ -1996,6 +2046,56 @@ async function loadNominaTab(container) {
     }
 }
 
+// --- FUNCIÓN ACTUALIZADA: CARGAR BITÁCORA CON FILTRO ---
+let unsubscribeBitacora = null;
+
+function loadEmployeeBitacora(userId, startDateInput = null, endDateInput = null) {
+    const container = document.getElementById('bitacora-list-container');
+    if (!container) return;
+
+    container.innerHTML = '<div class="flex justify-center py-10"><div class="loader"></div></div>';
+
+    if (unsubscribeBitacora) unsubscribeBitacora();
+
+    let q;
+    if (startDateInput && endDateInput) {
+        const start = new Date(startDateInput);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(endDateInput);
+        end.setHours(23, 59, 59, 999);
+
+        q = query(collection(_db, "users", userId, "daily_reports"), where("createdAt", ">=", start), where("createdAt", "<=", end), orderBy("createdAt", "desc"));
+    } else {
+        q = query(collection(_db, "users", userId, "daily_reports"), orderBy("createdAt", "desc"), limit(20));
+    }
+
+    unsubscribeBitacora = onSnapshot(q, (snapshot) => {
+        container.innerHTML = '';
+        if (snapshot.empty) {
+            container.innerHTML = `<div class="text-center py-10 text-gray-500 bg-gray-50 rounded-lg border border-dashed border-gray-300"><i class="fa-solid fa-filter-circle-xmark text-2xl mb-2 text-gray-300"></i><p>No hay reportes.</p></div>`;
+            return;
+        }
+        snapshot.forEach(doc => {
+            const r = doc.data();
+            const dateObj = r.createdAt ? r.createdAt.toDate() : new Date();
+            const dateStr = dateObj.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' });
+            const timeStr = dateObj.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+
+            const card = document.createElement('div');
+            card.className = "bg-white p-4 rounded-xl shadow-sm border border-gray-100 border-l-4 border-l-indigo-500 mb-3";
+            card.innerHTML = `
+                <div class="flex justify-between mb-2">
+                    <h4 class="font-bold text-gray-800 capitalize">${dateStr}</h4>
+                    <span class="text-xs bg-gray-100 px-2 py-1 rounded font-mono text-gray-500">${timeStr}</span>
+                </div>
+                <p class="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">${r.content}</p>
+                <p class="text-[10px] text-right text-gray-400 mt-2 italic">Por: ${r.createdByName || 'Usuario'}</p>
+            `;
+            container.appendChild(card);
+        });
+    });
+}
+
 /**
  * Muestra la vista de detalle de un empleado específico.
  * VERSIÓN SEGURA: No se rompe si faltan elementos en el HTML.
@@ -2003,21 +2103,40 @@ async function loadNominaTab(container) {
 export async function showEmpleadoDetails(userId) {
     _showView('empleado-details');
 
+    // --- LIMPIEZA DE COMPONENTES (CORREGIDO) ---
+    
+    // 1. Limpiar Gráfica
     if (typeof destroyActiveChart === 'function') {
         destroyActiveChart();
     }
 
+    // 2. Limpiar Mapa de Asistencia
+    // IMPORTANTE: Usamos la variable local 'attendanceMapInstance', SIN 'window.'
+    if (attendanceMapInstance) {
+        attendanceMapInstance.remove(); 
+        attendanceMapInstance = null;
+        // También limpiamos la capa de marcadores por si acaso
+        if (typeof attendanceMarkersLayer !== 'undefined') attendanceMarkersLayer = null;
+    }
+    // -----------------------------------------------
+
+    // Guardar ID para las pestañas
+    const detailsView = document.getElementById('empleado-details-view');
+    if (detailsView) detailsView.dataset.currentUserId = userId;
+
+    // --- CORRECCIÓN CLAVE: LIMPIAR CONTENEDOR DE PESTAÑAS ---
+    const contentContainer = document.getElementById('empleado-details-content-container');
+    if (contentContainer) {
+        contentContainer.innerHTML = ''; 
+    }
+    
     const usersMap = _getUsersMap();
     const user = usersMap.get(userId);
 
-    // Helper para evitar el error "Cannot set properties of null"
+    // Helper seguro
     const safeSetText = (id, text) => {
         const el = document.getElementById(id);
-        if (el) {
-            el.textContent = text;
-        } else {
-            console.warn(`Elemento faltante en HTML: ${id}`); // Aviso en consola para depurar
-        }
+        if (el) el.textContent = text;
     };
 
     if (!user) {
@@ -2025,43 +2144,35 @@ export async function showEmpleadoDetails(userId) {
         return;
     }
 
-    // --- 1. RENDERIZAR ENCABEZADO ---
+    // 1. Renderizar Encabezado
     const level = user.commissionLevel || 'principiante';
     const levelText = level.charAt(0).toUpperCase() + level.slice(1);
 
-    // Nombre y ID
     safeSetText('empleado-details-name', `${user.firstName} ${user.lastName}`);
     const nameEl = document.getElementById('empleado-details-name');
     if (nameEl) nameEl.dataset.userId = userId;
 
-    // Botón Logs (Solo se agrega si existe el nombre)
+    // Botón Logs
     if (nameEl) {
         const headerContainer = nameEl.parentElement;
-        let btnAudit = headerContainer.querySelector('.btn-audit-log');
-        if (!btnAudit) {
-            btnAudit = document.createElement('button');
-            btnAudit.className = "btn-audit-log ml-3 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded border border-gray-300 transition-colors align-middle";
-            btnAudit.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-1"></i> Logs';
-            nameEl.insertAdjacentElement('afterend', btnAudit);
-            btnAudit.onclick = () => {
-                if (typeof window.openMainModal === 'function') window.openMainModal('view-audit-logs', { userId: userId });
-            };
-        }
+        // Limpiar botón previo si existe
+        const oldBtn = headerContainer.querySelector('.btn-audit-log');
+        if (oldBtn) oldBtn.remove();
+
+        const btnAudit = document.createElement('button');
+        btnAudit.className = "btn-audit-log ml-3 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded border border-gray-300 transition-colors align-middle";
+        btnAudit.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-1"></i> Logs';
+        nameEl.insertAdjacentElement('afterend', btnAudit);
+        btnAudit.onclick = () => {
+            if (typeof window.openMainModal === 'function') window.openMainModal('view-audit-logs', { userId: userId });
+        };
     }
 
-    // Datos Personales
     safeSetText('empleado-details-level', `Nivel: ${levelText}`);
-    safeSetText('empleado-details-idNumber', user.idNumber || 'N/A');
-    safeSetText('empleado-details-email', user.email || 'N/A');
-    safeSetText('empleado-details-phone', user.phone || 'N/A');
-    safeSetText('empleado-details-address', user.address || 'N/A');
 
-    // Datos Bancarios (Estos son los que probablemente causaban el error)
-    safeSetText('empleado-details-bank', user.bankName || 'No registrado');
-    safeSetText('empleado-details-account-type', user.accountType || 'N/A');
-    safeSetText('empleado-details-account-number', user.accountNumber || '---');
+    // (Los textos de cédula, email, etc. se llenarán al cargar la pestaña resumen)
 
-    // --- 2. CONFIGURACIÓN DE PESTAÑAS ---
+    // 2. Configurar Navegación
     const tabsNav = document.getElementById('empleado-details-tabs-nav');
     if (tabsNav) {
         const newTabsNav = tabsNav.cloneNode(false);
@@ -2071,15 +2182,15 @@ export async function showEmpleadoDetails(userId) {
             <button data-tab="resumen" class="empleado-details-tab-button active whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm text-blue-600 border-blue-500 hover:text-blue-800 transition-colors">
                 <i class="fa-solid fa-chart-pie mr-2"></i> Resumen
             </button>
-            
+            <button data-tab="bitacora" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
+                <i class="fa-solid fa-book-journal-whills mr-2"></i> Bitácora
+            </button>
             <button data-tab="asistencia" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
                 <i class="fa-solid fa-location-dot mr-2"></i> Reporte de Ingreso
             </button>
-
             <button data-tab="documentos" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
                 <i class="fa-solid fa-folder-open mr-2"></i> Expediente
             </button>
-
             <button data-tab="dotacion" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
                 <i class="fa-solid fa-helmet-safety mr-2"></i> Dotación
             </button>
@@ -2102,54 +2213,25 @@ export async function showEmpleadoDetails(userId) {
         });
     }
 
-    // --- 3. CONFIGURAR BOTONES DE RANGO ---
-    // Usamos un timeout pequeño para asegurar que el DOM se actualizó si acabamos de crear la pestaña
-    setTimeout(() => {
-        const rangeContainer = document.querySelector('#empleado-tab-asistencia .flex.gap-2');
-        if (rangeContainer) {
-            const newRangeContainer = rangeContainer.cloneNode(true);
-            rangeContainer.parentNode.replaceChild(newRangeContainer, rangeContainer);
-
-            newRangeContainer.addEventListener('click', (e) => {
-                const btn = e.target.closest('.range-btn');
-                if (!btn) return;
-
-                newRangeContainer.querySelectorAll('.range-btn').forEach(b => {
-                    b.classList.remove('bg-blue-100', 'text-blue-700', 'border-blue-200');
-                    b.classList.add('bg-gray-100', 'text-gray-600', 'border-gray-200');
-                });
-
-                btn.classList.remove('bg-gray-100', 'text-gray-600', 'border-gray-200');
-                btn.classList.add('bg-blue-100', 'text-blue-700', 'border-blue-200');
-
-                const days = parseInt(btn.dataset.range);
-                loadAttendanceTab(userId, days);
-            });
-        }
-    }, 500);
-
-    // --- 4. CARGA INICIAL ---
+    // Carga inicial
     switchEmpleadoDetailsTab('resumen', userId);
 }
-
 
 /**
  * Cambia el contenido visible en el detalle del empleado.
  * Crea dinámicamente los contenedores de las pestañas si no existen.
  */
 function switchEmpleadoDetailsTab(tabName, userId) {
-    // 1. Ocultar todos los contenidos
+    // 1. Ocultar todos los contenidos previos
     document.querySelectorAll('.empleado-details-tab-content').forEach(content => {
         content.classList.add('hidden');
     });
 
-    // 2. Buscar o Crear Contenedor
+    // 2. Buscar o Crear Contenedor de la pestaña
     let activeContent = document.getElementById(`empleado-tab-${tabName}`);
 
-    // Si no existe el div de la pestaña, lo creamos dinámicamente
     if (!activeContent) {
-        const parentContainer = document.getElementById('empleado-details-content-container') ||
-            document.getElementById('empleado-details');
+        const parentContainer = document.getElementById('empleado-details-content-container');
         if (parentContainer) {
             activeContent = document.createElement('div');
             activeContent.id = `empleado-tab-${tabName}`;
@@ -2158,100 +2240,221 @@ function switchEmpleadoDetailsTab(tabName, userId) {
         }
     }
 
-    // 3. Mostrar el contenedor
     if (activeContent) activeContent.classList.remove('hidden');
+    const user = _getUsersMap().get(userId);
 
-    // 4. Lógica por pestaña
+    // 3. Lógica por pestaña
     switch (tabName) {
         case 'resumen':
-            // --- CORRECCIÓN: Verificamos si falta la NUEVA sección específica ---
-            // Si no encuentra el ID 'resumen-asistencia-kpi', sobrescribe todo el HTML
-            // para asegurar que tengamos la estructura completa (Gráfica + Reporte).
-            if (!activeContent.querySelector('#resumen-asistencia-kpi')) {
-                activeContent.innerHTML = `
-                    <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-                        <h4 class="text-sm font-bold text-gray-500 uppercase mb-4">Productividad (Últimos 6 Meses)</h4>
-                        <div class="relative h-64">
-                            <canvas id="empleado-productivity-chart"></canvas>
-                        </div>
-                    </div>
-
-                    <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200 mt-6">
-                        <h4 class="text-sm font-bold text-gray-500 uppercase mb-4 flex items-center">
-                            <i class="fa-solid fa-clock-rotate-left mr-2 text-blue-500"></i>
-                            Reporte de Ingreso (Mes Actual)
-                        </h4>
-
-                        <div id="resumen-asistencia-kpi" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                            <div class="text-center py-4"><div class="loader-small mx-auto"></div></div>
-                        </div>
-
-                        <div class="overflow-hidden rounded-lg border border-gray-100">
-                            <table class="w-full text-sm text-left">
-                                <thead class="bg-gray-50 text-xs text-gray-500 uppercase font-semibold">
-                                    <tr>
-                                        <th class="px-4 py-2">Fecha</th>
-                                        <th class="px-4 py-2">Hora Llegada</th>
-                                        <th class="px-4 py-2 text-center">Evidencia</th>
-                                        <th class="px-4 py-2 text-center">Ubicación</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="resumen-asistencia-tbody" class="divide-y divide-gray-50">
-                                    </tbody>
-                            </table>
+            // Información del Resumen y Gráficas
+            activeContent.innerHTML = `
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 space-y-6">
+                        <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+                            <h4 class="text-sm font-bold text-gray-500 uppercase mb-4">Productividad (Últimos 6 Meses)</h4>
+                            <div class="relative h-64">
+                                <canvas id="empleado-productivity-chart"></canvas>
+                            </div>
                         </div>
                         
-                        <div class="mt-3 text-right">
-                            <button class="text-xs text-blue-600 hover:text-blue-800 font-bold hover:underline transition-colors" 
-                                onclick="document.querySelector('[data-tab=asistencia]').click()">
-                                Ver historial completo →
-                            </button>
+                        <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+                            <h4 class="text-sm font-bold text-gray-500 uppercase mb-4 flex items-center">
+                                <i class="fa-solid fa-clock-rotate-left mr-2 text-blue-500"></i>
+                                Reporte de Ingreso (Mes Actual)
+                            </h4>
+                            <div id="resumen-asistencia-kpi" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                <div class="text-center py-4"><div class="loader-small mx-auto"></div></div>
+                            </div>
+                            <div class="overflow-hidden rounded-lg border border-gray-100">
+                                <table class="w-full text-sm text-left">
+                                    <thead class="bg-gray-50 text-xs text-gray-500 uppercase font-semibold">
+                                        <tr><th class="px-4 py-2">Fecha</th><th class="px-4 py-2">Hora</th><th class="px-4 py-2 text-center">Evidencia</th><th class="px-4 py-2 text-center">Ubicación</th></tr>
+                                    </thead>
+                                    <tbody id="resumen-asistencia-tbody" class="divide-y divide-gray-50"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
-                `;
-            }
 
-            // Cargar los datos (Ahora sí encontrará los contenedores)
+                    <div class="lg:col-span-1 space-y-6">
+                        <div class="p-4 bg-white rounded-lg shadow border border-gray-200">
+                            <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-4">Información de Contacto</h3>
+                            <div class="space-y-2 text-sm text-gray-700">
+                                <p><strong>Cédula:</strong> <span>${user?.idNumber || 'N/A'}</span></p>
+                                <p><strong>Email:</strong> <span class="break-all">${user?.email || 'N/A'}</span></p>
+                                <p><strong>Teléfono:</strong> <span>${user?.phone || 'N/A'}</span></p>
+                                <p><strong>Dirección:</strong> <span>${user?.address || 'N/A'}</span></p>
+                            </div>
+
+                            <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-4 mt-6">Datos de Pago</h3>
+                            <div class="space-y-2 text-sm text-gray-700">
+                                <p><strong>Banco:</strong> <span>${user?.bankName || 'N/A'}</span></p>
+                                <p><strong>Cuenta:</strong> <span>${user?.accountType || 'N/A'}</span></p>
+                                <p><strong>Número:</strong> <span class="font-mono bg-gray-100 px-1 rounded select-all">${user?.accountNumber || 'N/A'}</span></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
             loadEmpleadoResumenTab(userId);
             break;
 
-        case 'asistencia':
-            // Inyectamos la estructura de la pestaña completa de asistencia
-            if (!activeContent.innerHTML.trim()) {
+        case 'bitacora':
+            // --- CORRECCIÓN CRÍTICA: Verificamos si existe el INPUT, no el contenedor ---
+            // Esto obliga a redibujar si faltan los filtros
+            if (!activeContent.querySelector('#bitacora-start')) {
+
+                // Fechas: Mañana y 15 días atrás
+                const dateTomorrow = new Date();
+                dateTomorrow.setDate(dateTomorrow.getDate() + 1);
+                const tomorrowStr = dateTomorrow.toISOString().split('T')[0];
+
+                const datePast = new Date();
+                datePast.setDate(datePast.getDate() - 15);
+                const pastStr = datePast.toISOString().split('T')[0];
+
                 activeContent.innerHTML = `
-                    <div class="flex justify-between items-center bg-white p-4 rounded-lg shadow border border-gray-200 mb-6">
-                        <h3 class="text-lg font-bold text-gray-800">Historial de Asistencia</h3>
-                        <div class="flex gap-2">
-                            <button data-range="7" class="range-btn bg-blue-100 text-blue-700 px-3 py-1 rounded-md text-sm font-bold border border-blue-200">7 Días</button>
-                            <button data-range="15" class="range-btn bg-gray-100 text-gray-600 px-3 py-1 rounded-md text-sm font-bold border border-gray-200">15 Días</button>
-                            <button data-range="30" class="range-btn bg-gray-100 text-gray-600 px-3 py-1 rounded-md text-sm font-bold border border-gray-200">30 Días</button>
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 min-h-[500px]">
+                        
+                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b border-gray-100 pb-4 gap-4">
+                            <div>
+                                <h3 class="text-xl font-bold text-gray-800 flex items-center">
+                                    <i class="fa-solid fa-book-journal-whills text-indigo-600 mr-2"></i> Bitácora de Actividades
+                                </h3>
+                                <p class="text-sm text-gray-500">Historial de reportes diarios.</p>
+                            </div>
+
+                            <div class="flex flex-wrap items-end gap-2 bg-gray-50 p-2 rounded-lg border border-gray-200">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Desde</label>
+                                    <input type="date" id="bitacora-start" class="border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-indigo-500 focus:border-indigo-500" value="${pastStr}">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Hasta</label>
+                                    <input type="date" id="bitacora-end" class="border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-indigo-500 focus:border-indigo-500" value="${tomorrowStr}">
+                                </div>
+                                <button id="btn-filter-bitacora" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold py-1.5 px-4 rounded-md shadow-sm transition-colors h-[30px]">
+                                    Filtrar
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                        <div class="bg-white p-4 rounded-lg shadow border border-gray-200">
-                            <h4 class="text-sm font-bold text-gray-500 uppercase mb-4">Tendencia</h4>
-                            <div class="relative h-64"><canvas id="attendance-chart"></canvas></div>
-                        </div>
-                        <div class="bg-white p-4 rounded-lg shadow border border-gray-200 flex flex-col">
-                            <h4 class="text-sm font-bold text-gray-500 uppercase mb-4">Mapa</h4>
-                            <div id="attendance-map" class="flex-grow w-full h-64 rounded-lg border border-gray-300 z-0"></div>
-                        </div>
-                    </div>
-                    <div class="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
-                        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50"><h4 class="text-sm font-bold text-gray-700">Bitácora</h4></div>
-                        <div class="overflow-x-auto max-h-80">
-                            <table class="w-full text-sm text-left">
-                                <thead class="text-xs text-gray-700 uppercase bg-gray-100 sticky top-0 z-10">
-                                    <tr><th class="px-6 py-3">Fecha</th><th class="px-6 py-3">Hora</th><th class="px-6 py-3 text-center">Evidencia</th><th class="px-6 py-3 text-center">Mapa</th><th class="px-6 py-3">Disp.</th></tr>
-                                </thead>
-                                <tbody id="attendance-list-body" class="divide-y divide-gray-100"></tbody>
-                            </table>
+
+                        <div id="bitacora-list-container" class="space-y-4">
+                            <p class="text-center text-gray-400 py-10">Cargando bitácora...</p>
                         </div>
                     </div>
                 `;
+
+                // Listener del Botón Filtrar
+                const filterBtn = document.getElementById('btn-filter-bitacora');
+                if (filterBtn) {
+                    filterBtn.addEventListener('click', () => {
+                        const s = document.getElementById('bitacora-start');
+                        const e = document.getElementById('bitacora-end');
+                        if (s && e) loadEmployeeBitacora(userId, s.value, e.value);
+                    });
+                }
             }
+
+            // Carga inicial segura (usando los valores de los inputs creados)
+            setTimeout(() => {
+                const sInput = document.getElementById('bitacora-start');
+                const eInput = document.getElementById('bitacora-end');
+
+                if (sInput && eInput) {
+                    loadEmployeeBitacora(userId, sInput.value, eInput.value);
+                } else {
+                    // Fallback de seguridad
+                    const dT = new Date(); dT.setDate(dT.getDate() + 1);
+                    const dP = new Date(); dP.setDate(dP.getDate() - 15);
+                    loadEmployeeBitacora(userId, dP.toISOString().split('T')[0], dT.toISOString().split('T')[0]);
+                }
+            }, 100);
+            break;
+
+case 'asistencia':
+            // PASO 1: Limpieza TOTAL del mapa previo usando la variable LOCAL
+            if (attendanceMapInstance) {
+                attendanceMapInstance.remove(); // Destruye el mapa viejo correctamente
+                attendanceMapInstance = null;
+            }
+
+            // PASO 2: Reconstruir HTML SIEMPRE
+            activeContent.innerHTML = `
+                <div class="flex justify-between items-center bg-white p-4 rounded-lg shadow border border-gray-200 mb-6">
+                    <h3 class="text-lg font-bold text-gray-800">Historial de Asistencia</h3>
+                    <div class="flex gap-2" id="attendance-controls-group">
+                        <button type="button" data-range="7" class="range-btn bg-blue-100 text-blue-700 px-3 py-1 rounded-md text-sm font-bold border border-blue-200 transition-colors shadow-sm">7 Días</button>
+                        <button type="button" data-range="15" class="range-btn bg-gray-100 text-gray-600 px-3 py-1 rounded-md text-sm font-bold border border-gray-200 transition-colors hover:bg-gray-200">15 Días</button>
+                        <button type="button" data-range="30" class="range-btn bg-gray-100 text-gray-600 px-3 py-1 rounded-md text-sm font-bold border border-gray-200 transition-colors hover:bg-gray-200">30 Días</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-white p-4 rounded-lg shadow border border-gray-200">
+                        <h4 class="text-sm font-bold text-gray-500 uppercase mb-4">Tendencia de Llegada</h4>
+                        <div class="relative h-64 w-full">
+                            <canvas id="attendance-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white p-4 rounded-lg shadow border border-gray-200 flex flex-col">
+                        <h4 class="text-sm font-bold text-gray-500 uppercase mb-4">Mapa de Reportes</h4>
+                        <div id="attendance-map" class="flex-grow w-full h-64 rounded-lg border border-gray-300 z-0 relative bg-gray-100"></div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-100 bg-gray-50">
+                        <h4 class="text-sm font-bold text-gray-700">Bitácora de Registros</h4>
+                    </div>
+                    <div class="overflow-x-auto max-h-80 custom-scrollbar">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-100 sticky top-0 z-10 shadow-sm">
+                                <tr>
+                                    <th class="px-6 py-3">Fecha</th>
+                                    <th class="px-6 py-3">Hora</th>
+                                    <th class="px-6 py-3 text-center">Evidencia</th>
+                                    <th class="px-6 py-3 text-center">Mapa</th>
+                                    <th class="px-6 py-3">Dispositivo</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attendance-list-body" class="divide-y divide-gray-100">
+                                <tr><td colspan="5" class="text-center py-4 text-gray-400">Cargando datos...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+
+            // PASO 3: Asignar Listeners a los botones
+            const controls = activeContent.querySelector('#attendance-controls-group');
+            if (controls) {
+                controls.addEventListener('click', (e) => {
+                    const btn = e.target.closest('.range-btn');
+                    if (!btn) return;
+
+                    // Estilos Visuales
+                    controls.querySelectorAll('.range-btn').forEach(b => {
+                        b.className = "range-btn bg-gray-100 text-gray-600 px-3 py-1 rounded-md text-sm font-bold border border-gray-200 transition-colors hover:bg-gray-200";
+                    });
+                    btn.className = "range-btn bg-blue-100 text-blue-700 px-3 py-1 rounded-md text-sm font-bold border border-blue-200 transition-colors shadow-sm";
+
+                    // Cargar Datos
+                    const range = parseInt(btn.dataset.range);
+                    loadAttendanceTab(userId, range);
+                });
+            }
+
+            // PASO 4: Carga Inicial (7 días)
             loadAttendanceTab(userId, 7);
-            setTimeout(() => { if (attendanceMapInstance) attendanceMapInstance.invalidateSize(); }, 200);
+            
+            // Fix Mapa Leaflet
+            setTimeout(() => { 
+                if (attendanceMapInstance) { // Sin window.
+                    attendanceMapInstance.invalidateSize();
+                }
+            }, 300);
             break;
 
         case 'documentos':
@@ -2261,8 +2464,6 @@ function switchEmpleadoDetailsTab(tabName, userId) {
         case 'dotacion':
             if (typeof window.loadDotacionAsignaciones === 'function') {
                 window.loadDotacionAsignaciones(userId, `empleado-tab-dotacion`);
-            } else {
-                console.error("Función de dotación no encontrada.");
             }
             break;
     }
@@ -2623,16 +2824,51 @@ async function loadEmpleadoDocumentosTab(userId, container) {
  * @param {object} payment - Objeto con los datos del pago.
  * @param {object} user - Objeto completo del usuario.
  */
-function openPaymentVoucherModal(payment, user) {
+async function openPaymentVoucherModal(payment, user) {
     const modal = document.getElementById('payment-voucher-modal');
     const earningsList = document.getElementById('voucher-earnings-list');
     const deductionsList = document.getElementById('voucher-deductions-list');
 
     if (!modal) return;
 
+    // --- CAMBIO: Inyectar Encabezado de Empresa ---
+    let empresaHtml = '';
+    try {
+        const configSnap = await getDoc(doc(_db, "system", "generalConfig"));
+        if (configSnap.exists()) {
+            const emp = configSnap.data().empresa || {};
+            const nombre = emp.nombre || 'Vidrios Éxito';
+            const nit = emp.nit ? `NIT: ${emp.nit}` : '';
+            
+            empresaHtml = `
+                <div class="text-center mb-4 border-b border-gray-100 pb-2">
+                    <h3 class="text-lg font-bold text-gray-800 uppercase">${nombre}</h3>
+                    <p class="text-xs text-gray-500">${nit}</p>
+                    <p class="text-xs text-gray-400 mt-1">Comprobante de Pago de Nómina</p>
+                </div>
+            `;
+        }
+    } catch (e) { console.log("Sin datos de empresa"); }
+
+    // Insertar el encabezado ANTES del contenido existente del modal body
+    // (Asumimos que hay un contenedor principal, si no, lo inyectamos al principio del body del modal)
+    const modalBody = modal.querySelector('.bg-white.p-6') || modal.querySelector('.p-6'); // Selector genérico del padding del modal
+    
+    // Limpiamos inyecciones previas si las hubiera
+    const existingHeader = document.getElementById('voucher-dynamic-header');
+    if (existingHeader) existingHeader.remove();
+    
+    if (modalBody && empresaHtml) {
+        const headerDiv = document.createElement('div');
+        headerDiv.id = 'voucher-dynamic-header';
+        headerDiv.innerHTML = empresaHtml;
+        modalBody.insertBefore(headerDiv, modalBody.firstChild);
+    }
+    // ---------------------------------------------
+
     // 1. Llenar datos básicos
     const dateStr = payment.createdAt ? payment.createdAt.toDate().toLocaleDateString('es-CO') : payment.paymentDate;
-    document.getElementById('voucher-date').textContent = `Fecha de Pago: ${dateStr}`;
+    document.getElementById('voucher-date').textContent = `Fecha: ${dateStr}`;
 
     // Nombre y Cédula
     document.getElementById('voucher-employee-name').textContent = `${user.firstName} ${user.lastName}`;
@@ -2644,86 +2880,46 @@ function openPaymentVoucherModal(payment, user) {
     // 2. Limpiar listas
     earningsList.innerHTML = '';
     deductionsList.innerHTML = '';
-    earningsList.classList.remove('space-y-2');
-    deductionsList.classList.remove('space-y-2');
 
     // 3. Helper de filas
     const createItemRow = (label, value, isBold = false) => {
         return `
-            <li class="flex justify-between items-center py-3 border-b border-gray-100 last:border-0 ${isBold ? 'font-bold text-gray-800 text-base' : 'text-gray-600'}">
+            <li class="flex justify-between items-center py-2 border-b border-gray-50 text-sm ${isBold ? 'font-bold text-gray-800' : 'text-gray-600'}">
                 <span>${label}</span>
                 <span>${currencyFormatter.format(value)}</span>
             </li>`;
     };
 
-    // 4. Desglosar datos
+    // 4. Desglosar datos (Lógica existente)
     const d = payment.desglose || {};
     const horas = payment.horas || {};
 
-    // --- INICIO DE LA LÓGICA DE VISUALIZACIÓN (Salario Mínimo vs Real) ---
     let displaySalario = d.salarioProrrateado;
     let displayBonificacion = d.bonificacionM2 || 0;
 
-    // Si el pago se calculó sobre la base del mínimo (deduccionSobreMinimo = true)
     if (d.deduccionSobreMinimo && d.baseDeduccion > 0) {
-        // En este modo, 'baseDeduccion' guarda exactamente el Salario Mínimo * Días Trabajados.
         const salarioMinimoProrrateado = d.baseDeduccion;
-
-        // Solo aplicamos el cambio si el salario real es mayor al mínimo (para no afectar a quienes ganan menos)
         if (displaySalario > salarioMinimoProrrateado) {
             const excedente = displaySalario - salarioMinimoProrrateado;
-
-            // 1. El salario básico visual pasa a ser el mínimo
             displaySalario = salarioMinimoProrrateado;
-
-            // 2. El excedente se suma a la bonificación existente
             displayBonificacion += excedente;
         }
     }
-    // --- FIN DE LA LÓGICA ---
 
     // --- INGRESOS ---
-    if (displaySalario > 0) {
-        earningsList.innerHTML += createItemRow(`Salario Básico (${payment.diasPagados} días)`, displaySalario);
-    }
-
-    if (d.auxilioTransporteProrrateado > 0) {
-        earningsList.innerHTML += createItemRow(`Aux. Transporte`, d.auxilioTransporteProrrateado);
-    }
-
-    if (d.horasExtra > 0) {
-        earningsList.innerHTML += createItemRow(`Horas Extra (${horas.totalHorasExtra || 0}h)`, d.horasExtra);
-    }
-
-    if (displayBonificacion > 0) {
-        // Cambiamos la etiqueta para que refleje que incluye auxilios/bonos
-        earningsList.innerHTML += createItemRow(`Bonificación / Aux. No Salarial`, displayBonificacion, true);
-    }
-
-    if (d.otros > 0) {
-        earningsList.innerHTML += createItemRow(`Otros Pagos`, d.otros);
-    }
+    if (displaySalario > 0) earningsList.innerHTML += createItemRow(`Salario Básico (${payment.diasPagados} días)`, displaySalario);
+    if (d.auxilioTransporteProrrateado > 0) earningsList.innerHTML += createItemRow(`Aux. Transporte`, d.auxilioTransporteProrrateado);
+    if (d.horasExtra > 0) earningsList.innerHTML += createItemRow(`Horas Extra (${horas.totalHorasExtra || 0}h)`, d.horasExtra);
+    if (displayBonificacion > 0) earningsList.innerHTML += createItemRow(`Bonificación / Aux. No Salarial`, displayBonificacion, true);
+    if (d.otros > 0) earningsList.innerHTML += createItemRow(`Otros Pagos`, d.otros);
 
     // --- DEDUCCIONES ---
-    if (d.deduccionSalud < 0) {
-        deductionsList.innerHTML += createItemRow(`Aporte Salud (4%)`, Math.abs(d.deduccionSalud));
-    }
+    if (d.deduccionSalud < 0) deductionsList.innerHTML += createItemRow(`Aporte Salud (4%)`, Math.abs(d.deduccionSalud));
+    if (d.deduccionPension < 0) deductionsList.innerHTML += createItemRow(`Aporte Pensión (4%)`, Math.abs(d.deduccionPension));
+    if (d.abonoPrestamos > 0) deductionsList.innerHTML += createItemRow(`Abono a Préstamos`, d.abonoPrestamos, true);
+    if (d.otros < 0) deductionsList.innerHTML += createItemRow(`Otros Descuentos`, Math.abs(d.otros));
 
-    if (d.deduccionPension < 0) {
-        deductionsList.innerHTML += createItemRow(`Aporte Pensión (4%)`, Math.abs(d.deduccionPension));
-    }
-
-    if (d.abonoPrestamos > 0) {
-        deductionsList.innerHTML += createItemRow(`Abono a Préstamos/Adelantos`, d.abonoPrestamos, true); // true para negrita
-    }
-
-    if (d.otros < 0) {
-        deductionsList.innerHTML += createItemRow(`Otros Descuentos`, Math.abs(d.otros));
-    }
-
-    if (deductionsList.innerHTML === '') {
-        deductionsList.innerHTML = '<li class="py-3 text-gray-400 italic text-center text-xs">No hay deducciones registradas</li>';
-    }
+    if (deductionsList.innerHTML === '') deductionsList.innerHTML = '<li class="py-2 text-gray-400 italic text-center text-xs">No hay deducciones</li>';
 
     // 5. Mostrar Modal
     modal.classList.remove('hidden');

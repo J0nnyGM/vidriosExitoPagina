@@ -4,9 +4,9 @@ import {
     setDoc
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
-// --- Variables del Módulo (Dependencias de app.js) ---
+// --- Variables del Módulo ---
 let _db;
-let _setupCurrencyInput; // Función de app.js para formatear moneda
+let _setupCurrencyInput;
 
 /**
  * Inicializa el módulo de Configuración.
@@ -18,75 +18,133 @@ export function initConfiguracion(db, setupCurrencyInput) {
 
 /**
  * Carga la vista de Configuración.
- * Carga los datos de Firestore y los pone en los formularios.
  */
 export async function loadConfiguracionView() {
+    const generalForm = document.getElementById('general-config-form'); // <--- NUEVO
     const bonificationForm = document.getElementById('bonification-config-form');
     const payrollForm = document.getElementById('payroll-config-form');
 
     if (!bonificationForm || !payrollForm) return;
 
-    // Aplicar formato de moneda a todos los campos
+    // Formato moneda
     document.querySelectorAll('#configuracion-view .currency-input').forEach(_setupCurrencyInput);
 
     try {
-        // 1. Cargar Configuración de Bonificaciones
+        // 1. NUEVO: Cargar Configuración General (Empresa y Alertas)
+        if (generalForm) {
+            const generalRef = doc(_db, "system", "generalConfig");
+            const generalSnap = await getDoc(generalRef);
+            
+            if (generalSnap.exists()) {
+                const data = generalSnap.data();
+                // Empresa
+                if (data.empresa) {
+                    generalForm.elements.empresaNombre.value = data.empresa.nombre || '';
+                    generalForm.elements.empresaNIT.value = data.empresa.nit || '';
+                    generalForm.elements.empresaLogoURL.value = data.empresa.logoURL || '';
+                }
+                // Alertas
+                if (data.alertas) {
+                    generalForm.elements.diasAlertaSST.value = data.alertas.diasVencimientoSST || 45;
+                    generalForm.elements.diasAlertaHerramienta.value = data.alertas.diasMantenimiento || 30;
+                }
+            }
+        }
+
+        // 2. Cargar Configuración de Bonificaciones
         const bonificationRef = doc(_db, "system", "bonificationConfig");
         const bonificationSnap = await getDoc(bonificationRef);
         if (bonificationSnap.exists()) {
             const data = bonificationSnap.data();
-            // Llenar el formulario (con formato de moneda)
-            bonificationForm.elements.principiante_enTiempo.value = formatAsCurrency(data.principiante.valorM2EnTiempo);
-            bonificationForm.elements.principiante_fueraTiempo.value = formatAsCurrency(data.principiante.valorM2FueraDeTiempo);
-            bonificationForm.elements.intermedio_enTiempo.value = formatAsCurrency(data.intermedio.valorM2EnTiempo);
-            bonificationForm.elements.intermedio_fueraTiempo.value = formatAsCurrency(data.intermedio.valorM2FueraDeTiempo);
-            bonificationForm.elements.avanzado_enTiempo.value = formatAsCurrency(data.avanzado.valorM2EnTiempo);
-            bonificationForm.elements.avanzado_fueraTiempo.value = formatAsCurrency(data.avanzado.valorM2FueraDeTiempo);
+            bonificationForm.elements.principiante_enTiempo.value = formatAsCurrency(data.principiante?.valorM2EnTiempo);
+            bonificationForm.elements.principiante_fueraTiempo.value = formatAsCurrency(data.principiante?.valorM2FueraDeTiempo);
+            bonificationForm.elements.intermedio_enTiempo.value = formatAsCurrency(data.intermedio?.valorM2EnTiempo);
+            bonificationForm.elements.intermedio_fueraTiempo.value = formatAsCurrency(data.intermedio?.valorM2FueraDeTiempo);
+            bonificationForm.elements.avanzado_enTiempo.value = formatAsCurrency(data.avanzado?.valorM2EnTiempo);
+            bonificationForm.elements.avanzado_fueraTiempo.value = formatAsCurrency(data.avanzado?.valorM2FueraDeTiempo);
         }
 
-        // 2. Cargar Configuración de Nómina
+        // 3. Cargar Configuración de Nómina
         const payrollRef = doc(_db, "system", "payrollConfig");
         const payrollSnap = await getDoc(payrollRef);
         if (payrollSnap.exists()) {
             const data = payrollSnap.data();
-            // Llenar el formulario (números y moneda)
             payrollForm.elements.salarioMinimo.value = formatAsCurrency(data.salarioMinimo);
             payrollForm.elements.auxilioTransporte.value = formatAsCurrency(data.auxilioTransporte);
             payrollForm.elements.limiteAuxilioTransporte.value = data.limiteAuxilioTransporte || 2;
             payrollForm.elements.multiplicadorHoraExtra.value = data.multiplicadorHoraExtra || 1.25;
             payrollForm.elements.porcentajeSalud.value = data.porcentajeSalud || 4;
             payrollForm.elements.porcentajePension.value = data.porcentajePension || 4;
-            // payrollForm.elements.baseDeduccion.value = data.baseDeduccion || 'basico';
         }
 
     } catch (error) {
         console.error("Error al cargar la configuración:", error);
-        alert("No se pudo cargar la configuración existente.");
     }
 
-    // 3. Configurar los listeners de guardado (asegurándonos de que solo se añadan una vez)
-    // Usamos .replaceWith(.cloneNode(true)) para limpiar listeners antiguos
+    // 4. Configurar listeners (Clonando para limpiar eventos previos)
+    
+    // Listener General (NUEVO)
+    if (generalForm) {
+        const newGeneralForm = generalForm.cloneNode(true);
+        generalForm.parentNode.replaceChild(newGeneralForm, generalForm);
+        newGeneralForm.addEventListener('submit', handleSaveGeneralConfig);
+    }
+
+    // Listener Bonificaciones
     const newBonificationForm = bonificationForm.cloneNode(true);
     bonificationForm.parentNode.replaceChild(newBonificationForm, bonificationForm);
     newBonificationForm.addEventListener('submit', handleSaveBonificationConfig);
     
+    // Listener Nómina
     const newPayrollForm = payrollForm.cloneNode(true);
     payrollForm.parentNode.replaceChild(newPayrollForm, payrollForm);
     newPayrollForm.addEventListener('submit', handleSavePayrollConfig);
     
-    // Volver a aplicar el formato de moneda a los campos clonados
     document.querySelectorAll('#configuracion-view .currency-input').forEach(_setupCurrencyInput);
 }
 
 /**
- * Maneja el guardado de la configuración de bonificaciones.
+ * NUEVO: Maneja el guardado de datos de Empresa y Alertas.
  */
-async function handleSaveBonificationConfig(e) {
+async function handleSaveGeneralConfig(e) {
     e.preventDefault();
     const form = e.target;
     const button = form.querySelector('button[type="submit"]');
     button.disabled = true;
+    button.textContent = "Guardando...";
 
+    try {
+        const configData = {
+            empresa: {
+                nombre: form.elements.empresaNombre.value.trim(),
+                nit: form.elements.empresaNIT.value.trim(),
+                logoURL: form.elements.empresaLogoURL.value.trim()
+            },
+            alertas: {
+                diasVencimientoSST: parseInt(form.elements.diasAlertaSST.value) || 45,
+                diasMantenimiento: parseInt(form.elements.diasAlertaHerramienta.value) || 30
+            }
+        };
+
+        const configRef = doc(_db, "system", "generalConfig");
+        await setDoc(configRef, configData, { merge: true }); // Merge para no borrar otros datos futuros
+        
+        alert("¡Configuración general actualizada!");
+
+    } catch (error) {
+        console.error("Error:", error);
+        alert("Error al guardar.");
+    } finally {
+        button.disabled = false;
+        button.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i> Guardar Configuración General';
+    }
+}
+
+// --- Funciones Existentes (Sin cambios lógicos mayores) ---
+
+async function handleSaveBonificationConfig(e) {
+    e.preventDefault();
+    const form = e.target;
     try {
         const configData = {
             principiante: {
@@ -102,29 +160,14 @@ async function handleSaveBonificationConfig(e) {
                 valorM2FueraDeTiempo: parseCurrency(form.elements.avanzado_fueraTiempo.value)
             }
         };
-
-        const configRef = doc(_db, "system", "bonificationConfig");
-        await setDoc(configRef, configData); // setDoc sobrescribe
-        
-        alert("¡Tarifas de bonificación guardadas!");
-
-    } catch (error) {
-        console.error("Error al guardar tarifas de bonificación:", error);
-        alert("Error al guardar las tarifas.");
-    } finally {
-        button.disabled = false;
-    }
+        await setDoc(doc(_db, "system", "bonificationConfig"), configData);
+        alert("¡Tarifas guardadas!");
+    } catch (error) { console.error(error); alert("Error al guardar."); }
 }
 
-/**
- * Maneja el guardado de la configuración de nómina.
- */
 async function handleSavePayrollConfig(e) {
     e.preventDefault();
     const form = e.target;
-    const button = form.querySelector('button[type="submit"]');
-    button.disabled = true;
-
     try {
         const configData = {
             salarioMinimo: parseCurrency(form.elements.salarioMinimo.value),
@@ -133,38 +176,16 @@ async function handleSavePayrollConfig(e) {
             multiplicadorHoraExtra: parseFloat(form.elements.multiplicadorHoraExtra.value) || 1.25,
             porcentajeSalud: parseFloat(form.elements.porcentajeSalud.value) || 4,
             porcentajePension: parseFloat(form.elements.porcentajePension.value) || 4,
-            // baseDeduccion: form.elements.baseDeduccion.value
         };
-        
-        const configRef = doc(_db, "system", "payrollConfig");
-        await setDoc(configRef, configData); // setDoc sobrescribe
-
+        await setDoc(doc(_db, "system", "payrollConfig"), configData);
         alert("¡Variables de nómina guardadas!");
-
-    } catch (error) {
-        console.error("Error al guardar variables de nómina:", error);
-        alert("Error al guardar las variables.");
-    } finally {
-        button.disabled = false;
-    }
+    } catch (error) { console.error(error); alert("Error al guardar."); }
 }
 
-// --- Funciones auxiliares (podrían moverse a un 'utils.js' global) ---
-
-/**
- * Limpia un string de moneda (ej. "$ 1.300.000") y lo convierte en número.
- * @param {string} currencyString - El string formateado.
- * @returns {number}
- */
 function parseCurrency(currencyString) {
     return parseFloat(currencyString.replace(/[$. ]/g, '')) || 0;
 }
 
-/**
- * Formatea un número como moneda COP.
- * @param {number} number - El número.
- * @returns {string}
- */
 function formatAsCurrency(number) {
     const currencyFormatter = new Intl.NumberFormat('es-CO', {
         style: 'currency',
