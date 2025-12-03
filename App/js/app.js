@@ -3886,8 +3886,21 @@ function createItemRow(item, executedCount) {
     else if (item.status === 'En Proceso') { statusColor = 'bg-yellow-100 text-yellow-800'; }
     else { statusColor = 'bg-green-100 text-green-800'; }
 
+    // Botón de Plano (Si existe)
+    const blueprintBtn = item.blueprintURL
+        ? `<button onclick="viewDocument('${item.blueprintURL}', '${item.name}'); event.stopPropagation();" 
+             class="text-indigo-600 hover:text-indigo-800 font-semibold text-xs border border-indigo-200 bg-indigo-50 px-2 py-1 rounded flex items-center gap-1" title="Ver Plano">
+             <i class="fa-solid fa-file-contract"></i> Plano
+           </button>`
+        : '';
+
+
     row.innerHTML = `
-            <td class="px-6 py-4 font-medium text-gray-900" data-label="Objeto">${item.name}</td>
+        <td class="px-6 py-4" data-label="Objeto">
+            <div class="font-medium text-gray-900">${item.name}</div>
+            ${blueprintBtn ? `<div class="mt-1">${blueprintBtn}</div>` : ''}
+        </td>
+        <td class="px-6 py-4 font-medium text-gray-900" data-label="Objeto">${item.name}</td>
         <td class="px-6 py-4 text-center" data-label="Cant.">${item.quantity}</td>
         <td class="px-6 py-4 text-center" data-label="Ancho (m)">${item.width}</td>
         <td class="px-6 py-4 text-center" data-label="Alto (m)">${item.height}</td>
@@ -3919,6 +3932,7 @@ async function createItem(data) {
         const newItemData = {
             name: data.name,
             description: data.description,
+            blueprintURL: data.blueprintURL || null, // <-- AÑADIR ESTA LÍNEA
             quantity: parseInt(data.quantity),
             width: parseFloat(data.width) || 0,
             height: parseFloat(data.height) || 0,
@@ -3969,6 +3983,7 @@ async function updateItem(itemId, data) {
     const updatedData = {
         name: data.name,
         description: data.description,
+        ...(data.blueprintURL ? { blueprintURL: data.blueprintURL } : {}),
         width: parseFloat(data.width) || 0,
         height: parseFloat(data.height) || 0,
         itemType: projectPricingModel === 'incluido' ? 'suministro_instalacion_incluido' : 'suministro_instalacion',
@@ -4789,16 +4804,15 @@ async function openMainModal(type, data = {}) {
         modalContentDiv.style.maxWidth = '';
     }
 
-    // Restaurar el encabezado por defecto (por si la alerta lo ocultó)
-    if (document.getElementById('modal-title')) {
-        document.getElementById('modal-title').parentElement.style.display = 'flex';
-    }
-    // --- FIN DE CORRECCIÓN ---
-
     let title, bodyHtml, btnText, btnClass;
     modalForm.reset();
     modalForm.dataset.type = type;
     modalForm.dataset.id = data.id || '';
+
+    if (document.getElementById('modal-title')) {
+        document.getElementById('modal-title').parentElement.style.display = 'none';
+    }
+
     switch (type) {
         case 'newProject':
             title = 'Crear Nuevo Proyecto';
@@ -7538,8 +7552,21 @@ async function openMainModal(type, data = {}) {
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700">Descripción</label>
-                                <textarea name="description" rows="3" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Ventana corrediza sistema 744 con vidrio laminado 3+3mm...">${isEditing ? (data.description || '') : ''}</textarea>
+                                <textarea name="description" rows="2" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Ventana corrediza sistema 744...">${isEditing ? (data.description || '') : ''}</textarea>
                             </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Plano o Diseño (PDF / Imagen)</label>
+                                ${isEditing && data.blueprintURL ? `
+                                    <div class="flex items-center gap-2 mb-2 mt-1">
+                                        <a href="#" onclick="viewDocument('${data.blueprintURL}', '${data.name}'); return false;" class="text-xs text-blue-600 font-bold hover:underline flex items-center">
+                                            <i class="fa-solid fa-eye mr-1"></i> Ver Plano Actual
+                                        </a>
+                                    </div>
+                                ` : ''}
+                                <input type="file" name="blueprintFile" accept="image/*,.pdf" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border rounded-lg mt-1"/>
+                            </div>
+
                         </div>
                     </div>
 
@@ -7547,7 +7574,7 @@ async function openMainModal(type, data = {}) {
                         <h4 class="text-md font-semibold text-gray-700 mb-3 border-b pb-2">2. Medidas y Cantidad</h4>
                         <div class="grid grid-cols-3 gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700">Cantidad</Tlabel>
+                                <label class="block text-sm font-medium text-gray-700">Cantidad</label>
                                 <input type="number" name="quantity" required min="1" class="mt-1 w-full border rounded-md p-2" value="${isEditing ? data.quantity : ''}" ${isEditing ? 'readonly' : ''}>
                             </div>
                             <div>
@@ -8082,12 +8109,15 @@ async function openMainModal(type, data = {}) {
 
             break;
         }
-        case 'edit-task': { // Case con formato mejorado
+        case 'edit-task': {
+            // --- CORRECCIÓN CRÍTICA: Leemos 'id' del objeto 'data' ---
+            const taskId = data.id;
+            // --- FIN CORRECCIÓN ---
+
             title = 'Editar Tarea';
             btnText = 'Guardar Cambios';
-            btnClass = 'bg-yellow-500 hover:bg-yellow-600';
-            modalContentDiv.classList.add('max-w-2xl'); // Aseguramos el tamaño estándar
-            modalForm.dataset.id = data.id; // Guardamos el ID de la tarea
+            btnClass = 'bg-yellow-500 hover:bg-yellow-600 shadow-lg transition-all';
+            modalContentDiv.classList.add('max-w-6xl');
 
             modalBody.innerHTML = '<div class="text-center py-5"><div class="loader mx-auto"></div> Cargando datos...</div>';
             mainModal.style.display = 'flex';
@@ -8101,81 +8131,112 @@ async function openMainModal(type, data = {}) {
                 });
                 allActiveUsers.sort((a, b) => a.name.localeCompare(b.name));
             } catch (error) {
-                console.error("Error cargando usuarios para editar tarea:", error);
+                console.error("Error cargando usuarios:", error);
                 closeMainModal();
                 alert("Error al cargar usuarios.");
                 return;
             }
 
-            // --- INICIO DE LA MODIFICACIÓN (Nuevo HTML) ---
+            // --- DISEÑO MODERNO HTML ---
             bodyHtml = `
-                <div class="space-y-6">
-
-                    <fieldset class="space-y-2">
-                        <legend class="text-lg font-semibold text-gray-800 pb-2">1. Proyecto (No editable)</legend>
-                        <div>
-                            <select id="task-project-choices" name="projectId" required placeholder="Cargando proyecto..."></select>
-                            <input type="hidden" name="projectName" value="${data.projectName || ''}"> 
+                <div class="flex flex-col h-full max-h-[80vh]">
+                    
+                    <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-r from-yellow-500 to-amber-600 px-8 py-4 rounded-t-lg text-white shadow-md flex justify-between items-center">
+                         <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl backdrop-blur-sm"><i class="fa-solid fa-pen-to-square"></i></div>
+                            <h2 class="text-xl font-bold tracking-tight">Editar Tarea Operativa</h2>
                         </div>
-                    </fieldset>
+                        <span class="text-xs font-mono bg-white/20 px-2 py-0.5 rounded">ID: ${taskId.substring(0, 6).toUpperCase()}</span>
+                    </div>
 
-                    <fieldset id="task-items-selection" class="space-y-2">
-                        <legend class="text-lg font-semibold text-gray-800 pb-2">2. Ítems Relacionados (No editable)</legend>
-                        <div id="task-items-list" class="max-h-48 overflow-y-auto space-y-2 text-sm pr-2 border rounded-md p-3 bg-gray-50">
-                            <p class="text-gray-400 italic text-center py-4">Cargando ítems...</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-grow overflow-y-auto custom-scrollbar p-1">
+
+                        <div class="space-y-6">
+                            
+                            <div class="bg-gray-100 p-5 rounded-xl border border-gray-300 shadow-inner">
+                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-300 pb-2 flex items-center">
+                                    <i class="fa-solid fa-city mr-2 text-gray-500"></i> Proyecto Asignado
+                                </h4>
+                                <div>
+                                    <label for="task-project-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Proyecto (No editable)</label>
+                                    <select id="task-project-choices" name="projectId" class="w-full" disabled placeholder="Cargando proyecto..."></select>
+                                    <input type="hidden" name="projectName" value="${data.projectName || ''}"> 
+                                </div>
+                            </div>
+
+                            <div id="task-items-selection" class="bg-white p-5 rounded-xl border border-gray-200 shadow-md">
+                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
+                                    <i class="fa-solid fa-layer-group mr-2 text-orange-500"></i> Ítems Relacionados
+                                </h4>
+                                <div id="task-items-list" class="max-h-64 overflow-y-auto space-y-2 text-sm pr-2 custom-scrollbar">
+                                    <p class="text-gray-400 italic text-center py-4">Cargando ítems...</p>
+                                </div>
+                                <p class="text-xs text-red-500 mt-3"><i class="fa-solid fa-info-circle mr-1"></i> Los ítems de una tarea en curso no pueden modificarse.</p>
+                            </div>
                         </div>
-                    </fieldset>
 
-                    <fieldset class="space-y-4">
-                        <legend class="text-lg font-semibold text-gray-800 pb-2">3. Detalles de la Tarea</legend>
-                        
-                        <div>
-                            <label for="task-description" class="block text-sm font-medium mb-1">Descripción de la Tarea</label>
-                            <textarea id="task-description" name="description" rows="3" required class="mt-1 w-full border rounded-md p-2 text-sm">${data.description || ''}</textarea>
+                        <div class="space-y-6">
+
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-md space-y-4">
+                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
+                                    <i class="fa-solid fa-user-tag mr-2 text-green-500"></i> 1. Responsables
+                                </h4>
+                                
+                                <div>
+                                    <label for="task-additional-assignees-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Personas Adicionales</label>
+                                    <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple></select>
+                                </div>
+                                
+                                <div>
+                                    <label for="task-assignee-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Asignar A (Principal)</label>
+                                    <select id="task-assignee-choices" name="assigneeId" required></select>
+                                    <input type="hidden" name="assigneeName" value="${data.assigneeName || ''}">
+                                </div>
+                                </div>
+                            
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-md space-y-4">
+                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
+                                    <i class="fa-solid fa-clipboard-list mr-2 text-indigo-500"></i> 2. Descripción y Plazo
+                                </h4>
+                                
+                                <div>
+                                    <label for="task-description" class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción de la Tarea</label>
+                                    <textarea id="task-description" name="description" rows="3" required class="w-full border rounded-lg p-2 text-sm resize-none">${data.description || ''}</textarea>
+                                </div>
+                                
+                                <div>
+                                    <label for="task-dueDate" class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Límite</label>
+                                    <input type="date" id="task-dueDate" name="dueDate" class="w-full border rounded-lg p-2 text-sm" value="${data.dueDate || ''}">
+                                </div>
+                            </div>
                         </div>
-
-                        <div>
-                            <label for="task-assignee-choices" class="block text-sm font-medium mb-1">Asignar A (Principal)</label>
-                            <select id="task-assignee-choices" name="assigneeId" required placeholder="Buscar o seleccionar usuario..."></select>
-                            <input type="hidden" name="assigneeName" value="${data.assigneeName || ''}">
-                        </div>
-
-                        <div>
-                            <label for="task-additional-assignees-choices" class="block text-sm font-medium mb-1">Asignar a Personas Adicionales</label>
-                            <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple placeholder="Buscar o añadir más usuarios..."></select>
-                        </div>
-
-                        <div>
-                            <label for="task-dueDate" class="block text-sm font-medium mb-1">Fecha Límite</label>
-                            <input type="date" id="task-dueDate" name="dueDate" class="mt-1 w-full border rounded-md p-2 text-sm" value="${data.dueDate || ''}">
-                        </div>
-                    </fieldset>
-
-                </div>`; // Fin de space-y-6
-            // --- FIN DE LA MODIFICACIÓN ---
+                    </div>
+                </div>
+            `;
+            // --- FIN DISEÑO MODERNO HTML ---
 
             modalBody.innerHTML = bodyHtml;
 
-            // --- INICIO DE MODIFICACIÓN (Lógica JS) ---
+            // Lógica JS para inicializar el modal
             setTimeout(() => {
-                // 1. Selector de Proyecto (Cargar, seleccionar y deshabilitar)
+                // 1. Selector de Proyecto (Solo lectura)
                 const projectElement = document.getElementById('task-project-choices');
                 const projectChoices = new Choices(projectElement, {
                     choices: [{ value: data.projectId, label: data.projectName || 'Cargando...' }],
-                    itemSelectText: '',
-                    allowHTML: false,
+                    itemSelectText: '', allowHTML: false,
                 });
                 projectChoices.setValue([{ value: data.projectId, label: data.projectName || 'Proyecto' }]);
-                projectChoices.disable(); // Lo deshabilitamos
+                projectChoices.disable();
 
-                // 2. Asignado Principal (Lógica existente)
+                // 2. Asignado Principal
                 const assigneeElement = document.getElementById('task-assignee-choices');
                 const assigneeChoices = new Choices(assigneeElement, {
                     choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
                     searchPlaceholderValue: "Buscar usuario...", itemSelectText: 'Seleccionar', allowHTML: false,
                 });
                 if (data.assigneeId) {
-                    assigneeChoices.setValue([{ value: data.assigneeId, label: data.assigneeName || 'Usuario' }]);
+                    const selectedUser = allActiveUsers.find(u => u.id === data.assigneeId);
+                    assigneeChoices.setValue([{ value: data.assigneeId, label: selectedUser ? selectedUser.name : 'Usuario' }]);
                 }
                 assigneeElement.addEventListener('change', (event) => {
                     const selectedAssigneeId = event.detail.value;
@@ -8184,74 +8245,76 @@ async function openMainModal(type, data = {}) {
                     assigneeNameInput.value = selectedUser ? selectedUser.name : '';
                 });
 
-                // 3. Asignados Adicionales (Lógica existente)
+                // 3. Asignados Adicionales
                 const additionalAssigneesElement = document.getElementById('task-additional-assignees-choices');
                 const additionalAssigneesChoices = new Choices(additionalAssigneesElement, {
                     choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
                     removeItemButton: true, searchPlaceholderValue: "Añadir más usuarios...", allowHTML: false,
                 });
-                const additionalAssigneeValues = (data.additionalAssigneeIds || []).map(id => ({ value: id }));
-                if (additionalAssigneeValues.length > 0) {
-                    const preSelectedLabels = additionalAssigneeValues.map(v => {
-                        const user = allActiveUsers.find(u => u.id === v.value);
-                        return { value: v.value, label: user ? user.name : 'Usuario Desconocido' };
+                if (data.additionalAssigneeIds && data.additionalAssigneeIds.length > 0) {
+                    const preSelectedLabels = data.additionalAssigneeIds.map(v => {
+                        const user = allActiveUsers.find(u => u.id === v);
+                        return { value: v, label: user ? user.name : 'Usuario Desconocido' };
                     });
                     additionalAssigneesChoices.setValue(preSelectedLabels);
                 }
 
                 // 4. Cargar y mostrar los ítems (Modo solo lectura)
-                const itemsListUl = document.getElementById('task-items-list');
+                const itemsListDiv = document.getElementById('task-items-list');
+                const itemsListUl = document.createElement('ul');
+                itemsListUl.className = 'space-y-2';
+
                 if (data.selectedItems && data.selectedItems.length > 0) {
                     const itemDetailPromises = data.selectedItems.map(async itemInfo => {
                         try {
                             const itemDoc = await getDoc(doc(db, "projects", data.projectId, "items", itemInfo.itemId));
-                            const itemName = itemDoc.exists() ? itemDoc.data().name : `ID: ${itemInfo.itemId}`;
+                            const itemData = itemDoc.exists() ? itemDoc.data() : { name: `ID: ${itemInfo.itemId}`, blueprintURL: null };
+                            const planoBtn = itemData.blueprintURL ? `
+                                <button type="button" onclick="viewDocument('${itemData.blueprintURL}', '${itemData.name}'); return false;" class="text-blue-500 hover:text-blue-700 ml-1 p-1 rounded-md text-xs border border-blue-200 bg-white shadow-sm">
+                                    <i class="fa-solid fa-file-contract"></i>
+                                </button>` : '';
 
-                            // HTML de solo lectura (checkbox marcado y deshabilitado)
                             return `
-                                <div class="task-item-row flex items-center justify-between py-1 px-1">
-                                    <label class="inline-flex items-center flex-grow mr-2"> 
-                                        <input type="checkbox" class="item-checkbox rounded" checked disabled>
-                                        <span class="ml-2 truncate" title="${itemName}">${itemName}</span>
-                                    </label>
-                                    <span class_name="item-quantity-display w-20 text-sm text-center font-medium">${itemInfo.quantity}</span>
-                                </div>
+                                <li class="flex items-center justify-between py-1 px-1 border-b border-gray-100 last:border-0">
+                                    <span class="font-medium text-gray-700">
+                                        <i class="fa-solid fa-check-square mr-2 text-green-500"></i>
+                                        ${itemData.name} (x${itemInfo.quantity})
+                                    </span>
+                                    <div class="flex items-center">
+                                        ${planoBtn}
+                                    </div>
+                                </li>
                             `;
-                        } catch {
-                            return `<li class="list-disc text-red-500">Error cargando ítem</li>`;
+                        } catch (e) {
+                            return `<li class="text-red-500">Error cargando ítem</li>`;
                         }
                     });
                     Promise.all(itemDetailPromises).then(htmlItems => {
-                        if (itemsListUl) itemsListUl.innerHTML = htmlItems.join('');
+                        itemsListUl.innerHTML = htmlItems.join('');
+                        itemsListDiv.innerHTML = '';
+                        itemsListDiv.appendChild(itemsListUl);
                     });
                 } else {
-                    if (itemsListUl) itemsListUl.innerHTML = '<li class="italic text-gray-500">No hay ítems asociados.</li>';
+                    itemsListDiv.innerHTML = '<p class="italic text-gray-500 text-center py-4">No hay ítems asociados.</p>';
                 }
 
-                // 5. Fecha mínima (Lógica existente)
+                // 5. Fecha mínima y limpieza
                 const dueDateInput = modalBody.querySelector('#task-dueDate');
-                if (dueDateInput) {
-                    dueDateInput.min = new Date().toISOString().split("T")[0];
-                }
+                if (dueDateInput) dueDateInput.min = new Date().toISOString().split("T")[0];
 
-                // Destruir Choices al cerrar
                 mainModal.addEventListener('close', () => {
-                    projectChoices.destroy();
-                    assigneeChoices.destroy();
-                    additionalAssigneesChoices.destroy();
+                    projectChoices.destroy(); assigneeChoices.destroy(); additionalAssigneesChoices.destroy();
                 }, { once: true });
 
             }, 150);
-            // --- FIN DE MODIFICACIÓN (Lógica JS) ---
-
-            break; // Fin del case 'edit-task'
+            break;
         }
 
-        case 'new-task': { // Case con formato mejorado
+        case 'new-task': {
             title = 'Crear Nueva Tarea';
             btnText = 'Guardar Tarea';
-            btnClass = 'bg-green-500 hover:bg-green-600';
-            modalContentDiv.classList.add('max-w-2xl'); // Aseguramos el tamaño estándar
+            btnClass = 'bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white shadow-lg transform hover:-translate-y-0.5 transition-all';
+            modalContentDiv.classList.add('max-w-6xl');
 
             modalBody.innerHTML = '<div class="text-center py-5"><div class="loader mx-auto"></div> Cargando datos...</div>';
             mainModal.style.display = 'flex';
@@ -8277,54 +8340,81 @@ async function openMainModal(type, data = {}) {
                 return;
             }
 
-            // --- INICIO DE LA MODIFICACIÓN ---
-            // Reemplazamos el antiguo bodyHtml por este nuevo diseño de 3 pasos
+            // --- DISEÑO MODERNO HTML ---
             bodyHtml = `
-                <div class="space-y-6">
-
-                    <fieldset class="space-y-2">
-                        <legend class="text-lg font-semibold text-gray-800 pb-2">1. Seleccionar Proyecto</legend>
-                        <div>
-                            <label for="task-project-choices" class="block text-sm font-medium mb-1">Proyecto (Activos)</label>
-                            <select id="task-project-choices" name="projectId" required placeholder="Buscar o seleccionar proyecto..."></select>
-                            <input type="hidden" name="projectName"> 
+                <div class="flex flex-col h-full max-h-[80vh]">
+                    
+                    <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-r from-indigo-600 to-blue-700 px-8 py-4 rounded-t-lg text-white shadow-md flex justify-between items-center">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl backdrop-blur-sm"><i class="fa-solid fa-file-circle-plus"></i></div>
+                            <h2 class="text-xl font-bold tracking-tight">Crear Nueva Tarea Operativa</h2>
                         </div>
-                    </fieldset>
+                    </div>
 
-                    <fieldset id="task-items-selection" class="hidden space-y-2">
-                        <legend class="text-lg font-semibold text-gray-800 pb-2">2. Ítems Relacionados <span class="text-red-500 font-semibold">*</span></legend>
-                        <div id="task-items-list" class="max-h-48 overflow-y-auto space-y-2 text-sm pr-2 border rounded-md p-3 bg-gray-50">
-                            <p class="text-gray-400 italic text-center py-4">Selecciona un proyecto para ver sus ítems.</p>
-                        </div>
-                    </fieldset>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-grow overflow-y-auto custom-scrollbar p-1">
 
-                    <fieldset class="space-y-4">
-                        <legend class="text-lg font-semibold text-gray-800 pb-2">3. Detalles de la Tarea</legend>
-                        
-                        <div>
-                            <label for="task-description" class="block text-sm font-medium mb-1">Descripción de la Tarea</label>
-                            <textarea id="task-description" name="description" rows="3" required class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="Describe brevemente la tarea..."></textarea>
-                        </div>
+                        <div class="space-y-6">
+                            
+                            <div class="bg-white p-5 rounded-xl border border-blue-200 shadow-md">
+                                <h4 class="text-md font-extrabold text-blue-700 mb-3 border-b border-blue-100 pb-2 flex items-center">
+                                    <i class="fa-solid fa-city mr-2 text-blue-500"></i> 1. Proyecto
+                                </h4>
+                                <div>
+                                    <label for="task-project-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Proyecto (Activos)</label>
+                                    <select id="task-project-choices" name="projectId" required class="w-full"></select>
+                                    <input type="hidden" name="projectName">
+                                </div>
+                            </div>
 
-                        <div>
-                            <label for="task-assignee-choices" class="block text-sm font-medium mb-1">Asignar A (Principal)</label>
-                            <select id="task-assignee-choices" name="assigneeId" required placeholder="Buscar o seleccionar usuario..."></select>
-                            <input type="hidden" name="assigneeName">
-                        </div>
-
-                        <div>
-                            <label for="task-additional-assignees-choices" class="block text-sm font-medium mb-1">Asignar a Personas Adicionales (Opcional)</label>
-                            <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple placeholder="Buscar o añadir más usuarios..."></select>
+                            <div id="task-items-selection" class="bg-white p-5 rounded-xl border border-gray-200 shadow-md hidden">
+                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
+                                    <i class="fa-solid fa-layer-group mr-2 text-orange-500"></i> 2. Ítems a Asignar <span class="text-red-500 ml-1">*</span>
+                                </h4>
+                                <div id="task-items-list" class="max-h-64 overflow-y-auto space-y-2 text-sm pr-2 custom-scrollbar">
+                                    <p class="text-gray-400 italic text-center py-4">Selecciona un proyecto...</p>
+                                </div>
+                            </div>
                         </div>
 
-                        <div>
-                            <label for="task-dueDate" class="block text-sm font-medium mb-1">Fecha Límite (Opcional)</label>
-                            <input type="date" id="task-dueDate" name="dueDate" class="mt-1 w-full border rounded-md p-2 text-sm">
-                        </div>
-                    </fieldset>
+                        <div class="space-y-6">
 
-                </div>`; // Fin de space-y-6
-            // --- FIN DE LA MODIFICACIÓN ---
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-md space-y-4">
+                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
+                                    <i class="fa-solid fa-user-tag mr-2 text-green-500"></i> 3. Responsables
+                                </h4>
+                                
+                                <div>
+                                    <label for="task-assignee-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Asignar A (Principal)</label>
+                                    <select id="task-assignee-choices" name="assigneeId" required></select>
+                                    <input type="hidden" name="assigneeName">
+                                </div>
+
+                                <div>
+                                    <label for="task-additional-assignees-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Personas Adicionales</label>
+                                    <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple></select>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-md space-y-4">
+                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
+                                    <i class="fa-solid fa-clipboard-list mr-2 text-indigo-500"></i> 4. Descripción y Plazo
+                                </h4>
+                                
+                                <div>
+                                    <label for="task-description" class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción de la Tarea</label>
+                                    <textarea id="task-description" name="description" rows="3" required class="w-full border rounded-lg p-2 text-sm resize-none" placeholder="Describe brevemente la tarea..."></textarea>
+                                </div>
+                                
+                                <div>
+                                    <label for="task-dueDate" class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Límite (Opcional)</label>
+                                    <input type="date" id="task-dueDate" name="dueDate" class="w-full border rounded-lg p-2 text-sm">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            // --- FIN DISEÑO MODERNO HTML ---
 
             modalBody.innerHTML = bodyHtml;
             document.getElementById('modal-title').textContent = title;
@@ -8332,124 +8422,106 @@ async function openMainModal(type, data = {}) {
             confirmBtn.textContent = btnText;
             confirmBtn.className = `text-white font-bold py-2 px-4 rounded-lg transition-all ${btnClass}`;
 
-            // --- Inicialización de Choices.js y Lógica Dinámica (sin cambios) ---
             setTimeout(() => {
                 const projectElement = document.getElementById('task-project-choices');
-                const projectChoices = new Choices(projectElement, { /* ... opciones ... */
+                const projectChoices = new Choices(projectElement, {
                     choices: activeProjects.map(p => ({ value: p.id, label: p.name })),
                     searchPlaceholderValue: "Buscar proyecto...", itemSelectText: 'Seleccionar', allowHTML: false,
                 });
 
                 const assigneeElement = document.getElementById('task-assignee-choices');
-                const assigneeChoices = new Choices(assigneeElement, { /* ... opciones ... */
+                const assigneeChoices = new Choices(assigneeElement, {
                     choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
                     searchPlaceholderValue: "Buscar usuario...", itemSelectText: 'Seleccionar', allowHTML: false,
                 });
 
                 const additionalAssigneesElement = document.getElementById('task-additional-assignees-choices');
-                const additionalAssigneesChoices = new Choices(additionalAssigneesElement, { /* ... opciones ... */
+                const additionalAssigneesChoices = new Choices(additionalAssigneesElement, {
                     choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
                     removeItemButton: true, searchPlaceholderValue: "Añadir más usuarios...", allowHTML: false,
                 });
 
-                // --- Lógica para cargar ítems al seleccionar proyecto ---
-                projectElement.addEventListener('change', async (event) => { /* ... (código existente sin cambios) ... */
+                // Lógica para cargar ítems al seleccionar proyecto
+                projectElement.addEventListener('change', async (event) => {
                     const selectedProjectId = event.detail.value;
                     const itemsSelectionDiv = document.getElementById('task-items-selection');
                     const itemsListDiv = document.getElementById('task-items-list');
-                    const projectNameInput = modalForm.querySelector('input[name="projectName"]'); // Campo oculto
+                    const projectNameInput = modalForm.querySelector('input[name="projectName"]');
 
-                    // Guardar nombre del proyecto seleccionado
                     const selectedProject = activeProjects.find(p => p.id === selectedProjectId);
                     projectNameInput.value = selectedProject ? selectedProject.name : '';
-
 
                     if (selectedProjectId) {
                         itemsListDiv.innerHTML = '<p class="text-gray-400">Cargando ítems...</p>';
                         itemsSelectionDiv.classList.remove('hidden');
 
                         try {
-                            // --- INICIO DE LA CORRECCIÓN ---
-                            // BUG: La consulta antigua buscaba en la colección raíz "items"
-                            // const itemsQuery = query(collection(db, "items"), where("projectId", "==", selectedProjectId), orderBy("name"));
-
-                            // CORRECCIÓN: Esta consulta busca en la subcolección "items" DENTRO del proyecto seleccionado
                             const itemsQuery = query(collection(db, "projects", selectedProjectId, "items"), orderBy("name"));
-                            // --- FIN DE LA CORRECCIÓN ---
-
                             const itemsSnapshot = await getDocs(itemsQuery);
                             if (itemsSnapshot.empty) {
                                 itemsListDiv.innerHTML = '<p class="text-gray-400">Este proyecto no tiene ítems definidos.</p>';
                             } else {
-                                itemsListDiv.innerHTML = ''; // Limpiar
+                                itemsListDiv.innerHTML = '';
                                 itemsSnapshot.forEach(doc => {
                                     const item = { id: doc.id, ...doc.data() };
-                                    // Creamos el HTML para cada ítem con el campo de cantidad
+                                    const planoBtn = item.blueprintURL ? `
+                                        <button type="button" onclick="viewDocument('${item.blueprintURL}', '${item.name}'); return false;" class="text-blue-500 hover:text-blue-700 ml-1.5 p-1 rounded-md text-xs border border-blue-200 bg-white shadow-sm">
+                                            <i class="fa-solid fa-file-contract"></i>
+                                        </button>` : '';
+
                                     itemsListDiv.innerHTML += `
-                                        <div class="task-item-row flex items-center justify-between py-1 hover:bg-gray-100 px-1 rounded">
+                                        <div class="task-item-row flex items-center justify-between py-1 hover:bg-gray-100 px-1 rounded transition-colors">
                                             <label class="inline-flex items-center flex-grow mr-2 cursor-pointer"> 
-                                                <input type="checkbox" name="selectedItemIds" value="${item.id}" data-item-quantity="${item.quantity}" class="item-checkbox rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                                                <input type="checkbox" name="selectedItemIds" value="${item.id}" data-item-quantity="${item.quantity}" class="item-checkbox rounded border-gray-300 text-blue-600 focus:ring-blue-500">
                                                 <span class="ml-2 truncate" title="${item.name}">${item.name}</span>
                                             </label>
-                                            <input type="number" name="itemQuantity_${item.id}" min="1" max="${item.quantity}" placeholder="Cant." class="item-quantity-input w-20 border rounded-md p-1 text-sm bg-gray-100 focus:bg-white focus:ring-1 focus:ring-blue-300" disabled>
+                                            <div class="flex items-center">
+                                                ${planoBtn}
+                                                <input type="number" name="itemQuantity_${item.id}" min="1" max="${item.quantity}" placeholder="Cant." class="item-quantity-input w-20 border rounded-md p-1 text-sm bg-gray-100 focus:bg-white focus:ring-1 focus:ring-blue-300 ml-2" disabled>
+                                            </div>
                                         </div>
                                     `;
                                 });
-
-                                // Añadimos un listener para habilitar/deshabilitar el input de cantidad
+                                // Listener para habilitar el input de cantidad
                                 itemsListDiv.addEventListener('change', (e) => {
                                     if (e.target.classList.contains('item-checkbox')) {
                                         const quantityInput = e.target.closest('.task-item-row').querySelector('.item-quantity-input');
                                         if (quantityInput) {
                                             quantityInput.disabled = !e.target.checked;
-                                            quantityInput.classList.toggle('bg-gray-100', !e.target.checked); // Visual feedback
-                                            quantityInput.classList.toggle('focus:bg-white', e.target.checked); // Estilo focus
-                                            if (!e.target.checked) {
-                                                quantityInput.value = ''; // Limpiar cantidad si se desmarca
-                                            } else {
-                                                quantityInput.focus(); // Poner foco para ingresar cantidad
-                                            }
+                                            quantityInput.classList.toggle('bg-gray-100', !e.target.checked);
+                                            if (!e.target.checked) quantityInput.value = '';
+                                            else quantityInput.focus();
                                         }
                                     }
                                 });
                             }
                         } catch (error) {
-                            console.error("Error cargando ítems para la tarea:", error);
+                            console.error("Error cargando ítems:", error);
                             itemsListDiv.innerHTML = '<p class="text-red-500">Error al cargar ítems.</p>';
                         }
                     } else {
-                        // Si se deselecciona el proyecto
                         itemsSelectionDiv.classList.add('hidden');
                         itemsListDiv.innerHTML = '<p class="text-gray-400">Selecciona un proyecto para ver sus ítems.</p>';
-                        projectNameInput.value = ''; // Limpiar nombre oculto
+                        projectNameInput.value = '';
                     }
                 });
 
-
-                // Guardar nombre del asignado principal
-                assigneeElement.addEventListener('change', (event) => { /* ... (código existente sin cambios) ... */
+                assigneeElement.addEventListener('change', (event) => {
                     const selectedAssigneeId = event.detail.value;
-                    const assigneeNameInput = modalForm.querySelector('input[name="assigneeName"]'); // Campo oculto
+                    const assigneeNameInput = modalForm.querySelector('input[name="assigneeName"]');
                     const selectedUser = allActiveUsers.find(u => u.id === selectedAssigneeId);
                     assigneeNameInput.value = selectedUser ? selectedUser.name : '';
                 });
 
-                // Establecer fecha mínima para dueDate
                 const dueDateInput = modalBody.querySelector('#task-dueDate');
-                if (dueDateInput) {
-                    dueDateInput.min = new Date().toISOString().split("T")[0];
-                }
+                if (dueDateInput) dueDateInput.min = new Date().toISOString().split("T")[0];
 
-                // Destruir instancias de Choices al cerrar el modal
                 mainModal.addEventListener('close', () => {
-                    projectChoices.destroy();
-                    assigneeChoices.destroy();
-                    additionalAssigneesChoices.destroy();
+                    projectChoices.destroy(); assigneeChoices.destroy(); additionalAssigneesChoices.destroy();
                 }, { once: true });
-
             }, 150);
 
-            break; // Fin del case 'new-task'
+            break;
         }
 
         case 'editProfile':
@@ -8913,39 +8985,205 @@ modalForm.addEventListener('submit', async (e) => {
             await addDoc(collection(db, "materialCatalog"), catalogData);
             break;
         }
-        case 'edit-task': { // Nuevo case para guardar edición de tarea
-            const taskId = id; // El ID de la tarea se guardó en modalForm.dataset.id
-            if (!taskId) {
-                alert("Error: No se pudo identificar la tarea a editar.");
-                break;
-            }
 
-            // Recolectar datos actualizados del formulario
-            const assigneeId = data.assigneeId;
-            const assigneeName = data.assigneeName; // Nombre guardado desde el cambio en Choices
-            const additionalAssignees = data.additionalAssigneeIds ?
-                (Array.isArray(data.additionalAssigneeIds) ? data.additionalAssigneeIds : [data.additionalAssigneeIds])
-                : [];
+        case 'edit-task': {
+            // --- CORRECCIÓN CRÍTICA: Leemos 'id' del objeto 'data' ---
+            const taskId = data.id;
+            // --- FIN CORRECCIÓN ---
 
-            const updatedTaskData = {
-                assigneeId: assigneeId,
-                assigneeName: assigneeName,
-                additionalAssigneeIds: additionalAssignees,
-                description: data.description,
-                dueDate: data.dueDate || null,
-                // No actualizamos projectId, projectName, selectedItems, specificSubItemIds
-            };
+            title = 'Editar Tarea';
+            btnText = 'Guardar Cambios';
+            btnClass = 'bg-yellow-500 hover:bg-yellow-600 shadow-lg transition-all';
+            modalContentDiv.classList.add('max-w-6xl');
 
+            modalBody.innerHTML = '<div class="text-center py-5"><div class="loader mx-auto"></div> Cargando datos...</div>';
+            mainModal.style.display = 'flex';
+
+            let allActiveUsers = [];
             try {
-                await updateDoc(doc(db, "tasks", taskId), updatedTaskData);
-                console.log(`Tarea ${taskId} actualizada.`);
-                // La vista se refrescará automáticamente por onSnapshot
+                usersMap.forEach((user, userId) => {
+                    if (user.status === 'active') {
+                        allActiveUsers.push({ id: userId, name: `${user.firstName} ${user.lastName}` });
+                    }
+                });
+                allActiveUsers.sort((a, b) => a.name.localeCompare(b.name));
             } catch (error) {
-                console.error(`Error al actualizar la tarea ${taskId}:`, error);
-                alert("No se pudo guardar los cambios en la tarea.");
+                console.error("Error cargando usuarios:", error);
+                closeMainModal();
+                alert("Error al cargar usuarios.");
+                return;
             }
-            break; // Fin del case 'edit-task'
+
+            // --- DISEÑO MODERNO HTML ---
+            bodyHtml = `
+                <div class="flex flex-col h-full max-h-[80vh]">
+                    
+                    <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-r from-yellow-500 to-amber-600 px-8 py-4 rounded-t-lg text-white shadow-md flex justify-between items-center">
+                         <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl backdrop-blur-sm"><i class="fa-solid fa-pen-to-square"></i></div>
+                            <h2 class="text-xl font-bold tracking-tight">Editar Tarea Operativa</h2>
+                        </div>
+                        <span class="text-xs font-mono bg-white/20 px-2 py-0.5 rounded">ID: ${taskId.substring(0, 6).toUpperCase()}</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-grow overflow-y-auto custom-scrollbar p-1">
+
+                        <div class="space-y-6">
+                            
+                            <div class="bg-gray-100 p-5 rounded-xl border border-gray-300 shadow-inner">
+                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-300 pb-2 flex items-center">
+                                    <i class="fa-solid fa-city mr-2 text-gray-500"></i> Proyecto Asignado
+                                </h4>
+                                <div>
+                                    <label for="task-project-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Proyecto (No editable)</label>
+                                    <select id="task-project-choices" name="projectId" class="w-full" disabled placeholder="Cargando proyecto..."></select>
+                                    <input type="hidden" name="projectName" value="${data.projectName || ''}"> 
+                                </div>
+                            </div>
+
+                            <div id="task-items-selection" class="bg-white p-5 rounded-xl border border-gray-200 shadow-md">
+                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
+                                    <i class="fa-solid fa-layer-group mr-2 text-orange-500"></i> Ítems Relacionados
+                                </h4>
+                                <div id="task-items-list" class="max-h-64 overflow-y-auto space-y-2 text-sm pr-2 custom-scrollbar">
+                                    <p class="text-gray-400 italic text-center py-4">Cargando ítems...</p>
+                                </div>
+                                <p class="text-xs text-red-500 mt-3"><i class="fa-solid fa-info-circle mr-1"></i> Los ítems de una tarea en curso no pueden modificarse.</p>
+                            </div>
+                        </div>
+
+                        <div class="space-y-6">
+
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-md space-y-4">
+                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
+                                    <i class="fa-solid fa-user-tag mr-2 text-green-500"></i> 1. Responsables
+                                </h4>
+                                
+                                <div>
+                                    <label for="task-assignee-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Asignar A (Principal)</label>
+                                    <select id="task-assignee-choices" name="assigneeId" required></select>
+                                    <input type="hidden" name="assigneeName" value="${data.assigneeName || ''}">
+                                </div>
+                                
+                                <div>
+                                    <label for="task-additional-assignees-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Personas Adicionales</label>
+                                    <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple></select>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-md space-y-4">
+                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
+                                    <i class="fa-solid fa-clipboard-list mr-2 text-indigo-500"></i> 2. Descripción y Plazo
+                                </h4>
+                                
+                                <div>
+                                    <label for="task-description" class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción de la Tarea</label>
+                                    <textarea id="task-description" name="description" rows="3" required class="w-full border rounded-lg p-2 text-sm resize-none">${data.description || ''}</textarea>
+                                </div>
+                                
+                                <div>
+                                    <label for="task-dueDate" class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Límite</label>
+                                    <input type="date" id="task-dueDate" name="dueDate" class="w-full border rounded-lg p-2 text-sm" value="${data.dueDate || ''}">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            // --- FIN DISEÑO MODERNO HTML ---
+
+            modalBody.innerHTML = bodyHtml;
+            // ... (resto de la inicialización JS con Choices.js se mantiene igual) ...
+
+            setTimeout(() => {
+                const projectElement = document.getElementById('task-project-choices');
+                const projectChoices = new Choices(projectElement, {
+                    choices: [{ value: data.projectId, label: data.projectName || 'Cargando...' }],
+                    itemSelectText: '', allowHTML: false,
+                });
+                projectChoices.setValue([{ value: data.projectId, label: data.projectName || 'Proyecto' }]);
+                projectChoices.disable();
+
+                const assigneeElement = document.getElementById('task-assignee-choices');
+                const assigneeChoices = new Choices(assigneeElement, {
+                    choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
+                    searchPlaceholderValue: "Buscar usuario...", itemSelectText: 'Seleccionar', allowHTML: false,
+                });
+                if (data.assigneeId) {
+                    const selectedUser = allActiveUsers.find(u => u.id === data.assigneeId);
+                    assigneeChoices.setValue([{ value: data.assigneeId, label: selectedUser ? selectedUser.name : 'Usuario' }]);
+                }
+                assigneeElement.addEventListener('change', (event) => {
+                    const selectedAssigneeId = event.detail.value;
+                    const assigneeNameInput = modalForm.querySelector('input[name="assigneeName"]');
+                    const selectedUser = allActiveUsers.find(u => u.id === selectedAssigneeId);
+                    assigneeNameInput.value = selectedUser ? selectedUser.name : '';
+                });
+
+                const additionalAssigneesElement = document.getElementById('task-additional-assignees-choices');
+                const additionalAssigneesChoices = new Choices(additionalAssigneesElement, {
+                    choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
+                    removeItemButton: true, searchPlaceholderValue: "Añadir más usuarios...", allowHTML: false,
+                });
+                if (data.additionalAssigneeIds && data.additionalAssigneeIds.length > 0) {
+                    const preSelectedLabels = data.additionalAssigneeIds.map(v => {
+                        const user = allActiveUsers.find(u => u.id === v);
+                        return { value: v, label: user ? user.name : 'Usuario Desconocido' };
+                    });
+                    additionalAssigneesChoices.setValue(preSelectedLabels);
+                }
+
+                // 4. Cargar y mostrar los ítems (Modo solo lectura)
+                const itemsListDiv = document.getElementById('task-items-list');
+                const itemsListUl = document.createElement('ul');
+                itemsListUl.className = 'space-y-2';
+
+                if (data.selectedItems && data.selectedItems.length > 0) {
+                    const itemDetailPromises = data.selectedItems.map(async itemInfo => {
+                        try {
+                            const itemDoc = await getDoc(doc(db, "projects", data.projectId, "items", itemInfo.itemId));
+                            const itemData = itemDoc.exists() ? itemDoc.data() : { name: `ID: ${itemInfo.itemId}`, blueprintURL: null };
+                            const planoBtn = itemData.blueprintURL ? `
+                                <button type="button" onclick="viewDocument('${itemData.blueprintURL}', '${itemData.name}'); return false;" class="text-blue-500 hover:text-blue-700 ml-1 p-1 rounded-md text-xs border border-blue-200 bg-white shadow-sm">
+                                    <i class="fa-solid fa-file-contract"></i>
+                                </button>` : '';
+
+                            return `
+                                <li class="flex items-center justify-between py-1 px-1 border-b border-gray-100 last:border-0">
+                                    <span class="font-medium text-gray-700">
+                                        <i class="fa-solid fa-check-square mr-2 text-green-500"></i>
+                                        ${itemData.name} (x${itemInfo.quantity})
+                                    </span>
+                                    <div class="flex items-center">
+                                        ${planoBtn}
+                                    </div>
+                                </li>
+                            `;
+                        } catch (e) {
+                            return `<li class="text-red-500">Error cargando ítem</li>`;
+                        }
+                    });
+                    Promise.all(itemDetailPromises).then(htmlItems => {
+                        itemsListUl.innerHTML = htmlItems.join('');
+                        itemsListDiv.innerHTML = '';
+                        itemsListDiv.appendChild(itemsListUl);
+                    });
+                } else {
+                    itemsListDiv.innerHTML = '<p class="italic text-gray-500 text-center py-4">No hay ítems asociados.</p>';
+                }
+
+                // 5. Fecha mínima y limpieza
+                const dueDateInput = modalBody.querySelector('#task-dueDate');
+                if (dueDateInput) dueDateInput.min = new Date().toISOString().split("T")[0];
+
+                mainModal.addEventListener('close', () => {
+                    projectChoices.destroy(); assigneeChoices.destroy(); additionalAssigneesChoices.destroy();
+                }, { once: true });
+
+            }, 150);
+            break;
         }
+
         case 'edit-catalog-item': {
             const measurementType = data.measurementType;
             const isDivisible = measurementType === 'linear' || measurementType === 'area';
@@ -9504,57 +9742,100 @@ modalForm.addEventListener('submit', async (e) => {
             }
             break;
         }
-        case 'addItem': { // Se usan llaves para crear un bloque de alcance
+        case 'addItem': {
             const itemName = data.name.trim().toLowerCase();
             if (!itemName) {
                 alert("El nombre del objeto no puede estar vacío.");
-                return; // Detiene la ejecución
+                return;
             }
 
-            // Realiza una consulta para verificar si ya existe un ítem con ese nombre en el proyecto
+            // --- 1. SUBIDA DE PLANO (NUEVO) ---
+            const fileInput = modalForm.querySelector('input[name="blueprintFile"]');
+            const file = fileInput ? fileInput.files[0] : null;
+
+            if (file) {
+                modalConfirmBtn.disabled = true;
+                modalConfirmBtn.textContent = 'Subiendo plano...';
+                try {
+                    // Usamos timestamp para evitar nombres duplicados en Storage
+                    const storageRef = ref(storage, `blueprints/${currentProject.id}/${Date.now()}_${file.name}`);
+                    const snapshot = await uploadBytes(storageRef, file);
+                    const url = await getDownloadURL(snapshot.ref);
+                    data.blueprintURL = url; // Añadimos la URL al objeto de datos
+                } catch (err) {
+                    console.error("Error subiendo plano:", err);
+                    alert("Error al subir el plano. Intenta de nuevo.");
+                    modalConfirmBtn.disabled = false;
+                    modalConfirmBtn.textContent = 'Añadir Ítem';
+                    return;
+                }
+            }
+            // ----------------------------------
+
+            // Verificar duplicados
             const q = query(collection(db, "projects", currentProject.id, "items"), where("name", "==", data.name.trim()));
             const querySnapshot = await getDocs(q);
 
             if (!querySnapshot.empty) {
                 alert(`Error: Ya existe un ítem con el nombre "${data.name.trim()}" en este proyecto.`);
-                return; // Detiene la ejecución si el nombre ya existe
+                modalConfirmBtn.disabled = false;
+                modalConfirmBtn.textContent = 'Añadir Ítem';
+                return;
             }
 
-            // Convertimos cm (del modal) a m (para la DB)
+            // Convertimos cm a m
             data.width = parseFloat(data.width) / 100;
             data.height = parseFloat(data.height) / 100;
 
+            modalConfirmBtn.textContent = 'Guardando...';
+            modalConfirmBtn.disabled = true;
+
             await createItem(data);
-            // ====================================================================
-            //      INICIO: LÓGICA AÑADIDA PARA ACTUALIZAR LA VISTA
-            // ====================================================================
-            // Después de crear el ítem, volvemos a cargar los detalles del proyecto.
-            // La función showProjectDetails se encargará de recalcular todo y
-            // actualizar la "Información General" automáticamente.
+
+            // Actualizar la vista
             const projectDoc = await getDoc(doc(db, "projects", currentProject.id));
             if (projectDoc.exists()) {
-                currentProject = { id: projectDoc.id, ...projectDoc.data() }; // Actualizamos la data local del proyecto
-                showProjectDetails(currentProject, 'items'); // Recargamos la vista, manteniéndonos en la pestaña de ítems
+                currentProject = { id: projectDoc.id, ...projectDoc.data() };
+                showProjectDetails(currentProject, 'items');
             }
-            // ====================================================================
-            //      FIN: LÓGICA AÑADIDA
-            // ====================================================================
             break;
         }
-        case 'editItem': { // Se usan llaves para crear un bloque de alcance
+
+        case 'editItem': {
             const newItemName = data.name.trim();
             if (!newItemName) {
                 alert("El nombre del objeto no puede estar vacío.");
                 return;
             }
 
-            // Busca otros ítems en el proyecto que tengan el nuevo nombre
+            // --- 1. SUBIDA DE PLANO (NUEVO) ---
+            const fileInput = modalForm.querySelector('input[name="blueprintFile"]');
+            const file = fileInput ? fileInput.files[0] : null;
+
+            if (file) {
+                modalConfirmBtn.disabled = true;
+                modalConfirmBtn.textContent = 'Subiendo plano...';
+                try {
+                    const storageRef = ref(storage, `blueprints/${currentProject.id}/${Date.now()}_${file.name}`);
+                    const snapshot = await uploadBytes(storageRef, file);
+                    const url = await getDownloadURL(snapshot.ref);
+                    data.blueprintURL = url; // Añadimos la URL al objeto de datos
+                } catch (err) {
+                    console.error("Error subiendo plano:", err);
+                    alert("Error al subir el plano.");
+                    modalConfirmBtn.disabled = false;
+                    modalConfirmBtn.textContent = 'Guardar Cambios';
+                    return;
+                }
+            }
+            // ----------------------------------
+
+            // Verificar duplicados (excluyendo el ítem actual)
             const q = query(collection(db, "projects", currentProject.id, "items"), where("name", "==", newItemName));
             const querySnapshot = await getDocs(q);
 
             let isDuplicate = false;
             querySnapshot.forEach(doc => {
-                // Si encuentra un documento con el mismo nombre y un ID DIFERENTE, es un duplicado
                 if (doc.id !== id) {
                     isDuplicate = true;
                 }
@@ -9562,25 +9843,26 @@ modalForm.addEventListener('submit', async (e) => {
 
             if (isDuplicate) {
                 alert(`Error: Ya existe otro ítem con el nombre "${newItemName}" en este proyecto.`);
-                return; // Detiene la ejecución
+                modalConfirmBtn.disabled = false;
+                modalConfirmBtn.textContent = 'Guardar Cambios';
+                return;
             }
 
-            data.width = parseFloat(data.width) / 100; // <-- CAMBIO
-            data.height = parseFloat(data.height) / 100; // <-- CAMBIO
+            // Convertimos cm a m
+            data.width = parseFloat(data.width) / 100;
+            data.height = parseFloat(data.height) / 100;
+
+            modalConfirmBtn.textContent = 'Guardando...';
+            modalConfirmBtn.disabled = true;
+
             await updateItem(id, data);
 
-            // ====================================================================
-            //      INICIO: LÓGICA AÑADIDA PARA ACTUALIZAR LA VISTA
-            // ====================================================================
-            // Misma lógica que al añadir: recargamos los detalles del proyecto.
+            // Actualizar la vista
             const projectDoc = await getDoc(doc(db, "projects", currentProject.id));
             if (projectDoc.exists()) {
                 currentProject = { id: projectDoc.id, ...projectDoc.data() };
                 showProjectDetails(currentProject, 'items');
             }
-            // ====================================================================
-            //      FIN: LÓGICA AÑADIDA
-            // ====================================================================
             break;
         }
         case 'editUser':
@@ -15868,8 +16150,7 @@ async function createTask(taskData) {
 }
 
 /**
- * Abre el modal con los detalles completos de una tarea específica, con un diseño mejorado.
- * Establece el contexto de retorno para la solicitud de material.
+ * Abre el modal con los detalles completos de una tarea (DISEÑO MODERNO + PLANOS + ANCHO).
  * @param {string} taskId - El ID de la tarea a mostrar.
  */
 async function openTaskDetailsModal(taskId) {
@@ -15878,375 +16159,369 @@ async function openTaskDetailsModal(taskId) {
     const bodyEl = document.getElementById('task-details-body');
     const actionsEl = document.getElementById('task-details-actions');
 
+    // --- MEJORA 1: MÁS ANCHO ---
+    const modalContainer = modal.querySelector('.w-11\\/12');
+    if (modalContainer) {
+        modalContainer.classList.remove('md:max-w-2xl', 'md:max-w-4xl');
+        modalContainer.classList.add('md:max-w-6xl'); // Mucho más ancho para ver bitácora y planos
+    }
+
     if (!modal || !bodyEl || !actionsEl) return;
 
-    // --- INICIO DE CAMBIO: Marcar comentarios como leídos al abrir ---
+    // Marcar comentarios como leídos
     try {
         const taskRef = doc(db, "tasks", taskId);
-        // Usamos arrayRemove para quitar nuestro ID del array de "no leídos".
-        // Esto es "idempotente", no da error si nuestro ID no estaba.
-        updateDoc(taskRef, {
-            unreadCommentFor: arrayRemove(currentUser.uid)
-        });
-    } catch (error) {
-        console.error("Error al marcar comentarios como leídos:", error);
-    }
-    // --- FIN DE CAMBIO ---
+        updateDoc(taskRef, { unreadCommentFor: arrayRemove(currentUser.uid) });
+    } catch (e) { console.error(e); }
 
-    // Establecer el contexto de retorno CADA VEZ que se entra a esta vista
+    // Contexto para retorno
     materialRequestReturnContext = { view: 'detalle-tarea', taskId: taskId };
-    console.log("Contexto de retorno establecido en: detalle-tarea"); // Log para depuración
 
-    // Mostrar modal y estado de carga
+    // Reset visual
     modal.style.display = 'flex';
-    titleEl.textContent = 'Cargando Detalles...';
-    bodyEl.innerHTML = '<div class="text-center py-8"><div class="loader mx-auto"></div></div>';
-    actionsEl.querySelectorAll('button:not(#task-details-cancel-btn)').forEach(btn => btn.remove());
+    if (titleEl.parentElement) titleEl.parentElement.style.display = 'none';
+
+    bodyEl.innerHTML = '<div class="flex justify-center items-center h-64"><div class="loader"></div></div>';
+    actionsEl.innerHTML = `<button type="button" id="task-details-cancel-btn" data-action="close-task-details" class="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold py-2 px-4 rounded-lg transition-colors shadow-sm">Cerrar</button>`;
 
     try {
         const taskRef = doc(db, "tasks", taskId);
         const taskSnap = await getDoc(taskRef);
 
-        if (!taskSnap.exists()) {
-            throw new Error("Tarea no encontrada.");
-        }
+        if (!taskSnap.exists()) throw new Error("Tarea no encontrada.");
 
         const task = { id: taskSnap.id, ...taskSnap.data() };
 
-        // --- Título del Modal ---
-        titleEl.textContent = `Detalle Tarea: ${task.description.substring(0, 40)}${task.description.length > 40 ? '...' : ''}`;
+        // --- PREPARACIÓN DE DATOS ---
+        const assigneeUser = usersMap.get(task.assigneeId);
+        const assigneeName = assigneeUser ? `${assigneeUser.firstName} ${assigneeUser.lastName}` : 'Sin asignar';
+        const assigneeInitial = assigneeUser ? assigneeUser.firstName.charAt(0) : '?';
 
-        // --- Obtener Nombres ---
-        const creatorName = usersMap.get(task.createdBy)?.firstName || 'Desconocido';
-        const assigneeName = usersMap.get(task.assigneeId)?.firstName + ' ' + usersMap.get(task.assigneeId)?.lastName || 'No asignado';
-        let additionalAssigneesNames = 'Ninguno';
+        let additionalNamesHtml = '';
         if (task.additionalAssigneeIds && task.additionalAssigneeIds.length > 0) {
-            additionalAssigneesNames = task.additionalAssigneeIds
-                .map(id => usersMap.get(id)?.firstName || `ID: ${id.substring(0, 5)}...`)
-                .join(', ');
+            additionalNamesHtml = task.additionalAssigneeIds.map(id => {
+                const u = usersMap.get(id);
+                return u ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">${u.firstName}</span>` : '';
+            }).join(' ');
+        } else {
+            additionalNamesHtml = '<span class="text-gray-400 italic text-xs">Nadie más</span>';
         }
 
-        // --- Formatear Fechas y Estado ---
-        const dueDate = task.dueDate ? new Date(task.dueDate + 'T00:00:00') : null;
-        const createdAtDate = task.createdAt ? task.createdAt.toDate().toLocaleDateString('es-CO') : 'N/A';
-        let dueDateText = dueDate ? dueDate.toLocaleDateString('es-CO') : 'No establecida';
-        let statusText = task.status === 'pendiente' ? 'Pendiente' : 'Completada';
-        let statusColorClass = task.status === 'pendiente' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800';
+        const formatDate = (dateStr) => dateStr ? new Date(dateStr + 'T00:00:00').toLocaleDateString('es-CO', { month: 'short', day: 'numeric' }) : '---';
+        const createdDate = task.createdAt ? task.createdAt.toDate().toLocaleDateString('es-CO', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '---';
 
-        // --- Generar lista detallada de ítems ---
-        let itemsDetailsHtml = '<p class="text-sm text-gray-500 italic">No hay ítems asociados a esta tarea.</p>';
+        const statusConfig = {
+            'pendiente': { color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-200', icon: 'fa-clock', label: 'En Progreso' },
+            'completada': { color: 'text-green-700', bg: 'bg-green-50', border: 'border-green-200', icon: 'fa-circle-check', label: 'Completada' }
+        };
+        const st = statusConfig[task.status] || statusConfig['pendiente'];
+
+        const materialStatusId = `task-detail-material-status-${task.id}`;
+        const itemsTbodyId = `task-detail-items-tbody-${task.id}`;
+
+        // --- 1. ESTRUCTURA HTML (LAYOUT) ---
+        bodyEl.innerHTML = `
+            <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-10 -mt-10 opacity-50 pointer-events-none"></div>
+                
+                <div class="relative z-10 flex justify-between items-start">
+                    <div class="flex gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-xl shadow-md shrink-0">
+                            <i class="fa-solid fa-list-check"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Detalle de Tarea</p>
+                            <h2 class="text-2xl font-black text-gray-800 leading-tight mb-2">${task.description}</h2>
+                            
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="px-2.5 py-0.5 rounded-md text-xs font-bold uppercase bg-gray-100 text-gray-600 border border-gray-200">
+                                    <i class="fa-regular fa-folder mr-1"></i> ${task.projectName || 'Proyecto'}
+                                </span>
+                                <span class="px-2.5 py-0.5 rounded-md text-xs font-bold uppercase ${st.bg} ${st.color} border ${st.border} flex items-center gap-1">
+                                    <i class="fa-solid ${st.icon}"></i> ${st.label}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button onclick="document.getElementById('task-details-cancel-btn').click()" class="text-gray-400 hover:text-gray-600 transition-colors p-1">
+                        <i class="fa-solid fa-xmark text-2xl"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                <div class="lg:col-span-7 space-y-6">
+                    
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                        <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4 flex items-center">
+                            <i class="fa-solid fa-users mr-2"></i> Equipo Asignado
+                        </h4>
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold border border-indigo-200">
+                                    ${assigneeInitial}
+                                </div>
+                                <div>
+                                    <p class="text-sm font-bold text-gray-800">${assigneeName}</p>
+                                    <p class="text-xs text-gray-500">Responsable</p>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-xs text-gray-400 mb-1">Apoyo</p>
+                                <div class="flex flex-wrap justify-end gap-1">
+                                    ${additionalNamesHtml}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                         <div class="px-5 py-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+                            <h4 class="text-xs font-bold text-gray-700 uppercase tracking-wide">
+                                <i class="fa-solid fa-layer-group mr-2 text-blue-500"></i> Ítems a Instalar
+                            </h4>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-white text-gray-500 border-b border-gray-100 text-xs uppercase">
+                                    <tr>
+                                        <th class="px-4 py-3 font-semibold">Ítem / Referencia</th>
+                                        <th class="px-4 py-3 text-center font-semibold">Total</th>
+                                        <th class="px-4 py-3 text-center font-semibold text-orange-600">Pendiente</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="${itemsTbodyId}" class="divide-y divide-gray-50 text-gray-700">
+                                    <tr><td colspan="3" class="text-center py-4 text-gray-400 italic">Cargando ítems...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                        <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center">
+                            <i class="fa-solid fa-box-open mr-2"></i> Disponibilidad de Material
+                        </h4>
+                        <div id="${materialStatusId}">
+                            <div class="animate-pulse flex space-x-4">
+                                <div class="flex-1 space-y-2 py-1">
+                                    <div class="h-2 bg-gray-200 rounded"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="lg:col-span-5 space-y-6">
+                    
+                    <div class="bg-indigo-50 rounded-xl border border-indigo-100 p-5 flex justify-between items-center">
+                        <div>
+                            <p class="text-xs font-bold text-indigo-400 uppercase mb-1">Fecha Límite</p>
+                            <p class="text-lg font-bold text-indigo-900">${formatDate(task.dueDate)}</p>
+                        </div>
+                        <div class="text-right">
+                             <p class="text-xs font-bold text-indigo-400 uppercase mb-1">Creada</p>
+                             <p class="text-sm font-medium text-indigo-700">${createdDate}</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col h-[450px]">
+                        <div class="px-4 py-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                            <h4 class="text-xs font-bold text-gray-600 uppercase tracking-wide">
+                                <i class="fa-regular fa-comments mr-2"></i> Bitácora
+                            </h4>
+                            <span class="text-[10px] bg-white border border-gray-200 px-2 py-0.5 rounded text-gray-400">Chat de Tarea</span>
+                        </div>
+                        
+                        <div id="task-comments-list" class="flex-grow overflow-y-auto p-4 space-y-3 custom-scrollbar bg-slate-50">
+                            <p class="text-center text-gray-400 text-xs italic pt-4">Cargando historial...</p>
+                        </div>
+
+                        <div class="p-3 border-t border-gray-200 bg-white" id="task-comments-section" data-task-id="${task.id}">
+                            <div class="flex gap-2">
+                                <input type="text" id="task-comment-input" class="flex-grow border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" placeholder="Escribe un comentario...">
+                                <button id="task-comment-submit-btn" class="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 transition-colors shadow-sm">
+                                    <i class="fa-solid fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // --- 2. CARGA DE DATOS ASÍNCRONA ---
+
+        // Cargar detalle de ítems (Tabla) + PLANOS
         if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
-            itemsDetailsHtml = `<div class="border rounded-lg overflow-hidden mt-2">
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-100">
-                        <tr>
-                            <th class="px-3 py-2 text-left font-semibold text-gray-600">Ítem</th>
-                            <th class="px-3 py-2 text-center font-semibold text-gray-600">Cantidad Total</th>
-                            <th class="px-3 py-2 text-center font-semibold text-gray-600">Pendientes</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-200" id="task-detail-items-tbody-${task.id}">
-                        <tr><td colspan="3" class="text-center py-3 text-gray-400 italic">Cargando ítems...</td></tr>
-                    </tbody>
-                </table>
-             </div>`;
-
-            // Esta es la versión corregida que asume que todos los subItems
-            // pertenecen al primer item listado en la tarea (parche por migración)
-            const loadItemDetails = async () => {
+            const loadItems = async () => {
                 try {
-                    const subItemIds = task.specificSubItemIds || [];
+                    const subItemIds = task.specificSubItemIds;
                     const selectedItems = task.selectedItems || [];
-                    if (subItemIds.length === 0 || selectedItems.length === 0) {
-                        throw new Error("La tarea no tiene sub-ítems o ítems seleccionados.");
-                    }
 
                     const itemsStatus = new Map();
                     const itemIds = [...new Set(selectedItems.map(i => i.itemId))];
-                    const subItemIdsSet = new Set(subItemIds); // Para un filtrado rápido
 
-                    // 1. Cargar datos de los items (para nombres) - (N lecturas)
+                    // MEJORA 3: Cargar Nombres y PLANOS (URLs)
                     const itemDocs = await Promise.all(itemIds.map(id => getDoc(doc(db, "projects", task.projectId, "items", id))));
-                    const itemNames = new Map(itemDocs.map(d => [d.id, d.exists() ? d.data().name : `Ítem ID: ${d.id}`]));
+
+                    // Mapa con info completa (nombre + plano)
+                    const itemsInfo = new Map(itemDocs.map(d => [
+                        d.id,
+                        d.exists() ? { name: d.data().name, url: d.data().blueprintURL } : { name: 'Ítem', url: null }
+                    ]));
 
                     itemIds.forEach(id => {
-                        itemsStatus.set(id, { name: itemNames.get(id), total: 0, installed: 0 });
+                        const info = itemsInfo.get(id);
+                        itemsStatus.set(id, { name: info.name, url: info.url, total: 0, installed: 0 });
                     });
 
-                    // 2. Cargar estado de CADA subItem (M lecturas, en lotes de 30)
-                    // Iteramos sobre los ítems padres para construir los paths correctos
+                    // Consultar subítems en lotes
+                    const subItemIdsSet = new Set(subItemIds);
                     for (const itemInfo of selectedItems) {
                         const itemId = itemInfo.itemId;
-
-                        // Preparamos los IDs de esta tarea en lotes (chunks) de 30
-                        const subItemDocs = [];
-                        for (let i = 0; i < subItemIds.length; i += 30) {
-                            const chunkIds = subItemIds.slice(i, i + 30);
-                            const q = query(
-                                collection(db, "projects", task.projectId, "items", itemId, "subItems"),
-                                where(documentId(), "in", chunkIds)
-                            );
-                            const snapshot = await getDocs(q);
-                            snapshot.forEach(doc => subItemDocs.push(doc));
-                        }
-
-                        for (const docSnap of subItemDocs) {
-                            if (docSnap.exists()) {
-                                // Verificamos que este sub-ítem realmente esté en la lista de la tarea
-                                if (!subItemIdsSet.has(docSnap.id)) continue;
-
-                                const subItem = docSnap.data();
-                                const statusInfo = itemsStatus.get(subItem.itemId);
-                                if (statusInfo) {
-                                    statusInfo.total++;
-                                    if (subItem.status === 'Instalado') {
-                                        statusInfo.installed++;
-                                    }
+                        const q = query(collection(db, "projects", task.projectId, "items", itemId, "subItems"));
+                        const snap = await getDocs(q);
+                        snap.forEach(d => {
+                            if (subItemIdsSet.has(d.id)) {
+                                const st = itemsStatus.get(itemId);
+                                if (st) {
+                                    st.total++;
+                                    if (d.data().status === 'Instalado') st.installed++;
                                 }
                             }
-                        }
-                    }
-
-                    // 3. Renderizar la tabla
-                    let tableBodyHtml = '';
-                    if (itemsStatus.size === 0) {
-                        tableBodyHtml = '<tr><td colspan="3" class="text-center py-3 text-red-500">Error: No se encontraron los ítems asociados.</td></tr>';
-                    } else {
-                        itemsStatus.forEach((statusInfo, itemId) => {
-                            // Si el total es 0, significa que los subitems no se encontraron (eran de otro item)
-                            if (statusInfo.total === 0) return;
-
-                            const pendingCount = statusInfo.total - statusInfo.installed;
-                            tableBodyHtml += `
-                                <tr class="hover:bg-gray-50">
-                                    <td class="px-3 py-2 font-medium text-gray-800">${statusInfo.name}</td>
-                                    <td class="px-3 py-2 text-center">${statusInfo.total}</td>
-                                    <td class="px-3 py-2 text-center font-bold ${pendingCount > 0 ? 'text-red-600' : 'text-green-600'}">${pendingCount}</td>
-                                </tr>`;
                         });
                     }
-                    const tbodyElement = document.getElementById(`task-detail-items-tbody-${task.id}`);
-                    if (tbodyElement) tbodyElement.innerHTML = tableBodyHtml;
 
-                } catch (error) {
-                    console.error(`Error loading item details for task ${task.id}:`, error);
-                    const tbodyElement = document.getElementById(`task-detail-items-tbody-${task.id}`);
-                    if (tbodyElement) tbodyElement.innerHTML = '<tr><td colspan="3" class="text-center py-3 text-red-500">Error al cargar detalles de ítems.</td></tr>';
-                }
+                    let htmlRows = '';
+                    itemsStatus.forEach(st => {
+                        if (st.total === 0) return;
+                        const pending = st.total - st.installed;
+
+                        // MEJORA 3: Botón "Ver Plano" si existe URL
+                        let nameCellContent = `<span class="font-bold text-gray-700 block">${st.name}</span>`;
+                        if (st.url) {
+                            nameCellContent += `
+                                <button onclick="viewDocument('${st.url}', '${st.name}')" 
+                                    class="mt-1 inline-flex items-center text-[10px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded border border-blue-100 transition-colors">
+                                    <i class="fa-solid fa-file-contract mr-1.5"></i> Ver Plano
+                                </button>`;
+                        }
+
+                        htmlRows += `
+                            <tr class="hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0">
+                                <td class="px-4 py-3 align-middle">${nameCellContent}</td>
+                                <td class="px-4 py-3 text-center text-gray-600 align-middle font-mono bg-gray-50/50">${st.total}</td>
+                                <td class="px-4 py-3 text-center font-bold align-middle ${pending > 0 ? 'text-orange-600' : 'text-green-600'}">
+                                    ${pending > 0 ? pending : '<i class="fa-solid fa-check"></i>'}
+                                </td>
+                            </tr>`;
+                    });
+
+                    const tbody = document.getElementById(itemsTbodyId);
+                    if (tbody) tbody.innerHTML = htmlRows || '<tr><td colspan="3" class="p-4 text-center text-sm text-gray-400">Sin ítems</td></tr>';
+
+                } catch (e) { console.error(e); }
             };
-            setTimeout(loadItemDetails, 50);
+            loadItems();
+        } else {
+            document.getElementById(itemsTbodyId).innerHTML = '<tr><td colspan="3" class="p-4 text-center text-sm text-gray-400">No hay ítems asociados.</td></tr>';
         }
 
-        // --- INICIO DE LA MODIFICACIÓN (HTML y Lógica) ---
-        // 1. Añadimos el placeholder para el estado del material DENTRO del modal
-        const materialStatusId = `task-detail-material-status-${task.id}`;
-        let materialStatusHtml = '';
-        // Solo si la tarea tiene subítems (y por ende, podría necesitar material)
+        // Cargar estado de materiales (siempre intentamos cargarlo para llenar la caja)
         if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
-            materialStatusHtml = `
-                <div class="bg-white border border-gray-200 rounded-lg p-4">
-                     <h4 class="text-md font-semibold text-gray-700 mb-2 border-b pb-2 flex items-center">
-                        <svg class="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"></path></svg>
-                        Estado de Materiales
-                    </h4>
-                    <div id="${materialStatusId}">
-                        <p class="text-sm text-gray-400 italic">Cargando estado de materiales...</p>
-                    </div>
-                </div>
-             `;
+            loadTaskMaterialStatus(task.id, task.projectId, materialStatusId, 'summary');
+        } else {
+            document.getElementById(materialStatusId).innerHTML = '<p class="text-sm text-gray-400 italic">No aplica (sin ítems).</p>';
         }
 
-        // --- Construir el cuerpo del modal con secciones ---
-        bodyEl.innerHTML = `
-            <div class="space-y-6">
-                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                     <h4 class="text-md font-semibold text-gray-700 mb-3 border-b pb-2 flex items-center">
-                        <svg class="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        Información General
-                    </h4>
-                    <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                        <div>
-                            <dt class="font-medium text-gray-500">Proyecto</dt>
-                            <dd class="text-gray-900 font-semibold">${task.projectName || 'N/A'}</dd>
-                        </div>
-                        <div>
-                            <dt class="font-medium text-gray-500">Estado</dt>
-                            <dd><span class="px-2 py-1 text-xs font-semibold rounded-full ${statusColorClass}">${statusText}</span></dd>
-                        </div>
-                         <div>
-                            <dt class="font-medium text-gray-500">Fecha Límite</dt>
-                            <dd class="text-gray-900">${dueDateText}</dd>
-                        </div>
-                        <div>
-                            <dt class="font-medium text-gray-500">Fecha Creación</dt>
-                            <dd class="text-gray-900">${createdAtDate}</dd>
-                        </div>
-                        <div class="col-span-2">
-                            <dt class="font-medium text-gray-500">Descripción</dt>
-                            <dd class="text-gray-900 whitespace-pre-wrap">${task.description}</dd>
-                        </div>
-                    </dl>
-                </div>
-                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                      <h4 class="text-md font-semibold text-gray-700 mb-3 border-b pb-2 flex items-center">
-                         <svg class="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21v-1a6 6 0 00-1-3.796V12a4 4 0 11-8 0v2.204a6 6 0 00-1 3.796v1z"></path></svg>
-                        Asignación
-                    </h4>
-                     <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                        <div>
-                            <dt class="font-medium text-gray-500">Asignado Principal</dt>
-                            <dd class="text-gray-900 font-semibold">${assigneeName}</dd>
-                        </div>
-                        <div>
-                            <dt class="font-medium text-gray-500">Creada por</dt>
-                            <dd class="text-gray-900">${creatorName}</dd>
-                        </div>
-                        <div class="col-span-2">
-                            <dt class="font-medium text-gray-500">Otros Asignados</dt>
-                            <dd class="text-gray-900">${additionalAssigneesNames}</dd>
-                        </div>
-                    </dl>
-                </div>
-                <div class="bg-white border border-gray-200 rounded-lg p-4">
-                    <h4 class="text-md font-semibold text-gray-700 mb-2 border-b pb-2 flex items-center">
-                        <svg class="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-                        Ítems Relacionados y Avance
-                    </h4>
-                    ${itemsDetailsHtml}
-                </div>
-                
-                ${materialStatusHtml}
+        // --- 3. LÓGICA DE COMENTARIOS (CHAT) ---
+        // (Este bloque se mantiene igual que la versión anterior, funcional y correcto)
+        const commentsList = document.getElementById('task-comments-list');
+        const submitBtn = document.getElementById('task-comment-submit-btn');
 
-                <div id="task-comments-section" class="pt-4 border-t border-gray-200">
-                    <h4 class="text-md font-semibold text-gray-700 mb-3 flex items-center">
-                        <svg class="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
-                        </svg>
-                        Bitácora / Comentarios
-                    </h4>
-                    <div id="task-comments-list" class="space-y-3 max-h-48 overflow-y-auto bg-gray-50 p-3 rounded-lg border">
-                        <p class="text-sm text-gray-400 italic text-center">Cargando comentarios...</p>
-                    </div>
-                    <div class="mt-3 flex gap-2">
-                        <input type="text" id="task-comment-input" class="flex-grow border rounded-md p-2 text-sm" placeholder="Escribe un comentario...">
-                        <button type="button" id="task-comment-submit-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg text-sm">
-                            Enviar
-                        </button>
-                    </div>
-                </div>
-                </div>
-        `;
+        if (submitBtn && commentsList) {
+            submitBtn.addEventListener('click', () => addCommentToTask(task.id));
+            if (taskCommentListeners.has(task.id)) taskCommentListeners.get(task.id)();
 
-        // 2. Cargar estado de materiales (código existente)
-        if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
-            loadTaskMaterialStatus(task.id, task.projectId, materialStatusId);
-        }
-
-        // 3. Encontrar elementos de la bitácora (AHORA SÍ EXISTEN)
-        const commentsSection = bodyEl.querySelector('#task-comments-section');
-        const commentsList = bodyEl.querySelector('#task-comments-list');
-        const commentSubmitBtn = bodyEl.querySelector('#task-comment-submit-btn');
-
-        if (commentsSection && commentsList && commentSubmitBtn) {
-            // 3a. Guardar taskId para la limpieza del listener
-            commentsSection.dataset.taskId = task.id;
-
-            // 3b. Añadir listener al botón de enviar
-            commentSubmitBtn.addEventListener('click', () => {
-                addCommentToTask(task.id);
-            });
-
-            // 3c. Limpiar listener anterior si existe (por si acaso)
-            if (taskCommentListeners.has(task.id)) {
-                taskCommentListeners.get(task.id)();
-            }
-
-            // 3d. Crear nuevo listener para la subcolección 'comments'
-            const commentsQuery = query(collection(db, "tasks", task.id, "comments"), orderBy("createdAt", "asc"));
-            const unsubscribeComments = onSnapshot(commentsQuery, (snapshot) => {
-                commentsList.innerHTML = ''; // Limpiar lista
-                if (snapshot.empty) {
-                    commentsList.innerHTML = '<p class="text-sm text-gray-400 italic text-center">Aún no hay comentarios.</p>';
+            const qComments = query(collection(db, "tasks", task.id, "comments"), orderBy("createdAt", "asc"));
+            const unsubComments = onSnapshot(qComments, (snap) => {
+                commentsList.innerHTML = '';
+                if (snap.empty) {
+                    commentsList.innerHTML = '<div class="flex flex-col items-center justify-center h-full text-gray-300"><i class="fa-regular fa-comment-dots text-3xl mb-2"></i><p class="text-xs">Sin actividad reciente</p></div>';
                     return;
                 }
-                snapshot.forEach(doc => {
-                    const comment = doc.data();
-                    const commentDate = comment.createdAt.toDate();
-                    const formattedDate = `${commentDate.toLocaleDateString('es-CO')} ${commentDate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`;
+                snap.forEach(doc => {
+                    const c = doc.data();
+                    const isLog = c.type === 'log';
+                    const date = c.createdAt ? c.createdAt.toDate() : new Date();
+                    const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    const isMe = c.userId === currentUser.uid;
 
-                    const commentEl = document.createElement('div');
-
-                    // --- INICIO DE CORRECCIÓN (Estilo de Log) ---
-                    if (comment.type === 'log') {
-                        // Es un log del sistema
-                        commentEl.className = "text-sm italic text-gray-500 py-2 border-t border-gray-100";
-                        // Usamos 'innerHTML' para renderizar el <strong> o <b>
-                        commentEl.innerHTML = `
-                            <p class="inline">${comment.text}</p>
-                            <span class="text-xs ml-1">(${formattedDate})</span>
-                        `;
+                    let msgHtml = '';
+                    if (isLog) {
+                        msgHtml = `<div class="flex justify-center my-2"><div class="bg-gray-100 text-gray-500 text-[10px] py-1 px-3 rounded-full border border-gray-200 flex items-center gap-1"><i class="fa-solid fa-info-circle"></i> ${c.text} <span class="opacity-60 ml-1">${time}</span></div></div>`;
                     } else {
-                        // Es un comentario normal
-                        commentEl.className = "text-sm py-2 border-t border-gray-100";
-                        commentEl.innerHTML = `
-                            <p class="text-gray-800">${comment.text}</p>
-                            <p class="text-xs text-gray-500 font-medium">
-                                — ${comment.userName} <span class="font-normal">el ${formattedDate}</span>
-                            </p>
-                        `;
+                        msgHtml = `
+                            <div class="flex flex-col ${isMe ? 'items-end' : 'items-start'} mb-3 animate-fade-in">
+                                <div class="flex items-end gap-2 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}">
+                                    <div class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-600 border border-gray-300 shrink-0">${c.userName.charAt(0)}</div>
+                                    <div class="py-2 px-3 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-blue-100 text-blue-900 rounded-br-none' : 'bg-white border border-gray-200 text-gray-800 rounded-bl-none'}"><p>${c.text}</p></div>
+                                </div>
+                                <span class="text-[10px] text-gray-400 mt-1 mx-9">${c.userName} • ${time}</span>
+                            </div>`;
                     }
-                    // --- FIN DE CORRECCIÓN ---
-
-                    commentsList.appendChild(commentEl);
+                    commentsList.insertAdjacentHTML('beforeend', msgHtml);
                 });
-                // Scroll automático al último comentario
                 commentsList.scrollTop = commentsList.scrollHeight;
-            }, (error) => {
-                console.error("Error al cargar comentarios:", error);
-                commentsList.innerHTML = '<p class="text-sm text-red-500 text-center">Error al cargar comentarios.</p>';
             });
-
-            // 3e. Guardar la función de unsubscribe
-            taskCommentListeners.set(task.id, unsubscribeComments);
+            taskCommentListeners.set(task.id, unsubComments);
         }
-        // --- FIN DE LA MODIFICACIÓN ---
 
-        // --- Añadir botones de acción (código existente) ---
-        actionsEl.querySelectorAll('button:not(#task-details-cancel-btn)').forEach(btn => btn.remove());
+        // --- 4. BOTONES DE ACCIÓN (FOOTER) ---
+        const actionBtnsContainer = document.createElement('div');
+        actionBtnsContainer.className = 'flex flex-wrap gap-2 mr-auto';
 
         if (currentUserRole === 'admin') {
-            const editBtn = document.createElement('button');
-            editBtn.type = 'button';
-            editBtn.dataset.action = 'edit-task';
-            editBtn.dataset.id = task.id;
-            editBtn.className = 'bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg flex items-center';
-            editBtn.innerHTML = `<svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg> Editar Tarea`;
-            actionsEl.insertBefore(editBtn, actionsEl.firstChild);
-        }
-        if (task.status === 'pendiente' && task.specificSubItemIds && task.specificSubItemIds.length > 0) {
-            const requestBtn = document.createElement('button');
-            requestBtn.type = 'button';
-            requestBtn.dataset.action = 'request-material-from-task';
-            requestBtn.dataset.projectId = task.projectId;
-            requestBtn.dataset.taskId = task.id;
-            requestBtn.className = 'bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg flex items-center';
-            requestBtn.innerHTML = `<svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg> Solicitar Material`;
-            actionsEl.insertBefore(requestBtn, actionsEl.firstChild);
-        }
-        if (task.status === 'pendiente' && task.specificSubItemIds && task.specificSubItemIds.length > 0) {
-            const progressBtn = document.createElement('button');
-            progressBtn.type = 'button';
-            progressBtn.dataset.action = 'register-task-progress';
-            progressBtn.dataset.taskId = task.id;
-            progressBtn.className = 'bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg flex items-center';
-            progressBtn.innerHTML = `<svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg> Registrar Avance`;
-            actionsEl.insertBefore(progressBtn, actionsEl.firstChild);
+            actionBtnsContainer.innerHTML += `
+                <button data-action="edit-task" data-id="${task.id}" class="text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 font-bold py-2 px-3 rounded-lg text-sm transition-colors flex items-center border border-yellow-200">
+                    <i class="fa-solid fa-pen-to-square mr-2"></i> Editar
+                </button>`;
         }
 
+        if (task.status === 'pendiente' && task.specificSubItemIds && task.specificSubItemIds.length > 0) {
+            const progressBtn = document.createElement('button');
+            progressBtn.dataset.action = 'register-task-progress';
+            progressBtn.dataset.taskId = task.id;
+            progressBtn.className = "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center transform hover:-translate-y-0.5 text-sm";
+            progressBtn.innerHTML = `<i class="fa-solid fa-camera mr-2"></i> Registrar Avance`;
+
+            const materialBtn = document.createElement('button');
+            materialBtn.dataset.action = 'request-material-from-task';
+            materialBtn.dataset.projectId = task.projectId;
+            materialBtn.dataset.taskId = task.id;
+            materialBtn.className = "bg-white border border-purple-200 text-purple-600 hover:bg-purple-50 font-bold py-2 px-4 rounded-lg shadow-sm transition-colors text-sm flex items-center";
+            materialBtn.innerHTML = `<i class="fa-solid fa-dolly mr-2"></i> Pedir Material`;
+
+            actionBtnsContainer.appendChild(progressBtn);
+            actionBtnsContainer.appendChild(materialBtn);
+        }
+
+        if (task.status === 'pendiente') {
+            actionBtnsContainer.innerHTML += `
+                <button data-action="complete-task" data-id="${task.id}" class="text-green-600 hover:text-green-800 hover:bg-green-50 border border-green-200 font-bold py-2 px-3 rounded-lg text-sm transition-colors ml-2" title="Marcar como completada">
+                    <i class="fa-solid fa-check-double mr-1"></i> Completar
+                </button>`;
+        }
+
+        actionsEl.insertBefore(actionBtnsContainer, actionsEl.firstChild);
+
     } catch (error) {
-        console.error("Error al abrir detalles de tarea:", error);
+        console.error("Error modal tarea:", error);
         titleEl.textContent = 'Error';
-        bodyEl.innerHTML = `<p class="text-red-500 text-center py-6">${error.message}</p>`;
+        bodyEl.innerHTML = `<div class="p-8 text-center text-red-500 bg-red-50 rounded-xl border border-red-100"><i class="fa-solid fa-triangle-exclamation text-3xl mb-2"></i><p>${error.message}</p></div>`;
     }
 }
 
