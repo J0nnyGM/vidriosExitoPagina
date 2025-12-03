@@ -574,114 +574,155 @@ export function loadHerramientaView() {
 
 
 /**
- * Crea el HTML para una TARJETA de herramienta. (Actualizada con Categoría y Costo)
+ * Crea el HTML para una TARJETA de herramienta.
+ * (DISEÑO MEJORADO: Estilo Card Vertical con Badges y Acciones)
  */
 function createToolCard(tool, usersMap) {
+    // 1. Configuración de Estilos según Estado
+    const statusConfig = {
+        'disponible': { 
+            color: 'bg-emerald-100 text-emerald-700 border-emerald-200', 
+            icon: 'fa-check-circle', 
+            label: 'Disponible' 
+        },
+        'asignada': { 
+            color: 'bg-blue-100 text-blue-700 border-blue-200', 
+            icon: 'fa-user-check', 
+            label: 'Asignada' 
+        },
+        'en_reparacion': { 
+            color: 'bg-orange-100 text-orange-700 border-orange-200', 
+            icon: 'fa-screwdriver-wrench', 
+            label: 'En Reparación' 
+        },
+        'dada_de_baja': { 
+            color: 'bg-red-100 text-red-700 border-red-200', 
+            icon: 'fa-ban', 
+            label: 'Retirada' 
+        }
+    };
+
+    const currentStatus = statusConfig[tool.status] || statusConfig['disponible'];
+    
+    // 2. Preparación de Datos
+    const role = getCurrentUserRole();
+    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    
+    const category = TOOL_CATEGORIES.find(c => c.value === tool.category);
+    const categoryLabel = category ? category.label : (tool.category || 'General');
+    const purchaseCostLabel = (tool.purchaseCost && tool.purchaseCost > 0) ? currencyFormatter.format(tool.purchaseCost) : null;
+
+    const assignedToUser = usersMap.get(tool.assignedTo);
+    // Avatar con iniciales para el usuario asignado
+    let assigneeHtml = '';
+    if (tool.assignedTo && assignedToUser) {
+        const initials = `${assignedToUser.firstName[0]}${assignedToUser.lastName[0]}`;
+        assigneeHtml = `
+            <div class="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+                <div class="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold shadow-sm">
+                    ${initials}
+                </div>
+                <span class="text-xs font-bold text-blue-900 truncate max-w-[120px]" title="${assignedToUser.firstName} ${assignedToUser.lastName}">
+                    ${assignedToUser.firstName} ${assignedToUser.lastName}
+                </span>
+            </div>
+        `;
+    } else {
+        assigneeHtml = `
+            <div class="flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200">
+                <i class="fa-solid fa-warehouse text-gray-400 text-xs"></i>
+                <span class="text-xs font-bold text-gray-500">En Bodega</span>
+            </div>
+        `;
+    }
+
+    // 3. Lógica de Botones (Conservada)
+    let actionButton = '', thirdButtonHtml = '';
+
+    if (role !== 'operario') {
+        // Botón Principal (Acción)
+        if (tool.status === 'asignada') {
+            actionButton = `<button data-action="return-tool" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2"><i class="fa-solid fa-rotate-left"></i> Devolver</button>`;
+        } else if (tool.status === 'en_reparacion') {
+            actionButton = `<button data-action="register-maintenance" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold py-2 px-3 rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2"><i class="fa-solid fa-check"></i> Finalizar</button>`;
+        } else if (tool.status === 'dada_de_baja') {
+            actionButton = `<button disabled class="flex-1 bg-gray-300 text-gray-500 text-xs font-bold py-2 px-3 rounded-lg cursor-not-allowed border border-gray-200"><i class="fa-solid fa-lock"></i> Bloqueado</button>`;
+        } else { // disponible
+            actionButton = `<button data-action="assign-tool" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3 rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2"><i class="fa-solid fa-hand-holding-hand"></i> Asignar</button>`;
+        }
+
+        // Botón Secundario (Gestión)
+        if (tool.status === 'en_reparacion') {
+            thirdButtonHtml = `<button data-action="decommission-tool" class="text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors" title="Dar de Baja"><i class="fa-solid fa-ban"></i></button>`;
+        } else if (tool.status === 'dada_de_baja') {
+            thirdButtonHtml = `<button data-action="delete-tool" class="text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors" title="Eliminar Definitivamente"><i class="fa-solid fa-trash"></i></button>`;
+        } else {
+            thirdButtonHtml = `<button data-action="edit-tool" class="text-gray-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors" title="Editar"><i class="fa-solid fa-pen-to-square"></i></button>`;
+        }
+    }
+
+    // 4. Construcción del HTML de la Tarjeta
     const card = document.createElement('div');
-    card.className = 'bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden flex flex-col tool-card';
+    // Clases esenciales: tool-card para los eventos, flex-col para verticalidad, hover effects
+    card.className = 'tool-card group bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-lg hover:border-blue-200 transition-all duration-300 flex flex-col overflow-hidden relative';
+    
+    // Dataset attributes (CRUCIALES PARA LA LÓGICA)
     card.dataset.id = tool.id;
     card.dataset.name = tool.name;
     card.dataset.assignedto = tool.assignedTo || '';
 
-    // --- OBTENER ROL ACTUAL ---
-    const role = getCurrentUserRole();
-
-    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
-    const category = TOOL_CATEGORIES.find(c => c.value === tool.category);
-    const categoryLabel = category ? category.label : (tool.category || 'Sin Categoría');
-    const purchaseCostLabel = (tool.purchaseCost && tool.purchaseCost > 0)
-        ? currencyFormatter.format(tool.purchaseCost)
-        : null;
-
-    const assignedToUser = usersMap.get(tool.assignedTo);
-    const assignedToName = assignedToUser ? `${assignedToUser.firstName} ${assignedToUser.lastName}` : 'En Bodega';
-
-    let statusText, statusColor, actionButton, thirdButtonHtml;
-
-    if (role === 'operario') {
-        // --- VISTA SIMPLIFICADA PARA OPERARIO ---
-        statusText = 'Asignada';
-        statusColor = 'bg-yellow-100 text-yellow-800';
-        actionButton = ''; // No puede asignar/devolver
-        thirdButtonHtml = ''; // No puede editar/eliminar
-
-    } else {
-        // --- VISTA COMPLETA PARA ADMIN/BODEGA ---
-        if (tool.status === 'asignada') {
-            statusText = 'Asignada';
-            statusColor = 'bg-yellow-100 text-yellow-800';
-            actionButton = `<button data-action="return-tool" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Recibir (Devolver)</button>`;
-        } else if (tool.status === 'en_reparacion') {
-            statusText = 'En Reparación';
-            statusColor = 'bg-red-100 text-red-800';
-            actionButton = `<button data-action="register-maintenance" class="bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Registrar Mantenimiento</button>`;
-        } else if (tool.status === 'dada_de_baja') {
-            statusText = 'Dada de Baja';
-            statusColor = 'bg-gray-200 text-gray-800';
-            actionButton = `<button disabled class="bg-gray-400 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Retirada</button>`;
-        } else { // 'disponible'
-            statusText = 'Disponible';
-            statusColor = 'bg-green-100 text-green-800';
-            actionButton = `<button data-action="assign-tool" class="bg-green-500 hover:bg-green-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Asignar</button>`;
-        }
-
-        thirdButtonHtml = (tool.status === 'en_reparacion')
-            ? `<button data-action="decommission-tool" class="bg-red-700 hover:bg-red-800 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Dar de Baja</button>`
-            : (tool.status === 'dada_de_baja')
-                ? `<button data-action="delete-tool" class="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Eliminar</button>`
-                : `<button data-action="edit-tool" class="bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-semibold py-2 px-3 rounded-lg w-full">Editar</button>`;
-    }
-
-
     card.innerHTML = `
-        <div class="flex-grow flex">
-            <div class="w-1/3 flex-shrink-0 aspect-square bg-gray-100"> 
-                <img 
-                    src="${tool.photoURL || 'https://via.placeholder.com/300'}" 
-                    alt="${tool.name}" 
-                    class="w-full h-full object-contain cursor-pointer" 
-                    data-action="view-tool-image"
-                    data-url="${tool.photoURL || 'https://via.placeholder.com/300'}"
-                >
-            </div>
+        <div class="relative h-48 bg-gray-50 overflow-hidden flex items-center justify-center group-hover:bg-white transition-colors">
+            ${tool.photoURL ? 
+                `<img src="${tool.photoURL}" alt="${tool.name}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 cursor-pointer" data-action="view-tool-image" data-url="${tool.photoURL}">` : 
+                `<i class="fa-solid fa-screwdriver-wrench text-6xl text-gray-200"></i>`
+            }
             
-            <div class="w-2/3 flex-grow p-4 flex flex-col">
-                <div class="flex-grow">
-                    <h3 class="text-lg font-bold text-gray-900">${tool.name}</h3>
-                    <p class="text-sm text-gray-500">${tool.reference || 'Sin referencia'}</p>
-                    
-                    <div class="mt-3 text-sm space-y-1">
-                        <div>
-                            <span class="font-medium text-gray-600">Categoría:</span>
-                            <span class="font-semibold text-gray-800">${categoryLabel}</span>
-                        </div>
-                        ${purchaseCostLabel ? `
-                        <div>
-                            <span class="font-medium text-gray-600">Costo Adq.:</span>
-                            <span class="font-semibold text-gray-800">${purchaseCostLabel}</span>
-                        </div>` : ''}
-                    </div>
-                </div>
-                
-                <div class="text-sm space-y-2 mt-4 pt-2 border-t">
-                    <div class="flex justify-between items-center">
-                        <span class="font-medium text-gray-600">Estado:</span>
-                        <span class="px-2 py-0.5 text-xs font-semibold rounded-full ${statusColor}">${statusText}</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="font-medium text-gray-600">Ubicación:</span>
-                        <span class="font-medium text-gray-800 truncate" title="${assignedToName}">${assignedToName}</span>
-                    </div>
+            <div class="absolute top-3 right-3 z-10">
+                <span class="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wide border ${currentStatus.color} shadow-sm backdrop-blur-md bg-opacity-90">
+                    <i class="fa-solid ${currentStatus.icon} mr-1"></i> ${currentStatus.label}
+                </span>
+            </div>
+
+            <div class="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black/60 to-transparent p-3 pt-8">
+                <p class="text-[10px] font-bold text-white uppercase tracking-wider flex items-center">
+                    <i class="fa-solid fa-tag mr-1.5 opacity-75"></i> ${categoryLabel}
+                </p>
+            </div>
+        </div>
+
+        <div class="p-4 flex-1 flex flex-col">
+            
+            <div class="mb-4">
+                <h3 class="text-base font-bold text-gray-800 leading-tight mb-1 group-hover:text-blue-700 transition-colors line-clamp-2" title="${tool.name}">
+                    ${tool.name}
+                </h3>
+                <p class="text-xs text-gray-400 font-mono flex items-center">
+                    <i class="fa-solid fa-barcode mr-1.5"></i> ${tool.reference || 'Sin Ref.'}
+                </p>
+            </div>
+
+            <div class="mt-auto space-y-3">
+                <div class="flex justify-between items-end">
+                    ${assigneeHtml}
+                    ${purchaseCostLabel && role !== 'operario' ? 
+                        `<div class="text-right">
+                            <p class="text-[10px] text-gray-400 uppercase font-bold">Valor</p>
+                            <p class="text-xs font-bold text-gray-700 font-mono">${purchaseCostLabel}</p>
+                        </div>` : ''
+                    }
                 </div>
             </div>
         </div>
-        
-        <div class="bg-gray-50 p-3 border-t grid ${role === 'operario' ? 'grid-cols-1' : 'grid-cols-3'} gap-2">
-            ${actionButton}
-            <button data-action="view-tool-history" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-semibold py-2 px-3 rounded-lg w-full">Historial</button>
-            ${thirdButtonHtml}
-        </div>
+
+        <div class="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center gap-2">
+            ${actionButton} <button data-action="view-tool-history" class="bg-white border border-gray-200 hover:bg-gray-100 text-gray-600 p-2 rounded-lg transition-colors shadow-sm" title="Ver Historial">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+            </button>
+            
+            ${thirdButtonHtml} </div>
     `;
+
     return card;
 }
 
@@ -1141,24 +1182,25 @@ function closeToolHistoryModal() {
  * @param {HTMLElement} container - El elemento <div> donde se inyectará el HTML.
  */
 async function loadToolDashboard(container) {
+    // 0. Estado de Carga (Diseño limpio)
     container.innerHTML = `
-        <div class="text-center p-10">
-            <p class="text-gray-500">Calculando estadísticas...</p>
-            <div class="loader mx-auto mt-4"></div>
+        <div class="flex flex-col items-center justify-center py-20 h-full">
+            <div class="loader mb-4"></div>
+            <p class="text-gray-400 font-medium text-sm animate-pulse">Consolidando inventario y costos...</p>
         </div>`;
 
     try {
         const usersMap = getUsersMap();
         const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
-        // 1. Consultas en paralelo
+        // 1. Consultas en paralelo (Lógica original conservada)
         const [toolsSnapshot, maintenanceSnapshot, damagedReturnsSnapshot] = await Promise.all([
-            getDocs(query(collection(db, "tools"))), // Todas las herramientas
-            getDocs(query(collectionGroup(db, "history"), where("action", "==", "mantenimiento"))), // Costos
-            getDocs(query(collectionGroup(db, "history"), where("returnStatus", "in", ["dañado", "con_defecto"]))) // Daños
+            getDocs(query(collection(db, "tools"))), 
+            getDocs(query(collectionGroup(db, "history"), where("action", "==", "mantenimiento"))), 
+            getDocs(query(collectionGroup(db, "history"), where("returnStatus", "in", ["dañado", "con_defecto"]))) 
         ]);
 
-        // 2. Procesar KPIs (Costos y Conteo)
+        // 2. Procesar KPIs (Lógica original conservada)
         let kpi = {
             total: 0,
             disponible: 0,
@@ -1166,9 +1208,9 @@ async function loadToolDashboard(container) {
             en_reparacion: 0,
             dada_de_baja: 0,
             totalMaintenanceCost: 0,
-            totalAssetValue: 0 // <-- AÑADE ESTA LÍNEA (si no existe)
+            totalAssetValue: 0 
         };
-        const assignedToMap = new Map(); // Para "Herramientas por Colaborador"
+        const assignedToMap = new Map();
 
         toolsSnapshot.forEach(doc => {
             const tool = doc.data();
@@ -1178,13 +1220,12 @@ async function loadToolDashboard(container) {
                 kpi.totalAssetValue += tool.purchaseCost || 0;
             }
 
-
             switch (tool.status) {
                 case 'disponible': kpi.disponible++; break;
                 case 'asignada':
                     kpi.asignada++;
                     const userId = tool.assignedTo;
-                    if (userId) { // Solo contamos si hay un ID de usuario
+                    if (userId) { 
                         const count = (assignedToMap.get(userId) || 0) + 1;
                         assignedToMap.set(userId, count);
                     }
@@ -1198,84 +1239,188 @@ async function loadToolDashboard(container) {
             kpi.totalMaintenanceCost += doc.data().maintenanceCost || 0;
         });
 
-        // 3. Procesar Devoluciones Dañadas (Tu nueva solicitud)
-        const damagedReturnsMap = new Map(); // Para "Devoluciones con daños"
+        // 3. Procesar Devoluciones Dañadas (Lógica original conservada)
+        const damagedReturnsMap = new Map(); 
         damagedReturnsSnapshot.forEach(doc => {
             const historyEntry = doc.data();
-            // --- INICIO DE CORRECCIÓN ---
-            // Cambiamos 'adminId' por 'returnedByUserId'
             const returnedById = historyEntry.returnedByUserId;
             if (returnedById) {
                 const count = (damagedReturnsMap.get(returnedById) || 0) + 1;
                 damagedReturnsMap.set(returnedById, count);
             }
-            // --- FIN DE CORRECCIÓN ---
         });
 
-        // 4. Renderizar el HTML
+        // 4. Renderizar el HTML (DISEÑO MEJORADO)
 
-        // HTML para KPIs
-        const kpiHtml = `
-            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-6">
-                <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 text-center"><p class="text-sm font-medium text-blue-800">Total Herramientas</p><p class="text-3xl font-bold text-blue-900">${kpi.total}</p></div>
-                <div class="bg-green-50 p-4 rounded-lg border border-green-200 text-center"><p class="text-sm font-medium text-green-800">Disponibles</p><p class="text-3xl font-bold text-green-900">${kpi.disponible}</p></div>
-                <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200 text-center"><p class="text-sm font-medium text-yellow-800">Asignadas</p><p class="text-3xl font-bold text-yellow-900">${kpi.asignada}</p></div>
-                <div class="bg-orange-50 p-4 rounded-lg border border-orange-200 text-center"><p class="text-sm font-medium text-orange-800">En Reparación</p><p class="text-3xl font-bold text-orange-900">${kpi.en_reparacion}</p></div>
-                <div class="bg-gray-100 p-4 rounded-lg border border-gray-300 text-center"><p class="text-sm font-medium text-gray-700">Costo Mantenimiento</p><p class="text-3xl font-bold text-gray-800">${currencyFormatter.format(kpi.totalMaintenanceCost)}</p></div>
-                <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200 text-center">
-                    <p class="text-sm font-medium text-indigo-800">Valor Total Activos</p>
-                    <p class="text-3xl font-bold text-indigo-900">${currencyFormatter.format(kpi.totalAssetValue)}</p>
-                </div>
-            </div>
-        `;
-
-        // HTML para Reportes
-        let assignedHtml = '<p class="text-sm text-gray-500">No hay herramientas asignadas.</p>';
+        // A. Generar Listas HTML (Estilizadas)
+        
+        // Lista de Asignaciones
+        let assignedHtml = `
+            <div class="flex flex-col items-center justify-center h-32 text-gray-400">
+                <i class="fa-solid fa-clipboard-check text-2xl mb-2 opacity-50"></i>
+                <p class="text-xs">Todo el inventario en bodega</p>
+            </div>`;
+            
         if (assignedToMap.size > 0) {
-            assignedHtml = '<ul class="divide-y divide-gray-200">';
-            const sortedAssigned = [...assignedToMap.entries()].sort((a, b) => b[1] - a[1]); // Ordenar por quién tiene más
+            assignedHtml = '<ul class="divide-y divide-gray-100">';
+            const sortedAssigned = [...assignedToMap.entries()].sort((a, b) => b[1] - a[1]);
             sortedAssigned.forEach(([userId, count]) => {
                 const user = usersMap.get(userId);
                 const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido';
-                assignedHtml += `<li class="py-2 flex justify-between items-center"><span class="font-medium text-gray-700">${userName}</span><span class="font-bold text-lg text-blue-600">${count}</span></li>`;
+                // Avatar con iniciales
+                const initials = userName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                
+                assignedHtml += `
+                    <li class="py-3 flex justify-between items-center group hover:bg-gray-50 px-2 rounded-lg transition-colors">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">
+                                ${initials}
+                            </div>
+                            <span class="font-medium text-sm text-gray-700">${userName}</span>
+                        </div>
+                        <div class="flex items-center bg-blue-50 px-2 py-1 rounded-md border border-blue-100">
+                            <i class="fa-solid fa-screwdriver-wrench text-blue-400 text-xs mr-2"></i>
+                            <span class="font-bold text-sm text-blue-700">${count}</span>
+                        </div>
+                    </li>`;
             });
             assignedHtml += '</ul>';
         }
 
-        let damagedHtml = '<p class="text-sm text-gray-500">No hay registros de devoluciones con daños.</p>';
+        // Lista de Daños
+        let damagedHtml = `
+            <div class="flex flex-col items-center justify-center h-32 text-gray-400">
+                <i class="fa-regular fa-thumbs-up text-2xl mb-2 opacity-50"></i>
+                <p class="text-xs">Sin reportes de daños recientes</p>
+            </div>`;
+
         if (damagedReturnsMap.size > 0) {
-            damagedHtml = '<ul class="divide-y divide-gray-200">';
-            const sortedDamaged = [...damagedReturnsMap.entries()].sort((a, b) => b[1] - a[1]); // Ordenar por quién reporta más
-            sortedDamaged.forEach(([userId, count]) => { // <-- CAMBIADO DE 'adminId' a 'userId'
-                const user = usersMap.get(userId); // <-- CAMBIADO
-                const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido'; // <-- Ahora es el colaborador
-                damagedHtml += `<li class="py-2 flex justify-between items-center"><span class="font-medium text-gray-700">${userName}</span><span class="font-bold text-lg text-red-600">${count}</span></li>`;
+            damagedHtml = '<ul class="divide-y divide-gray-100">';
+            const sortedDamaged = [...damagedReturnsMap.entries()].sort((a, b) => b[1] - a[1]);
+            sortedDamaged.forEach(([userId, count]) => {
+                const user = usersMap.get(userId);
+                const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido';
+                
+                damagedHtml += `
+                    <li class="py-3 flex justify-between items-center group hover:bg-red-50 px-2 rounded-lg transition-colors">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xs font-bold">
+                                <i class="fa-solid fa-user-injured"></i>
+                            </div>
+                            <span class="font-medium text-sm text-gray-700">${userName}</span>
+                        </div>
+                        <span class="font-bold text-sm text-red-600 bg-white px-2 py-1 rounded border border-red-100 shadow-sm">${count} reportes</span>
+                    </li>`;
             });
             damagedHtml += '</ul>';
         }
 
-        const reportsHtml = `
-            <div class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="bg-white p-4 rounded-lg shadow-md border">
-                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Herramientas por Colaborador</h3>
-                    <div class="max-h-60 overflow-y-auto pr-2">
-                        ${assignedHtml}
+        // B. Estructura Principal del Dashboard
+        container.innerHTML = `
+            <div class="space-y-6 animate-fade-in-up">
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
+                            <i class="fa-solid fa-toolbox text-4xl text-gray-800"></i>
+                        </div>
+                        <p class="text-xs font-bold text-gray-500 uppercase tracking-wider">Total Herramientas</p>
+                        <p class="text-2xl font-black text-gray-800 mt-1">${kpi.total}</p>
+                        <div class="mt-2 w-full bg-gray-100 h-1 rounded-full overflow-hidden">
+                            <div class="bg-gray-600 h-full" style="width: 100%"></div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
+                            <i class="fa-solid fa-circle-check text-4xl text-green-600"></i>
+                        </div>
+                        <p class="text-xs font-bold text-green-600 uppercase tracking-wider">Disponibles</p>
+                        <p class="text-2xl font-black text-gray-800 mt-1">${kpi.disponible}</p>
+                        <p class="text-[10px] text-gray-400 mt-1">En bodega</p>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
+                            <i class="fa-solid fa-hand-holding-hand text-4xl text-blue-600"></i>
+                        </div>
+                        <p class="text-xs font-bold text-blue-600 uppercase tracking-wider">Asignadas</p>
+                        <p class="text-2xl font-black text-gray-800 mt-1">${kpi.asignada}</p>
+                        <p class="text-[10px] text-gray-400 mt-1">En campo</p>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
+                            <i class="fa-solid fa-triangle-exclamation text-4xl text-orange-500"></i>
+                        </div>
+                        <p class="text-xs font-bold text-orange-500 uppercase tracking-wider">En Reparación</p>
+                        <p class="text-2xl font-black text-gray-800 mt-1">${kpi.en_reparacion}</p>
+                        <p class="text-[10px] text-gray-400 mt-1">Mantenimiento</p>
                     </div>
                 </div>
-                <div class="bg-white p-4 rounded-lg shadow-md border">
-                    <h3 class="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">Devoluciones con Daños (Reportadas por)</h3>
-                    <div class="max-h-60 overflow-y-auto pr-2">
-                        ${damagedHtml}
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <div class="bg-gradient-to-br from-indigo-50 to-white p-6 rounded-xl shadow-sm border border-indigo-100 flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-bold text-indigo-500 uppercase mb-1">Valor Total Activos</p>
+                            <p class="text-3xl font-black text-indigo-900 tracking-tight">${currencyFormatter.format(kpi.totalAssetValue)}</p>
+                            <p class="text-xs text-indigo-400 mt-1">Costo de adquisición histórico</p>
+                        </div>
+                        <div class="h-12 w-12 rounded-full bg-white border border-indigo-100 flex items-center justify-center shadow-sm">
+                            <i class="fa-solid fa-sack-dollar text-indigo-600 text-xl"></i>
+                        </div>
+                    </div>
+
+                    <div class="bg-gradient-to-br from-gray-50 to-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-bold text-gray-500 uppercase mb-1">Gasto en Mantenimiento</p>
+                            <p class="text-3xl font-black text-gray-700 tracking-tight">${currencyFormatter.format(kpi.totalMaintenanceCost)}</p>
+                            <p class="text-xs text-gray-400 mt-1">Acumulado histórico</p>
+                        </div>
+                        <div class="h-12 w-12 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm">
+                            <i class="fa-solid fa-screwdriver text-gray-500 text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
+                        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                            <h3 class="font-bold text-gray-700 text-sm">
+                                <i class="fa-solid fa-users-gear mr-2 text-blue-500"></i>Herramientas Asignadas
+                            </h3>
+                            <span class="text-xs bg-white px-2 py-1 rounded border border-gray-200 text-gray-500 font-mono">${assignedToMap.size} Colab.</span>
+                        </div>
+                        <div class="p-4 flex-1 max-h-80 overflow-y-auto custom-scrollbar">
+                            ${assignedHtml}
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
+                        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                            <h3 class="font-bold text-gray-700 text-sm">
+                                <i class="fa-solid fa-circle-exclamation mr-2 text-red-500"></i>Reportes de Daños
+                            </h3>
+                            <span class="text-xs bg-white px-2 py-1 rounded border border-gray-200 text-gray-500 font-mono">Histórico</span>
+                        </div>
+                        <div class="p-4 flex-1 max-h-80 overflow-y-auto custom-scrollbar">
+                            ${damagedHtml}
+                        </div>
                     </div>
                 </div>
             </div>
         `;
 
-        // Unir todo
-        container.innerHTML = kpiHtml + reportsHtml;
-
     } catch (error) {
         console.error("Error al cargar el dashboard de herramientas:", error);
-        container.innerHTML = `<p class="text-red-500 text-center p-10">Error al cargar las estadísticas: ${error.message}</p>`;
+        container.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-full text-red-500 p-8 bg-red-50 rounded-xl border border-red-100">
+                <i class="fa-solid fa-bug text-4xl mb-3"></i>
+                <p class="font-bold">Error al calcular estadísticas</p>
+                <p class="text-sm mt-1">${error.message}</p>
+            </div>`;
     }
 }
