@@ -22,14 +22,16 @@ export function initSolicitudes(db, showView, currentUserRole, usersMap, openMai
     _usersMap = usersMap;
     _openMainModal = openMainModal;
 
-    // --- LISTENERS GLOBALES (Delegación de Eventos) ---
+    // --- CORRECCIÓN: COMENTAMOS ESTE BLOQUE COMPLETO ---
+    // El archivo app.js ya maneja estos clics globalmente. 
+    // Al tenerlo aquí también, se ejecutaba dos veces (doble modal).
     
-    document.addEventListener('click', (e) => {
+    /* document.addEventListener('click', (e) => {
         // 1. Botón "Registrar Entrega / Despachar"
         const deliverBtn = e.target.closest('[data-action="deliver-material"]');
         if (deliverBtn) {
             e.stopPropagation(); 
-            e.preventDefault(); // Prevenir comportamiento por defecto
+            e.preventDefault();
             const reqId = deliverBtn.dataset.id;
             const projectId = deliverBtn.dataset.projectId;
             
@@ -63,7 +65,6 @@ export function initSolicitudes(db, showView, currentUserRole, usersMap, openMai
 
         // 4. Clic en la Tarjeta (Ver Detalles)
         const card = e.target.closest('[data-action="view-request-details"]');
-        // Validamos que no sea un clic en un botón interno ni en inputs
         if (card && !e.target.closest('button') && !e.target.closest('input') && !e.target.closest('.action-btn')) {
             const reqId = card.dataset.id;
             const projectId = card.dataset.projectId;
@@ -72,6 +73,8 @@ export function initSolicitudes(db, showView, currentUserRole, usersMap, openMai
     });
 
     // 5. Configurar Modales (Limpieza de listeners antiguos)
+    // app.js también configura estos modales, así que esto es redundante.
+    /*
     setupModal('delivery-modal', 'delivery-modal-close-btn', 'delivery-modal-cancel-btn', () => {
         currentDeliveryReqId = null;
         currentDeliveryProjectId = null;
@@ -80,21 +83,20 @@ export function initSolicitudes(db, showView, currentUserRole, usersMap, openMai
 
     setupModal('request-details-modal', 'request-details-close-btn', 'request-details-cancel-btn');
 
-    // Listener específico para el formulario de entrega
     const deliveryForm = document.getElementById('delivery-modal-form');
     if (deliveryForm) {
-        // Clonar y reemplazar para eliminar listeners viejos si init se llama varias veces
         const newForm = deliveryForm.cloneNode(true);
         deliveryForm.parentNode.replaceChild(newForm, deliveryForm);
         newForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            // Pasamos la función de cierre del modal
             await handleDeliverySubmit(() => {
                 document.getElementById('delivery-modal').classList.add('hidden');
                 document.getElementById('delivery-modal').classList.remove('flex');
             });
         });
     }
+    */
+   // --- FIN DEL BLOQUE COMENTADO ---
 }
 
 // Función helper para configurar cierre de modales
@@ -294,16 +296,39 @@ function createSolicitudCard(req, projectId, projectName) {
     const items = req.consumedItems || req.materials || [];
     let itemsHtml = '';
     
+    // Función auxiliar para calcular entregas reales (Lógica mejorada)
+    const getRealDeliveredQuantity = (item) => {
+        let total = parseInt(item.deliveredQuantity) || 0;
+        if (req.deliveryHistory && Array.isArray(req.deliveryHistory)) {
+            let historialTotal = 0;
+            req.deliveryHistory.forEach(delivery => {
+                if (delivery.items && Array.isArray(delivery.items)) {
+                    delivery.items.forEach(dItem => {
+                        // Normalizamos para comparar
+                        const sameId = String(dItem.materialId) === String(item.materialId);
+                        const sameType = (dItem.type || 'full_unit') === (item.type || 'full_unit');
+                        const sameLength = (parseFloat(dItem.length) || 0) === (parseFloat(item.length) || 0);
+                        if (sameId && sameType && sameLength) {
+                            historialTotal += (parseInt(dItem.quantity) || 0);
+                        }
+                    });
+                }
+            });
+            if (historialTotal > total) total = historialTotal;
+        }
+        return total;
+    };
+
     items.slice(0, 3).forEach(item => {
-        const delivered = parseInt(item.deliveredQuantity) || 0;
+        const delivered = getRealDeliveredQuantity(item);
         const requested = parseInt(item.quantity) || 0;
         const progressPercent = requested > 0 ? Math.min(100, Math.round((delivered / requested) * 100)) : 0;
-        const progressColor = progressPercent === 100 ? 'bg-emerald-500' : 'bg-blue-500';
+        const progressColor = progressPercent >= 100 ? 'bg-emerald-500' : 'bg-blue-500';
 
         itemsHtml += `
             <div class="mb-2 last:mb-0">
                 <div class="flex justify-between text-xs text-gray-600 mb-0.5">
-                    <span class="font-medium truncate max-w-[70%]">${item.itemName}</span>
+                    <span class="font-medium truncate max-w-[70%]">${item.itemName || 'Ítem'}</span>
                     <span class="font-mono"><span class="font-bold text-gray-800">${delivered}</span> / ${requested}</span>
                 </div>
                 <div class="w-full bg-gray-200 rounded-full h-1.5">
@@ -311,6 +336,7 @@ function createSolicitudCard(req, projectId, projectName) {
                 </div>
             </div>`;
     });
+
     if (items.length > 3) {
         itemsHtml += `<div class="text-xs text-center text-indigo-400 font-medium mt-2">+ ${items.length - 3} ítems más</div>`;
     }
@@ -322,10 +348,11 @@ function createSolicitudCard(req, projectId, projectName) {
     card.setAttribute('data-id', req.id);
     card.setAttribute('data-project-id', projectId);
 
+    // --- LÓGICA DE BOTONES ACTUALIZADA ---
     let actionButtons = '';
     
-    // BOTONES VISIBLES SIN RESTRICCIÓN DE ROL PARA PRUEBAS
     if (req.status === 'pendiente') {
+        // Pendiente: Aprobar / Rechazar
         actionButtons = `
             <div class="flex gap-2 relative z-20 mt-2">
                 <button class="action-btn flex-1 py-2 px-2 rounded-xl bg-red-50 text-red-600 font-bold text-xs hover:bg-red-100 border border-red-100 transition-all flex items-center justify-center gap-2 active:scale-95"
@@ -337,13 +364,26 @@ function createSolicitudCard(req, projectId, projectName) {
                     <i class="fa-solid fa-check"></i> Aprobar
                 </button>
             </div>`;
+
     } else if (req.status === 'aprobado' || req.status === 'entregado_parcial') {
+        // Aprobado o Parcial: Solo "Continuar Entrega" (Ya NO sale devolver aquí)
+        const btnText = req.status === 'entregado_parcial' ? 'Continuar Entrega' : 'Registrar Entrega';
         actionButtons = `
             <button class="action-btn w-full mt-2 py-3 px-4 rounded-2xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95 relative z-20"
                 data-action="deliver-material" data-id="${req.id}" data-project-id="${projectId}">
-                <i class="fa-solid fa-dolly"></i> Registrar Entrega
+                <i class="fa-solid fa-dolly"></i> ${btnText}
             </button>`;
+
+    } else if (req.status === 'entregado') {
+        // Entregado Total (Historial): Aquí SÍ sale el botón de Devolver
+        actionButtons = `
+            <button class="action-btn w-full mt-2 py-2 px-4 rounded-2xl bg-white border border-gray-200 text-gray-600 font-bold text-xs hover:bg-gray-50 hover:text-yellow-600 transition-all flex items-center justify-center gap-2 active:scale-95 relative z-20"
+                data-action="return-material" data-id="${req.id}" data-project-id="${projectId}">
+                <i class="fa-solid fa-rotate-left"></i> Devolver Material
+            </button>`;
+            
     } else {
+        // Rechazado
         actionButtons = `<div class="w-full py-2 text-center text-gray-300 text-xs font-bold">Finalizada</div>`;
     }
 
