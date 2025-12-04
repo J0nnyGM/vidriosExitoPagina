@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Gestor de Proyectos de Obra</title>
+    <title>Vidrios Exito Organizador</title>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
@@ -21,8 +21,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <meta http-equiv="Content-Security-Policy"
-        content="script-src 'self' 'unsafe-inline' https://www.gstatic.com/ https://www.google.com/recaptcha/ https://apis.google.com https://cdn.jsdelivr.net https://kit.fontawesome.com; frame-src 'self' https://www.google.com/recaptcha/ https://www.google.com/ https://firebasestorage.googleapis.com;">
-
+    content="script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com/ https://www.google.com/recaptcha/ https://apis.google.com https://cdn.jsdelivr.net https://kit.fontawesome.com; frame-src 'self' https://www.google.com/recaptcha/ https://www.google.com/ https://firebasestorage.googleapis.com;">
+    
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
     <link href="css/output.css" rel="stylesheet">
@@ -1834,45 +1834,67 @@
                 </div>
             </div>
 
-            <div id="catalog-view" class="hidden">
-                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-4">
-                    <h1 class="text-3xl font-bold text-gray-700">Catálogo de Materiales</h1>
-                    <div class="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
-                        <button data-action="add-catalog-item"
-                            class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg w-full sm:w-auto">
-                            + Añadir Nuevo Material
+            <div id="catalog-view" class="hidden p-4 md:p-8">
+                
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6 flex flex-col md:flex-row justify-between items-center gap-4 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-16 -mt-16 opacity-50 pointer-events-none"></div>
+                    
+                    <div class="flex items-center gap-4 w-full md:w-auto relative z-10">
+                        <div class="w-12 h-12 bg-gradient-to-br from-indigo-500 to-blue-600 text-white rounded-xl flex items-center justify-center text-2xl shadow-md transform -rotate-3">
+                            <i class="fa-solid fa-boxes-stacked"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-2xl font-black text-gray-800 tracking-tight leading-none">Catálogo Maestro</h1>
+                            <p class="text-xs text-gray-500 font-medium mt-1">Inventario global y control de existencias</p>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2 w-full md:w-auto relative z-10">
+                        <button data-action="add-catalog-item" class="flex-grow md:flex-none bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 group transform hover:-translate-y-0.5">
+                            <div class="bg-white/20 rounded-full w-5 h-5 flex items-center justify-center group-hover:rotate-90 transition-transform">
+                                <i class="fa-solid fa-plus text-[10px]"></i>
+                            </div>
+                            <span>Nuevo Material</span>
                         </button>
                     </div>
                 </div>
 
-                <div class="mb-4">
-                    <input type="text" id="catalog-search-input" placeholder="Buscar material por nombre..."
-                        class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                </div>
-
-                <div class="bg-white p-6 rounded-lg shadow-md">
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm text-left">
-                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
-                                <tr>
-                                    <th class="px-6 py-3"></th>
-                                    <th class="px-6 py-3">Nombre del Material</th>
-                                    <th class="px-6 py-3">Referencia / SKU</th>
-                                    <th class="px-6 py-3">Unidad</th>
-                                    <th class="px-6 py-3 text-right">Cantidad en Stock</th>
-                                    <th class="px-6 py-3 text-center">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody id="catalog-table-body">
-                            </tbody>
-                        </table>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6">
+                    <div class="relative group">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-indigo-500 transition-colors">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        </div>
+                        <input type="text" id="catalog-search-input" 
+                            class="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all bg-gray-50 focus:bg-white placeholder-gray-400 font-medium"
+                            placeholder="Buscar por nombre, referencia o tipo de material...">
                     </div>
                 </div>
-                <div id="catalog-loader-container" class="text-center py-4">
-                    <button id="load-more-catalog-btn"
-                        class="bg-gray-700 hover:bg-gray-800 text-white font-bold py-2 px-6 rounded-lg transition-colors">
-                        Cargar Más
-                    </button>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-500 uppercase bg-slate-50 border-b border-slate-100">
+                                <tr>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider">Material / Ref</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-center">Tipo</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-center">Unidad</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-center">Stock</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-center text-emerald-600">Mejor Precio</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-center">Estado</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-right">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="catalog-table-body" class="divide-y divide-slate-50">
+                                </tbody>
+                        </table>
+                    </div>
+                    
+                    <div id="catalog-loader-container" class="p-4 text-center border-t border-slate-50 bg-slate-50/50">
+                        <button id="load-more-catalog-btn"
+                            class="text-xs font-bold text-slate-500 hover:text-indigo-600 bg-white hover:bg-indigo-50 px-4 py-2 rounded-lg transition-all border border-slate-200 hover:border-indigo-200 shadow-sm">
+                            Cargar más resultados
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -2511,66 +2533,86 @@
         </div>
     </div>
 
-    <div id="inventory-details-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-3xl mx-auto max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center p-4 border-b">
-                <h3 id="inventory-details-title" class="text-xl font-bold">Detalle de Inventario</h3>
-                <button data-action="close-inventory-details"
-                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
+<div id="inventory-details-modal" class="fixed inset-0 z-[60] items-center justify-center hidden modal-backdrop p-4 bg-slate-900/50 backdrop-blur-sm transition-opacity duration-300">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden transform transition-all scale-100">
+            
+            <div class="bg-gradient-to-r from-slate-800 to-slate-900 px-6 py-5 flex justify-between items-center relative overflow-hidden shrink-0">
+                <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+                    <i class="fa-solid fa-layer-group text-8xl text-white transform rotate-12 translate-x-4 -translate-y-2"></i>
+                </div>
+                
+                <div class="relative z-10 flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center text-2xl backdrop-blur-md border border-white/10 shadow-inner text-white">
+                        <i class="fa-solid fa-boxes-stacked"></i>
+                    </div>
+                    <div>
+                        <p class="text-blue-200 text-xs font-bold uppercase tracking-wider mb-0.5">Detalle de Existencias</p>
+                        <h3 id="inventory-details-title" class="text-2xl font-black text-white tracking-tight leading-none">Cargando...</h3>
+                    </div>
+                </div>
+                
+                <button data-action="close-inventory-details" class="relative z-10 text-white/60 hover:text-white hover:bg-white/10 p-2 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
             </div>
 
-            <div class="p-4 sm:p-6 overflow-y-auto bg-gray-50 space-y-4">
-                <div class="mb-4 border-b border-gray-200">
-                    <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+            <div class="flex-1 overflow-hidden flex flex-col bg-gray-50">
+                
+                <div class="px-6 pt-4 bg-white border-b border-gray-200 shadow-sm z-10">
+                    <nav class="flex space-x-8" aria-label="Tabs">
                         <button data-tab="complete-stock"
-                            class="inventory-tab tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm active">
-                            Unidades Completas
+                            class="inventory-tab group flex items-center py-3 px-1 border-b-2 font-bold text-sm transition-all border-slate-800 text-slate-800 active">
+                            <i class="fa-solid fa-box mr-2 opacity-75 group-[.active]:text-slate-800"></i> Unidades Completas
                         </button>
                         <button data-tab="remnant-stock"
-                            class="inventory-tab tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                            Retazos / Sobrantes
+                            class="inventory-tab group flex items-center py-3 px-1 border-b-2 font-bold text-sm transition-all border-transparent text-gray-400 hover:text-gray-600 hover:border-gray-300">
+                            <i class="fa-solid fa-scissors mr-2 opacity-75"></i> Retazos / Sobrantes
                         </button>
                     </nav>
                 </div>
 
-                <div id="complete-stock-content" class="inventory-tab-content">
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm text-left">
-                            <thead class="text-xs text-gray-700 uppercase bg-gray-100">
-                                <tr>
-                                    <th class="px-4 py-2">Fecha de Compra</th>
-                                    <th class="px-4 py-2">Cantidad Inicial</th>
-                                    <th class="px-4 py-2">Cantidad Restante</th>
-                                    <th class="px-4 py-2">Origen</th>
-                                </tr>
-                            </thead>
-                            <tbody id="complete-stock-table-body">
-                            </tbody>
-                        </table>
+                <div class="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                    
+                    <div id="complete-stock-content" class="inventory-tab-content space-y-4">
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                            <table class="w-full text-sm text-left">
+                                <thead class="text-xs text-gray-500 uppercase bg-slate-50 border-b border-gray-100">
+                                    <tr>
+                                        <th class="px-5 py-4 font-bold tracking-wider">Fecha Ingreso</th>
+                                        <th class="px-5 py-4 font-bold tracking-wider text-center">Cant. Inicial</th>
+                                        <th class="px-5 py-4 font-bold tracking-wider text-center">Disponible</th>
+                                        <th class="px-5 py-4 font-bold tracking-wider">Origen / Lote</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="complete-stock-table-body" class="divide-y divide-gray-50"></tbody>
+                            </table>
+                        </div>
                     </div>
-                </div>
 
-                <div id="remnant-stock-content" class="inventory-tab-content hidden">
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm text-left">
-                            <thead class="text-xs text-gray-700 uppercase bg-gray-100">
-                                <tr>
-                                    <th class="px-4 py-2">Fecha de Creación</th>
-                                    <th class="px-4 py-2">Medida</th>
-                                    <th class="px-4 py-2">Cantidad</th>
-                                    <th class="px-4 py-2">Origen</th>
-                                </tr>
-                            </thead>
-                            <tbody id="remnant-stock-table-body">
-                            </tbody>
-                        </table>
+                    <div id="remnant-stock-content" class="inventory-tab-content hidden space-y-4">
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                             <table class="w-full text-sm text-left">
+                                <thead class="text-xs text-gray-500 uppercase bg-slate-50 border-b border-gray-100">
+                                    <tr>
+                                        <th class="px-5 py-4 font-bold tracking-wider">Fecha Creación</th>
+                                        <th class="px-5 py-4 font-bold tracking-wider">Medida</th>
+                                        <th class="px-5 py-4 font-bold tracking-wider text-center">Cantidad</th>
+                                        <th class="px-5 py-4 font-bold tracking-wider">Origen / Notas</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="remnant-stock-table-body" class="divide-y divide-gray-50"></tbody>
+                            </table>
+                        </div>
                     </div>
+
                 </div>
             </div>
 
-            <div class="mt-auto p-4 border-t flex justify-end">
+            <div class="p-4 bg-white border-t border-gray-100 flex justify-end">
                 <button data-action="close-inventory-details"
-                    class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg">Cerrar</button>
+                    class="bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 font-bold py-2.5 px-6 rounded-xl transition-colors shadow-sm hover:shadow text-sm">
+                    Cerrar Panel
+                </button>
             </div>
         </div>
     </div>

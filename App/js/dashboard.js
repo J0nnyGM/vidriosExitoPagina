@@ -90,68 +90,86 @@ export function showGeneralDashboard() {
 
 /**
  * Carga los datos y listeners para el dashboard de Admin/Bodega.
+ * (VERSIÓN BLINDADA: Fuerza la lectura de datos si el listener falla)
  */
 function loadAdminDashboard(container) {
     const statsRef = doc(_db, "system", "dashboardStats");
+    let isInitializing = false;
+
+    // Helper para renderizar y evitar código duplicado
+    const renderData = (data) => {
+        destroyExistingCharts();
+        renderAdminDashboard(data, container);
+        createDashboardCharts(data);
+    };
 
     const unsubStats = onSnapshot(statsRef, (docSnap) => {
         
-        // --- LÓGICA DE AUTO-INICIALIZACIÓN VÍA BACKEND ---
-        if (!docSnap.exists()) {
-            console.warn("⚠️ Dashboard sin datos. Solicitando recálculo al servidor...");
-            
+        // 1. CAMINO FELIZ: El documento existe
+        if (docSnap.exists()) {
+            console.log("✅ Dashboard: Datos recibidos por listener.");
+            renderData(docSnap.data());
+            isInitializing = false;
+            return;
+        }
+
+        // 2. CAMINO DE RECUPERACIÓN: El documento no existe
+        if (!isInitializing) {
+            console.warn("⚠️ Dashboard: Sin datos. Iniciando cálculo en servidor...");
+            isInitializing = true;
+
             container.innerHTML = `
                 <div class="flex flex-col items-center justify-center h-64 text-gray-400">
                     <div class="loader mb-4"></div>
-                    <p class="animate-pulse text-blue-600 font-medium">Obteniendo datos del servidor...</p>
-                    <p class="text-xs text-gray-400 mt-2">(Calculando estadísticas reales)</p>
+                    <p class="animate-pulse text-blue-600 font-medium">Sincronizando estadísticas...</p>
+                    <p class="text-xs text-gray-400 mt-2">(Esto puede tomar unos segundos)</p>
                 </div>
             `;
 
-            // En lugar de crear datos falsos/vacíos aquí, llamamos a la función del backend
-            // que cuenta los datos REALES y crea el documento.
             const functions = getFunctions(getApp(), 'us-central1');
             const runRecalculation = httpsCallable(functions, 'runFullRecalculation');
 
             runRecalculation()
-                .then(() => console.log("✅ Servidor completó la inicialización."))
+                .then(() => {
+                    console.log("✅ Servidor terminó. Forzando lectura de datos...");
+                    // CORRECCIÓN CRÍTICA: Leemos manualmente, no esperamos al listener
+                    return getDoc(statsRef);
+                })
+                .then((forcedSnap) => {
+                    if (forcedSnap.exists()) {
+                        console.log("✅ Lectura forzada exitosa. Desbloqueando UI...");
+                        renderData(forcedSnap.data());
+                        isInitializing = false; // Reset para permitir futuras actualizaciones
+                    } else {
+                        console.error("❌ Error: El servidor dijo 'OK' pero los datos no aparecen.");
+                        container.innerHTML = `<div class="p-4 text-center text-yellow-600 bg-yellow-50 rounded-lg">Datos no disponibles. Recarga la página.</div>`;
+                    }
+                })
                 .catch((error) => {
-                    console.error("❌ Error al solicitar inicialización:", error);
-                    container.innerHTML = `
-                        <div class="p-6 bg-red-50 border border-red-200 rounded-xl text-center">
-                            <p class="text-red-600 font-bold">No se pudo conectar con el servidor.</p>
-                            <p class="text-xs mt-1">${error.message}</p>
-                        </div>`;
+                    console.error("❌ Error crítico:", error);
+                    isInitializing = false;
+                    container.innerHTML = `<div class="p-4 text-center text-red-600 bg-red-50 rounded-lg">Error: ${error.message}</div>`;
                 });
-                
-            return; // Salimos y esperamos a que el onSnapshot se dispare de nuevo con los datos
-        }
-        // -------------------------------------------------
-
-        const stats = docSnap.data();
-
-        destroyExistingCharts();
-        renderAdminDashboard(stats, container);
-        createDashboardCharts(stats);
-
-        // Listener de préstamos pendientes
-        const badgeEl = document.getElementById('pending-loans-badge');
-        if (badgeEl) {
-            const qLoans = query(collectionGroup(_db, 'loans'), where('status', '==', 'pending'));
-            onSnapshot(qLoans, (snap) => {
-                const count = snap.size;
-                badgeEl.textContent = count;
-                badgeEl.classList.toggle('hidden', count === 0);
-            });
         }
 
     }, (error) => {
         if (error.code === 'permission-denied') return;
-        console.error("Error dashboard:", error);
-        container.innerHTML = `<p class="text-red-500 bg-red-50 p-4 rounded-lg">Error de conexión: ${error.message}</p>`;
+        console.error("Error listener dashboard:", error);
+        container.innerHTML = `<p class="text-red-500 text-center p-4">Error de conexión.</p>`;
     });
 
     unsubscribeDashboard = unsubStats;
+
+    // Listener auxiliar para préstamos pendientes (Badge rojo)
+    const badgeEl = document.getElementById('pending-loans-badge');
+    if (badgeEl) {
+        const qLoans = query(collectionGroup(_db, 'loans'), where('status', '==', 'pending'));
+        onSnapshot(qLoans, (snap) => {
+            const count = snap.size;
+            badgeEl.textContent = count;
+            badgeEl.classList.toggle('hidden', count === 0);
+        }, (e) => console.log("Error badge préstamos", e));
+    }
 }
 
 

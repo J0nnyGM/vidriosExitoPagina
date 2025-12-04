@@ -1,7 +1,9 @@
 // Importaciones de Firebase
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment, limit, serverTimestamp, arrayRemove, documentId, enableIndexedDbPersistence, CACHE_SIZE_UNLIMITED } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js"; // <-- AÑADIDO documentId
+
+import { getFirestore, initializeFirestore, persistentLocalCache,persistentMultipleTabManager,  doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment, limit, serverTimestamp, arrayRemove, documentId} from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js"; // <-- AÑADIDO documentId
+
 import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app-check.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
@@ -37,25 +39,21 @@ const appCheck = initializeAppCheck(app, {
     provider: new ReCaptchaV3Provider('6Lc-090rAAAAAKkE09k5txsrVWXG3Xelxnrpb7Ty'),
     isTokenAutoRefreshEnabled: true
 });
-const db = getFirestore(app);
+
+// --- CONFIGURACIÓN BASE DE DATOS (CON PERSISTENCIA NUEVA) ---
+const db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager() // Permite tener la app abierta en varias pestañas sin error
+    })
+});
+
 const auth = getAuth(app);
 const storage = getStorage(app);
 const messaging = getMessaging(app);
 const functions = getFunctions(app, 'us-central1'); // ASEGÚRATE DE QUE ESTA LÍNEA EXISTA
 
 
-// --- INICIO CONFIGURACIÓN OFFLINE ---
-enableIndexedDbPersistence(db)
-    .catch((err) => {
-        if (err.code == 'failed-precondition') {
-            // Falló porque hay múltiples pestañas abiertas a la vez
-            console.warn("La persistencia offline solo funciona con una pestaña abierta a la vez.");
-        } else if (err.code == 'unimplemented') {
-            // El navegador no soporta esta característica
-            console.warn("El navegador no soporta persistencia offline.");
-        }
-    });
-// --- FIN CONFIGURACIÓN OFFLINE ---
+
 
 let unsubscribeTasks = null; // <-- AÑADE ESTA LÍNEA
 let unsubscribeReports = null;
@@ -1106,6 +1104,8 @@ let unsubscribeCatalog = null; // Renombra la variable global
 
 let materialCatalogData = []; // Variable global para el stock en tiempo real
 
+let cachedRecentPOs = [];
+
 async function loadCatalogView() {
     const tableBody = document.getElementById('catalog-table-body');
     const searchInput = document.getElementById('catalog-search-input');
@@ -1116,16 +1116,29 @@ async function loadCatalogView() {
     if (unsubscribeCatalog) unsubscribeCatalog();
     catalogSearchTerm = searchInput.value.trim();
 
-    // Si hay texto en el buscador, se activa el modo de búsqueda
-    if (catalogSearchTerm) {
-        loadMoreBtn.classList.add('hidden'); // Ocultamos paginación durante la búsqueda
+    // 1. PRE-CARGA DE HISTORIAL (Optimización: Una sola consulta para toda la tabla)
+    // Traemos las últimas 200 órdenes recibidas para calcular precios
+    try {
+        const historyQuery = query(
+            collection(db, "purchaseOrders"), 
+            where("status", "==", "recibida"), 
+            orderBy("createdAt", "desc"), 
+            limit(200)
+        );
+        const historySnap = await getDocs(historyQuery);
+        cachedRecentPOs = historySnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        console.log(`Historial de precios cargado: ${cachedRecentPOs.length} órdenes procesadas.`);
+    } catch (e) {
+        console.warn("No se pudo cargar historial de precios:", e);
+        cachedRecentPOs = [];
+    }
 
+    if (catalogSearchTerm) {
+        loadMoreBtn.classList.add('hidden');
         try {
-            // 1. Primero, obtenemos TODOS los materiales de la base de datos
             const allItemsSnapshot = await getDocs(query(collection(db, "materialCatalog")));
             const searchTermLower = catalogSearchTerm.toLowerCase();
 
-            // 2. Filtramos los resultados en memoria
             const results = allItemsSnapshot.docs.filter(doc => {
                 const material = doc.data();
                 const nameMatch = material.name?.toLowerCase().includes(searchTermLower);
@@ -1133,50 +1146,29 @@ async function loadCatalogView() {
                 return nameMatch || refMatch;
             });
 
-            // 3. AHORA SÍ, limpiamos la tabla justo antes de mostrar los nuevos resultados
             tableBody.innerHTML = '';
 
             if (results.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-gray-500">No se encontraron coincidencias.</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-gray-400 flex flex-col items-center justify-center"><i class="fa-solid fa-box-open text-3xl mb-2 opacity-50"></i><p>No se encontraron coincidencias.</p></td></tr>`;
             } else {
-                // 4. Mostramos los resultados encontrados
                 results.forEach(doc => {
                     const material = { id: doc.id, ...doc.data() };
-                    const stock = material.quantityInStock || 0;
-                    const minStock = material.minStockThreshold || 0;
-                    let stockStatusIndicator = stock > minStock ? '<div class="h-3 w-3 rounded-full bg-green-500 mx-auto" title="Stock OK"></div>' : '<div class="h-3 w-3 rounded-full bg-red-500 mx-auto" title="Stock Bajo"></div>';
-                    const viewInventoryBtn = material.isDivisible ? `<button data-action="view-inventory" data-id="${material.id}" data-name="${material.name}" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-4 rounded-lg">Ver Inventario</button>` : '';
-
-                    const row = document.createElement('tr');
-                    row.className = 'bg-white border-b';
-                    row.innerHTML = `
-                        <td class="px-6 py-4">${stockStatusIndicator}</td>
-                        <td class="px-6 py-4 font-medium">${material.name}</td>
-                        <td class="px-6 py-4 text-gray-500">${material.reference || 'N/A'}</td>
-                        <td class="px-6 py-4">${material.unit}</td>
-                        <td class="px-6 py-4 text-right font-bold text-lg">${stock}</td>
-                        <td class="px-6 py-4 text-center">
-                            <div class="flex justify-center items-center gap-2">
-                                <button data-action="edit-catalog-item" data-id="${material.id}" class="bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-semibold py-2 px-4 rounded-lg">Editar</button>
-                                ${viewInventoryBtn}
-                            </div>
-                        </td>
-                    `;
-                    tableBody.appendChild(row);
+                    // Pasamos el caché a la función de creación de filas
+                    tableBody.appendChild(createModernCatalogRow(material, cachedRecentPOs));
                 });
             }
         } catch (error) {
-            console.error("Error durante la búsqueda:", error);
-            tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-red-500">Error al realizar la búsqueda.</td></tr>`;
+            console.error("Error búsqueda:", error);
+            tableBody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-red-500">Error al buscar.</td></tr>`;
         }
 
     } else {
-        // Si el buscador está vacío, volvemos al modo de paginación
-        tableBody.innerHTML = ''; // Limpiamos la tabla para reiniciar la paginación
+        tableBody.innerHTML = '';
         lastVisibleCatalogDoc = null;
         fetchMoreCatalogItems();
     }
 }
+
 async function fetchMoreCatalogItems() {
     const tableBody = document.getElementById('catalog-table-body');
     const loadMoreBtn = document.getElementById('load-more-catalog-btn');
@@ -1195,34 +1187,15 @@ async function fetchMoreCatalogItems() {
         const snapshot = await getDocs(q);
 
         if (snapshot.empty && !lastVisibleCatalogDoc) {
-            tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-gray-500">No hay materiales en el catálogo.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-gray-400 flex flex-col items-center justify-center"><i class="fa-solid fa-box-open text-3xl mb-2 opacity-50"></i><p>El catálogo está vacío.</p></td></tr>`;
             loadMoreBtn.classList.add('hidden');
             return;
         }
 
         snapshot.forEach(doc => {
             const material = { id: doc.id, ...doc.data() };
-            const stock = material.quantityInStock || 0;
-            const minStock = material.minStockThreshold || 0;
-            let stockStatusIndicator = stock > minStock ? '<div class="h-3 w-3 rounded-full bg-green-500 mx-auto" title="Stock OK"></div>' : '<div class="h-3 w-3 rounded-full bg-red-500 mx-auto" title="Stock Bajo"></div>';
-            const viewInventoryBtn = material.isDivisible ? `<button data-action="view-inventory" data-id="${material.id}" data-name="${material.name}" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-4 rounded-lg">Ver Inventario</button>` : '';
-
-            const row = document.createElement('tr');
-            row.className = 'bg-white border-b';
-            row.innerHTML = `
-                <td class="px-6 py-4">${stockStatusIndicator}</td>
-                <td class="px-6 py-4 font-medium">${material.name}</td>
-                <td class="px-6 py-4 text-gray-500">${material.reference || 'N/A'}</td>
-                <td class="px-6 py-4">${material.unit}</td>
-                <td class="px-6 py-4 text-right font-bold text-lg">${stock}</td>
-                <td class="px-6 py-4 text-center">
-                    <div class="flex justify-center items-center gap-2">
-                        <button data-action="edit-catalog-item" data-id="${material.id}" class="bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-semibold py-2 px-4 rounded-lg">Editar</button>
-                        ${viewInventoryBtn}
-                    </div>
-                </td>
-            `;
-            tableBody.appendChild(row);
+            // Usamos el caché global que ya se cargó en loadCatalogView (o está vacío si es primera carga directa)
+            tableBody.appendChild(createModernCatalogRow(material, cachedRecentPOs));
         });
 
         lastVisibleCatalogDoc = snapshot.docs[snapshot.docs.length - 1];
@@ -1234,17 +1207,137 @@ async function fetchMoreCatalogItems() {
         }
 
     } catch (error) {
-        console.error("Error al cargar más materiales:", error);
-        tableBody.innerHTML += `<tr><td colspan="6" class="text-center py-4 text-red-500">Error al cargar datos.</td></tr>`;
+        console.error("Error carga catálogo:", error);
+        tableBody.innerHTML += `<tr><td colspan="7" class="text-center py-4 text-red-500">Error al cargar datos.</td></tr>`;
     } finally {
         isFetchingCatalog = false;
-        loadMoreBtn.textContent = 'Cargar Más';
+        loadMoreBtn.textContent = 'Cargar más resultados';
     }
 }
 
 /**
- * Abre y rellena el modal con los detalles de inventario de un material específico,
- * mostrando unidades completas y retazos en pestañas separadas.
+ * Crea una fila de tabla moderna para el catálogo de materiales.
+ * AHORA INCLUYE: Mejor visibilidad del proveedor en la columna de precios.
+ */
+function createModernCatalogRow(material, priceHistory = []) {
+    const stock = material.quantityInStock || 0;
+    const minStock = material.minStockThreshold || 0;
+    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+    
+    // 1. Lógica de Mejor Precio
+    let bestPriceHtml = '<span class="text-xs text-gray-400 italic font-medium">Sin cotización</span>';
+    let bestPriceData = null;
+
+    if (priceHistory.length > 0) {
+        let minPrice = Infinity;
+        let bestSupplier = '';
+        
+        priceHistory.forEach(po => {
+            if (po.items && Array.isArray(po.items)) {
+                const itemInPO = po.items.find(i => i.materialId === material.id);
+                if (itemInPO && itemInPO.unitCost > 0) {
+                    if (itemInPO.unitCost < minPrice) {
+                        minPrice = itemInPO.unitCost;
+                        bestSupplier = po.supplierName || po.provider || 'Prov. Desconocido';
+                    }
+                }
+            }
+        });
+
+        if (minPrice !== Infinity) {
+            // CORRECCIÓN VISUAL: Menos truncado y mejor estilo
+            // Si el nombre es muy largo (>18 chars), lo cortamos, si no, se muestra completo.
+            const displaySupplier = bestSupplier.length > 18 ? bestSupplier.substring(0, 16) + '...' : bestSupplier;
+            
+            bestPriceHtml = `
+                <div class="flex flex-col items-center justify-center gap-1">
+                    <span class="font-black text-emerald-700 text-base tracking-tight shadow-sm bg-white/50 px-2 rounded">
+                        ${currencyFormatter.format(minPrice)}
+                    </span>
+                    
+                    <div class="flex items-center gap-1.5 bg-white border border-emerald-200 rounded-md px-2 py-1 shadow-sm w-full max-w-[140px] justify-center" title="${bestSupplier}">
+                        <i class="fa-solid fa-truck-fast text-emerald-400 text-[10px]"></i>
+                        <span class="text-[10px] font-bold text-slate-700 uppercase tracking-wide truncate">
+                            ${displaySupplier}
+                        </span>
+                    </div>
+                </div>
+            `;
+            bestPriceData = { price: minPrice, supplier: bestSupplier };
+        }
+    }
+
+    // 2. Badges de Estado
+    let statusBadge;
+    if (stock <= 0) {
+        statusBadge = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-red-50 text-red-600 border border-red-100"><i class="fa-solid fa-circle-xmark"></i> Agotado</span>`;
+    } else if (stock <= minStock) {
+        statusBadge = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-amber-50 text-amber-600 border border-amber-100"><i class="fa-solid fa-triangle-exclamation"></i> Bajo</span>`;
+    } else {
+        statusBadge = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-600 border border-emerald-100"><i class="fa-solid fa-check-circle"></i> OK</span>`;
+    }
+
+    const viewInventoryBtn = material.isDivisible 
+        ? `<button data-action="view-inventory" data-id="${material.id}" data-name="${material.name}" 
+             class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all" title="Ver Lotes">
+             <i class="fa-solid fa-layer-group"></i>
+           </button>` 
+        : `<span class="w-8 inline-block"></span>`;
+
+    // 3. Botón de Comparar
+    const compareBtn = `
+        <button data-action="compare-prices" data-id="${material.id}" data-name="${material.name}" 
+            class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all" title="Comparar Precios">
+            <i class="fa-solid fa-tags"></i>
+        </button>
+    `;
+
+    const row = document.createElement('tr');
+    row.className = 'bg-white hover:bg-slate-50 transition-colors group border-b border-slate-50 last:border-0';
+    
+    // Nota: Añadimos min-w-[160px] a la celda de precio para asegurar espacio
+    row.innerHTML = `
+        <td class="px-6 py-4">
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 rounded-lg bg-slate-100 text-slate-400 flex items-center justify-center text-lg border border-slate-200 group-hover:border-indigo-200 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-all shadow-sm">
+                    <i class="fa-solid fa-box"></i>
+                </div>
+                <div>
+                    <p class="font-bold text-slate-700 text-sm leading-tight">${material.name}</p>
+                    <p class="text-[10px] text-slate-400 font-mono mt-0.5">${material.reference || '---'}</p>
+                </div>
+            </div>
+        </td>
+        <td class="px-6 py-4 text-center">
+             <span class="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded border border-slate-200">
+                ${material.measurementType === 'linear' ? 'Lineal' : (material.measurementType === 'area' ? 'Área' : 'Unidad')}
+             </span>
+        </td>
+        <td class="px-6 py-4 text-center text-sm font-bold text-slate-600">${material.unit}</td>
+        <td class="px-6 py-4 text-center">
+            <span class="font-black text-slate-800 text-base">${stock}</span>
+        </td>
+        <td class="px-4 py-4 text-center bg-emerald-50/40 border-l border-r border-dashed border-emerald-100 min-w-[160px]">
+            ${bestPriceHtml}
+        </td>
+        <td class="px-6 py-4 text-center">${statusBadge}</td>
+        <td class="px-6 py-4 text-right">
+            <div class="flex justify-end items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                ${compareBtn}
+                ${viewInventoryBtn}
+                <button data-action="edit-catalog-item" data-id="${material.id}" 
+                    class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all" title="Editar">
+                    <i class="fa-solid fa-pen-to-square"></i>
+                </button>
+            </div>
+        </td>
+    `;
+    return row;
+}
+
+/**
+ * Abre y rellena el modal con los detalles de inventario de un material específico.
+ * (DISEÑO MEJORADO V2)
  */
 async function openInventoryDetailsModal(materialId, materialName) {
     const modal = document.getElementById('inventory-details-modal');
@@ -1252,17 +1345,20 @@ async function openInventoryDetailsModal(materialId, materialName) {
 
     if (!materialId) {
         console.error("Se intentó abrir el detalle de inventario sin un ID de material.");
-        alert("Error: No se pudo identificar el material seleccionado.");
         return;
     }
 
-    document.getElementById('inventory-details-title').textContent = `Inventario de: ${materialName}`;
+    // Actualizar título moderno
+    const titleEl = document.getElementById('inventory-details-title');
+    if (titleEl) titleEl.textContent = materialName;
 
     const completeStockBody = document.getElementById('complete-stock-table-body');
     const remnantStockBody = document.getElementById('remnant-stock-table-body');
 
-    completeStockBody.innerHTML = `<tr><td colspan="4" class="text-center py-4">Cargando...</td></tr>`;
-    remnantStockBody.innerHTML = `<tr><td colspan-4" class="text-center py-4">Cargando...</td></tr>`;
+    // Estados de carga
+    const loaderRow = `<tr><td colspan="4" class="text-center py-8 text-gray-400"><i class="fa-solid fa-circle-notch fa-spin mb-2"></i><p class="text-xs">Cargando datos...</p></td></tr>`;
+    completeStockBody.innerHTML = loaderRow;
+    remnantStockBody.innerHTML = loaderRow;
 
     modal.style.display = 'flex';
 
@@ -1272,7 +1368,7 @@ async function openInventoryDetailsModal(materialId, materialName) {
 
         completeStockBody.innerHTML = '';
         if (batchesSnapshot.empty) {
-            completeStockBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-500">No hay unidades completas en stock.</td></tr>`;
+            completeStockBody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-gray-400 flex flex-col items-center"><i class="fa-solid fa-box-open text-2xl mb-2 opacity-30"></i><span class="text-xs">No hay unidades completas.</span></td></tr>`;
         } else {
             const poIds = [...new Set(batchesSnapshot.docs.map(doc => doc.data().purchaseOrderId).filter(id => id))];
             let poMap = new Map();
@@ -1282,53 +1378,84 @@ async function openInventoryDetailsModal(materialId, materialName) {
                 poSnapshot.forEach(doc => poMap.set(doc.id, doc.data().poNumber || doc.id.substring(0, 6)));
             }
 
-            // =================== INICIO DE LA MODIFICACIÓN ===================
             batchesSnapshot.forEach(doc => {
                 const batch = doc.data();
-                let originText = 'N/A';
-                let rowClass = 'bg-white';
-
-                // Ahora priorizamos el ID de devolución
+                let originHtml = '';
+                
+                // Estilo para el origen
                 if (batch.returnId) {
-                    originText = `<span class="font-semibold text-yellow-700">Devolución (${batch.returnId})</span>`;
-                    rowClass = 'bg-yellow-50';
-                }
-                else if (batch.purchaseOrderId) {
-                    const poIdentifier = poMap.get(batch.purchaseOrderId) || 'N/A';
-                    originText = `Compra (PO: ${poIdentifier})`;
+                    originHtml = `<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100"><i class="fa-solid fa-rotate-left mr-1.5"></i> Devolución (${batch.returnId})</span>`;
+                } else if (batch.purchaseOrderId) {
+                    const poIdentifier = poMap.get(batch.purchaseOrderId) || '---';
+                    originHtml = `<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-slate-50 text-slate-600 border border-slate-100"><i class="fa-solid fa-cart-shopping mr-1.5 text-slate-400"></i> Compra PO-${poIdentifier}</span>`;
+                } else {
+                     originHtml = `<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-50 text-gray-500 border border-gray-100">Carga Inicial / Desconocido</span>`;
                 }
 
                 const row = document.createElement('tr');
-                row.className = `${rowClass} border-b`;
+                row.className = 'bg-white hover:bg-slate-50 transition-colors group border-b border-gray-50 last:border-0';
                 row.innerHTML = `
-                    <td class="px-4 py-2">${batch.purchaseDate.toDate().toLocaleDateString('es-CO')}</td>
-                    <td class="px-4 py-2">${batch.quantityInitial}</td>
-                    <td class="px-4 py-2 font-bold">${batch.quantityRemaining}</td>
-                    <td class="px-4 py-2 text-xs">${originText}</td>
+                    <td class="px-5 py-4 text-gray-600 text-xs font-medium">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-regular fa-calendar text-gray-300"></i>
+                            ${batch.purchaseDate ? batch.purchaseDate.toDate().toLocaleDateString('es-CO') : '--'}
+                        </div>
+                    </td>
+                    <td class="px-5 py-4 text-center text-gray-400 font-mono text-xs">${batch.quantityInitial}</td>
+                    <td class="px-5 py-4 text-center">
+                        <span class="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-sm font-bold ${batch.quantityRemaining > 0 ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-400'}">
+                            ${batch.quantityRemaining}
+                        </span>
+                    </td>
+                    <td class="px-5 py-4 text-left">
+                        ${originHtml}
+                    </td>
                 `;
                 completeStockBody.appendChild(row);
             });
-            // =================== FIN DE LA MODIFICACIÓN ===================
         }
 
-        const remnantsQuery = query(collection(db, "materialCatalog", materialId, "remnantStock"), orderBy("createdAt", "desc"));
+        // --- Carga de Retazos ---
+        const remnantsQuery = query(collection(db, "materialCatalog", materialId, "remnantStock"), orderBy("length", "desc"));
         const remnantsSnapshot = await getDocs(remnantsQuery);
+        
         remnantStockBody.innerHTML = '';
         if (remnantsSnapshot.empty) {
-            remnantStockBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-500">No hay retazos en stock.</td></tr>`;
+            remnantStockBody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-gray-400 flex flex-col items-center"><i class="fa-solid fa-scissors text-2xl mb-2 opacity-30"></i><span class="text-xs">No hay retazos disponibles.</span></td></tr>`;
         } else {
             remnantsSnapshot.forEach(doc => {
                 const remnant = doc.data();
+                // Convertir metros a cm para mostrar
+                const lengthCm = (remnant.length * 100).toFixed(0); 
+
                 const row = document.createElement('tr');
-                row.innerHTML = `<td class="px-4 py-2">${remnant.createdAt.toDate().toLocaleDateString('es-CO')}</td><td class="px-4 py-2 font-bold">${remnant.length} ${remnant.unit || 'm'}</td><td class="px-4 py-2">${remnant.quantity}</td><td class="px-4 py-2 text-xs">${remnant.notes || 'N/A'}</td>`;
+                row.className = 'bg-white hover:bg-slate-50 transition-colors group border-b border-gray-50 last:border-0';
+                row.innerHTML = `
+                    <td class="px-5 py-4 text-gray-600 text-xs">
+                         ${remnant.createdAt ? remnant.createdAt.toDate().toLocaleDateString('es-CO') : '--'}
+                    </td>
+                    <td class="px-5 py-4">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-ruler-horizontal text-indigo-300"></i>
+                            <span class="font-bold text-slate-700">${lengthCm} cm</span>
+                        </div>
+                    </td>
+                    <td class="px-5 py-4 text-center">
+                         <span class="font-bold text-slate-800 bg-slate-100 px-2 py-1 rounded border border-slate-200 text-xs">${remnant.quantity}</span>
+                    </td>
+                    <td class="px-5 py-4 text-xs text-gray-500 italic">
+                        ${remnant.notes || '---'}
+                    </td>
+                `;
                 remnantStockBody.appendChild(row);
             });
         }
 
     } catch (error) {
         console.error("Error al cargar el detalle de inventario:", error);
-        completeStockBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-red-500">Error al cargar datos.</td></tr>`;
-        remnantStockBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-red-500">Error al cargar datos.</td></tr>`;
+        const errorHtml = `<tr><td colspan="4" class="text-center py-4 text-red-500 bg-red-50 rounded-lg m-2">Error de conexión.</td></tr>`;
+        completeStockBody.innerHTML = errorHtml;
+        remnantStockBody.innerHTML = errorHtml;
     }
 }
 
@@ -2458,7 +2585,6 @@ function createUserRow(user) {
     const statusColor = user.status === 'active' ? 'text-green-600' : (user.status === 'pending' ? 'text-yellow-600' : 'text-gray-500');
     const statusText = user.status === 'active' ? 'Activo' : (user.status === 'pending' ? 'Pendiente' : 'Archivado');
 
-    // =================== INICIO DE LA MODIFICACIÓN ===================
     const baseButtonClasses = "text-sm font-semibold py-2 px-4 rounded-lg transition-colors w-32 text-center";
     let actionsHtml = '';
 
@@ -2476,6 +2602,7 @@ function createUserRow(user) {
             <button class="toggle-status-btn ${toggleStatusColor} text-white ${baseButtonClasses}" data-status="${user.status}">
                 ${toggleStatusText}
             </button>
+            <button class="archive-user-btn bg-gray-400 hover:bg-gray-500 text-white ${baseButtonClasses}">Archivar</button>
         `;
     }
 
@@ -2497,7 +2624,6 @@ function createUserRow(user) {
             </div>
         </td>
     `;
-    // =================== FIN DE LA MODIFICACIÓN ===================
 
     row.querySelector('.user-role-select').addEventListener('change', (e) => {
         updateUserRole(user.id, e.target.value);
@@ -2509,8 +2635,12 @@ function createUserRow(user) {
             updateUserStatus(user.id, newStatus);
         });
         row.querySelector('.edit-user-btn').addEventListener('click', () => openMainModal('editUser', user));
+        
+        // --- LISTENER PARA ARCHIVAR ---
+        row.querySelector('.archive-user-btn').addEventListener('click', () => {
+            openConfirmModal(`¿Seguro que quieres archivar al usuario ${user.email}?`, () => updateUserStatus(user.id, 'archived'));
+        });
 
-        // Se elimina el botón "Archivar", ya que se puede desactivar el usuario
     } else {
         row.querySelector('.restore-user-btn').addEventListener('click', () => {
             openConfirmModal(`¿Seguro que quieres restaurar al usuario ${user.email}?`, () => updateUserStatus(user.id, 'pending'));
@@ -5122,6 +5252,128 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
 
+            case 'compare-prices': {
+            // 1. Configuración Visual
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+
+            title = 'Comparativa de Precios';
+            btnText = 'Cerrar';
+            btnClass = 'bg-gray-500 hover:bg-gray-600';
+            modalContentDiv.classList.add('max-w-lg');
+
+            // 2. Lógica de Cálculo (Top 3)
+            // Usamos el cachedRecentPOs que ya tenemos cargado
+            const materialId = data.materialId;
+            const materialName = data.name;
+            const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+
+            // Agrupar por proveedor, tomando su MEJOR precio (el más bajo)
+            const pricesBySupplier = new Map();
+
+            cachedRecentPOs.forEach(po => {
+                if (po.items && Array.isArray(po.items)) {
+                    const item = po.items.find(i => i.materialId === materialId);
+                    if (item && item.unitCost > 0) {
+                        const supplierName = po.supplierName || po.provider || 'Desconocido';
+                        const currentBest = pricesBySupplier.get(supplierName);
+                        
+                        if (!currentBest || item.unitCost < currentBest.price) {
+                            pricesBySupplier.set(supplierName, {
+                                price: item.unitCost,
+                                date: po.createdAt ? po.createdAt.toDate() : new Date(),
+                                poNumber: po.poNumber || po.id.substring(0, 6)
+                            });
+                        }
+                    }
+                }
+            });
+
+            // Convertir a array, ordenar por precio ASC y tomar top 3
+            const topSuppliers = Array.from(pricesBySupplier.entries())
+                .map(([name, data]) => ({ name, ...data }))
+                .sort((a, b) => a.price - b.price)
+                .slice(0, 3);
+
+            // 3. Generar HTML de la lista
+            let listHtml = '';
+            if (topSuppliers.length === 0) {
+                listHtml = `
+                    <div class="text-center py-10">
+                        <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3 text-gray-400">
+                            <i class="fa-solid fa-magnifying-glass-dollar text-3xl"></i>
+                        </div>
+                        <p class="text-gray-500 font-medium">No hay historial de compras para este ítem.</p>
+                    </div>`;
+            } else {
+                listHtml = `<div class="space-y-3">`;
+                topSuppliers.forEach((sup, index) => {
+                    const isBest = index === 0;
+                    const medalColor = isBest ? 'text-yellow-400' : (index === 1 ? 'text-gray-400' : 'text-orange-400');
+                    const borderClass = isBest ? 'border-emerald-500 ring-1 ring-emerald-500/30 bg-emerald-50/30' : 'border-gray-200 bg-white';
+                    
+                    listHtml += `
+                        <div class="flex items-center justify-between p-4 rounded-xl border ${borderClass} relative overflow-hidden">
+                            ${isBest ? '<div class="absolute top-0 left-0 bg-emerald-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-br-lg">MEJOR OPCIÓN</div>' : ''}
+                            
+                            <div class="flex items-center gap-4">
+                                <div class="text-center w-8">
+                                    <i class="fa-solid fa-medal ${medalColor} text-2xl drop-shadow-sm"></i>
+                                </div>
+                                <div>
+                                    <p class="font-bold text-slate-800">${sup.name}</p>
+                                    <p class="text-xs text-slate-500 flex items-center gap-1">
+                                        <i class="fa-regular fa-clock"></i> ${sup.date.toLocaleDateString('es-CO')} 
+                                        <span class="text-gray-300 mx-1">|</span> 
+                                        Ref: ${sup.poNumber}
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            <div class="text-right">
+                                <p class="text-xl font-black ${isBest ? 'text-emerald-600' : 'text-slate-700'}">${currencyFormatter.format(sup.price)}</p>
+                                <p class="text-[10px] text-slate-400 font-medium uppercase">por unidad</p>
+                            </div>
+                        </div>
+                    `;
+                });
+                listHtml += `</div>`;
+            }
+
+            bodyHtml = `
+                <div class="-mx-6 -mt-6 mb-6 bg-indigo-600 px-6 py-5 rounded-t-lg text-white flex justify-between items-center shadow-md">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-white/20 rounded-lg backdrop-blur-sm"><i class="fa-solid fa-scale-balanced text-xl"></i></div>
+                        <div>
+                            <h3 class="font-bold text-lg leading-tight">Comparativa de Precios</h3>
+                            <p class="text-xs text-indigo-200 font-medium truncate max-w-[200px]">${materialName}</p>
+                        </div>
+                    </div>
+                    <button onclick="closeMainModal()" class="text-white/70 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+                </div>
+                
+                <div class="px-2 pb-4">
+                    ${listHtml}
+                    
+                    <div class="mt-6 p-3 bg-blue-50 rounded-lg flex items-start gap-3 border border-blue-100">
+                        <i class="fa-solid fa-circle-info text-blue-500 mt-0.5"></i>
+                        <p class="text-xs text-blue-700 leading-relaxed">
+                            <strong>Nota:</strong> Estos precios se basan en las últimas 200 órdenes recibidas. Los precios de mercado pueden haber cambiado.
+                        </p>
+                    </div>
+                </div>
+            `;
+            
+            // Ocultar botón de acción principal (es solo informativo)
+            setTimeout(() => {
+                const footerBtn = document.getElementById('modal-confirm-btn');
+                if(footerBtn) footerBtn.style.display = 'none';
+            }, 0);
+            
+            break;
+        }
+
 
         case 'camera_entry': // <--- ESTE ES EL CASO QUE FALTA
             title = '📸 Validación de Ingreso';
@@ -5740,47 +5992,126 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
 
-        case 'add-catalog-item':
+case 'add-catalog-item':
         case 'edit-catalog-item': {
+            // 1. Ocultar título por defecto del modal
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+
             const isEditing = type === 'edit-catalog-item';
-            title = isEditing ? 'Editar Material del Catálogo' : 'Añadir Nuevo Material al Catálogo';
+            
+            // Configuración visual según la acción (Crear = Azul, Editar = Amarillo)
+            const headerTitle = isEditing ? 'Editar Material' : 'Nuevo Material';
+            const headerIcon = isEditing ? 'fa-pen-to-square' : 'fa-box-open';
+            const headerGradient = isEditing ? 'from-amber-500 to-orange-600' : 'from-blue-600 to-indigo-700';
+            const subTitle = isEditing ? 'Modificar ficha técnica' : 'Añadir al catálogo global';
+
+            title = headerTitle; // Fallback interno
             btnText = isEditing ? 'Guardar Cambios' : 'Añadir Material';
-            btnClass = isEditing ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-blue-500 hover:bg-blue-600';
+            btnClass = isEditing 
+                ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white shadow-md' 
+                : 'bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white shadow-md';
+
+            modalContentDiv.classList.add('max-w-3xl'); // Un poco más ancho para que respire
 
             bodyHtml = `
-                <div class="space-y-4">
-                    <div><label class="block text-sm font-medium">Nombre del Material</label><input type="text" name="name" required class="mt-1 w-full border p-2 rounded-md" value="${isEditing ? data.name : ''}"></div>
-                    <div><label class="block text-sm font-medium">Referencia / SKU (Opcional)</label><input type="text" name="reference" class="mt-1 w-full border p-2 rounded-md" value="${isEditing ? data.reference || '' : ''}"></div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div><label class="block text-sm font-medium">Unidad de Medida</label><input type="text" name="unit" required class="mt-1 w-full border p-2 rounded-md" value="${isEditing ? data.unit : ''}" placeholder="ej: Tira, Lámina, Und"></div>
-                        <div><label class="block text-sm font-medium">Umbral de Stock Mínimo</label><input type="number" name="minStockThreshold" class="mt-1 w-full border p-2 rounded-md" value="${isEditing ? data.minStockThreshold || '' : ''}" placeholder="Ej: 10"></div>
-                    </div>
+                <div class="flex flex-col h-full max-h-[85vh]">
                     
-                    <div class="border-t pt-4 space-y-4">
-                        <div>
-                            <label for="measurementType-select" class="block text-sm font-medium">Tipo de Medida</label>
-                            <select id="measurementType-select" name="measurementType" class="mt-1 w-full border rounded-md p-2 bg-white">
-                                <option value="unit" ${isEditing && data.measurementType === 'unit' ? 'selected' : ''}>Por Unidad (ej: tornillos, accesorios)</option>
-                                <option value="linear" ${isEditing && data.measurementType === 'linear' ? 'selected' : ''}>Lineal (ej: perfiles, tiras)</option>
-                                <option value="area" ${isEditing && data.measurementType === 'area' ? 'selected' : ''}>Por Área (ej: láminas de vidrio)</option>
-                            </select>
+                    <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-r ${headerGradient} px-8 py-5 rounded-t-lg text-white shadow-md flex justify-between items-center relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none transform scale-150 translate-x-4 -translate-y-2">
+                            <i class="fa-solid ${headerIcon} text-6xl"></i>
+                        </div>
+                        
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-2xl backdrop-blur-sm border border-white/10 shadow-inner">
+                                <i class="fa-solid ${headerIcon}"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-2xl font-bold tracking-tight text-white">${headerTitle}</h2>
+                                <p class="text-blue-50 text-xs font-medium opacity-90">${subTitle}</p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors relative z-10">
+                            <i class="fa-solid fa-xmark text-2xl"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex-grow overflow-y-auto custom-scrollbar p-1 pr-2 space-y-6 pb-4">
+                        
+                        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4 flex items-center">
+                                <i class="fa-solid fa-tag mr-2"></i> Identificación
+                            </h4>
+                             
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div class="col-span-2 md:col-span-1">
+                                    <label class="block text-xs font-bold text-gray-700 mb-1.5">Nombre del Material</label>
+                                    <input type="text" name="name" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50 focus:bg-white transition-all placeholder-gray-400 font-medium" placeholder="Ej: Vidrio Templado 10mm" value="${isEditing ? data.name : ''}">
+                                </div>
+                                <div class="col-span-2 md:col-span-1">
+                                    <label class="block text-xs font-bold text-gray-700 mb-1.5">Referencia / SKU <span class="text-gray-400 font-normal text-[10px]">(Opcional)</span></label>
+                                    <input type="text" name="reference" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50 focus:bg-white transition-all placeholder-gray-400" placeholder="REF-000" value="${isEditing ? data.reference || '' : ''}">
+                                </div>
+                            </div>
                         </div>
 
-                    <div id="dimensions-container" class="hidden space-y-4">
-                            <p class="text-xs text-gray-500">Define el tamaño estándar de una unidad de compra (ej: una tira mide 600cm).</p>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div id="length-field">
-                                    <label class="block text-sm font-medium">Largo (cm)</label>
-                                    <input type="number" name="defaultLength" class="mt-1 w-full border p-2 rounded-md" value="${isEditing && data.defaultSize ? (data.defaultSize.length * 100) || '' : ''}">
+                        <div class="bg-slate-50 p-5 rounded-xl border border-slate-200">
+                             <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-4 flex items-center">
+                                <i class="fa-solid fa-boxes-stacked mr-2"></i> Control de Stock
+                             </h4>
+
+                             <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 mb-1.5">Unidad de Medida</label>
+                                    <div class="relative">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><i class="fa-solid fa-ruler"></i></div>
+                                        <input type="text" name="unit" required class="w-full pl-9 border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Unidad, Metro, Lámina..." value="${isEditing ? data.unit : ''}">
+                                    </div>
                                 </div>
-                                <div id="width-field" class="hidden">
-                                    <label class="block text-sm font-medium">Ancho (cm)</label>
-                                    <input type="number" name="defaultWidth" class="mt-1 w-full border p-2 rounded-md" value="${isEditing && data.defaultSize ? (data.defaultSize.width * 100) || '' : ''}">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 mb-1.5">Alerta de Stock Bajo</label>
+                                     <div class="relative">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><i class="fa-solid fa-bell"></i></div>
+                                        <input type="number" name="minStockThreshold" class="w-full pl-9 border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Cantidad mínima (Ej: 5)" value="${isEditing ? data.minStockThreshold || '' : ''}">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-white p-4 rounded-lg border border-slate-200 shadow-sm ring-1 ring-slate-100">
+                                <div>
+                                    <label for="measurementType-select" class="block text-xs font-bold text-blue-700 mb-2">¿Cómo se gestiona este material?</label>
+                                    <select id="measurementType-select" name="measurementType" class="w-full border-blue-200 rounded-lg p-2.5 text-sm bg-blue-50/50 focus:ring-2 focus:ring-blue-500 text-slate-700 font-medium cursor-pointer">
+                                        <option value="unit" ${isEditing && data.measurementType === 'unit' ? 'selected' : ''}>📦 Por Unidad (Indivisible: Tornillos, Herrajes)</option>
+                                        <option value="linear" ${isEditing && data.measurementType === 'linear' ? 'selected' : ''}>📏 Lineal (Se corta: Perfiles, Tiras)</option>
+                                        <option value="area" ${isEditing && data.measurementType === 'area' ? 'selected' : ''}>📐 Por Área (Se corta: Vidrio, Láminas)</option>
+                                    </select>
+                                </div>
+
+                                <div id="dimensions-container" class="hidden mt-4 pt-4 border-t border-slate-100 animate-fade-in">
+                                    <div class="flex items-start gap-3 mb-4 bg-orange-50 p-3 rounded-md border border-orange-100">
+                                        <i class="fa-solid fa-scissors text-orange-500 mt-0.5"></i>
+                                        <p class="text-xs text-orange-800 leading-snug">
+                                            <strong>Configuración de Corte:</strong><br>
+                                            Define el tamaño original (estándar) con el que compras este material. El sistema descontará los cortes de estas unidades.
+                                        </p>
+                                    </div>
+                                    
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div id="length-field">
+                                            <label class="block text-xs font-bold text-slate-700 mb-1">Largo Estándar (cm)</label>
+                                            <input type="number" name="defaultLength" class="w-full border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 font-bold text-gray-700" placeholder="0" value="${isEditing && data.defaultSize ? (data.defaultSize.length * 100) || '' : ''}">
+                                        </div>
+                                        <div id="width-field" class="hidden">
+                                            <label class="block text-xs font-bold text-slate-700 mb-1">Ancho Estándar (cm)</label>
+                                            <input type="number" name="defaultWidth" class="w-full border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 font-bold text-gray-700" placeholder="0" value="${isEditing && data.defaultSize ? (data.defaultSize.width * 100) || '' : ''}">
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    </div>`;
+                </div>`;
 
             // Lógica para mostrar/ocultar los campos de dimensiones
             setTimeout(() => {
@@ -5805,6 +6136,7 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
         }
+
         case 'addInterestPerson':
             title = 'Añadir Persona de Interés';
             btnText = 'Guardar Persona';
@@ -8138,7 +8470,7 @@ async function openMainModal(type, data = {}) {
             }
 
             // --- DISEÑO MODERNO HTML ---
-            bodyHtml = `
+bodyHtml = `
                 <div class="flex flex-col h-full max-h-[80vh]">
                     
                     <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-r from-yellow-500 to-amber-600 px-8 py-4 rounded-t-lg text-white shadow-md flex justify-between items-center">
@@ -8149,7 +8481,7 @@ async function openMainModal(type, data = {}) {
                         <span class="text-xs font-mono bg-white/20 px-2 py-0.5 rounded">ID: ${taskId.substring(0, 6).toUpperCase()}</span>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-grow overflow-y-auto custom-scrollbar p-1">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-grow overflow-y-auto custom-scrollbar p-1 pb-20">
 
                         <div class="space-y-6">
                             
@@ -8157,14 +8489,14 @@ async function openMainModal(type, data = {}) {
                                 <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-300 pb-2 flex items-center">
                                     <i class="fa-solid fa-city mr-2 text-gray-500"></i> Proyecto Asignado
                                 </h4>
-                                <div>
+                                <div class="relative z-50">
                                     <label for="task-project-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Proyecto (No editable)</label>
                                     <select id="task-project-choices" name="projectId" class="w-full" disabled placeholder="Cargando proyecto..."></select>
                                     <input type="hidden" name="projectName" value="${data.projectName || ''}"> 
                                 </div>
                             </div>
 
-                            <div id="task-items-selection" class="bg-white p-5 rounded-xl border border-gray-200 shadow-md">
+                            <div id="task-items-selection" class="bg-white p-5 rounded-xl border border-gray-200 shadow-md relative z-10">
                                 <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
                                     <i class="fa-solid fa-layer-group mr-2 text-orange-500"></i> Ítems Relacionados
                                 </h4>
@@ -8182,19 +8514,19 @@ async function openMainModal(type, data = {}) {
                                     <i class="fa-solid fa-user-tag mr-2 text-green-500"></i> 1. Responsables
                                 </h4>
                                 
-                                <div>
-                                    <label for="task-additional-assignees-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Personas Adicionales</label>
-                                    <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple></select>
-                                </div>
-                                
-                                <div>
+                                <div class="relative z-50"> 
                                     <label for="task-assignee-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Asignar A (Principal)</label>
                                     <select id="task-assignee-choices" name="assigneeId" required></select>
                                     <input type="hidden" name="assigneeName" value="${data.assigneeName || ''}">
                                 </div>
+
+                                <div class="relative z-40"> 
+                                    <label for="task-additional-assignees-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Personas Adicionales</label>
+                                    <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple></select>
                                 </div>
+                            </div>
                             
-                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-md space-y-4">
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-md space-y-4 relative z-10">
                                 <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
                                     <i class="fa-solid fa-clipboard-list mr-2 text-indigo-500"></i> 2. Descripción y Plazo
                                 </h4>
@@ -8310,8 +8642,13 @@ async function openMainModal(type, data = {}) {
             break;
         }
 
-        case 'new-task': {
-            title = 'Crear Nueva Tarea';
+case 'new-task': {
+            // 1. Ocultar el título por defecto del modal para usar el personalizado
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+            
+            title = 'Crear Nueva Tarea'; // Título interno (no se verá en header default)
             btnText = 'Guardar Tarea';
             btnClass = 'bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white shadow-lg transform hover:-translate-y-0.5 transition-all';
             modalContentDiv.classList.add('max-w-6xl');
@@ -8340,7 +8677,7 @@ async function openMainModal(type, data = {}) {
                 return;
             }
 
-            // --- DISEÑO MODERNO HTML ---
+            // --- DISEÑO MODERNO HTML CORREGIDO (Z-INDEX) ---
             bodyHtml = `
                 <div class="flex flex-col h-full max-h-[80vh]">
                     
@@ -8349,24 +8686,22 @@ async function openMainModal(type, data = {}) {
                             <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl backdrop-blur-sm"><i class="fa-solid fa-file-circle-plus"></i></div>
                             <h2 class="text-xl font-bold tracking-tight">Crear Nueva Tarea Operativa</h2>
                         </div>
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white p-1"><i class="fa-solid fa-xmark text-xl"></i></button>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-grow overflow-y-auto custom-scrollbar p-1">
-
-                        <div class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-grow overflow-y-auto custom-scrollbar p-1 pb-20"> <div class="space-y-6">
                             
                             <div class="bg-white p-5 rounded-xl border border-blue-200 shadow-md">
                                 <h4 class="text-md font-extrabold text-blue-700 mb-3 border-b border-blue-100 pb-2 flex items-center">
                                     <i class="fa-solid fa-city mr-2 text-blue-500"></i> 1. Proyecto
                                 </h4>
-                                <div>
-                                    <label for="task-project-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Proyecto (Activos)</label>
+                                <div class="relative z-50"> <label for="task-project-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Proyecto (Activos)</label>
                                     <select id="task-project-choices" name="projectId" required class="w-full"></select>
                                     <input type="hidden" name="projectName">
                                 </div>
                             </div>
 
-                            <div id="task-items-selection" class="bg-white p-5 rounded-xl border border-gray-200 shadow-md hidden">
+                            <div id="task-items-selection" class="bg-white p-5 rounded-xl border border-gray-200 shadow-md hidden relative z-10">
                                 <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
                                     <i class="fa-solid fa-layer-group mr-2 text-orange-500"></i> 2. Ítems a Asignar <span class="text-red-500 ml-1">*</span>
                                 </h4>
@@ -8383,19 +8718,17 @@ async function openMainModal(type, data = {}) {
                                     <i class="fa-solid fa-user-tag mr-2 text-green-500"></i> 3. Responsables
                                 </h4>
                                 
-                                <div>
-                                    <label for="task-assignee-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Asignar A (Principal)</label>
+                                <div class="relative z-50"> <label for="task-assignee-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Asignar A (Principal)</label>
                                     <select id="task-assignee-choices" name="assigneeId" required></select>
                                     <input type="hidden" name="assigneeName">
                                 </div>
 
-                                <div>
-                                    <label for="task-additional-assignees-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Personas Adicionales</label>
+                                <div class="relative z-40"> <label for="task-additional-assignees-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Personas Adicionales</label>
                                     <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple></select>
                                 </div>
                             </div>
                             
-                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-md space-y-4">
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-md space-y-4 relative z-10">
                                 <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
                                     <i class="fa-solid fa-clipboard-list mr-2 text-indigo-500"></i> 4. Descripción y Plazo
                                 </h4>
@@ -12247,6 +12580,13 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'back-to-empleados-from-payment':
                 loadEmpleadosView(); // Recarga la vista de empleados (para que se actualice la pestaña)
                 showView('empleados');
+                break;
+
+            case 'compare-prices':
+                openMainModal('compare-prices', { 
+                    materialId: elementWithAction.dataset.id,
+                    name: elementWithAction.dataset.name
+                });
                 break;
 
             case 'delete-payment': {
@@ -16430,9 +16770,10 @@ async function openTaskDetailsModal(taskId) {
             document.getElementById(itemsTbodyId).innerHTML = '<tr><td colspan="3" class="p-4 text-center text-sm text-gray-400">No hay ítems asociados.</td></tr>';
         }
 
-        // Cargar estado de materiales (siempre intentamos cargarlo para llenar la caja)
+        // Cargar estado de materiales
         if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
-            loadTaskMaterialStatus(task.id, task.projectId, materialStatusId, 'summary');
+            // CAMBIO AQUÍ: Cambiar 'summary' por 'detail'
+            loadTaskMaterialStatus(task.id, task.projectId, materialStatusId, 'detail'); 
         } else {
             document.getElementById(materialStatusId).innerHTML = '<p class="text-sm text-gray-400 italic">No aplica (sin ítems).</p>';
         }
