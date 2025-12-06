@@ -108,11 +108,12 @@ export function initEmpleados(
     console.log("Módulo de Empleados inicializado correctamente.");
 }
 
-// 1. ACTUALIZAR loadEmpleadosView (Nuevos Nombres)
+// 1. ACTUALIZAR loadEmpleadosView (Diseño Moderno)
 export function loadEmpleadosView() {
     const role = _getCurrentUserRole();
     const tabsNav = document.getElementById('empleados-tabs-nav');
     const viewContainer = document.getElementById('empleados-view');
+
     if (!tabsNav || !viewContainer) return;
 
     if (unsubscribeEmpleadosTab) {
@@ -120,78 +121,106 @@ export function loadEmpleadosView() {
         unsubscribeEmpleadosTab = null;
     }
 
-    // (Selector de mes se mantiene igual...)
-    if (!viewContainer.querySelector('#empleado-month-selector')) {
-        const header = viewContainer.querySelector('.flex.justify-between.items-center');
-        header.insertAdjacentHTML('beforeend', `
-            <div>
-                <label for="empleado-month-selector" class="block text-sm font-medium text-gray-700">Seleccionar Mes:</label>
-                <input type="month" id="empleado-month-selector"
-                       class="mt-1 block w-full md:w-auto px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-            </div>
-        `);
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        document.getElementById('empleado-month-selector').value = `${year}-${month}`;
-        document.getElementById('empleado-month-selector').addEventListener('change', () => {
-            const activeTabKey = tabsNav.querySelector('.active')?.dataset.tab || 'productividad';
-            switchEmpleadosTab(activeTabKey);
-        });
+    // --- CONFIGURACIÓN DEL SELECTOR DE MES ---
+    // Ya no lo inyectamos, solo configuramos el valor y el listener
+    const monthSelector = document.getElementById('empleado-month-selector');
+    if (monthSelector) {
+        // Si está vacío, poner el mes actual
+        if (!monthSelector.value) {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            monthSelector.value = `${year}-${month}`;
+        }
+
+        // Listener para recargar la pestaña actual al cambiar fecha
+        // Usamos una propiedad personalizada para evitar múltiples listeners
+        if (!monthSelector.dataset.listenerAttached) {
+            monthSelector.addEventListener('change', () => {
+                const activeTabKey = tabsNav.querySelector('.active')?.dataset.tab || 'productividad';
+                switchEmpleadosTab(activeTabKey);
+            });
+            monthSelector.dataset.listenerAttached = "true";
+        }
     }
 
     // DEFINICIÓN DE PESTAÑAS
     const allTabs = {
         productividad: { label: 'Productividad', roles: ['admin'] },
-        documentos: { label: 'RRHH', roles: ['admin', 'sst'] }, // <-- CAMBIO: RRHH
-        sst: { label: 'SST', roles: ['admin', 'sst'] }, // <-- CAMBIO: Solo SST
+        documentos: { label: 'RRHH (Expedientes)', roles: ['admin', 'sst'] },
+        sst: { label: 'Centro de Control SST', roles: ['admin', 'sst'] },
         nomina: { label: 'Nómina', roles: ['admin', 'nomina'] },
-        historial_global: { label: 'Historial Pagos', roles: ['admin', 'nomina'] }
+        historial_global: { label: 'Historial de Pagos', roles: ['admin', 'nomina'] }
     };
 
-    const availableTabs = Object.keys(allTabs).filter(key =>
-        allTabs[key].roles.includes(role)
-    );
+    // Filtrar pestañas según rol
+    const availableTabs = Object.keys(allTabs).filter(key => {
+        if (!allTabs[key].roles) return true; // Si no tiene roles definidos, es pública
+        return allTabs[key].roles.includes(role);
+    });
 
+    // Generar HTML de los botones
     tabsNav.innerHTML = '';
     availableTabs.forEach(tabKey => {
+        const tab = allTabs[tabKey];
+        // Estilo base para botones inactivos
         tabsNav.innerHTML += `
             <button data-tab="${tabKey}"
-                class="empleados-tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                ${allTabs[tabKey].label}
+                class="empleados-tab-button whitespace-nowrap py-4 px-2 border-b-2 font-bold text-sm transition-all duration-200 text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300">
+                ${tab.label}
             </button>
         `;
     });
 
+    // Activar la primera pestaña por defecto
     if (availableTabs.length > 0) {
-        const currentActiveTab = tabsNav.querySelector('.active')?.dataset.tab;
-        const defaultTab = availableTabs[0];
-        switchEmpleadosTab(defaultTab);
+        // Intentamos mantener la pestaña activa si ya había una
+        const previousActive = document.querySelector('.empleados-tab-button.active');
+        const defaultTab = previousActive ? previousActive.dataset.tab : availableTabs[0];
+
+        // Verificamos que la pestaña previa siga siendo válida para el rol
+        if (availableTabs.includes(defaultTab)) {
+            switchEmpleadosTab(defaultTab);
+        } else {
+            switchEmpleadosTab(availableTabs[0]);
+        }
     } else {
         document.getElementById('empleados-content-container').innerHTML =
-            '<p class="text-gray-500">Esta sección no está disponible para tu rol.</p>';
+            '<div class="p-10 text-center bg-gray-50 rounded-lg border border-gray-200"><p class="text-gray-500">No tienes permisos para ver ninguna sección de este módulo.</p></div>';
     }
 }
 
-// 2. ACTUALIZAR switchEmpleadosTab
+// 2. ACTUALIZAR switchEmpleadosTab (Estilos Activos)
 function switchEmpleadosTab(tabName) {
+    // Limpiar suscripciones previas para evitar fugas de memoria
     if (unsubscribeEmpleadosTab) {
         unsubscribeEmpleadosTab();
         unsubscribeEmpleadosTab = null;
     }
 
-    const container = document.getElementById('empleados-content-container');
-    container.innerHTML = '<div class="p-8 text-center"><div class="loader mx-auto"></div></div>';
+    // Limpiar el mapa de asistencia si venimos de ahí (importante)
+    if (typeof attendanceMapInstance !== 'undefined' && attendanceMapInstance) {
+        attendanceMapInstance.remove();
+        attendanceMapInstance = null;
+    }
 
+    const container = document.getElementById('empleados-content-container');
+    container.innerHTML = '<div class="py-16 text-center"><div class="loader mx-auto mb-2"></div><p class="text-xs text-gray-400">Cargando módulo...</p></div>';
+
+    // Actualizar estilos de los botones (Visualización Activa)
     document.querySelectorAll('.empleados-tab-button').forEach(button => {
         const isActive = button.dataset.tab === tabName;
-        button.classList.toggle('active', isActive);
-        button.classList.toggle('border-blue-500', isActive);
-        button.classList.toggle('text-blue-600', isActive);
-        button.classList.toggle('border-transparent', !isActive);
-        button.classList.toggle('text-gray-500', !isActive);
+
+        if (isActive) {
+            button.classList.add('active', 'border-slate-800', 'text-slate-800');
+            button.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+        } else {
+            button.classList.remove('active', 'border-slate-800', 'text-slate-800');
+            button.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+        }
     });
 
+    // Cargar contenido
     switch (tabName) {
         case 'productividad':
             const prodDiv = document.createElement('div');
@@ -202,13 +231,13 @@ function switchEmpleadosTab(tabName) {
         case 'documentos':
             const docsDiv = document.createElement('div');
             container.innerHTML = ''; container.appendChild(docsDiv);
-            loadDocumentosTab(docsDiv); // Ahora carga solo documentos
+            loadDocumentosTab(docsDiv);
             break;
 
-        case 'sst': // <-- NUEVO CASO
+        case 'sst':
             const sstDiv = document.createElement('div');
             container.innerHTML = ''; container.appendChild(sstDiv);
-            loadSSTTab(sstDiv); // Función dedicada a alertas
+            loadSSTTab(sstDiv);
             break;
 
         case 'nomina':
@@ -222,6 +251,9 @@ function switchEmpleadosTab(tabName) {
             container.innerHTML = ''; container.appendChild(historyDiv);
             loadGlobalHistoryTab(historyDiv);
             break;
+
+        default:
+            container.innerHTML = '<p class="text-red-500 text-center p-4">Módulo no encontrado.</p>';
     }
 }
 
@@ -905,10 +937,10 @@ async function loadSSTColaboradoresSubTab(container) {
     // -----------------------------------------------
 
     const usersMap = _getUsersMap();
-    
+
     // Mapeamos entries() para asegurar que el ID vaya dentro del objeto
     const activeUsers = Array.from(usersMap.entries())
-        .map(([id, data]) => ({ id: id, ...data })) 
+        .map(([id, data]) => ({ id: id, ...data }))
         .filter(u => u.status === 'active');
 
     tableBody.innerHTML = '';
@@ -995,7 +1027,7 @@ async function checkUserSSTStatus(userId, alertDays = 30) {
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                 if (diffDays < 0) return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700" title="Venció el ${expiration.toLocaleDateString()}"><i class="fa-solid fa-triangle-exclamation"></i> Vencido</span>`;
-                
+
                 // --- USAMOS LA VARIABLE DINÁMICA AQUÍ ---
                 if (diffDays <= alertDays) return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800" title="Vence en ${diffDays} días (Alerta: ${alertDays}d)"><i class="fa-solid fa-clock"></i> Vence pronto</span>`;
             }
@@ -1030,7 +1062,7 @@ async function loadSSTUserProfile(userId, container) {
     }
 
     // Aquí fusionamos el ID que viene como parámetro con los datos del mapa
-    const user = { id: userId, ...rawUserData }; 
+    const user = { id: userId, ...rawUserData };
     // ----------------------------------------------------------------
 
     const SST_USER_CATS = [
@@ -1774,275 +1806,327 @@ async function loadProductividadTab(container) {
 
 
 /**
- * Carga el contenido de la pestaña "Nómina" (VERSIÓN SEGURA Y COMPLETA).
+ * Carga el contenido de la pestaña "Nómina" (CON INTERRUPTOR DE PRÉSTAMOS).
  */
 async function loadNominaTab(container) {
-    // 1. Renderizar el "Shell" (Estructura HTML)
+    // 1. ESTRUCTURA HTML MEJORADA
     container.innerHTML = `
-        <div class="bg-white p-6 rounded-lg shadow-md">
+        <div class="space-y-6">
             
-            <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
-                <div class="w-full md:w-1/3">
-                    <input type="text" id="nomina-search" class="block w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-blue-500 focus:border-blue-500 shadow-sm" placeholder="Buscar empleado...">
-                </div>
-                
-                <button id="btn-export-nomina-excel" class="w-full md:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center shadow transition-colors">
-                    <i class="fa-solid fa-file-excel mr-2"></i> Exportar Sábana (Excel)
-                </button>
+            <div id="nomina-kpi-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 animate-pulse h-24"></div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 animate-pulse h-24"></div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 animate-pulse h-24"></div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 animate-pulse h-24"></div>
             </div>
 
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm text-left" id="nomina-table">
-                    <thead class="text-xs text-gray-700 uppercase bg-gray-50 border-b">
-                        <tr>
-                            <th class="px-6 py-3">Operario</th>
-                            <th class="px-6 py-3 text-center">Nivel Comisión</th>
-                            <th class="px-6 py-3 text-right">Salario Básico</th>
-                            <th class="px-6 py-3 text-right text-lime-600">Bonificación M² (Mes)</th>
-                            <th class="px-6 py-3 text-right text-red-600">Desc. Préstamos (Est.)</th>
-                            <th class="px-6 py-3 text-right text-blue-700">Total a Pagar (Est.)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="empleados-nomina-table-body" class="divide-y divide-gray-100">
-                        </tbody>
-                    <tfoot id="empleados-nomina-table-foot" class="bg-gray-100 font-bold text-gray-800 border-t-2 border-gray-200">
-                        <tr>
-                            <td colspan="2" class="px-6 py-4 text-right uppercase text-xs tracking-wider">Totales del Mes:</td>
-                            <td id="total-basico" class="px-6 py-4 text-right">---</td>
-                            <td id="total-bonificacion" class="px-6 py-4 text-right text-lime-700">---</td>
-                            <td id="total-deducciones" class="px-6 py-4 text-right text-red-700">---</td>
-                            <td id="total-pagar" class="px-6 py-4 text-right text-blue-800 text-base">---</td>
-                        </tr>
-                    </tfoot>
-                </table>
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                
+                <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-800">Detalle de Nómina</h3>
+                        <p class="text-xs text-gray-500">Pre-liquidación estimada del mes seleccionado.</p>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                        
+                        <label class="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors h-[42px]">
+                            <input type="checkbox" id="toggle-apply-loans" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer">
+                            <span class="text-xs font-bold text-slate-600 select-none">Aplicar Préstamos</span>
+                        </label>
+
+                        <div class="relative flex-grow md:flex-grow-0 group">
+                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-blue-500 transition-colors">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                            </div>
+                            <input type="text" id="nomina-search" 
+                                class="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full md:w-56 transition-all outline-none h-[42px]" 
+                                placeholder="Buscar operario...">
+                        </div>
+                        
+                        <button id="btn-export-nomina-excel" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-all flex items-center gap-2 text-sm transform hover:-translate-y-0.5 h-[42px]">
+                            <i class="fa-solid fa-file-excel"></i> Exportar
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-hidden rounded-xl border border-gray-200">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left" id="nomina-table">
+                            <thead class="text-xs text-gray-500 uppercase bg-slate-50 border-b border-gray-200">
+                                <tr>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider">Colaborador</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-center">Nivel</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-right">Básico</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-right text-emerald-600">Bonos (M²)</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-right text-rose-600">Deducciones</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-right text-blue-700">Neto a Pagar</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="empleados-nomina-table-body" class="divide-y divide-gray-50">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="mt-4 flex justify-end items-center gap-2 text-xs text-gray-400 bg-gray-50 p-2 rounded-lg border border-gray-100 inline-block float-right">
+                    <i class="fa-solid fa-circle-info text-blue-400"></i>
+                    <p>Nota: Las deducciones de préstamos son estimadas. El valor final se ajusta al registrar el pago individual.</p>
+                </div>
             </div>
-            <p class="text-xs text-gray-400 mt-2 text-right">* La deducción de préstamos es un estimado basado en (Saldo / Cuotas). El valor final se ajusta al registrar el pago.</p>
         </div>
     `;
 
-    // 2. Obtener referencias a elementos del DOM
+    // 2. Referencias DOM
     const monthSelector = document.getElementById('empleado-month-selector');
     const tableBody = document.getElementById('empleados-nomina-table-body');
+    const kpiContainer = document.getElementById('nomina-kpi-container');
     const searchInput = document.getElementById('nomina-search');
     const exportBtn = document.getElementById('btn-export-nomina-excel');
+    const toggleLoans = document.getElementById('toggle-apply-loans'); // <-- Nuevo Switch
 
-    // Validación básica
     if (!monthSelector || !tableBody) return;
 
     const selectedMonthYear = monthSelector.value;
     const currentStatDocId = selectedMonthYear.replace('-', '_');
 
-    // Loader inicial
-    tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10"><div class="loader mx-auto"></div><p class="mt-2 text-gray-500">Cargando reporte para ${selectedMonthYear}...</p></td></tr>`;
+    // Loader
+    tableBody.innerHTML = `<tr><td colspan="7" class="text-center py-12"><div class="loader mx-auto mb-2"></div><p class="text-xs text-gray-400">Calculando nómina...</p></td></tr>`;
 
     try {
-        // 3. Obtener usuarios activos del sistema
         const usersMap = _getUsersMap();
         const activeUsers = [];
         usersMap.forEach((user, id) => {
-            if (user.status === 'active') {
-                activeUsers.push({ id, ...user });
-            }
+            if (user.status === 'active') activeUsers.push({ id, ...user });
         });
 
         if (activeUsers.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-gray-500">No se encontraron operarios activos.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="7" class="text-center py-10 text-gray-500">No se encontraron operarios activos.</td></tr>`;
+            kpiContainer.innerHTML = '';
             return;
         }
 
-        // 4. Obtener TODOS los Préstamos Activos (Consulta Global Optimizada)
+        // 4. Obtener PRÉSTAMOS (Global)
         const loansQuery = query(collectionGroup(_db, 'loans'), where('status', '==', 'active'));
         const loansSnapshot = await getDocs(loansQuery);
 
-        // --- CHECK DE SEGURIDAD 1: Si el usuario cambió de pestaña, detenemos aquí ---
-        if (!document.getElementById('total-basico')) return;
-        // ---------------------------------------------------------------------------
+        if (!document.getElementById('nomina-table')) return;
 
-        // Mapear préstamos por usuario
-        const userLoansMap = new Map(); // userId -> { totalBalance, estimatedDeduction }
-
+        const userLoansMap = new Map();
         loansSnapshot.forEach(doc => {
             const loan = doc.data();
-            const userId = doc.ref.parent.parent.id; // El "abuelo" es el usuario
-
-            if (!userLoansMap.has(userId)) {
-                userLoansMap.set(userId, { totalBalance: 0, estimatedDeduction: 0 });
-            }
+            const userId = doc.ref.parent.parent.id;
+            if (!userLoansMap.has(userId)) userLoansMap.set(userId, { totalBalance: 0, estimatedDeduction: 0 });
 
             const userData = userLoansMap.get(userId);
             userData.totalBalance += (loan.balance || 0);
-
-            // Cálculo de cuota sugerida: Si hay cuotas, dividimos. Si no, sugerimos todo o 1 cuota.
-            const installments = loan.installments && loan.installments > 0 ? loan.installments : 1;
-            const deduction = (loan.balance || 0) / installments;
-
-            userData.estimatedDeduction += deduction;
+            const installments = loan.installments > 0 ? loan.installments : 1;
+            userData.estimatedDeduction += (loan.balance || 0) / installments;
         });
 
-        // 5. Obtener estadísticas de productividad del mes seleccionado
+        // 5. Obtener ESTADÍSTICAS
         const statPromises = activeUsers.map(op => getDoc(doc(_db, "employeeStats", op.id, "monthlyStats", currentStatDocId)));
         const statSnapshots = await Promise.all(statPromises);
 
-        // --- CHECK DE SEGURIDAD 2 ---
-        if (!document.getElementById('total-basico')) return;
-        // -----------------------------
+        if (!document.getElementById('nomina-table')) return;
 
-        // Acumuladores globales
-        let sumBasico = 0;
-        let sumBonificacion = 0;
-        let sumDeducciones = 0;
-        let sumTotal = 0;
-
-        // 6. Procesar datos combinados
-        const empleadoData = activeUsers.map((operario, index) => {
+        // 6. Procesar Datos BASE (Sin cálculos finales de totales todavía)
+        const rawEmpleadoData = activeUsers.map((operario, index) => {
             const statDoc = statSnapshots[index];
             const stats = statDoc.exists() ? statDoc.data() : { totalBonificacion: 0 };
             const loanInfo = userLoansMap.get(operario.id) || { totalBalance: 0, estimatedDeduction: 0 };
 
             const basico = parseFloat(operario.salarioBasico) || 0;
             const bono = stats.totalBonificacion || 0;
-
-            // La deducción estimada no puede ser mayor a lo que debe
-            const deduction = Math.min(loanInfo.estimatedDeduction, loanInfo.totalBalance);
-
-            // Neto Estimado
-            const total = basico + bono - deduction;
-
-            sumBasico += basico;
-            sumBonificacion += bono;
-            sumDeducciones += deduction;
-            sumTotal += total;
+            // Calculamos la deducción potencial (la máxima posible)
+            const deductionPotential = Math.min(loanInfo.estimatedDeduction, loanInfo.totalBalance);
 
             return {
                 id: operario.id,
                 fullName: `${operario.firstName} ${operario.lastName}`,
+                initials: (operario.firstName[0] + operario.lastName[0]).toUpperCase(),
                 cedula: operario.idNumber || 'N/A',
                 bankName: operario.bankName || 'N/A',
-                accountType: operario.accountType || 'N/A',
                 accountNumber: operario.accountNumber || 'N/A',
                 commissionLevel: operario.commissionLevel || 'principiante',
+                role: operario.role || 'operario',
                 salarioBasico: basico,
                 bonificacion: bono,
-                deduccionPrestamos: deduction,
-                deudaTotal: loanInfo.totalBalance,
-                totalPagar: total
+                deduccionPotencial: deductionPotential, // Guardamos el valor potencial
+                deudaTotal: loanInfo.totalBalance
             };
         });
 
-        // Ordenar por total a pagar (mayor a menor)
-        empleadoData.sort((a, b) => b.totalPagar - a.totalPagar);
+        // --- FUNCIÓN CENTRALIZADA DE ACTUALIZACIÓN ---
+        const updateView = () => {
+            const applyLoans = toggleLoans.checked;
+            const searchTerm = searchInput.value.toLowerCase();
 
-        // 7. Función de Renderizado
-        const renderTable = (dataToRender) => {
-            // Referencia fresca al cuerpo de la tabla
-            const tBodyRef = document.getElementById('empleados-nomina-table-body');
-            if (!tBodyRef) return; // Seguridad extra
+            // A. Recalcular datos dinámicos
+            const processedData = rawEmpleadoData.map(emp => {
+                // Si el switch está apagado, la deducción aplicada es 0
+                const deduccionAplicada = applyLoans ? emp.deduccionPotencial : 0;
+                const totalPagar = emp.salarioBasico + emp.bonificacion - deduccionAplicada;
 
-            tBodyRef.innerHTML = '';
-            if (dataToRender.length === 0) {
-                tBodyRef.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-gray-500">No se encontraron resultados.</td></tr>`;
-                return;
-            }
-
-            dataToRender.forEach(data => {
-                const row = document.createElement('tr');
-                row.className = 'bg-white hover:bg-blue-50 cursor-pointer transition-colors searchable-row';
-                row.dataset.action = "view-payment-history";
-                row.dataset.id = data.id;
-
-                const levelText = data.commissionLevel.charAt(0).toUpperCase() + data.commissionLevel.slice(1);
-
-                // Estilo rojo si hay deducción
-                const dedHtml = data.deduccionPrestamos > 0
-                    ? `<span class="text-red-600 font-semibold">- ${currencyFormatter.format(data.deduccionPrestamos)}</span>`
-                    : `<span class="text-gray-400">-</span>`;
-
-                row.innerHTML = `
-                    <td class="px-6 py-4 font-medium text-gray-900">
-                        ${data.fullName}
-                        ${data.deudaTotal > 0 ? `<div class="text-xs text-red-400">Deuda Total: ${currencyFormatter.format(data.deudaTotal)}</div>` : ''}
-                    </td>
-                    <td class="px-6 py-4 text-center text-xs uppercase text-gray-500 font-semibold">${levelText}</td>
-                    <td class="px-6 py-4 text-right font-medium text-gray-600">${currencyFormatter.format(data.salarioBasico)}</td>
-                    <td class="px-6 py-4 text-right font-bold text-lime-600">${currencyFormatter.format(data.bonificacion)}</td>
-                    <td class="px-6 py-4 text-right">${dedHtml}</td>
-                    <td class="px-6 py-4 text-right font-bold text-blue-700">${currencyFormatter.format(data.totalPagar)}</td>
-                `;
-                tBodyRef.appendChild(row);
+                return {
+                    ...emp,
+                    deduccionAplicada,
+                    totalPagar
+                };
             });
+
+            // B. Filtrar
+            const filteredData = processedData.filter(emp =>
+                emp.fullName.toLowerCase().includes(searchTerm) ||
+                emp.cedula.includes(searchTerm)
+            );
+
+            // C. Ordenar
+            filteredData.sort((a, b) => b.totalPagar - a.totalPagar);
+
+            // D. Calcular Totales Globales (de toda la lista procesada, no solo la filtrada, para los KPIs)
+            let sumBasico = 0, sumBonificacion = 0, sumDeducciones = 0, sumTotal = 0;
+
+            // Usamos 'processedData' para los KPIs generales, o 'filteredData' si quieres que los KPIs respondan a la búsqueda.
+            // Usualmente en dashboards, los KPIs superiores muestran el total general.
+            processedData.forEach(p => {
+                sumBasico += p.salarioBasico;
+                sumBonificacion += p.bonificacion;
+                sumDeducciones += p.deduccionAplicada;
+                sumTotal += p.totalPagar;
+            });
+
+            // E. Renderizar KPIs
+            kpiContainer.innerHTML = `
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-blue-100 flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-xl"><i class="fa-solid fa-money-bill-wave"></i></div>
+                    <div>
+                        <p class="text-[10px] font-bold text-gray-400 uppercase">Nómina Estimada</p>
+                        <h3 class="text-xl font-black text-gray-800">${currencyFormatter.format(sumTotal)}</h3>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-emerald-100 flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl"><i class="fa-solid fa-chart-line"></i></div>
+                    <div>
+                        <p class="text-[10px] font-bold text-gray-400 uppercase">Bonificaciones</p>
+                        <h3 class="text-xl font-black text-emerald-600">+ ${currencyFormatter.format(sumBonificacion)}</h3>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-red-100 flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center text-xl"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                    <div>
+                        <p class="text-[10px] font-bold text-gray-400 uppercase">Deducciones ${applyLoans ? '' : '(Inactivas)'}</p>
+                        <h3 class="text-xl font-black ${applyLoans ? 'text-red-600' : 'text-gray-300'}">- ${currencyFormatter.format(sumDeducciones)}</h3>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-full bg-slate-50 text-slate-600 flex items-center justify-center text-xl"><i class="fa-solid fa-users"></i></div>
+                    <div>
+                        <p class="text-[10px] font-bold text-gray-400 uppercase">Personal Activo</p>
+                        <h3 class="text-xl font-black text-gray-800">${activeUsers.length}</h3>
+                    </div>
+                </div>
+            `;
+
+            // F. Renderizar Tabla
+            tableBody.innerHTML = '';
+            if (filteredData.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="7" class="text-center py-10 text-gray-500">No se encontraron resultados.</td></tr>`;
+            } else {
+                filteredData.forEach(data => {
+                    const row = document.createElement('tr');
+                    row.className = 'bg-white hover:bg-blue-50 cursor-pointer transition-colors border-b border-slate-50 last:border-0 group';
+                    row.dataset.action = "view-payment-history";
+                    row.dataset.id = data.id;
+
+                    const levelText = data.commissionLevel.charAt(0).toUpperCase() + data.commissionLevel.slice(1);
+
+                    // Visualización condicional de la deducción
+                    let dedHtml = `<span class="text-gray-300">-</span>`;
+                    if (data.deduccionAplicada > 0) {
+                        dedHtml = `<span class="text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded">- ${currencyFormatter.format(data.deduccionAplicada)}</span>`;
+                    } else if (!applyLoans && data.deduccionPotencial > 0) {
+                        // Si hay deuda pero el switch está apagado, mostramos un indicador gris
+                        dedHtml = `<span class="text-gray-400 text-xs italic" title="Deuda existente no aplicada">(${currencyFormatter.format(data.deduccionPotencial)})</span>`;
+                    }
+
+                    row.innerHTML = `
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold border border-indigo-200">
+                                    ${data.initials}
+                                </div>
+                                <div>
+                                    <p class="font-bold text-gray-800 text-sm leading-tight">${data.fullName}</p>
+                                    <p class="text-[10px] text-gray-400 uppercase mt-0.5">${data.role}</p>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="px-2 py-1 rounded text-[10px] font-bold uppercase bg-gray-100 text-gray-600 border border-gray-200">${levelText}</span>
+                        </td>
+                        <td class="px-6 py-4 text-right font-medium text-gray-600 text-sm">${currencyFormatter.format(data.salarioBasico)}</td>
+                        <td class="px-6 py-4 text-right font-bold text-emerald-600 text-sm">${currencyFormatter.format(data.bonificacion)}</td>
+                        <td class="px-6 py-4 text-right text-sm">${dedHtml}</td>
+                        <td class="px-6 py-4 text-right">
+                            <span class="font-black text-blue-700 text-base">${currencyFormatter.format(data.totalPagar)}</span>
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <button class="btn-cert-laboral text-slate-400 hover:text-blue-600 hover:bg-blue-50 w-8 h-8 rounded-lg transition-all inline-flex items-center justify-center shadow-sm border border-transparent hover:border-blue-200" 
+                                title="Generar Certificación" 
+                                data-userid="${data.id}">
+                                <i class="fa-solid fa-file-contract"></i>
+                            </button>
+                        </td>
+                    `;
+
+                    const certBtn = row.querySelector('.btn-cert-laboral');
+                    if (certBtn) {
+                        certBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            const userFullData = _getUsersMap().get(data.id);
+                            if (typeof window.openMainModal === 'function') window.openMainModal('generate-certification', userFullData);
+                        });
+                    }
+
+                    tableBody.appendChild(row);
+                });
+            }
         };
 
-        // Render inicial
-        renderTable(empleadoData);
+        // 7. Listeners para interactividad
+        toggleLoans.addEventListener('change', updateView);
+        searchInput.addEventListener('input', updateView);
 
-        // 8. Actualizar Footer con Totales (CON VALIDACIÓN DE EXISTENCIA)
-        const footerBasico = document.getElementById('total-basico');
-        if (footerBasico) {
-            footerBasico.textContent = currencyFormatter.format(sumBasico);
-            document.getElementById('total-bonificacion').textContent = currencyFormatter.format(sumBonificacion);
-            document.getElementById('total-deducciones').textContent = "- " + currencyFormatter.format(sumDeducciones);
-            document.getElementById('total-pagar').textContent = currencyFormatter.format(sumTotal);
-        }
-
-        // 9. Configurar Buscador
-        searchInput.addEventListener('input', (e) => {
-            const term = e.target.value.toLowerCase();
-            const filteredData = empleadoData.filter(emp =>
-                emp.fullName.toLowerCase().includes(term) ||
-                emp.cedula.includes(term)
-            );
-            renderTable(filteredData);
-        });
-
-        // 10. Configurar Exportación Excel
         exportBtn.addEventListener('click', () => {
+            const applyLoans = toggleLoans.checked;
+            // Recalculamos para exportación asegurándonos de tener la data fresca
+            const dataForExport = rawEmpleadoData.map(emp => ({
+                "Cédula": emp.cedula,
+                "Nombre": emp.fullName,
+                "Banco": emp.bankName,
+                "Cuenta": emp.accountNumber,
+                "Básico": emp.salarioBasico,
+                "Bonos": emp.bonificacion,
+                "Deducción": applyLoans ? emp.deduccionPotencial : 0,
+                "Neto a Pagar": emp.salarioBasico + emp.bonificacion - (applyLoans ? emp.deduccionPotencial : 0)
+            }));
+
             try {
-                const exportData = empleadoData.map(emp => ({
-                    "Cédula": emp.cedula,
-                    "Nombre Completo": emp.fullName,
-                    "Banco": emp.bankName,
-                    "Cuenta": emp.accountNumber,
-                    "Nivel": emp.commissionLevel,
-                    "Salario Básico": emp.salarioBasico,
-                    "Bonificación Mes": emp.bonificacion,
-                    "Deducción Préstamos (Est.)": emp.deduccionPrestamos,
-                    "Deuda Total Restante": emp.deudaTotal - emp.deduccionPrestamos,
-                    "Total a Pagar (Est.)": emp.totalPagar,
-                    "Mes": selectedMonthYear
-                }));
-
-                // Fila de Totales para Excel
-                exportData.push({
-                    "Cédula": "", "Nombre Completo": "TOTALES", "Banco": "", "Cuenta": "", "Nivel": "",
-                    "Salario Básico": sumBasico,
-                    "Bonificación Mes": sumBonificacion,
-                    "Deducción Préstamos (Est.)": sumDeducciones,
-                    "Deuda Total Restante": "",
-                    "Total a Pagar (Est.)": sumTotal,
-                    "Mes": ""
-                });
-
-                const ws = XLSX.utils.json_to_sheet(exportData);
+                const ws = XLSX.utils.json_to_sheet(dataForExport);
                 const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "Nomina " + selectedMonthYear);
-
-                // Ajustar anchos de columna
-                const wscols = [{ wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 10 }];
-                ws['!cols'] = wscols;
-
-                XLSX.writeFile(wb, `Sabana_Nomina_${selectedMonthYear}.xlsx`);
-
-            } catch (error) {
-                console.error("Error al exportar Excel:", error);
-                alert("No se pudo generar el archivo Excel.");
-            }
+                XLSX.utils.book_append_sheet(wb, ws, "Nomina");
+                XLSX.writeFile(wb, `Nomina_${selectedMonthYear}.xlsx`);
+            } catch (e) { alert("Error exportando Excel."); }
         });
+
+        // 8. Renderizado Inicial
+        updateView();
 
     } catch (error) {
-        console.error("Error al cargar el reporte de nómina:", error);
-        // Si el error ocurre, intentamos mostrarlo en la tabla si aún existe
-        const tb = document.getElementById('empleados-nomina-table-body');
-        if (tb) tb.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-red-500">Error: ${error.message}</td></tr>`;
+        console.error("Error nómina:", error);
+        tableBody.innerHTML = `<tr><td colspan="7" class="text-center py-10 text-red-500">Error: ${error.message}</td></tr>`;
     }
 }
 
@@ -2104,7 +2188,7 @@ export async function showEmpleadoDetails(userId) {
     _showView('empleado-details');
 
     // --- LIMPIEZA DE COMPONENTES (CORREGIDO) ---
-    
+
     // 1. Limpiar Gráfica
     if (typeof destroyActiveChart === 'function') {
         destroyActiveChart();
@@ -2113,7 +2197,7 @@ export async function showEmpleadoDetails(userId) {
     // 2. Limpiar Mapa de Asistencia
     // IMPORTANTE: Usamos la variable local 'attendanceMapInstance', SIN 'window.'
     if (attendanceMapInstance) {
-        attendanceMapInstance.remove(); 
+        attendanceMapInstance.remove();
         attendanceMapInstance = null;
         // También limpiamos la capa de marcadores por si acaso
         if (typeof attendanceMarkersLayer !== 'undefined') attendanceMarkersLayer = null;
@@ -2127,9 +2211,9 @@ export async function showEmpleadoDetails(userId) {
     // --- CORRECCIÓN CLAVE: LIMPIAR CONTENEDOR DE PESTAÑAS ---
     const contentContainer = document.getElementById('empleado-details-content-container');
     if (contentContainer) {
-        contentContainer.innerHTML = ''; 
+        contentContainer.innerHTML = '';
     }
-    
+
     const usersMap = _getUsersMap();
     const user = usersMap.get(userId);
 
@@ -2372,7 +2456,7 @@ function switchEmpleadoDetailsTab(tabName, userId) {
             }, 100);
             break;
 
-case 'asistencia':
+        case 'asistencia':
             // PASO 1: Limpieza TOTAL del mapa previo usando la variable LOCAL
             if (attendanceMapInstance) {
                 attendanceMapInstance.remove(); // Destruye el mapa viejo correctamente
@@ -2448,9 +2532,9 @@ case 'asistencia':
 
             // PASO 4: Carga Inicial (7 días)
             loadAttendanceTab(userId, 7);
-            
+
             // Fix Mapa Leaflet
-            setTimeout(() => { 
+            setTimeout(() => {
                 if (attendanceMapInstance) { // Sin window.
                     attendanceMapInstance.invalidateSize();
                 }
@@ -2839,7 +2923,7 @@ async function openPaymentVoucherModal(payment, user) {
             const emp = configSnap.data().empresa || {};
             const nombre = emp.nombre || 'Vidrios Éxito';
             const nit = emp.nit ? `NIT: ${emp.nit}` : '';
-            
+
             empresaHtml = `
                 <div class="text-center mb-4 border-b border-gray-100 pb-2">
                     <h3 class="text-lg font-bold text-gray-800 uppercase">${nombre}</h3>
@@ -2853,11 +2937,11 @@ async function openPaymentVoucherModal(payment, user) {
     // Insertar el encabezado ANTES del contenido existente del modal body
     // (Asumimos que hay un contenedor principal, si no, lo inyectamos al principio del body del modal)
     const modalBody = modal.querySelector('.bg-white.p-6') || modal.querySelector('.p-6'); // Selector genérico del padding del modal
-    
+
     // Limpiamos inyecciones previas si las hubiera
     const existingHeader = document.getElementById('voucher-dynamic-header');
     if (existingHeader) existingHeader.remove();
-    
+
     if (modalBody && empresaHtml) {
         const headerDiv = document.createElement('div');
         headerDiv.id = 'voucher-dynamic-header';
@@ -3105,76 +3189,109 @@ function createProductivityChart(ctx, labels, dataBonificacion, dataEnTiempo, da
 }
 
 /**
- * Abre el modal de creación de préstamo.
+ * Abre el modal de creación de préstamo con calculadora en tiempo real.
  */
 function openLoanModal(userId) {
     const modal = document.getElementById('loan-modal');
     const form = document.getElementById('loan-form');
+
     if (!modal || !form) return;
 
+    // 1. Reset
     form.reset();
-    // Formato de moneda para el input
-    const amountInput = form.querySelector('input[name="amount"]');
-    _setupCurrencyInput(amountInput);
 
-    // Fecha hoy
-    form.querySelector('input[name="date"]').value = new Date().toISOString().split('T')[0];
+    // 2. Referencias UI
+    const dateInput = form.querySelector('input[name="date"]');
+    const amountInput = document.getElementById('loan-amount');
+    const installmentsInput = document.getElementById('loan-installments');
+    const quotaDisplay = document.getElementById('loan-estimated-quota');
 
+    // 3. Configuración Inicial
+    if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
+    if (amountInput) {
+        amountInput.value = '';
+        if (_setupCurrencyInput) _setupCurrencyInput(amountInput);
+    }
+    if (quotaDisplay) quotaDisplay.textContent = '$ 0';
+
+    // 4. Calculadora en Tiempo Real
+    const calculateQuota = () => {
+        const amount = parseFloat(amountInput.value.replace(/[$. ]/g, '')) || 0;
+        const installments = parseInt(installmentsInput.value) || 1;
+
+        if (amount > 0 && installments > 0) {
+            const quota = amount / installments;
+            quotaDisplay.textContent = currencyFormatter.format(quota);
+        } else {
+            quotaDisplay.textContent = '$ 0';
+        }
+    };
+
+    amountInput.addEventListener('input', calculateQuota);
+    installmentsInput.addEventListener('input', calculateQuota);
+
+    // 5. Mostrar
     modal.classList.remove('hidden');
     modal.style.display = 'flex';
 
-    // Manejo del submit (una sola vez)
+    // 6. Cierre
+    const closeModal = () => {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    };
+    document.getElementById('loan-modal-cancel').onclick = closeModal;
+    const closeX = document.getElementById('loan-modal-close-x');
+    if (closeX) closeX.onclick = closeModal;
+
+    // 7. Submit
     form.onsubmit = async (e) => {
         e.preventDefault();
-        const btn = form.querySelector('button[type="submit"]');
-        btn.disabled = true;
-        btn.textContent = 'Guardando...';
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<div class="loader-small-white mx-auto"></div>';
 
         try {
             const amount = parseFloat(amountInput.value.replace(/[$. ]/g, '')) || 0;
             const description = form.querySelector('textarea[name="description"]').value;
-            const installments = parseInt(form.querySelector('input[name="installments"]').value) || 1;
+            const installments = parseInt(installmentsInput.value) || 1;
             const date = form.querySelector('input[name="date"]').value;
 
             if (amount <= 0) throw new Error("El monto debe ser mayor a 0");
+            if (!description) throw new Error("El motivo es obligatorio.");
 
-            // Guardar en subcolección 'loans'
             await addDoc(collection(_db, "users", userId, "loans"), {
                 amount: amount,
-                balance: amount, // Al inicio, el saldo es igual al monto
+                balance: amount,
                 description: description,
                 installments: installments,
                 date: date,
-                status: 'active', // active | paid
-                createdAt: serverTimestamp()
+                status: 'active',
+                createdAt: serverTimestamp(),
+                createdBy: _getCurrentUserId ? _getCurrentUserId() : 'admin'
             });
 
-            alert("Préstamo registrado exitosamente.");
-            modal.style.display = 'none';
-            // Recargar vista para actualizar deuda
-            loadPaymentHistoryView(userId);
+            if (window.showToast) window.showToast("Préstamo registrado.", "success");
+            closeModal();
+            loadPaymentHistoryView(userId); // Refrescar lista
 
         } catch (error) {
             console.error(error);
-            alert("Error al guardar: " + error.message);
+            if (window.showToast) window.showToast(error.message, "error");
         } finally {
-            btn.disabled = false;
-            btn.textContent = 'Guardar Préstamo';
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
         }
-    };
-
-    document.getElementById('loan-modal-cancel').onclick = () => {
-        modal.style.display = 'none';
     };
 }
 
 /**
- * (FUNCIÓN MAESTRA) Carga el historial, datos bancarios, navegación y GESTIÓN DE PRÉSTAMOS.
+ * (FUNCIÓN MAESTRA CORREGIDA) Carga el historial, datos bancarios y GESTIÓN DE PRÉSTAMOS.
  */
 export async function loadPaymentHistoryView(userId) {
     _showView('payment-history-view');
 
-    // Limpiar listener anterior
     if (unsubscribeEmpleadosTab) {
         unsubscribeEmpleadosTab();
         unsubscribeEmpleadosTab = null;
@@ -3183,30 +3300,22 @@ export async function loadPaymentHistoryView(userId) {
     // --- 1. REFERENCIAS DOM ---
     const nameEl = document.getElementById('payment-history-name');
     const tableBody = document.getElementById('payment-history-table-body');
-
-    // Bancarios
     const bankInfoContainer = document.getElementById('payment-header-bank-info');
     const bankNameEl = document.getElementById('ph-bank-name');
     const accountTypeEl = document.getElementById('ph-account-type');
     const accountNumberEl = document.getElementById('ph-account-number');
-
-    // Navegación
     const btnPrev = document.getElementById('btn-prev-employee');
     const btnNext = document.getElementById('btn-next-employee');
-
-    // Formulario
-    const form = document.getElementById('payment-register-form');
+    
+    // Inputs del formulario
     const salarioEl = document.getElementById('payment-salario-basico');
     const bonificacionEl = document.getElementById('payment-bonificacion-mes');
     const liquidarCheckbox = document.getElementById('payment-liquidar-bonificacion');
     const diasPagarInput = document.getElementById('payment-dias-pagar');
+    const conceptoSelect = document.getElementById('payment-concepto');
+    const form = document.getElementById('payment-register-form');
 
-    // Préstamos (Elementos nuevos)
-    const debtEl = document.getElementById('payment-total-debt');
-    // Nota: El contenedor de la lista se genera dinámicamente abajo, 
-    // asegurándonos de reemplazar el fieldset estático si aún existe.
-
-    // Estado de carga inicial
+    // Estado inicial
     nameEl.textContent = 'Cargando datos...';
     tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-10 text-gray-500"><div class="loader mx-auto"></div></td></tr>`;
     bankInfoContainer.classList.add('hidden');
@@ -3214,7 +3323,50 @@ export async function loadPaymentHistoryView(userId) {
     let user = null;
 
     try {
-        // --- 2. DATOS FRESCOS ---
+        // --- 2. GENERAR CONCEPTOS Y LÓGICA DE DÍAS ---
+        if (conceptoSelect) {
+            const now = new Date();
+            const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+            const currentMonth = months[now.getMonth()];
+            const year = now.getFullYear();
+
+            // Opciones limpias
+            const options = [
+                { val: `Primera Quincena de ${currentMonth} ${year}`, text: `1ª Quincena - ${currentMonth}` },
+                { val: `Segunda Quincena de ${currentMonth} ${year}`, text: `2ª Quincena - ${currentMonth}` },
+                { val: `Nómina Mensual ${currentMonth} ${year}`, text: `Mes Completo - ${currentMonth}` }
+            ];
+
+            conceptoSelect.innerHTML = options.map(opt => `<option value="${opt.val}">${opt.text}</option>`).join('');
+            
+            // Selección por defecto
+            if (now.getDate() > 15) {
+                conceptoSelect.value = options[1].val; 
+            } else {
+                conceptoSelect.value = options[0].val; 
+            }
+
+            // LÓGICA DE CAMBIO DE DÍAS (FIX)
+            // Reemplazamos el elemento para limpiar listeners viejos de forma segura
+            const newConceptSelect = conceptoSelect.cloneNode(true);
+            conceptoSelect.parentNode.replaceChild(newConceptSelect, conceptoSelect);
+
+            newConceptSelect.addEventListener('change', () => {
+                const val = newConceptSelect.value.toLowerCase();
+                
+                // Verificamos si es mes completo
+                if (val.includes('mensual') || val.includes('completo')) {
+                    diasPagarInput.value = 30;
+                } else {
+                    diasPagarInput.value = 15;
+                }
+                
+                // Disparamos la actualización de totales
+                if (typeof updatePaymentTotal === 'function') updatePaymentTotal();
+            });
+        }
+        
+        // --- 3. DATOS DEL USUARIO ---
         const userRef = doc(_db, "users", userId);
         const userSnap = await getDoc(userRef);
 
@@ -3225,7 +3377,7 @@ export async function loadPaymentHistoryView(userId) {
             throw new Error("Usuario no encontrado.");
         }
 
-        // --- 3. UI ENCABEZADO Y BANCO ---
+        // --- 4. UI ENCABEZADO ---
         nameEl.textContent = `${user.firstName} ${user.lastName}`;
 
         if (user.bankName && user.accountNumber) {
@@ -3233,28 +3385,41 @@ export async function loadPaymentHistoryView(userId) {
             accountTypeEl.textContent = user.accountType || 'Cuenta';
             accountNumberEl.textContent = user.accountNumber;
             bankInfoContainer.classList.remove('hidden');
+            
+            // Botón de copiar (fix null)
+            const accountContainer = accountNumberEl.parentElement.parentElement;
+            if(accountContainer) {
+                 // Clonar para limpiar eventos previos
+                const newAccountContainer = accountContainer.cloneNode(true);
+                accountContainer.parentNode.replaceChild(newAccountContainer, accountContainer);
+                newAccountContainer.onclick = () => {
+                    navigator.clipboard.writeText(user.accountNumber).then(() => {
+                        window.showToast('Número de cuenta copiado', 'success');
+                    });
+                };
+            }
 
-            const accountContainer = accountNumberEl.parentElement;
-            const newAccountContainer = accountContainer.cloneNode(true);
-            accountContainer.parentNode.replaceChild(newAccountContainer, accountContainer);
-
-            newAccountContainer.onclick = () => {
-                navigator.clipboard.writeText(user.accountNumber).then(() => {
-                    const icon = newAccountContainer.querySelector('i');
-                    const originalClass = "fa-regular fa-copy ml-2 text-gray-400 group-hover:text-gray-600";
-                    icon.className = "fa-solid fa-check ml-2 text-green-600 scale-125 transition-transform";
-                    setTimeout(() => { icon.className = originalClass; }, 1500);
-                }).catch(console.error);
-            };
+            // Botón Acción Rápida
+            const quickCopyBtn = document.getElementById('btn-quick-copy-bank');
+            if (quickCopyBtn) {
+                const newQuickBtn = quickCopyBtn.cloneNode(true);
+                quickCopyBtn.parentNode.replaceChild(newQuickBtn, quickCopyBtn);
+                newQuickBtn.onclick = () => {
+                    navigator.clipboard.writeText(user.accountNumber).then(() => {
+                        window.showToast('Número de cuenta copiado', 'success');
+                    });
+                };
+            }
         } else {
             bankInfoContainer.classList.add('hidden');
         }
 
-        // --- 4. NAVEGACIÓN ---
+        // --- 5. NAVEGACIÓN ---
         const usersMap = _getUsersMap();
-        const activeUsers = Array.from(usersMap.values())
+        const activeUsers = Array.from(usersMap.entries())
+            .map(([key, val]) => ({ id: key, ...val }))
             .filter(u => u.status === 'active')
-            .sort((a, b) => a.firstName.localeCompare(b.firstName));
+            .sort((a, b) => (a.firstName || '').localeCompare(b.firstName || ''));
 
         let currentIndex = -1;
         if (activeUsers.length > 0) currentIndex = activeUsers.findIndex(u => u.id === userId);
@@ -3265,9 +3430,9 @@ export async function loadPaymentHistoryView(userId) {
             if (currentIndex > 0) {
                 const prevUser = activeUsers[currentIndex - 1];
                 newBtnPrev.disabled = false;
-                newBtnPrev.title = `Ir a: ${prevUser.firstName} ${prevUser.lastName}`;
+                newBtnPrev.className = "p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all";
                 newBtnPrev.onclick = () => loadPaymentHistoryView(prevUser.id);
-            } else { newBtnPrev.disabled = true; }
+            } else { newBtnPrev.disabled = true; newBtnPrev.className = "p-2 text-gray-300 cursor-not-allowed"; }
         }
 
         if (btnNext) {
@@ -3276,60 +3441,44 @@ export async function loadPaymentHistoryView(userId) {
             if (currentIndex !== -1 && currentIndex < activeUsers.length - 1) {
                 const nextUser = activeUsers[currentIndex + 1];
                 newBtnNext.disabled = false;
-                newBtnNext.title = `Ir a: ${nextUser.firstName} ${nextUser.lastName}`;
+                newBtnNext.className = "p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all";
                 newBtnNext.onclick = () => loadPaymentHistoryView(nextUser.id);
-            } else { newBtnNext.disabled = true; }
+            } else { newBtnNext.disabled = true; newBtnNext.className = "p-2 text-gray-300 cursor-not-allowed"; }
         }
 
-        // --- 5. GESTIÓN DE PRÉSTAMOS (DISEÑO COMPACTO SIN DESCRIPCIÓN) ---
-
-        // 1. Búsqueda robusta del contenedor
+        // --- 6. GESTIÓN DE PRÉSTAMOS (FIX ACTUALIZACIÓN) ---
         let loanFieldset = document.getElementById('loan-management-fieldset');
         if (!loanFieldset) {
-            loanFieldset = form.querySelector('fieldset.bg-indigo-50');
-            if (!loanFieldset) {
-                const legends = form.querySelectorAll('legend');
-                for (const legend of legends) {
-                    if (legend.textContent.includes('Deducción') || legend.textContent.includes('Préstamos')) {
-                        loanFieldset = legend.parentElement;
-                        break;
-                    }
-                }
+            const placeholder = document.getElementById('loan-management-fieldset-placeholder');
+            if (placeholder) {
+                loanFieldset = document.createElement('div');
+                loanFieldset.id = 'loan-management-fieldset';
+                placeholder.appendChild(loanFieldset);
             }
         }
 
         if (loanFieldset) {
-            loanFieldset.id = 'loan-management-fieldset';
-            // Contenedor blanco limpio con borde suave
-            loanFieldset.className = "mt-6 border border-gray-200 rounded-lg bg-white shadow-sm overflow-hidden";
-            loanFieldset.style = "";
-
+            loanFieldset.className = "border border-gray-200 rounded-lg bg-white shadow-sm overflow-hidden";
             loanFieldset.innerHTML = `
                 <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-                    <h4 class="text-sm font-bold text-gray-700 flex items-center">
-                        <i class="fa-solid fa-hand-holding-dollar mr-2 text-gray-500"></i>
-                        Préstamos Activos
-                    </h4>
+                    <div class="flex items-center gap-2">
+                        <h4 class="text-sm font-bold text-gray-700"><i class="fa-solid fa-hand-holding-dollar mr-2 text-gray-400"></i> Préstamos Activos</h4>
+                        <button type="button" onclick="openMainModal('view-loan-history', { userId: '${userId}' })" class="text-[10px] text-blue-600 hover:underline font-bold bg-blue-50 px-2 py-0.5 rounded">Ver Historial</button>
+                    </div>
                     <div class="text-right">
                          <span class="text-[10px] uppercase text-gray-400 font-bold tracking-wider block">Total Deuda</span>
                          <span id="payment-total-debt" class="text-sm font-bold text-red-600">$ 0</span>
                     </div>
                 </div>
-
                 <div id="active-loans-list" class="max-h-60 overflow-y-auto custom-scrollbar divide-y divide-gray-100">
-                    <div class="text-center py-8">
-                        <div class="loader-small mx-auto mb-2"></div>
-                        <p class="text-xs text-gray-400">Cargando...</p>
-                    </div>
+                    <div class="text-center py-4"><div class="loader-small mx-auto"></div></div>
                 </div>
-
                 <div class="bg-indigo-50 px-4 py-3 flex justify-between items-center border-t border-indigo-100">
                     <span class="text-xs font-bold text-indigo-900 uppercase">A Descontar:</span>
                     <span id="payment-total-loan-deduction-display" class="text-lg font-bold text-indigo-700">$ 0</span>
                 </div>
             `;
 
-            // 2. Consultar y Renderizar Préstamos
             const activeLoansList = document.getElementById('active-loans-list');
             const totalDebtElDisplay = document.getElementById('payment-total-debt');
 
@@ -3340,41 +3489,32 @@ export async function loadPaymentHistoryView(userId) {
             activeLoansList.innerHTML = '';
 
             if (loansSnap.empty) {
-                activeLoansList.innerHTML = `
-                    <div class="py-6 text-center">
-                        <p class="text-sm text-gray-500">No hay préstamos activos.</p>
-                    </div>`;
+                activeLoansList.innerHTML = `<div class="py-4 text-center"><p class="text-xs text-gray-400">Sin préstamos activos.</p></div>`;
             } else {
                 loansSnap.forEach(doc => {
                     const loan = { id: doc.id, ...doc.data() };
                     totalActiveDebt += (loan.balance || 0);
-
-                    // Formato de fecha legible (ej: 15 de Noviembre)
-                    const dateStr = new Date(loan.date).toLocaleDateString('es-CO', { day: 'numeric', month: 'long' });
+                    
+                    const dateStr = new Date(loan.date).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+                    
+                    // Cálculo cuota sugerida
+                    const cuotaBase = (loan.amount || loan.balance) / (loan.installments || 1);
+                    const cuotaSugerida = Math.min(cuotaBase, loan.balance);
 
                     const row = document.createElement('div');
-                    // Fila limpia: Flexbox simple
                     row.className = "px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors";
-
-                    // --- HTML SIMPLIFICADO (SIN DESCRIPCIÓN) ---
                     row.innerHTML = `
-                        <div class="flex flex-col justify-center">
-                            <span class="text-sm font-bold text-gray-700 capitalize">
-                                ${dateStr} 
-                                ${loan.installments > 1 ? '<span class="ml-2 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200 align-middle">Cuotas</span>' : ''}
-                            </span>
+                        <div class="flex flex-col justify-center min-w-0 pr-2">
+                            <span class="text-sm font-bold text-gray-700 truncate" title="${loan.description}">${loan.description}</span>
                             <span class="text-xs text-gray-500 mt-0.5">
-                                Saldo: <span class="text-red-500 font-semibold">${currencyFormatter.format(loan.balance)}</span>
+                                ${dateStr} • Saldo: <span class="text-red-500 font-semibold">${currencyFormatter.format(loan.balance)}</span>
                             </span>
                         </div>
-
-                        <div class="relative w-32">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <span class="text-gray-400 text-sm font-bold">$</span>
-                            </div>
+                        <div class="relative w-28 shrink-0">
+                            <div class="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none"><span class="text-gray-400 text-xs">$</span></div>
                             <input type="text" 
-                                class="loan-deduction-input block w-full pl-6 pr-3 py-1.5 text-right border-gray-300 rounded-md text-sm font-bold text-gray-900 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-300 shadow-sm" 
-                                placeholder="0"
+                                class="loan-deduction-input block w-full pl-5 pr-2 py-1 text-right border-gray-300 rounded-md text-sm font-bold text-indigo-700 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-sm" 
+                                value="${currencyFormatter.format(cuotaSugerida)}"
                                 data-loan-id="${loan.id}"
                                 data-balance="${loan.balance}">
                         </div>
@@ -3385,22 +3525,25 @@ export async function loadPaymentHistoryView(userId) {
 
             totalDebtElDisplay.textContent = currencyFormatter.format(totalActiveDebt);
 
-            // Activar eventos
+            // --- ACTIVAR LISTENERS DE PRÉSTAMOS ---
+            // Esto es lo que faltaba para que al escribir se actualice el total
             activeLoansList.querySelectorAll('.loan-deduction-input').forEach(input => {
-                _setupCurrencyInput(input);
-                input.addEventListener('focus', function () { this.select(); });
-                input.addEventListener('input', () => updatePaymentTotal());
+                _setupCurrencyInput(input); // Formato moneda
+                input.addEventListener('input', () => {
+                    // Llamada directa a la función de actualización
+                    if (typeof updatePaymentTotal === 'function') updatePaymentTotal(); 
+                }); 
             });
         }
 
     } catch (e) {
-        console.error("Error al cargar datos:", e);
+        console.error("Error al cargar perfil:", e);
         nameEl.textContent = 'Error';
-        tableBody.innerHTML = `<tr><td colspan="4" class="text-center text-red-500">${e.message}</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="4" class="text-center text-red-500 py-4">${e.message}</td></tr>`;
         return;
     }
 
-    // --- 6. CONFIGURAR FORMULARIO ---
+    // --- 7. CONFIGURAR FORMULARIO ---
     const config = _getPayrollConfig();
     const salario = parseFloat(user.salarioBasico) || 0;
     let auxTransporte = 0;
@@ -3413,7 +3556,6 @@ export async function loadPaymentHistoryView(userId) {
     salarioEl.textContent = currencyFormatter.format(salario) + " (Mensual)";
     salarioEl.dataset.value = salario;
     salarioEl.dataset.auxTransporte = auxTransporte;
-
     form.dataset.deduccionSobreMinimo = user.deduccionSobreMinimo || false;
 
     // Bonificación
@@ -3431,76 +3573,74 @@ export async function loadPaymentHistoryView(userId) {
 
     bonificacionEl.dataset.value = bonificacion;
     if (pagada) {
-        bonificacionEl.textContent = currencyFormatter.format(bonificacion) + " (Ya liquidada)";
-        bonificacionEl.classList.replace('text-lime-600', 'text-gray-400');
+        bonificacionEl.textContent = currencyFormatter.format(bonificacion) + " (Pagada)";
+        bonificacionEl.classList.add('text-gray-400', 'line-through');
         liquidarCheckbox.checked = true; liquidarCheckbox.disabled = true;
     } else {
-        bonificacionEl.textContent = currencyFormatter.format(bonificacion) + " (Pendiente)";
-        bonificacionEl.classList.replace('text-gray-400', 'text-lime-600');
+        bonificacionEl.textContent = currencyFormatter.format(bonificacion);
+        bonificacionEl.classList.remove('text-gray-400', 'line-through');
         liquidarCheckbox.checked = false; liquidarCheckbox.disabled = false;
     }
 
-    if (!diasPagarInput.value) diasPagarInput.value = 15;
-    // Llamamos al recálculo inicial
-    if (typeof updatePaymentTotal === 'function') updatePaymentTotal();
+    // Inicializar Días y disparar lógica de concepto
+    const newConceptSelect = document.getElementById('payment-concepto');
+    if (newConceptSelect) {
+        // Forzamos el evento change para setear los días correctamente al inicio
+        newConceptSelect.dispatchEvent(new Event('change'));
+    } else {
+        // Fallback
+        diasPagarInput.value = 15;
+    }
+    
+    // Actualizar totales iniciales (con un pequeño delay para asegurar que el DOM está listo)
+    setTimeout(() => { if (typeof updatePaymentTotal === 'function') updatePaymentTotal(); }, 100);
 
-    // --- 7. TABLA HISTORIAL (Snapshot) ---
+
+    // --- 8. HISTORIAL (Sin cambios) ---
     const q = query(collection(_db, "users", userId, "paymentHistory"), orderBy("createdAt", "desc"));
     unsubscribeEmpleadosTab = onSnapshot(q, (snapshot) => {
         if (snapshot.empty) {
-            tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-10 text-gray-500">No hay pagos.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-xs text-gray-400">Sin pagos previos.</td></tr>`;
             return;
         }
         tableBody.innerHTML = '';
         snapshot.forEach(docSnap => {
             const payment = docSnap.data();
+            const date = payment.createdAt ? payment.createdAt.toDate().toLocaleDateString('es-CO') : '---';
+            
             const row = document.createElement('tr');
-            row.className = 'bg-white border-b hover:bg-gray-50 transition-colors';
-            const date = payment.createdAt ? payment.createdAt.toDate().toLocaleDateString('es-CO') : payment.paymentDate;
-
             row.innerHTML = `
-                <td class="px-6 py-4 font-medium text-gray-900">${date}</td>
-                <td class="px-6 py-4">${payment.concepto}</td>
-                <td class="px-6 py-4 text-right font-medium text-gray-900">${currencyFormatter.format(payment.monto)}</td>
-                <td class="px-6 py-4 text-center">
-                    <div class="flex justify-center items-center gap-2">
-                        <button class="view-voucher-btn bg-blue-100 hover:bg-blue-200 text-blue-700 p-2 rounded-full transition-colors" title="Ver Comprobante">
-                            <i class="fa-solid fa-file-invoice-dollar"></i>
-                        </button>
-                        <button data-action="delete-payment" data-user-id="${userId}" data-doc-id="${docSnap.id}" class="bg-red-100 hover:bg-red-200 text-red-600 p-2 rounded-full transition-colors" title="Eliminar">
-                            <i class="fa-solid fa-trash-can"></i>
-                        </button>
+                <td class="p-4 border-b border-gray-50 block hover:bg-slate-50 transition-colors">
+                    <div class="flex justify-between mb-1">
+                        <span class="text-xs font-bold text-gray-500">${date}</span>
+                        <span class="text-sm font-bold text-indigo-700">${currencyFormatter.format(payment.monto)}</span>
                     </div>
-                </td>
-            `;
-
-            const viewBtn = row.querySelector('.view-voucher-btn');
-            if (viewBtn) {
-                // Aseguramos que openPaymentVoucherModal esté disponible
-                viewBtn.addEventListener('click', () => {
-                    // Suponiendo que esta función existe en el mismo archivo o es global
-                    // Si es interna, la llamamos directo.
-                    openPaymentVoucherModal(payment, user);
-                });
-            }
-            tableBody.appendChild(row);
+                    <p class="text-xs text-gray-600 truncate">${payment.concepto}</p>
+                    <div class="flex justify-end gap-2 mt-2">
+                         <button class="view-voucher-btn text-[10px] bg-white border border-gray-200 px-2 py-1 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors">Ver</button>
+                         <button data-action="delete-payment" data-user-id="${userId}" data-doc-id="${docSnap.id}" class="text-[10px] text-red-400 hover:text-red-600 px-2 py-1">Eliminar</button>
+                    </div>
+                </td>`;
+            
+             const viewBtn = row.querySelector('.view-voucher-btn');
+             if(viewBtn) viewBtn.onclick = () => openPaymentVoucherModal(payment, user);
+             
+             tableBody.appendChild(row);
         });
     });
 
-    // --- 8. LISTENERS DEL FORMULARIO ---
+    // --- 9. LISTENERS FORMULARIO ---
     const newForm = form.cloneNode(true);
     form.parentNode.replaceChild(newForm, form);
-
     newForm.addEventListener('submit', (e) => handleRegisterPayment(e, userId));
 
     newForm.querySelectorAll('.payment-horas-input, .currency-input, .payment-dias-input, #payment-liquidar-bonificacion').forEach(input => {
-        input.addEventListener('input', () => {
-            if (typeof updatePaymentTotal === 'function') updatePaymentTotal();
-        });
+        input.addEventListener('input', () => { if (typeof updatePaymentTotal === 'function') updatePaymentTotal(); });
+        input.addEventListener('change', () => { if (typeof updatePaymentTotal === 'function') updatePaymentTotal(); });
     });
-
     newForm.querySelectorAll('.currency-input').forEach(_setupCurrencyInput);
 }
+
 
 /**
  * (FUNCIÓN ACTUALIZADA - FASE 3: LÓGICA DE LIQUIDACIÓN)
@@ -3591,74 +3731,75 @@ function updatePaymentTotal() {
 }
 
 /**
- * (FUNCIÓN COMPLETA) Registra el pago, aplica deducciones y AMORTIZA PRÉSTAMOS ESPECÍFICOS.
+ * (FUNCIÓN COMPLETA CORREGIDA) Registra el pago, aplica deducciones y AMORTIZA PRÉSTAMOS.
  */
 async function handleRegisterPayment(e, userId) {
     e.preventDefault();
     const submitButton = document.getElementById('payment-submit-button');
     submitButton.disabled = true;
-    submitButton.innerHTML = '<div class="loader-small mx-auto"></div>';
+    submitButton.innerHTML = '<div class="loader-small-white mx-auto"></div>';
 
     const config = _getPayrollConfig();
-    const form = document.getElementById('payment-register-form');
+    
+    // Función auxiliar para limpiar moneda
+    const parseMoney = (idOrValue) => {
+        let val = typeof idOrValue === 'string' ? idOrValue : document.getElementById(idOrValue).value;
+        return parseFloat(val.replace(/[$. ]/g, '')) || 0;
+    };
 
     try {
-        // 1. Obtener valores generales
         const diasPagar = parseFloat(document.getElementById('payment-dias-pagar').value) || 0;
-        const salarioMensual = parseFloat(document.getElementById('payment-salario-basico').dataset.value || 0);
-        const auxTransporteMensual = parseFloat(document.getElementById('payment-salario-basico').dataset.auxTransporte || 0);
+        
+        // 1. LEER DATOS BASE
+        const salarioEl = document.getElementById('payment-salario-basico');
+        const salarioMensual = parseFloat(salarioEl.dataset.value || 0);
+        const auxTransporteMensual = parseFloat(salarioEl.dataset.auxTransporte || 0);
 
+        // 2. CÁLCULOS PRORRATEADOS (DEFINICIÓN DE VARIABLES FALTANTES)
         const salarioProrrateado = (salarioMensual / 30) * diasPagar;
-        const auxTransporteProrrateado = (auxTransporteMensual / 30) * diasPagar;
+        const auxTransporteProrrateado = (auxTransporteMensual / 30) * diasPagar; // <--- AQUÍ SE DEFINE LA VARIABLE
 
-        const otros = parseFloat(document.getElementById('payment-otros').value.replace(/[$. ]/g, '')) || 0;
-        const totalHorasExtra = parseFloat(document.getElementById('payment-total-horas').textContent.replace(/[$. ]/g, '')) || 0;
+        const otros = parseMoney('payment-otros');
+        // Aseguramos leer el texto del span de horas
+        const totalHorasExtra = parseMoney(document.getElementById('payment-total-horas').textContent); 
         const concepto = document.getElementById('payment-concepto').value;
 
-        // 2. PROCESAR DEDUCCIÓN DE PRÉSTAMOS (Lógica Individual)
+        // 3. Préstamos
         let totalLoanDeduction = 0;
-        const loanPayments = []; // Array para guardar qué préstamos se pagaron
-
-        const loanInputs = document.querySelectorAll('.loan-deduction-input');
-        for (const input of loanInputs) {
+        const loanPayments = []; 
+        document.querySelectorAll('.loan-deduction-input').forEach(input => {
             const val = parseFloat(input.value.replace(/[$. ]/g, '')) || 0;
-            const loanId = input.dataset.loanId;
-            const currentBalance = parseFloat(input.dataset.balance);
-
             if (val > 0) {
-                if (val > currentBalance) {
-                    throw new Error(`El abono a uno de los préstamos supera su saldo pendiente (${currencyFormatter.format(currentBalance)}).`);
-                }
-
                 totalLoanDeduction += val;
                 loanPayments.push({
-                    loanId: loanId,
+                    loanId: input.dataset.loanId,
                     amount: val,
-                    previousBalance: currentBalance
+                    previousBalance: parseFloat(input.dataset.balance)
                 });
             }
-        }
+        });
 
-        // 3. Checkbox Liquidación
+        // 4. Bonificación
         const liquidarBonificacion = document.getElementById('payment-liquidar-bonificacion').checked;
         const bonificacionPotencial = parseFloat(document.getElementById('payment-bonificacion-mes').dataset.value || 0);
         const bonificacionPagada = liquidarBonificacion ? bonificacionPotencial : 0;
 
-        // 4. Validaciones
-        if (!concepto) throw new Error("Ingresa un concepto para el pago.");
+        // Validaciones
+        if (!concepto) throw new Error("Ingresa un concepto.");
         if (diasPagar <= 0) throw new Error("Días a pagar inválidos.");
 
-        // 5. Calcular Deducciones de Ley
-        const deduccionSobreMinimo = form.dataset.deduccionSobreMinimo === 'true';
+        // 5. Deducciones Ley
+        const deduccionSobreMinimo = document.getElementById('payment-register-form').dataset.deduccionSobreMinimo === 'true';
         let baseDeduccion = 0;
-
-        if (deduccionSobreMinimo) {
+        
+        if (deduccionSobreMinimo && config.salarioMinimo) {
             baseDeduccion = (config.salarioMinimo / 30) * diasPagar;
         } else {
             baseDeduccion = salarioProrrateado + totalHorasExtra + bonificacionPagada;
         }
 
-        if (baseDeduccion > 0 && baseDeduccion < (config.salarioMinimo / 30) * diasPagar) {
+        // Validación extra para no cotizar por debajo del mínimo proporcional
+        if (config.salarioMinimo && baseDeduccion > 0 && baseDeduccion < (config.salarioMinimo / 30) * diasPagar) {
             baseDeduccion = (config.salarioMinimo / 30) * diasPagar;
         }
 
@@ -3666,20 +3807,20 @@ async function handleRegisterPayment(e, userId) {
         const deduccionPension = baseDeduccion * (config.porcentajePension / 100);
         const totalDeduccionesLey = deduccionSalud + deduccionPension;
 
-        // 6. CALCULAR NETO A PAGAR FINAL
-        // (Ingresos) - (Salud + Pension) - (Total Préstamos)
+        // 6. NETO FINAL
         const totalDevengado = salarioProrrateado + auxTransporteProrrateado + bonificacionPagada + totalHorasExtra + otros;
         const totalPagar = totalDevengado - totalDeduccionesLey - totalLoanDeduction;
 
-        if (totalPagar < 0) throw new Error("El total a pagar no puede ser negativo. Revisa las deducciones.");
+        if (totalPagar < 0) {
+            throw new Error(`El total es negativo ($${totalPagar.toLocaleString()}). Los descuentos superan el sueldo. Reduce el abono a préstamos.`);
+        }
 
-        // 7. Obtener datos de registro
+        // 7. Guardar
         const currentUserId = _getCurrentUserId();
         const usersMap = _getUsersMap();
         const currentUser = usersMap.get(currentUserId);
         const registeredByName = currentUser ? `${currentUser.firstName} ${currentUser.lastName}` : 'Sistema';
 
-        // 8. Construir Objeto Payment
         const paymentData = {
             userId: userId,
             paymentDate: new Date().toISOString().split('T')[0],
@@ -3688,32 +3829,27 @@ async function handleRegisterPayment(e, userId) {
             diasPagados: diasPagar,
             desglose: {
                 salarioProrrateado: salarioProrrateado,
-                auxilioTransporteProrrateado: auxTransporteProrrateado,
+                auxilioTransporteProrrateado: auxTransporteProrrateado, // <--- AHORA SÍ EXISTE
                 bonificacionM2: bonificacionPagada,
-                horasExtra: totalHorasExtra,
-                otros: otros,
-                abonoPrestamos: totalLoanDeduction, // Total descontado
-                detallesPrestamos: loanPayments,    // Detalle específico (NUEVO)
+                horasExtra: totalHorasExtra, 
+                otros: otros, 
+                abonoPrestamos: totalLoanDeduction,
+                detallesPrestamos: loanPayments, 
                 deduccionSalud: -deduccionSalud,
-                deduccionPension: -deduccionPension,
-                baseDeduccion: baseDeduccion,
+                deduccionPension: -deduccionPension, 
+                baseDeduccion: baseDeduccion, 
                 deduccionSobreMinimo: deduccionSobreMinimo
             },
-            horas: {
-                totalHorasExtra: parseFloat(document.getElementById('payment-horas-diurnas').value) || 0
-            },
+            horas: { totalHorasExtra: parseFloat(document.getElementById('payment-horas-diurnas').value) || 0 },
             createdAt: serverTimestamp(),
             registeredBy: currentUserId,
             registeredByName: registeredByName
         };
 
         const batch = writeBatch(_db);
-
-        // A. Guardar el documento de Pago
         const paymentHistoryRef = doc(collection(_db, "users", userId, "paymentHistory"));
         batch.set(paymentHistoryRef, paymentData);
 
-        // B. Actualizar Bonificación (si aplica)
         if (liquidarBonificacion) {
             const today = new Date();
             const currentStatDocId = `${today.getFullYear()}_${String(today.getMonth() + 1).padStart(2, '0')}`;
@@ -3721,42 +3857,33 @@ async function handleRegisterPayment(e, userId) {
             batch.set(statRef, { bonificacionPagada: true }, { merge: true });
         }
 
-        // C. AMORTIZAR PRÉSTAMOS ESPECÍFICOS
         loanPayments.forEach(pago => {
             const loanRef = doc(_db, "users", userId, "loans", pago.loanId);
             const newBalance = pago.previousBalance - pago.amount;
-
             const updateData = { balance: newBalance };
-            if (newBalance <= 0) {
-                updateData.status = 'paid';
-                updateData.paidAt = serverTimestamp();
-            }
+            if (newBalance <= 0) { updateData.status = 'paid'; updateData.paidAt = serverTimestamp(); }
             batch.update(loanRef, updateData);
         });
 
-        // Ejecutar todas las escrituras
         await batch.commit();
 
-        // 9. Resetear y Recargar
-        document.getElementById('payment-concepto').value = '';
+        if(window.showToast) window.showToast("Pago registrado exitosamente.", "success");
+        
+        // Reset
         document.getElementById('payment-horas-diurnas').value = '0';
         document.getElementById('payment-otros').value = '$ 0';
-        // Los inputs de préstamos se limpiarán al recargar la vista
-        document.getElementById('payment-dias-pagar').value = '15';
-
-        document.querySelectorAll('#payment-register-form .currency-input').forEach(_setupCurrencyInput);
-
-        // Recargar vista para ver el pago en la tabla y actualizar las deudas
         loadPaymentHistoryView(userId);
 
     } catch (error) {
-        console.error("Error al registrar el pago:", error);
-        window.showToast(error.message, "error");
+        console.error(error);
+        if(window.showToast) window.showToast(error.message, "error");
+        else alert(error.message);
     } finally {
         submitButton.disabled = false;
         submitButton.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>Registrar Pago';
     }
 }
+
 
 /**
  * Crea una ventana flotante temporal para pedir datos (Reemplazo de prompt)
@@ -3838,12 +3965,13 @@ function openCustomInputModal(title, label, inputType = 'text', placeholder = ''
 
 /**
  * Abre un modal para seleccionar documentos y descargarlos como ZIP.
+ * (CORREGIDO: Usa _db y agrega opción de Certificado sin sueldo)
  */
 async function openBatchDownloadModal(user) {
     const userId = user.id;
     const userName = `${user.firstName}_${user.lastName}`.replace(/\s+/g, '_');
 
-    // 1. Definir qué categorías de RRHH nos interesan (Las de SST se traen todas)
+    // 1. Definir categorías RRHH
     const RELEVANT_RRHH = ['cedula', 'hoja_vida', 'certificados', 'seguridad_social'];
     const RRHH_LABELS = {
         'cedula': 'Cédula de Ciudadanía',
@@ -3852,9 +3980,8 @@ async function openBatchDownloadModal(user) {
         'seguridad_social': 'Certificados ARL/EPS/CCF'
     };
 
-    // 2. Modal UI (Loading inicial)
+    // 2. Modal UI
     let modalId = 'zip-download-modal';
-    // Eliminar si existe previo
     const existing = document.getElementById(modalId);
     if (existing) existing.remove();
 
@@ -3870,25 +3997,46 @@ async function openBatchDownloadModal(user) {
                     <div class="text-center py-10"><div class="loader mx-auto"></div><p class="text-xs text-gray-400 mt-2">Buscando documentos...</p></div>
                 </div>
 
-                <div class="mt-6 pt-4 border-t border-gray-100 flex justify-between items-center">
-                    <div class="text-xs text-gray-500">
-                        <span id="zip-selected-count">0</span> seleccionados
-                    </div>
-                    <button id="btn-start-download" disabled class="bg-gray-300 text-white px-6 py-2 rounded-lg font-bold text-sm flex items-center transition-colors">
-                        Descargar ZIP
+                <div class="mt-6 pt-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
+                    
+                    <button id="btn-gen-cert-sst" class="text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors border border-transparent hover:border-indigo-100 w-full sm:w-auto justify-center">
+                        <i class="fa-solid fa-file-contract"></i> Certificado (Solo Cargo)
                     </button>
+
+                    <div class="flex items-center gap-4 w-full sm:w-auto justify-end">
+                        <div class="text-xs text-gray-500 text-right hidden sm:block">
+                            <span id="zip-selected-count">0</span> seleccionados
+                        </div>
+                        <button id="btn-start-download" disabled class="bg-gray-300 text-white px-6 py-2 rounded-lg font-bold text-sm flex items-center justify-center transition-colors shadow-sm w-full sm:w-auto">
+                            Descargar ZIP
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
     `;
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 
-    // Cerrar modal
+    // Listener para cerrar
     document.getElementById('close-zip-modal').onclick = () => document.getElementById(modalId).remove();
 
+    // --- LISTENER DEL NUEVO BOTÓN DE CERTIFICADO ---
+    document.getElementById('btn-gen-cert-sst').onclick = () => {
+        document.getElementById(modalId).remove();
+
+        // Usamos window.openMainModal porque estamos en un módulo
+        if (window.openMainModal) {
+            window.openMainModal('generate-certification', {
+                ...user,
+                forceNoSalary: true, // <--- ESTO ACTIVA EL MODO SIN SUELDO
+                jobTitle: user.jobTitle || 'Operario'
+            });
+        }
+    };
+
     try {
-        // 3. Consultar TODOS los documentos del usuario
-        const q = query(collection(_db, "users", userId, "documents"));
+        // 3. Consultar documentos (USANDO _db)
+        const q = query(collection(_db, "users", userId, "documents")); // <--- CORRECCIÓN AQUÍ (_db)
         const snapshot = await getDocs(q);
 
         if (snapshot.empty) {
@@ -3896,23 +4044,16 @@ async function openBatchDownloadModal(user) {
             return;
         }
 
-        // 4. Clasificar Documentos
+        // 4. Clasificar
         const rrhhDocs = [];
         const sstDocs = [];
 
         snapshot.forEach(doc => {
             const data = doc.data();
-            // Filtro RRHH
-            if (RELEVANT_RRHH.includes(data.category)) {
-                rrhhDocs.push(data);
-            }
-            // Filtro SST (Todo lo que empiece por sst_)
-            else if (data.category.startsWith('sst_')) {
-                sstDocs.push(data);
-            }
+            if (RELEVANT_RRHH.includes(data.category)) rrhhDocs.push(data);
+            else if (data.category.startsWith('sst_')) sstDocs.push(data);
         });
 
-        // 5. Renderizar Lista con Checkboxes
         const contentDiv = document.getElementById('zip-modal-content');
         contentDiv.innerHTML = '';
 
@@ -3941,11 +4082,11 @@ async function openBatchDownloadModal(user) {
         contentDiv.innerHTML += renderSection('Seguridad y Salud (SST)', sstDocs, 'indigo');
 
         if (rrhhDocs.length === 0 && sstDocs.length === 0) {
-            contentDiv.innerHTML = `<p class="text-center text-gray-500 py-8">No hay documentos de las categorías requeridas disponibles.</p>`;
+            contentDiv.innerHTML = `<p class="text-center text-gray-500 py-8">No hay documentos de las categorías requeridas.</p>`;
             return;
         }
 
-        // 6. Lógica de Selección
+        // 5. Lógica de Selección
         const checkboxes = contentDiv.querySelectorAll('.zip-checkbox');
         const btnDownload = document.getElementById('btn-start-download');
         const countLabel = document.getElementById('zip-selected-count');
@@ -3955,23 +4096,20 @@ async function openBatchDownloadModal(user) {
             countLabel.textContent = count;
             if (count > 0) {
                 btnDownload.disabled = false;
-                btnDownload.classList.remove('bg-gray-300', 'cursor-not-allowed');
-                btnDownload.classList.add('bg-indigo-600', 'hover:bg-indigo-700', 'shadow-lg');
+                btnDownload.classList.remove('bg-gray-300');
+                btnDownload.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
             } else {
                 btnDownload.disabled = true;
                 btnDownload.classList.add('bg-gray-300');
-                btnDownload.classList.remove('bg-indigo-600', 'hover:bg-indigo-700', 'shadow-lg');
+                btnDownload.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
             }
         };
 
         checkboxes.forEach(cb => cb.addEventListener('change', updateCount));
 
-        // 7. Lógica de Descarga y Compresión (JSZip)
         btnDownload.onclick = async () => {
             const selected = Array.from(contentDiv.querySelectorAll('.zip-checkbox:checked'));
             if (selected.length === 0) return;
-
-            // UI Loading state
             btnDownload.disabled = true;
             btnDownload.innerHTML = `<div class="loader-small-white mr-2"></div> Comprimiendo...`;
 
@@ -3980,40 +4118,30 @@ async function openBatchDownloadModal(user) {
             const folder = zip.folder(folderName);
 
             try {
-                // Iterar y descargar cada archivo
                 const promises = selected.map(async (checkbox) => {
                     const url = checkbox.dataset.url;
                     const originalName = checkbox.dataset.name;
                     const category = checkbox.dataset.cat;
-
-                    // Limpiar nombre para evitar errores en el zip
                     const safeName = originalName.replace(/[^a-z0-9.\-_]/gi, '_');
-                    // Opcional: Prefijo de categoría para ordenar carpeta
                     const fileName = `${category}_${safeName}`;
 
-                    // Fetch del BLOB (Binario)
                     const response = await fetch(url);
                     if (!response.ok) throw new Error(`Error descargando ${originalName}`);
                     const blob = await response.blob();
-
                     folder.file(fileName, blob);
                 });
 
                 await Promise.all(promises);
-
-                // Generar ZIP
                 const content = await zip.generateAsync({ type: "blob" });
-
-                // Guardar
                 saveAs(content, `${folderName}.zip`);
 
-                window.showToast("Archivo descargado correctamente.", "success");
+                if (window.showToast) window.showToast("Descarga iniciada.", "success");
                 document.getElementById(modalId).remove();
 
             } catch (error) {
-                console.error("Error generando ZIP:", error);
-                window.showToast("Error al descargar algunos archivos. Revisa los permisos o CORS.", "error");
-                btnDownload.innerHTML = "Reintentar Descarga";
+                console.error("Error ZIP:", error);
+                if (window.showToast) window.showToast("Error en descarga.", "error");
+                btnDownload.innerHTML = "Reintentar";
                 btnDownload.disabled = false;
             }
         };

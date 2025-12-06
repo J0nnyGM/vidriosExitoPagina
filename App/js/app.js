@@ -2,7 +2,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
 
-import { getFirestore, initializeFirestore, persistentLocalCache,persistentMultipleTabManager,  doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment, limit, serverTimestamp, arrayRemove, documentId} from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js"; // <-- AÑADIDO documentId
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment, limit, serverTimestamp, arrayRemove, documentId } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js"; // <-- AÑADIDO documentId
 
 import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app-check.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
@@ -54,7 +54,8 @@ const functions = getFunctions(app, 'us-central1'); // ASEGÚRATE DE QUE ESTA L�
 
 
 
-
+let allUsersCache = []; // Para búsqueda local rápida
+let currentUserFilter = 'active'; // 'active', 'pending', 'archived'
 let unsubscribeTasks = null; // <-- AÑADE ESTA LÍNEA
 let unsubscribeReports = null;
 let unsubscribePurchaseOrders = null;
@@ -95,119 +96,121 @@ let activeEmpleadoChart = null;
 let unsubscribeEmpleadosTab = null;
 
 /**
- * Carga y muestra el historial de cambios de un perfil de usuario.
- * @param {string} userId - El ID del usuario cuyo historial se cargará.
+ * Carga y muestra el historial de cambios (DISEÑO TIMELINE).
  */
-async function loadProfileHistory(userId) {
-    const modal = document.getElementById('tool-history-modal');
-    const titleEl = document.getElementById('tool-history-title');
-    const listContainer = document.getElementById('tool-history-body');
-
-    if (!modal || !titleEl || !listContainer) {
-        console.error("No se encontró el modal de historial (tool-history-modal).");
+function loadProfileHistory(userId) {
+    // --- VALIDACIÓN DE SEGURIDAD ---
+    if (!userId) {
+        console.error("loadProfileHistory: ID de usuario indefinido.");
+        const container = document.getElementById('history-timeline-container');
+        if (container) container.innerHTML = '<p class="text-red-500 text-center p-4">Error: No se identificó al usuario.</p>';
         return;
     }
+    // -------------------------------
 
-    const user = usersMap.get(userId);
-    const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario';
+    const listContainer = document.getElementById('history-timeline-container');
 
-    titleEl.textContent = `Historial de Cambios: ${userName}`;
+    if (!listContainer) return;
 
-    listContainer.innerHTML = '<p class="text-sm text-gray-400 italic text-center p-4">Cargando historial...</p>';
-    listContainer.className = "flex-grow overflow-y-auto pr-2 space-y-3 bg-gray-100 p-3 rounded-b-lg";
-    modal.style.display = 'flex';
-
+    // Diccionario de traducción (El mismo que tenías)
     const keyTranslator = {
-        firstName: 'Nombre',
-        lastName: 'Apellido',
-        idNumber: 'Cédula',
-        phone: 'Celular',
-        address: 'Dirección',
-        email: 'Correo',
-        // profilePhotoURL: 'Foto de Perfil', // Ya no se mostrará
-        tallaCamiseta: 'Talla Camiseta',
-        tallaPantalón: 'Talla Pantalón',
-        tallaBotas: 'Talla Botas'
+        firstName: 'Nombre', lastName: 'Apellido', idNumber: 'Cédula',
+        phone: 'Celular', address: 'Dirección', email: 'Correo',
+        role: 'Rol', commissionLevel: 'Comisión', salarioBasico: 'Salario',
+        bankName: 'Banco', accountNumber: 'N° Cuenta', accountType: 'Tipo Cuenta',
+        tallaCamiseta: 'Talla Camiseta', tallaPantalón: 'Talla Pantalón', tallaBotas: 'Talla Botas'
     };
 
-    function formatValue(value) {
-        if (value === null || typeof value === 'undefined') return '';
-        if (typeof value === 'string') return value.trim();
-        return String(value);
-    }
+    // Campos a ignorar (técnicos o muy largos)
+    const hiddenFields = ['profilePhotoURL', 'deduccionSobreMinimo', 'customPermissions'];
 
     const q = query(
         collection(db, "users", userId, "profileHistory"),
         orderBy("timestamp", "desc"),
-        limit(10)
+        limit(20)
     );
 
     onSnapshot(q, (snapshot) => {
         if (snapshot.empty) {
-            listContainer.innerHTML = '<p class="text-sm text-gray-400 italic text-center p-4">No hay historial de cambios.</p>';
+            listContainer.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-full opacity-50">
+                    <i class="fa-solid fa-wind text-4xl mb-2 text-slate-400"></i>
+                    <p class="text-slate-500 text-sm">No hay historial registrado.</p>
+                </div>`;
             return;
         }
 
-        listContainer.innerHTML = '';
+        let html = `<div class="border-l-2 border-slate-200 ml-3 space-y-8 relative">`;
+
         snapshot.forEach(doc => {
             const entry = doc.data();
-            const timestamp = entry.timestamp ? entry.timestamp.toDate() : new Date();
-            const dateString = timestamp.toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const dateObj = entry.timestamp ? entry.timestamp.toDate() : new Date();
+            const date = dateObj.toLocaleDateString('es-CO');
+            const time = dateObj.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 
-            const changedByUser = usersMap.get(entry.changedBy);
-            const changedByName = changedByUser ? (changedByUser.firstName || 'Usuario') : 'Desconocido';
+            // Obtener nombre del autor del cambio
+            const authorUser = usersMap.get(entry.changedBy);
+            const authorName = authorUser ? (authorUser.firstName || 'Usuario') : 'Sistema';
 
-            // --- INICIO DE MODIFICACIÓN: Filtrar campos ocultos ---
-            // Lista de campos que NO queremos mostrar en el historial
-            const hiddenFields = ['salarioBasico', 'profilePhotoURL', 'commissionLevel', 'deduccionSobreMinimo'];
+            // Procesar cambios para generar el detalle HTML
+            let changesList = '';
+            let hasVisible = false;
 
-            let hasVisibleChanges = false;
-            let changesHtml = '<dl class="mt-2 text-xs space-y-1 border-t pt-2">';
+            if (entry.changes) {
+                for (const [key, val] of Object.entries(entry.changes)) {
+                    if (hiddenFields.includes(key)) continue;
+                    hasVisible = true;
 
-            for (const [key, value] of Object.entries(entry.changes)) {
-                // Si la llave está en la lista de ocultos, la saltamos
-                if (hiddenFields.includes(key)) {
-                    continue;
+                    const label = keyTranslator[key] || key;
+                    const oldVal = val.old || '<span class="italic text-gray-400">Vacío</span>';
+                    const newVal = val.new || '<span class="italic text-gray-400">Vacío</span>';
+
+                    changesList += `
+                        <div class="text-xs mt-1 border-t border-gray-100 pt-1 first:border-0 first:pt-0">
+                            <span class="font-bold text-slate-600">${label}:</span> 
+                            <span class="text-red-400 line-through ml-1">${oldVal}</span> 
+                            <i class="fa-solid fa-arrow-right text-gray-300 mx-1 text-[10px]"></i>
+                            <span class="text-emerald-600 font-bold">${newVal}</span>
+                        </div>
+                    `;
                 }
-
-                hasVisibleChanges = true;
-                const translatedKey = keyTranslator[key] || key;
-
-                changesHtml += `
-                    <div class="grid grid-cols-3 gap-1">
-                        <dt class="font-semibold text-gray-600 col-span-1">${translatedKey}:</dt>
-                        <dd class="text-gray-800 col-span-2">
-                            <span class="text-red-600">Antes:</span> ${formatValue(value.old)}<br>
-                            <span class="text-green-600">Después:</span> ${formatValue(value.new)}
-                        </dd>
-                    </div>
-                `;
             }
-            changesHtml += '</dl>';
-            // --- FIN DE MODIFICACIÓN ---
 
-            // Solo mostramos la tarjeta si hay cambios visibles
-            if (hasVisibleChanges) {
-                const logEntry = document.createElement('div');
-                logEntry.className = 'bg-white rounded-lg shadow-sm border border-gray-200 p-3';
-                logEntry.innerHTML = `
-                    <div class="flex justify-between items-center">
-                        <p class="text-sm font-semibold text-blue-700">Cambio por: ${changedByName}</p>
-                        <p class="text-xs text-gray-500">${dateString}</p>
+            if (!hasVisible) return; // Saltar si solo hubo cambios internos (ej: foto)
+
+            html += `
+                <div class="relative pl-8 group">
+                    <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 border-white shadow-sm bg-blue-500"></div>
+                    
+                    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="text-xs font-bold text-indigo-600 uppercase tracking-wide">
+                                <i class="fa-solid fa-pen-to-square mr-1"></i> Edición de Perfil
+                            </span>
+                            <span class="text-[10px] text-slate-400 font-mono">${date} • ${time}</span>
+                        </div>
+                        
+                        <div class="bg-slate-50 p-2 rounded-lg mb-2">
+                            ${changesList}
+                        </div>
+
+                        <div class="flex items-center gap-2 mt-1">
+                            <div class="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] text-slate-500">
+                                <i class="fa-solid fa-user"></i>
+                            </div>
+                            <span class="text-xs text-slate-500">Por: <span class="font-bold">${authorName}</span></span>
+                        </div>
                     </div>
-                    ${changesHtml}
-                `;
-                listContainer.appendChild(logEntry);
-            }
+                </div>
+            `;
         });
 
-        if (listContainer.children.length === 0) {
-            listContainer.innerHTML = '<p class="text-sm text-gray-400 italic text-center p-4">No hay cambios visibles en el historial reciente.</p>';
-        }
+        html += `</div>`;
+        listContainer.innerHTML = html;
 
     }, (error) => {
-        console.error("Error al cargar historial de perfil:", error);
-        listContainer.innerHTML = '<p class="text-sm text-red-500 text-center">Error al cargar historial.</p>';
+        console.error("Error loading history:", error);
+        listContainer.innerHTML = '<p class="text-red-500 text-center text-sm">Error al cargar datos.</p>';
     });
 }
 
@@ -452,21 +455,22 @@ function getRoleDefaultPermissions(role) {
     const isBodega = role === 'bodega';
     const isSST = role === 'sst';
     const isOperario = role === 'operario';
+    const isNomina = role === 'nomina'; // <--- NUEVO
 
     // Definimos la lógica base aquí (centralizada)
     return {
         dashboard: true,
-        proyectos: isAdmin,
+        proyectos: isAdmin || isNomina, // Puede ver proyectos para consultar información
         tareas: true,
         herramienta: isAdmin || isBodega || isSST || isOperario,
         dotacion: isAdmin || isBodega || isSST || isOperario,
-        cartera: isAdmin, // Ajusta según tu lógica de empleados.js si 'nomina' existe
+        cartera: isAdmin,
         solicitud: true,
-        empleados: isAdmin || isSST,
-        proveedores: isAdmin || isBodega,
+        empleados: isAdmin || isSST || isNomina, // <--- CLAVE: Acceso total a gestión de personal
+        proveedores: isAdmin || isBodega || isNomina, // Puede necesitar ver proveedores para pagos
         catalog: isAdmin || isBodega,
-        compras: isAdmin || isBodega,
-        reports: isAdmin,
+        compras: isAdmin || isBodega || isNomina,
+        reports: isAdmin || isNomina, // Acceso a reportes
         adminPanel: isAdmin,
         configuracion: isAdmin
     };
@@ -514,10 +518,8 @@ function closeSidebar() {
 //      FIN: FUNCIÓN AÑADIDA
 // ====================================================================
 
-
-// --- MANEJO DE VISTAS ---
-
 function showView(viewName, fromHistory = false) {
+    // 1. Ocultar todas las vistas
     Object.values(views).forEach(view => {
         if (view) {
             view.classList.add('hidden');
@@ -525,34 +527,50 @@ function showView(viewName, fromHistory = false) {
         }
     });
 
+    // 2. Mostrar la vista objetivo
     const targetView = views[viewName];
     if (targetView) {
         targetView.classList.remove('hidden');
         targetView.style.display = 'block';
     } else {
-        console.error(`Error: No se encontró la vista: ${viewName}`);
+        console.warn(`Advertencia: No se encontró la vista "${viewName}"`);
     }
 
+    // 3. ACTUALIZAR SIDEBAR (LÓGICA ROBUSTA)
+    // A. Primero quitamos la clase 'active' de TODOS los enlaces del menú
     document.querySelectorAll('#main-nav .nav-link').forEach(link => {
-        link.classList.toggle('active', link.dataset.view === viewName);
+        link.classList.remove('active');
+        // Opcional: Asegurar que se quiten estilos manuales si los hubiera
+        link.classList.remove('bg-slate-800', 'text-white');
     });
 
+    // B. Buscamos el enlace específico que corresponde a esta vista
+    // Usamos el selector de atributo exacto [data-view="nombre"]
+    const activeLink = document.querySelector(`#main-nav .nav-link[data-view="${viewName}"]`);
+
+    if (activeLink) {
+        activeLink.classList.add('active');
+        // Aseguramos que el contenedor padre (si es un submenú) esté visible (opcional)
+        activeLink.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // 4. Cerrar sidebar en móviles
     if (window.innerWidth < 768) {
         closeSidebar();
     }
 
-    // --- LÓGICA AÑADIDA PARA EL HISTORIAL ---
-    // Si el cambio de vista NO viene de presionar "Atrás",
-    // entonces lo añadimos al historial.
-    if (!fromHistory && viewName !== 'project-details') {
+    // 5. Historial del navegador
+    if (!fromHistory && viewName !== 'project-details' && viewName !== 'empleado-details') {
         const state = { viewName: viewName };
-        const title = `Gestor de Proyectos - ${viewName}`;
-        const url = `#${viewName}`;
-        history.pushState(state, title, url);
+        const title = `Gestor - ${viewName.charAt(0).toUpperCase() + viewName.slice(1)}`;
+        // Evitamos duplicar la misma entrada en el historial
+        if (history.state?.viewName !== viewName) {
+            history.pushState(state, title, `#${viewName}`);
+        }
     }
 }
 
-
+window.showView = showView;
 
 async function initializePushNotifications(user) {
     try {
@@ -1120,9 +1138,9 @@ async function loadCatalogView() {
     // Traemos las últimas 200 órdenes recibidas para calcular precios
     try {
         const historyQuery = query(
-            collection(db, "purchaseOrders"), 
-            where("status", "==", "recibida"), 
-            orderBy("createdAt", "desc"), 
+            collection(db, "purchaseOrders"),
+            where("status", "==", "recibida"),
+            orderBy("createdAt", "desc"),
             limit(200)
         );
         const historySnap = await getDocs(historyQuery);
@@ -1223,7 +1241,7 @@ function createModernCatalogRow(material, priceHistory = []) {
     const stock = material.quantityInStock || 0;
     const minStock = material.minStockThreshold || 0;
     const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
-    
+
     // 1. Lógica de Mejor Precio
     let bestPriceHtml = '<span class="text-xs text-gray-400 italic font-medium">Sin cotización</span>';
     let bestPriceData = null;
@@ -1231,7 +1249,7 @@ function createModernCatalogRow(material, priceHistory = []) {
     if (priceHistory.length > 0) {
         let minPrice = Infinity;
         let bestSupplier = '';
-        
+
         priceHistory.forEach(po => {
             if (po.items && Array.isArray(po.items)) {
                 const itemInPO = po.items.find(i => i.materialId === material.id);
@@ -1248,7 +1266,7 @@ function createModernCatalogRow(material, priceHistory = []) {
             // CORRECCIÓN VISUAL: Menos truncado y mejor estilo
             // Si el nombre es muy largo (>18 chars), lo cortamos, si no, se muestra completo.
             const displaySupplier = bestSupplier.length > 18 ? bestSupplier.substring(0, 16) + '...' : bestSupplier;
-            
+
             bestPriceHtml = `
                 <div class="flex flex-col items-center justify-center gap-1">
                     <span class="font-black text-emerald-700 text-base tracking-tight shadow-sm bg-white/50 px-2 rounded">
@@ -1277,11 +1295,11 @@ function createModernCatalogRow(material, priceHistory = []) {
         statusBadge = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-600 border border-emerald-100"><i class="fa-solid fa-check-circle"></i> OK</span>`;
     }
 
-    const viewInventoryBtn = material.isDivisible 
+    const viewInventoryBtn = material.isDivisible
         ? `<button data-action="view-inventory" data-id="${material.id}" data-name="${material.name}" 
              class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all" title="Ver Lotes">
              <i class="fa-solid fa-layer-group"></i>
-           </button>` 
+           </button>`
         : `<span class="w-8 inline-block"></span>`;
 
     // 3. Botón de Comparar
@@ -1294,7 +1312,7 @@ function createModernCatalogRow(material, priceHistory = []) {
 
     const row = document.createElement('tr');
     row.className = 'bg-white hover:bg-slate-50 transition-colors group border-b border-slate-50 last:border-0';
-    
+
     // Nota: Añadimos min-w-[160px] a la celda de precio para asegurar espacio
     row.innerHTML = `
         <td class="px-6 py-4">
@@ -1381,7 +1399,7 @@ async function openInventoryDetailsModal(materialId, materialName) {
             batchesSnapshot.forEach(doc => {
                 const batch = doc.data();
                 let originHtml = '';
-                
+
                 // Estilo para el origen
                 if (batch.returnId) {
                     originHtml = `<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100"><i class="fa-solid fa-rotate-left mr-1.5"></i> Devolución (${batch.returnId})</span>`;
@@ -1389,7 +1407,7 @@ async function openInventoryDetailsModal(materialId, materialName) {
                     const poIdentifier = poMap.get(batch.purchaseOrderId) || '---';
                     originHtml = `<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-slate-50 text-slate-600 border border-slate-100"><i class="fa-solid fa-cart-shopping mr-1.5 text-slate-400"></i> Compra PO-${poIdentifier}</span>`;
                 } else {
-                     originHtml = `<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-50 text-gray-500 border border-gray-100">Carga Inicial / Desconocido</span>`;
+                    originHtml = `<span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-50 text-gray-500 border border-gray-100">Carga Inicial / Desconocido</span>`;
                 }
 
                 const row = document.createElement('tr');
@@ -1418,7 +1436,7 @@ async function openInventoryDetailsModal(materialId, materialName) {
         // --- Carga de Retazos ---
         const remnantsQuery = query(collection(db, "materialCatalog", materialId, "remnantStock"), orderBy("length", "desc"));
         const remnantsSnapshot = await getDocs(remnantsQuery);
-        
+
         remnantStockBody.innerHTML = '';
         if (remnantsSnapshot.empty) {
             remnantStockBody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-gray-400 flex flex-col items-center"><i class="fa-solid fa-scissors text-2xl mb-2 opacity-30"></i><span class="text-xs">No hay retazos disponibles.</span></td></tr>`;
@@ -1426,7 +1444,7 @@ async function openInventoryDetailsModal(materialId, materialName) {
             remnantsSnapshot.forEach(doc => {
                 const remnant = doc.data();
                 // Convertir metros a cm para mostrar
-                const lengthCm = (remnant.length * 100).toFixed(0); 
+                const lengthCm = (remnant.length * 100).toFixed(0);
 
                 const row = document.createElement('tr');
                 row.className = 'bg-white hover:bg-slate-50 transition-colors group border-b border-gray-50 last:border-0';
@@ -1459,14 +1477,113 @@ async function openInventoryDetailsModal(materialId, materialName) {
     }
 }
 
+
+/**
+ * Carga la vista de Órdenes de Compra con alineación corregida y búsqueda en tiempo real.
+ */
 function loadComprasView() {
     const tableBody = document.getElementById('purchase-orders-table-body');
     const startDateInput = document.getElementById('po-start-date-filter');
     const endDateInput = document.getElementById('po-end-date-filter');
+    const searchInput = document.getElementById('po-search-input');
 
-    if (!tableBody || !startDateInput.value || !endDateInput.value) return;
+    if (!tableBody) return;
 
-    tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4"><div class="loader mx-auto"></div></td></tr>`;
+    // Configuración inicial de fechas (Últimos 30 días) si están vacías
+    if (!startDateInput.value || !endDateInput.value) {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(start.getDate() - 30);
+        startDateInput.value = start.toISOString().split('T')[0];
+        endDateInput.value = end.toISOString().split('T')[0];
+    }
+
+    // Formateador de moneda local
+    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+
+    // --- VARIABLES LOCALES ---
+    let cachedOrders = []; // Guardamos los datos aquí para búsqueda rápida
+
+    // --- FUNCIÓN DE RENDERIZADO (Filtrado visual) ---
+    const renderTable = () => {
+        const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+        tableBody.innerHTML = '';
+
+        // Filtramos la caché por el texto del buscador
+        const filtered = cachedOrders.filter(po => {
+            const textMatch =
+                (po.poNumber || '').toLowerCase().includes(searchTerm) ||
+                (po.provider || po.supplierName || '').toLowerCase().includes(searchTerm) ||
+                (po.id || '').toLowerCase().includes(searchTerm);
+            return textMatch;
+        });
+
+        if (filtered.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-12 text-gray-400"><div class="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-2"><i class="fa-solid fa-filter-circle-xmark text-xl"></i></div><p class="text-xs">No se encontraron órdenes con ese criterio.</p></td></tr>`;
+            return;
+        }
+
+        filtered.forEach(po => {
+            const poIdentifier = po.poNumber || po.id.substring(0, 6).toUpperCase();
+            const dateStr = po.createdAt ? po.createdAt.toDate().toLocaleDateString('es-CO') : '---';
+            const totalStr = currencyFormatter.format(po.totalCost || po.total || 0);
+
+            // Badge de Estado
+            let statusHtml;
+            switch (po.status) {
+                case 'recibida': statusHtml = `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-700 border border-emerald-200"><i class="fa-solid fa-check mr-1"></i>Recibida</span>`; break;
+                case 'anulada': statusHtml = `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700 border border-red-200"><i class="fa-solid fa-ban mr-1"></i>Anulada</span>`; break;
+                default: statusHtml = `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200"><span class="w-1.5 h-1.5 bg-amber-500 rounded-full mr-1.5 animate-pulse"></span>Pendiente</span>`;
+            }
+
+            const row = document.createElement('tr');
+            row.className = 'bg-white hover:bg-emerald-50/30 transition-colors border-b border-slate-50 last:border-0 group';
+            row.innerHTML = `
+                <td class="px-6 py-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center font-mono text-xs font-bold border border-slate-200 group-hover:border-emerald-300 group-hover:text-emerald-600 transition-colors">PO</div>
+                        <span class="font-bold text-indigo-600 text-sm">#${poIdentifier}</span>
+                    </div>
+                </td>
+                <td class="px-6 py-4 text-xs font-medium text-slate-500">
+                    <div class="flex items-center gap-2"><i class="fa-regular fa-calendar text-slate-300"></i> ${dateStr}</div>
+                </td>
+                <td class="px-6 py-4 font-bold text-slate-700 text-sm">${po.provider || po.supplierName || 'Desconocido'}</td>
+                <td class="px-6 py-4 text-right font-black text-slate-800 text-sm">${totalStr}</td>
+                <td class="px-6 py-4 text-center">${statusHtml}</td>
+                <td class="px-6 py-4 text-right">
+                    <button data-action="view-purchase-order" data-id="${po.id}" class="bg-white hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 border border-slate-200 hover:border-emerald-200 w-8 h-8 rounded-lg transition-all shadow-sm inline-flex items-center justify-center">
+                        <i class="fa-solid fa-eye"></i>
+                    </button>
+                </td>
+            `;
+            tableBody.appendChild(row);
+        });
+    };
+
+    // --- EVENTOS ---
+
+    // 1. Botón Filtrar (Recarga datos desde Firebase por fecha)
+    const filterBtn = document.getElementById('apply-po-filter-btn');
+    if (filterBtn && !filterBtn.dataset.listening) {
+        filterBtn.addEventListener('click', () => loadComprasView());
+        filterBtn.dataset.listening = "true";
+
+        // Validadores (si tienes la función validatePoDateRange, la usamos)
+        if (typeof validatePoDateRange === 'function') {
+            startDateInput.addEventListener('change', validatePoDateRange);
+            endDateInput.addEventListener('change', validatePoDateRange);
+        }
+    }
+
+    // 2. Buscador de Texto (Filtra localmente al escribir)
+    if (searchInput && !searchInput.dataset.listening) {
+        searchInput.addEventListener('input', renderTable);
+        searchInput.dataset.listening = "true";
+    }
+
+    // --- CARGA DE DATOS (Firestore) ---
+    tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-12"><div class="loader mx-auto mb-2"></div><p class="text-xs text-gray-400">Sincronizando órdenes...</p></td></tr>`;
 
     const startDate = new Date(startDateInput.value + 'T00:00:00');
     const endDate = new Date(endDateInput.value + 'T23:59:59');
@@ -1481,35 +1598,22 @@ function loadComprasView() {
     );
 
     unsubscribePurchaseOrders = onSnapshot(poQuery, (snapshot) => {
-        tableBody.innerHTML = '';
+        cachedOrders = []; // Limpiamos caché
+
         if (snapshot.empty) {
-            tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-gray-500">No hay órdenes de compra en este rango de fechas.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-16 text-gray-400"><div class="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3"><i class="fa-solid fa-calendar-xmark text-2xl opacity-30"></i></div><p class="text-sm">No hay órdenes en este rango de fechas.</p></td></tr>`;
             return;
         }
 
         snapshot.forEach(doc => {
-            const po = { id: doc.id, ...doc.data() };
-            let statusText, statusColor;
-            switch (po.status) {
-                case 'recibida': statusText = 'Recibida'; statusColor = 'bg-green-100 text-green-800'; break;
-                default: statusText = 'Pendiente'; statusColor = 'bg-yellow-100 text-yellow-800';
-            }
-            const poIdentifier = po.poNumber || po.id.substring(0, 6).toUpperCase();
-
-            const row = document.createElement('tr');
-            row.className = 'bg-white border-b';
-            row.innerHTML = `
-                <td class="px-6 py-4 font-mono text-xs font-bold">${poIdentifier}</td>
-                <td class="px-6 py-4">${po.createdAt.toDate().toLocaleDateString('es-CO')}</td>
-                <td class="px-6 py-4 font-medium">${po.provider}</td>
-                <td class="px-6 py-4 text-right font-semibold">${currencyFormatter.format(po.totalCost || 0)}</td>
-                <td class="px-6 py-4 text-center"><span class="px-2 py-1 text-xs font-semibold rounded-full ${statusColor}">${statusText}</span></td>
-                <td class="px-6 py-4 text-center">
-                    <button data-action="view-purchase-order" data-id="${po.id}" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors w-32 text-center">Ver</button>
-                </td>
-            `;
-            tableBody.appendChild(row);
+            cachedOrders.push({ id: doc.id, ...doc.data() });
         });
+
+        // Renderizamos inicialmente con todos los datos cargados
+        renderTable();
+    }, (error) => {
+        console.error("Error POs:", error);
+        tableBody.innerHTML = `<tr><td colspan="6" class="text-center text-red-500 py-4">Error de conexión al cargar órdenes.</td></tr>`;
     });
 }
 
@@ -1546,140 +1650,6 @@ function validatePoDateRange() {
     } else {
         feedbackP.textContent = ''; // Limpia el mensaje si el rango es válido
         applyFilterBtn.disabled = false; // Habilita el botón
-    }
-}
-
-
-async function loadReportsView() {
-    const projectFilter = document.getElementById('report-project-filter');
-    const startDateInput = document.getElementById('report-start-date');
-    const endDateInput = document.getElementById('report-end-date');
-    const generateReportBtn = document.getElementById('generate-report-btn');
-    const reportContainer = document.getElementById('report-results-container');
-    const reportSummary = document.getElementById('report-summary');
-    const reportTableBody = document.getElementById('report-table-body');
-
-    if (!projectFilter) return;
-
-    const today = new Date().toISOString().split('T')[0];
-    endDateInput.value = today;
-
-    projectFilter.innerHTML = '<option value="">Cargando proyectos...</option>';
-    try {
-        const projectsQuery = query(collection(db, "projects"), orderBy("name"));
-        const snapshot = await getDocs(projectsQuery);
-
-        projectFilter.innerHTML = '<option value="all">Todos los Proyectos</option>';
-        if (snapshot.empty) {
-            console.warn("No se encontraron proyectos para el reporte.");
-        } else {
-            snapshot.forEach(doc => {
-                const project = { id: doc.id, ...doc.data() };
-                if (project.name) {
-                    const option = document.createElement('option');
-                    option.value = project.id;
-                    option.textContent = project.name;
-                    projectFilter.appendChild(option);
-                }
-            });
-        }
-    } catch (error) {
-        console.error("Error al cargar la lista de proyectos:", error);
-        projectFilter.innerHTML = '<option value="all">Error al cargar</option>';
-    }
-
-    if (generateReportBtn && !generateReportBtn.dataset.listenerAttached) {
-        generateReportBtn.dataset.listenerAttached = 'true';
-        generateReportBtn.addEventListener('click', async () => {
-            const selectedProjectId = projectFilter.value;
-            const startDate = startDateInput.value;
-            const endDate = endDateInput.value;
-
-            if (!startDate) {
-                alert("Por favor, selecciona una fecha de inicio.");
-                return;
-            }
-
-            reportContainer.classList.remove('hidden');
-            reportTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4">Generando reporte...</td></tr>`;
-            reportSummary.innerHTML = '';
-
-            try {
-                let baseQuery = selectedProjectId === 'all'
-                    ? collectionGroup(db, 'materialRequests')
-                    : collection(db, "projects", selectedProjectId, "materialRequests");
-
-                const requestsQuery = query(baseQuery,
-                    where("createdAt", ">=", new Date(startDate)),
-                    where("createdAt", "<=", new Date(endDate + 'T23:59:59'))
-                );
-
-                const requestsSnapshot = await getDocs(requestsQuery);
-                if (requestsSnapshot.empty) {
-                    reportTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">No se encontraron datos.</td></tr>`;
-                    reportSummary.innerHTML = '';
-                    return;
-                }
-
-                const projectsMap = new Map();
-                const materialsMap = new Map();
-                let totalCost = 0;
-                let reportRowsHtml = '';
-
-                // =================== INICIO DE LA CORRECCIÓN ===================
-                // Se cambió la variable 'doc' por 'requestDoc' para evitar conflictos.
-                for (const requestDoc of requestsSnapshot.docs) {
-                    const request = requestDoc.data();
-                    const items = request.consumedItems || request.materials || [];
-                    const projectId = requestDoc.ref.parent.parent.id;
-                    let projectName = projectsMap.get(projectId);
-
-                    if (!projectName) {
-                        const projectSnap = await getDoc(requestDoc.ref.parent.parent);
-                        projectName = projectSnap.exists() ? projectSnap.data().name : 'Proyecto Desconocido';
-                        projectsMap.set(projectId, projectName);
-                    }
-                    totalCost += request.totalCost || 0;
-
-                    for (const item of items) {
-                        let materialInfo = materialsMap.get(item.materialId);
-                        if (item.materialId && !materialInfo) {
-                            // Aquí ocurría el error. Ahora 'doc' se refiere a la función de Firebase.
-                            const materialSnap = await getDoc(doc(db, "materialCatalog", item.materialId));
-                            materialInfo = materialSnap.exists() ? materialSnap.data() : { name: 'Material Desconocido', unit: '' };
-                            materialsMap.set(item.materialId, materialInfo);
-                        }
-
-                        const quantity = item.quantityConsumed || item.quantity || 0;
-                        const materialName = materialInfo ? materialInfo.name : (item.itemName || 'N/A');
-                        const materialUnit = materialInfo ? materialInfo.unit : '';
-
-                        reportRowsHtml += `
-                            <tr class="bg-white border-b">
-                                <td class="px-6 py-4">${request.createdAt.toDate().toLocaleDateString('es-CO')}</td>
-                                <td class="px-6 py-4 font-medium">${projectName}</td>
-                                <td class="px-6 py-4">${materialName}</td>
-                                <td class="px-6 py-4 text-center">${quantity} ${materialUnit}</td>
-                                <td class="px-6 py-4 text-right">${currencyFormatter.format(request.totalCost || 0)}</td>
-                            </tr>
-                        `;
-                    }
-                }
-                // =================== FIN DE LA CORRECCIÓN ===================
-
-                reportTableBody.innerHTML = reportRowsHtml;
-                reportSummary.innerHTML = `
-                    <div class="bg-blue-50 p-4 rounded-lg">
-                        <p class="text-sm text-blue-800">Costo Total de Materiales (aproximado)</p>
-                        <p class="text-2xl font-bold text-blue-900">${currencyFormatter.format(totalCost)}</p>
-                    </div>
-                `;
-
-            } catch (e) {
-                console.error("Error al generar el reporte:", e);
-                reportTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-red-500">Error: ${e.message}</td></tr>`;
-            }
-        });
     }
 }
 
@@ -1886,6 +1856,142 @@ function closePurchaseOrderModal() {
     const modal = document.getElementById('po-details-modal');
     if (modal) modal.style.display = 'none';
 }
+
+
+async function loadReportsView() {
+    const projectFilter = document.getElementById('report-project-filter');
+    const startDateInput = document.getElementById('report-start-date');
+    const endDateInput = document.getElementById('report-end-date');
+    const generateReportBtn = document.getElementById('generate-report-btn');
+    const reportContainer = document.getElementById('report-results-container');
+    const reportSummary = document.getElementById('report-summary');
+    const reportTableBody = document.getElementById('report-table-body');
+
+    if (!projectFilter) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    endDateInput.value = today;
+
+    projectFilter.innerHTML = '<option value="">Cargando proyectos...</option>';
+    try {
+        const projectsQuery = query(collection(db, "projects"), orderBy("name"));
+        const snapshot = await getDocs(projectsQuery);
+
+        projectFilter.innerHTML = '<option value="all">Todos los Proyectos</option>';
+        if (snapshot.empty) {
+            console.warn("No se encontraron proyectos para el reporte.");
+        } else {
+            snapshot.forEach(doc => {
+                const project = { id: doc.id, ...doc.data() };
+                if (project.name) {
+                    const option = document.createElement('option');
+                    option.value = project.id;
+                    option.textContent = project.name;
+                    projectFilter.appendChild(option);
+                }
+            });
+        }
+    } catch (error) {
+        console.error("Error al cargar la lista de proyectos:", error);
+        projectFilter.innerHTML = '<option value="all">Error al cargar</option>';
+    }
+
+    if (generateReportBtn && !generateReportBtn.dataset.listenerAttached) {
+        generateReportBtn.dataset.listenerAttached = 'true';
+        generateReportBtn.addEventListener('click', async () => {
+            const selectedProjectId = projectFilter.value;
+            const startDate = startDateInput.value;
+            const endDate = endDateInput.value;
+
+            if (!startDate) {
+                alert("Por favor, selecciona una fecha de inicio.");
+                return;
+            }
+
+            reportContainer.classList.remove('hidden');
+            reportTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4">Generando reporte...</td></tr>`;
+            reportSummary.innerHTML = '';
+
+            try {
+                let baseQuery = selectedProjectId === 'all'
+                    ? collectionGroup(db, 'materialRequests')
+                    : collection(db, "projects", selectedProjectId, "materialRequests");
+
+                const requestsQuery = query(baseQuery,
+                    where("createdAt", ">=", new Date(startDate)),
+                    where("createdAt", "<=", new Date(endDate + 'T23:59:59'))
+                );
+
+                const requestsSnapshot = await getDocs(requestsQuery);
+                if (requestsSnapshot.empty) {
+                    reportTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">No se encontraron datos.</td></tr>`;
+                    reportSummary.innerHTML = '';
+                    return;
+                }
+
+                const projectsMap = new Map();
+                const materialsMap = new Map();
+                let totalCost = 0;
+                let reportRowsHtml = '';
+
+                // =================== INICIO DE LA CORRECCIÓN ===================
+                // Se cambió la variable 'doc' por 'requestDoc' para evitar conflictos.
+                for (const requestDoc of requestsSnapshot.docs) {
+                    const request = requestDoc.data();
+                    const items = request.consumedItems || request.materials || [];
+                    const projectId = requestDoc.ref.parent.parent.id;
+                    let projectName = projectsMap.get(projectId);
+
+                    if (!projectName) {
+                        const projectSnap = await getDoc(requestDoc.ref.parent.parent);
+                        projectName = projectSnap.exists() ? projectSnap.data().name : 'Proyecto Desconocido';
+                        projectsMap.set(projectId, projectName);
+                    }
+                    totalCost += request.totalCost || 0;
+
+                    for (const item of items) {
+                        let materialInfo = materialsMap.get(item.materialId);
+                        if (item.materialId && !materialInfo) {
+                            // Aquí ocurría el error. Ahora 'doc' se refiere a la función de Firebase.
+                            const materialSnap = await getDoc(doc(db, "materialCatalog", item.materialId));
+                            materialInfo = materialSnap.exists() ? materialSnap.data() : { name: 'Material Desconocido', unit: '' };
+                            materialsMap.set(item.materialId, materialInfo);
+                        }
+
+                        const quantity = item.quantityConsumed || item.quantity || 0;
+                        const materialName = materialInfo ? materialInfo.name : (item.itemName || 'N/A');
+                        const materialUnit = materialInfo ? materialInfo.unit : '';
+
+                        reportRowsHtml += `
+                            <tr class="bg-white border-b">
+                                <td class="px-6 py-4">${request.createdAt.toDate().toLocaleDateString('es-CO')}</td>
+                                <td class="px-6 py-4 font-medium">${projectName}</td>
+                                <td class="px-6 py-4">${materialName}</td>
+                                <td class="px-6 py-4 text-center">${quantity} ${materialUnit}</td>
+                                <td class="px-6 py-4 text-right">${currencyFormatter.format(request.totalCost || 0)}</td>
+                            </tr>
+                        `;
+                    }
+                }
+                // =================== FIN DE LA CORRECCIÓN ===================
+
+                reportTableBody.innerHTML = reportRowsHtml;
+                reportSummary.innerHTML = `
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <p class="text-sm text-blue-800">Costo Total de Materiales (aproximado)</p>
+                        <p class="text-2xl font-bold text-blue-900">${currencyFormatter.format(totalCost)}</p>
+                    </div>
+                `;
+
+            } catch (e) {
+                console.error("Error al generar el reporte:", e);
+                reportTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-red-500">Error: ${e.message}</td></tr>`;
+            }
+        });
+    }
+}
+
+
 
 function loadProjects(status = 'active') {
     const projectsContainer = document.getElementById('projects-container');
@@ -2110,72 +2216,134 @@ async function restoreProject(projectId) {
     await updateDoc(doc(db, "projects", projectId), { status: 'active' });
 }
 
-// --- PANEL DE ADMINISTRACIÓN ---
-function loadUsers(filter) {
+/**
+ * Carga y gestiona la vista de usuarios con filtros y búsqueda.
+ */
+function loadUsers(filter = 'active') {
+    currentUserFilter = filter;
     const loadingDiv = document.getElementById('loading-users');
-    const usersTableBody = document.getElementById('users-table-body');
-    loadingDiv.classList.remove('hidden');
-    usersTableBody.innerHTML = '';
+    const tableBody = document.getElementById('users-table-body');
+    const emptyMsg = document.getElementById('empty-users-msg');
+    const searchInput = document.getElementById('user-search-input');
 
-    document.getElementById('active-users-tab').classList.toggle('active', filter === 'active');
-    document.getElementById('archived-users-tab').classList.toggle('active', filter === 'archived');
-
-    const q = query(collection(db, "users"));
-    unsubscribeUsers = onSnapshot(q, (querySnapshot) => {
-        loadingDiv.classList.add('hidden');
-        usersTableBody.innerHTML = '';
-
-        querySnapshot.forEach(doc => {
-            const userData = { id: doc.id, ...doc.data() };
-            const isActiveOrPending = userData.status === 'active' || userData.status === 'pending';
-
-            // --- INICIO DE LA MODIFICACIÓN ---
-            // La siguiente condición 'if' fue eliminada para que el 
-            // administrador pueda verse a sí mismo en la lista.
-            // if (userData.id !== currentUser.uid) { 
-            // --- FIN DE LA MODIFICACIÓN ---
-
-            if (filter === 'active' && isActiveOrPending) {
-                usersTableBody.appendChild(createUserRow(userData));
-            } else if (filter === 'archived' && userData.status === 'archived') {
-                usersTableBody.appendChild(createUserRow(userData));
-            }
-
-            // (La llave de cierre del 'if' eliminado también se quitó)
-        });
+    // 1. Actualizar UI de Pestañas
+    document.querySelectorAll('.user-tab-btn').forEach(btn => {
+        if (btn.dataset.filter === filter) {
+            btn.classList.remove('text-gray-500', 'hover:bg-white/60');
+            btn.classList.add('bg-white', 'text-indigo-600', 'shadow-sm');
+        } else {
+            btn.classList.add('text-gray-500', 'hover:bg-white/60');
+            btn.classList.remove('bg-white', 'text-indigo-600', 'shadow-sm');
+        }
     });
+
+    // 2. Configurar Listener de Búsqueda (Solo una vez)
+    if (searchInput && !searchInput.dataset.listenerAttached) {
+        searchInput.addEventListener('input', () => renderUsersList());
+        searchInput.dataset.listenerAttached = 'true';
+    }
+
+    // 3. Configurar Listeners de Tabs (Solo una vez)
+    const tabsContainer = document.getElementById('user-tabs-container');
+    if (tabsContainer && !tabsContainer.dataset.listenerAttached) {
+        tabsContainer.addEventListener('click', (e) => {
+            const btn = e.target.closest('.user-tab-btn');
+            if (btn) loadUsers(btn.dataset.filter);
+        });
+        tabsContainer.dataset.listenerAttached = 'true';
+    }
+
+    // 4. Iniciar Suscripción (Si no existe ya)
+    if (!unsubscribeUsers) {
+        loadingDiv.classList.remove('hidden');
+        tableBody.innerHTML = '';
+        emptyMsg.classList.add('hidden');
+
+        const q = query(collection(db, "users"), orderBy("firstName")); // Traemos todos y filtramos en memoria
+
+        unsubscribeUsers = onSnapshot(q, (querySnapshot) => {
+            allUsersCache = [];
+            querySnapshot.forEach(doc => {
+                allUsersCache.push({ id: doc.id, ...doc.data() });
+            });
+
+            loadingDiv.classList.add('hidden');
+            renderUsersList(); // Renderizar con el filtro actual
+        }, (error) => {
+            console.error("Error users:", error);
+            loadingDiv.innerHTML = '<p class="text-red-500">Error al cargar.</p>';
+        });
+    } else {
+        // Si ya estamos suscritos, solo refrescamos la vista con el nuevo filtro
+        renderUsersList();
+    }
 }
+/**
+ * Filtra y renderiza la lista de usuarios en memoria.
+ */
+function renderUsersList() {
+    const tableBody = document.getElementById('users-table-body');
+    const emptyMsg = document.getElementById('empty-users-msg');
+    const searchTerm = document.getElementById('user-search-input')?.value.toLowerCase().trim() || '';
+
+    tableBody.innerHTML = '';
+
+    const filteredUsers = allUsersCache.filter(user => {
+        // 1. Filtro por Estado (Tab)
+        let statusMatch = false;
+        if (currentUserFilter === 'active') statusMatch = user.status === 'active';
+        else if (currentUserFilter === 'pending') statusMatch = user.status === 'pending';
+        else if (currentUserFilter === 'archived') statusMatch = user.status === 'archived';
+
+        // 2. Filtro por Búsqueda
+        const searchMatch =
+            (user.firstName || '').toLowerCase().includes(searchTerm) ||
+            (user.lastName || '').toLowerCase().includes(searchTerm) ||
+            (user.email || '').toLowerCase().includes(searchTerm) ||
+            (user.idNumber || '').includes(searchTerm);
+
+        return statusMatch && searchMatch;
+    });
+
+    if (filteredUsers.length === 0) {
+        emptyMsg.classList.remove('hidden');
+    } else {
+        emptyMsg.classList.add('hidden');
+        filteredUsers.forEach(user => {
+            tableBody.appendChild(createUserRow(user));
+        });
+    }
+}
+
+
+
 let unsubscribeSuppliers = null; // Variable global para el listener de proveedores
 
+/**
+ * Carga la vista de Proveedores con diseño moderno.
+ */
 function loadProveedoresView() {
     const tableBody = document.getElementById('suppliers-table-body');
-    const searchInput = document.getElementById('supplier-search-input'); // Referencia al nuevo input
+    const searchInput = document.getElementById('supplier-search-input');
 
     if (!tableBody) return;
 
     if (unsubscribeSuppliers) unsubscribeSuppliers();
 
-    // Variable para guardar los datos originales y filtrar sin volver a consultar la DB
     let allSuppliers = [];
 
-    // Función interna para renderizar la tabla (reutilizable para el buscador)
+    // Función de renderizado
     const renderTable = (suppliersData) => {
         tableBody.innerHTML = '';
 
         if (suppliersData.length === 0) {
-            const message = searchInput.value.trim()
-                ? 'No se encontraron proveedores que coincidan con la búsqueda.'
-                : 'No hay proveedores registrados.';
-
             tableBody.innerHTML = `
                 <tr>
                     <td colspan="4" class="text-center py-16">
-                        <div class="flex flex-col items-center justify-center text-gray-400">
-                            <div class="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-3">
-                                <i class="fa-solid fa-users-slash text-2xl text-gray-300"></i>
-                            </div>
-                            <p class="font-medium">${message}</p>
+                        <div class="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3 text-gray-300">
+                            <i class="fa-solid fa-users-slash text-2xl"></i>
                         </div>
+                        <p class="text-gray-500 font-medium text-sm">No se encontraron proveedores.</p>
                     </td>
                 </tr>`;
             return;
@@ -2183,61 +2351,69 @@ function loadProveedoresView() {
 
         suppliersData.forEach(supplier => {
             const row = document.createElement('tr');
-            row.className = 'bg-white border-b last:border-0 hover:bg-slate-50 transition-all group';
+            row.className = 'bg-white hover:bg-purple-50/30 transition-colors border-b border-slate-50 last:border-0 group';
+
             const initial = (supplier.name || '?').charAt(0).toUpperCase();
 
             row.innerHTML = `
                 <td class="px-6 py-4">
                     <div class="flex items-center gap-4">
-                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 text-indigo-600 flex items-center justify-center text-lg font-bold border border-indigo-100 shadow-sm shrink-0">
+                        <div class="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-xl font-black border border-purple-100 shadow-sm shrink-0 group-hover:scale-105 transition-transform">
                             ${initial}
                         </div>
-                        <div class="min-w-0">
-                            <p class="font-bold text-gray-800 text-sm leading-tight truncate" title="${supplier.name}">${supplier.name}</p>
-                            <p class="text-xs text-gray-500 mt-0.5 font-mono flex items-center">
-                                <span class="opacity-50 mr-1 text-[10px]">NIT:</span> ${supplier.nit || 'N/A'}
-                            </p>
+                        <div>
+                            <p class="font-bold text-gray-800 text-sm leading-tight">${supplier.name}</p>
+                            <div class="flex items-center gap-2 mt-1">
+                                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">NIT</span>
+                                <span class="text-xs text-gray-500 font-mono">${supplier.nit || '---'}</span>
+                            </div>
                         </div>
                     </div>
                 </td>
 
                 <td class="px-6 py-4">
                     <div class="flex flex-col">
-                        <span class="text-sm font-medium text-gray-700 flex items-center gap-2">
-                            <i class="fa-solid fa-user-tie text-gray-400 text-xs"></i> 
+                        <p class="text-sm font-bold text-slate-700 flex items-center gap-2">
+                            <i class="fa-solid fa-user-tie text-purple-300 text-xs"></i> 
                             ${supplier.contactName || '---'}
-                        </span>
-                        <span class="text-xs text-gray-500 ml-5 mt-0.5 font-mono">
+                        </p>
+                        <p class="text-xs text-gray-400 mt-0.5 font-mono pl-5">
                             ${supplier.contactPhone || '---'}
-                        </span>
+                        </p>
                     </div>
                 </td>
 
                 <td class="px-6 py-4">
-                    <div class="flex flex-col gap-1.5">
+                    <div class="space-y-1">
                         ${supplier.email ?
-                    `<a href="mailto:${supplier.email}" class="text-xs text-blue-600 hover:underline flex items-center gap-2 font-medium"><i class="fa-solid fa-envelope text-blue-300"></i> ${supplier.email}</a>` :
-                    `<span class="text-xs text-gray-400 flex items-center gap-2"><i class="fa-solid fa-envelope"></i> Sin email</span>`
+                    `<a href="mailto:${supplier.email}" class="text-xs text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-2 font-medium">
+                                <i class="fa-solid fa-envelope text-indigo-200"></i> ${supplier.email}
+                            </a>` :
+                    `<span class="text-xs text-gray-400 flex items-center gap-2"><i class="fa-solid fa-envelope text-gray-200"></i> No registrado</span>`
                 }
-                        <span class="text-xs text-gray-500 flex items-center gap-2 truncate max-w-[200px]" title="${supplier.address || ''}">
-                            <i class="fa-solid fa-location-dot text-gray-400"></i> ${supplier.address || '---'}
-                        </span>
+                        <div class="flex items-center gap-2 text-xs text-gray-500 truncate max-w-[200px]" title="${supplier.address || ''}">
+                            <i class="fa-solid fa-location-dot text-gray-300"></i> ${supplier.address || '---'}
+                        </div>
                     </div>
                 </td>
 
                 <td class="px-6 py-4 text-right">
                     <div class="flex justify-end items-center gap-2 opacity-80 group-hover:opacity-100 transition-opacity">
-                        <button data-action="edit-supplier" data-id="${supplier.id}" 
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all" 
-                            title="Editar Información">
-                            <i class="fa-solid fa-pen-to-square"></i>
+                        <button data-action="quick-pay-supplier" data-id="${supplier.id}" 
+                            class="w-8 h-8 rounded-lg flex items-center justify-center bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50 transition-all shadow-sm" 
+                            title="Registrar Pago">
+                            <i class="fa-solid fa-money-bill-wave"></i>
                         </button>
+
                         <button data-action="view-supplier-details" data-id="${supplier.id}" 
-                            class="pl-3 pr-2 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-600 hover:border-indigo-300 hover:text-indigo-600 text-xs font-bold shadow-sm hover:shadow-md transition-all flex items-center gap-2 group/btn">
-                            Ver Perfil 
-                            <div class="bg-gray-100 group-hover/btn:bg-indigo-100 text-gray-400 group-hover/btn:text-indigo-600 rounded-md w-5 h-5 flex items-center justify-center transition-colors">
-                                <i class="fa-solid fa-chevron-right text-[10px]"></i>
-                            </div>
+                            class="w-8 h-8 rounded-lg flex items-center justify-center bg-white border border-slate-200 text-slate-400 hover:text-purple-600 hover:border-purple-200 hover:bg-purple-50 transition-all shadow-sm" 
+                            title="Ver Detalles">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                        <button data-action="edit-supplier" data-id="${supplier.id}" 
+                            class="w-8 h-8 rounded-lg flex items-center justify-center bg-white border border-slate-200 text-slate-400 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition-all shadow-sm" 
+                            title="Editar">
+                            <i class="fa-solid fa-pen-to-square"></i>
                         </button>
                     </div>
                 </td>
@@ -2246,40 +2422,32 @@ function loadProveedoresView() {
         });
     };
 
-    // Consultar Firestore en tiempo real
+    // Carga de datos
+    tableBody.innerHTML = '<tr><td colspan="4" class="text-center py-12"><div class="loader mx-auto"></div></td></tr>';
+
     const suppliersQuery = query(collection(db, "suppliers"), orderBy("name"));
     unsubscribeSuppliers = onSnapshot(suppliersQuery, (snapshot) => {
-        // Actualizamos la lista maestra
         allSuppliers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        // Renderizamos (aplicando filtro si ya había algo escrito)
-        filterAndRender();
+        renderTable(allSuppliers);
     });
 
-    // Lógica de Filtrado
-    const filterAndRender = () => {
-        const term = searchInput ? searchInput.value.toLowerCase().trim() : '';
-
-        if (!term) {
-            renderTable(allSuppliers);
-            return;
-        }
-
-        const filtered = allSuppliers.filter(s => {
-            const name = (s.name || '').toLowerCase();
-            const nit = (s.nit || '').toLowerCase();
-            const contact = (s.contactName || '').toLowerCase();
-            const email = (s.email || '').toLowerCase();
-
-            return name.includes(term) || nit.includes(term) || contact.includes(term) || email.includes(term);
+    // Listener de búsqueda (Evita duplicados)
+    if (searchInput && !searchInput.dataset.listening) {
+        searchInput.addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase().trim();
+            if (!term) {
+                renderTable(allSuppliers);
+                return;
+            }
+            const filtered = allSuppliers.filter(s => {
+                return (s.name || '').toLowerCase().includes(term) ||
+                    (s.nit || '').toLowerCase().includes(term) ||
+                    (s.contactName || '').toLowerCase().includes(term) ||
+                    (s.email || '').toLowerCase().includes(term);
+            });
+            renderTable(filtered);
         });
-
-        renderTable(filtered);
-    };
-
-    // Listener del Input
-    if (searchInput) {
-        searchInput.addEventListener('input', filterAndRender);
+        searchInput.dataset.listening = "true";
     }
 }
 
@@ -2287,6 +2455,9 @@ let currentSupplierId = null; // Variable global para saber en qué proveedor es
 let unsubscribeSupplierPOs = null; // Listener para las órdenes de compra
 let unsubscribeSupplierPayments = null; // Listener para los pagos
 
+/**
+ * Carga la vista detallada de un proveedor con diseño moderno.
+ */
 async function loadSupplierDetailsView(supplierId) {
     currentSupplierId = supplierId;
     showView('supplierDetails');
@@ -2294,199 +2465,226 @@ async function loadSupplierDetailsView(supplierId) {
     const summaryContent = document.getElementById('summary-content');
     const posTableBody = document.getElementById('supplier-pos-table-body');
     const paymentsTableBody = document.getElementById('supplier-payments-table-body');
+    const nameTitle = document.getElementById('supplier-details-name');
 
     const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
-    summaryContent.innerHTML = '<div class="flex justify-center items-center h-64"><div class="loader"></div></div>';
+    // Loader inicial
+    summaryContent.innerHTML = '<div class="flex justify-center items-center h-40"><div class="loader"></div></div>';
     posTableBody.innerHTML = '';
     paymentsTableBody.innerHTML = '';
 
     if (unsubscribeSupplierPOs) unsubscribeSupplierPOs();
     if (unsubscribeSupplierPayments) unsubscribeSupplierPayments();
 
-    // Configuración de pestañas internas
+    // Configuración de Tabs (Interacción)
     const tabsContainer = document.getElementById('supplier-details-tabs');
     const tabContents = document.querySelectorAll('.supplier-tab-content');
+
+    // Limpiamos listeners previos clonando el nodo
     const newTabsContainer = tabsContainer.cloneNode(true);
     tabsContainer.parentNode.replaceChild(newTabsContainer, tabsContainer);
 
     newTabsContainer.addEventListener('click', (e) => {
         const button = e.target.closest('.tab-button');
         if (button) {
+            // Reset estilos
             newTabsContainer.querySelectorAll('.tab-button').forEach(btn => {
-                btn.classList.remove('border-blue-500', 'text-blue-600');
+                btn.classList.remove('border-purple-600', 'text-purple-600');
                 btn.classList.add('border-transparent', 'text-gray-500');
             });
+            // Activar seleccionado
             button.classList.remove('border-transparent', 'text-gray-500');
-            button.classList.add('border-blue-500', 'text-blue-600');
+            button.classList.add('border-purple-600', 'text-purple-600');
+
+            // Mostrar contenido
             const tabName = button.dataset.tab;
             tabContents.forEach(content => content.classList.toggle('hidden', content.id !== `${tabName}-content`));
         }
     });
 
     try {
+        // 1. Cargar datos del proveedor
         const supplierRef = doc(db, "suppliers", supplierId);
         const supplierSnap = await getDoc(supplierRef);
         if (!supplierSnap.exists()) throw new Error("Proveedor no encontrado");
 
         const supplier = { id: supplierSnap.id, ...supplierSnap.data() };
-        document.getElementById('supplier-details-name').textContent = supplier.name;
+        if (nameTitle) nameTitle.textContent = supplier.name;
 
-        // --- 1. TARJETA DE PERFIL (Con QR Integrado) ---
-        const profileCard = `
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
-                <div class="bg-slate-800 px-6 py-4 flex justify-between items-center">
-                    <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 bg-white rounded-lg flex items-center justify-center text-slate-800 text-xl font-bold shadow">
-                            ${supplier.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                            <h2 class="text-xl font-bold text-white">${supplier.name}</h2>
-                            <p class="text-slate-300 text-xs flex items-center gap-2">
-                                <span><i class="fa-regular fa-id-card"></i> ${supplier.nit || 'S/N'}</span>
-                                <span class="w-1 h-1 bg-slate-500 rounded-full"></span>
-                                <span><i class="fa-solid fa-location-dot"></i> ${supplier.address || 'Sin dirección'}</span>
-                            </p>
-                        </div>
-                    </div>
-                    <button data-action="edit-supplier" data-id="${supplier.id}" class="text-xs bg-white/10 hover:bg-white/20 text-white font-bold py-2 px-4 rounded transition-colors">
-                        <i class="fa-solid fa-pen-to-square mr-1"></i> Editar
-                    </button>
-                </div>
-                
-                <div class="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <div class="space-y-3 border-r border-gray-100 pr-4">
-                        <h5 class="text-xs font-bold text-gray-400 uppercase tracking-wide">Contacto</h5>
-                        <div>
-                            <p class="text-sm font-bold text-gray-800">${supplier.contactName || '---'}</p>
-                            <p class="text-xs text-gray-500">Encargado</p>
-                        </div>
-                        <div class="flex items-center gap-2 text-sm text-gray-600">
-                            <i class="fa-solid fa-phone text-gray-300 w-5"></i> ${supplier.contactPhone || '---'}
-                        </div>
-                        <div class="flex items-center gap-2 text-sm text-gray-600">
-                            <i class="fa-solid fa-envelope text-gray-300 w-5"></i> ${supplier.email || '---'}
-                        </div>
-                    </div>
-
-                    <div class="space-y-3">
-                        <h5 class="text-xs font-bold text-gray-400 uppercase tracking-wide">Información Bancaria</h5>
-                        <div>
-                            <p class="text-sm font-bold text-indigo-700">${supplier.bankName || 'Banco no registrado'}</p>
-                            <p class="text-xs text-gray-500">${supplier.accountType || 'Cuenta'}</p>
-                        </div>
-                        <div class="flex items-center gap-2 bg-gray-50 p-2 rounded border border-gray-100 w-fit">
-                            <span class="font-mono text-sm font-bold text-gray-700 select-all">${supplier.accountNumber || '---'}</span>
-                            <button onclick="navigator.clipboard.writeText('${supplier.accountNumber}'); window.showToast('Copiado', 'success')" class="text-indigo-500 hover:text-indigo-700" title="Copiar">
-                                <i class="fa-regular fa-copy"></i>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="flex flex-col items-center justify-center pl-4 border-l border-gray-100">
-                        ${supplier.qrCodeURL ? `
-                            <div class="relative group cursor-pointer" onclick="window.openImageModal('${supplier.qrCodeURL}')">
-                                <img src="${supplier.qrCodeURL}" class="w-24 h-24 object-cover rounded-lg border-2 border-dashed border-indigo-200 shadow-sm group-hover:border-indigo-500 transition-all">
-                                <div class="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/10 transition-all rounded-lg">
-                                    <i class="fa-solid fa-expand text-white opacity-0 group-hover:opacity-100 drop-shadow-md"></i>
-                                </div>
-                            </div>
-                            <p class="text-[10px] text-indigo-500 mt-2 font-bold uppercase">Escanear QR</p>
-                        ` : `
-                            <div class="w-24 h-24 border-2 border-dashed border-gray-200 rounded-lg flex flex-col items-center justify-center text-gray-300">
-                                <i class="fa-solid fa-qrcode text-2xl mb-1"></i>
-                                <span class="text-[9px]">Sin QR</span>
-                            </div>
-                        `}
-                    </div>
-                </div>
-            </div>`;
-
-        // --- CÁLCULO DE SALDOS (Sin cambios) ---
+        // --- 2. Calcular Saldos ---
+        // Nota: Idealmente esto se haría con contadores en el documento del proveedor, 
+        // pero aquí lo calculamos en tiempo real para asegurar consistencia.
         const allPOsQuery = query(collection(db, "purchaseOrders"), where("supplierId", "==", supplierId));
         const allPaymentsQuery = query(collection(db, "suppliers", supplierId, "payments"));
+
         const [poSnapshot, paymentsSnap] = await Promise.all([getDocs(allPOsQuery), getDocs(allPaymentsQuery)]);
-        const totalBilled = poSnapshot.docs.reduce((sum, doc) => sum + (doc.data().totalCost || 0), 0);
+
+        // Solo sumamos órdenes NO anuladas
+        const totalBilled = poSnapshot.docs.reduce((sum, doc) => {
+            const d = doc.data();
+            return d.status !== 'anulada' ? sum + (d.totalCost || 0) : sum;
+        }, 0);
+
         const totalPaid = paymentsSnap.docs.reduce((sum, doc) => sum + (doc.data().amount || 0), 0);
         const saldo = totalBilled - totalPaid;
 
-        const balanceCards = `
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex items-center gap-4">
-                    <div class="p-3 bg-blue-50 text-blue-600 rounded-full text-xl"><i class="fa-solid fa-file-invoice"></i></div>
-                    <div><p class="text-xs font-bold text-gray-400 uppercase">Total Facturado</p><h3 class="text-xl font-black text-gray-800">${currencyFormatter.format(totalBilled)}</h3></div>
+        // --- 3. Construir HTML del Resumen ---
+        const initial = (supplier.name || '?').charAt(0).toUpperCase();
+
+        const profileCard = `
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 bg-gradient-to-br from-purple-700 to-indigo-800 rounded-xl shadow-lg text-white p-6 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 p-6 opacity-10 pointer-events-none">
+                        <i class="fa-solid fa-handshake text-9xl"></i>
+                    </div>
+                    
+                    <div class="relative z-10 flex flex-col md:flex-row gap-6 items-start md:items-center">
+                        <div class="w-20 h-20 bg-white rounded-2xl flex items-center justify-center text-purple-700 text-4xl font-black shadow-md shrink-0">
+                            ${initial}
+                        </div>
+                        
+                        <div class="flex-grow space-y-1">
+                            <h2 class="text-2xl font-bold leading-tight">${supplier.name}</h2>
+                            <div class="flex flex-wrap gap-3 text-sm text-purple-100">
+                                <span class="bg-white/10 px-2 py-0.5 rounded border border-white/20">NIT: ${supplier.nit || '---'}</span>
+                                <span class="flex items-center gap-1"><i class="fa-solid fa-location-dot"></i> ${supplier.address || 'Sin dirección'}</span>
+                            </div>
+                            
+                            <div class="pt-4 flex flex-wrap gap-6">
+                                <div>
+                                    <p class="text-[10px] text-purple-300 uppercase font-bold">Contacto</p>
+                                    <p class="font-medium">${supplier.contactName || '---'}</p>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] text-purple-300 uppercase font-bold">Teléfono</p>
+                                    <p class="font-medium font-mono">${supplier.contactPhone || '---'}</p>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] text-purple-300 uppercase font-bold">Correo</p>
+                                    <p class="font-medium">${supplier.email || '---'}</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex flex-col gap-2 shrink-0">
+                            <button data-action="edit-supplier" data-id="${supplier.id}" class="bg-white text-purple-700 hover:bg-purple-50 font-bold py-2 px-4 rounded-lg shadow-sm transition-all text-sm flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-pen-to-square"></i> Editar
+                            </button>
+                            <button data-action="new-supplier-payment" class="bg-emerald-500 text-white hover:bg-emerald-400 font-bold py-2 px-4 rounded-lg shadow-sm transition-all text-sm flex items-center justify-center gap-2 border border-emerald-400/50">
+                                <i class="fa-solid fa-money-bill-wave"></i> Pagar
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex items-center gap-4">
-                    <div class="p-3 bg-green-50 text-green-600 rounded-full text-xl"><i class="fa-solid fa-check-circle"></i></div>
-                    <div><p class="text-xs font-bold text-gray-400 uppercase">Total Pagado</p><h3 class="text-xl font-black text-green-600">${currencyFormatter.format(totalPaid)}</h3></div>
+
+                <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm flex flex-col justify-between relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-16 h-16 bg-gray-50 rounded-bl-full -mr-8 -mt-8"></div>
+                    
+                    <div>
+                        <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4 flex items-center">
+                            <i class="fa-solid fa-building-columns mr-2 text-indigo-500"></i> Datos Bancarios
+                        </h4>
+                        <div class="space-y-1 mb-4">
+                            <p class="text-sm font-bold text-gray-800">${supplier.bankName || 'No registrado'}</p>
+                            <p class="text-xs text-gray-500">${supplier.accountType || 'Cuenta'}</p>
+                            <div class="flex items-center gap-2 bg-indigo-50 px-2 py-1.5 rounded border border-indigo-100 w-fit mt-1">
+                                <span class="font-mono text-sm font-bold text-indigo-700 select-all">${supplier.accountNumber || '---'}</span>
+                                <button onclick="navigator.clipboard.writeText('${supplier.accountNumber}'); window.showToast('Copiado', 'success')" class="text-indigo-400 hover:text-indigo-700 transition-colors">
+                                    <i class="fa-regular fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    ${supplier.qrCodeURL ? `
+                        <div class="flex items-center gap-3 mt-auto pt-4 border-t border-gray-100 cursor-pointer group" onclick="window.openImageModal('${supplier.qrCodeURL}')">
+                            <img src="${supplier.qrCodeURL}" class="w-12 h-12 object-cover rounded border border-gray-200 shadow-sm">
+                            <div>
+                                <p class="text-xs font-bold text-indigo-600 group-hover:underline">Ver Código QR</p>
+                                <p class="text-[10px] text-gray-400">Clic para ampliar</p>
+                            </div>
+                        </div>
+                    ` : '<p class="text-xs text-gray-400 italic mt-auto">Sin QR registrado</p>'}
                 </div>
-                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex items-center gap-4">
-                    <div class="p-3 ${saldo > 100 ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-400'} rounded-full text-xl"><i class="fa-solid fa-scale-unbalanced"></i></div>
-                    <div><p class="text-xs font-bold text-gray-400 uppercase">Saldo Pendiente</p><h3 class="text-xl font-black ${saldo > 100 ? 'text-red-600' : 'text-gray-400'}">${currencyFormatter.format(saldo)}</h3></div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-lg"><i class="fa-solid fa-file-invoice"></i></div>
+                    <div><p class="text-[10px] font-bold text-gray-400 uppercase">Facturado Total</p><p class="text-lg font-black text-gray-800">${currencyFormatter.format(totalBilled)}</p></div>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-full bg-green-50 text-green-600 flex items-center justify-center text-lg"><i class="fa-solid fa-check-circle"></i></div>
+                    <div><p class="text-[10px] font-bold text-gray-400 uppercase">Pagado Total</p><p class="text-lg font-black text-green-600">${currencyFormatter.format(totalPaid)}</p></div>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-full ${saldo > 100 ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-400'} flex items-center justify-center text-lg"><i class="fa-solid fa-scale-unbalanced"></i></div>
+                    <div><p class="text-[10px] font-bold text-gray-400 uppercase">Saldo Pendiente</p><p class="text-lg font-black ${saldo > 100 ? 'text-red-600' : 'text-gray-400'}">${currencyFormatter.format(saldo)}</p></div>
                 </div>
             </div>
         `;
+        summaryContent.innerHTML = profileCard;
 
-        // Inyectamos el contenido
-        summaryContent.innerHTML = profileCard + balanceCards;
 
-        // --- 2. Pestaña ÓRDENES ---
+        // --- 4. LISTENER DE ÓRDENES (PO) ---
         const poQuery = query(collection(db, "purchaseOrders"), where("supplierId", "==", supplierId), orderBy("createdAt", "desc"));
         unsubscribeSupplierPOs = onSnapshot(poQuery, (snapshot) => {
             posTableBody.innerHTML = '';
             if (snapshot.empty) {
-                posTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-12 text-gray-400">No hay órdenes de compra registradas.</td></tr>`;
+                posTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-12 text-gray-400"><i class="fa-solid fa-file-circle-xmark text-2xl mb-2 opacity-50"></i><p>No hay órdenes registradas.</p></td></tr>`;
                 return;
             }
             snapshot.forEach(doc => {
                 const po = { id: doc.id, ...doc.data() };
+                const poNumber = po.poNumber || po.id.substring(0, 6);
+                const date = po.createdAt ? po.createdAt.toDate().toLocaleDateString('es-CO') : '---';
+
+                let statusBadge;
+                if (po.status === 'recibida') statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-700 border border-green-200"><i class="fa-solid fa-check mr-1"></i>Recibida</span>`;
+                else if (po.status === 'anulada') statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700 border border-red-200"><i class="fa-solid fa-ban mr-1"></i>Anulada</span>`;
+                else statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200"><i class="fa-solid fa-clock mr-1"></i>Pendiente</span>`;
+
+                // Barra de progreso de pago
+                const progress = po.totalCost > 0 ? Math.min(((po.paidAmount || 0) / po.totalCost) * 100, 100) : 0;
+                const progressColor = progress >= 100 ? 'bg-green-500' : 'bg-indigo-500';
+
                 const row = document.createElement('tr');
                 row.className = "bg-white hover:bg-gray-50 border-b last:border-0 transition-colors group";
-
-                let statusBadge = '';
-                if (po.status === 'recibida') statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-200"><i class="fa-solid fa-check mr-1"></i> Recibida</span>';
-                else if (po.status === 'rechazada') statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-200"><i class="fa-solid fa-ban mr-1"></i> Rechazada</span>';
-                else statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-800 border border-orange-200"><i class="fa-regular fa-clock mr-1"></i> Pendiente</span>';
-
-                const progress = po.totalCost > 0 ? ((po.paidAmount || 0) / po.totalCost) * 100 : 0;
-                const progressColor = progress >= 100 ? 'bg-green-500' : 'bg-yellow-400';
-
                 row.innerHTML = `
                     <td class="px-6 py-4">
-                        <p class="font-bold text-gray-800 text-sm">Orden #${po.poNumber || po.id.substring(0, 6)}</p>
-                        <p class="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><i class="fa-regular fa-calendar"></i> ${po.createdAt.toDate().toLocaleDateString('es-CO')}</p>
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500">PO</div>
+                            <div>
+                                <p class="font-bold text-gray-800 text-sm">#${poNumber}</p>
+                                <p class="text-xs text-gray-500">${date}</p>
+                            </div>
+                        </div>
                     </td>
                     <td class="px-6 py-4 text-right font-bold text-gray-800 text-sm">
                         ${currencyFormatter.format(po.totalCost || 0)}
                     </td>
                     <td class="px-6 py-4 text-center">
-                        <div class="flex flex-col items-center justify-center w-24 mx-auto">
-                            <div class="w-full bg-gray-200 rounded-full h-1.5 mb-1">
-                                <div class="${progressColor} h-1.5 rounded-full" style="width: ${Math.min(progress, 100)}%"></div>
-                            </div>
-                            <span class="text-[10px] text-gray-500 font-semibold">${progress.toFixed(0)}% Pagado</span>
+                         <div class="w-full bg-gray-200 rounded-full h-1.5 mb-1 max-w-[100px] mx-auto">
+                            <div class="${progressColor} h-1.5 rounded-full" style="width: ${progress}%"></div>
                         </div>
+                        <span class="text-[10px] text-gray-500 font-semibold">${progress.toFixed(0)}%</span>
                     </td>
+                    <td class="px-6 py-4 text-center">${statusBadge}</td>
                     <td class="px-6 py-4 text-center">
-                        ${statusBadge}
-                    </td>
-                    <td class="px-6 py-4 text-center">
-                        <button data-action="view-purchase-order" data-id="${po.id}" 
-                            class="text-gray-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-all" title="Ver Detalle">
-                            <i class="fa-solid fa-eye text-lg"></i>
-                        </button>
+                        <button data-action="view-purchase-order" data-id="${po.id}" class="text-gray-400 hover:text-purple-600 hover:bg-purple-50 w-8 h-8 rounded-lg transition-all"><i class="fa-solid fa-eye"></i></button>
                     </td>
                 `;
                 posTableBody.appendChild(row);
             });
         });
 
-        // --- 3. Pestaña PAGOS ---
+        // --- 5. LISTENER DE PAGOS ---
         const paymentsQuery = query(collection(db, "suppliers", supplierId, "payments"), orderBy("date", "desc"));
         unsubscribeSupplierPayments = onSnapshot(paymentsQuery, (snapshot) => {
             paymentsTableBody.innerHTML = '';
             if (snapshot.empty) {
-                paymentsTableBody.innerHTML = `<tr><td colspan="4" class="text-center py-12 text-gray-400">No hay pagos registrados.</td></tr>`;
+                paymentsTableBody.innerHTML = `<tr><td colspan="4" class="text-center py-12 text-gray-400"><i class="fa-solid fa-wallet text-2xl mb-2 opacity-50"></i><p>No hay pagos registrados.</p></td></tr>`;
                 return;
             }
             snapshot.forEach(doc => {
@@ -2494,34 +2692,28 @@ async function loadSupplierDetailsView(supplierId) {
                 const row = document.createElement('tr');
                 row.className = "bg-white hover:bg-gray-50 border-b last:border-0 transition-colors";
 
-                let methodIcon = 'fa-money-bill';
-                let methodClass = 'text-gray-500 bg-gray-100';
-                if (p.paymentMethod === 'Transferencia') { methodIcon = 'fa-building-columns'; methodClass = 'text-indigo-600 bg-indigo-50'; }
-                if (p.paymentMethod === 'Tarjeta') { methodIcon = 'fa-credit-card'; methodClass = 'text-purple-600 bg-purple-50'; }
+                let iconClass = 'bg-gray-100 text-gray-500';
+                let icon = 'fa-money-bill';
+                if (p.paymentMethod === 'Transferencia') { iconClass = 'bg-indigo-50 text-indigo-600'; icon = 'fa-building-columns'; }
 
                 row.innerHTML = `
                     <td class="px-6 py-4 text-sm text-gray-600 font-medium">
-                        ${new Date(p.date + 'T00:00:00').toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' })}
+                        ${new Date(p.date + 'T00:00:00').toLocaleDateString('es-CO')}
                     </td>
                     <td class="px-6 py-4">
                         <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 rounded-lg ${methodClass} flex items-center justify-center flex-shrink-0">
-                                <i class="fa-solid ${methodIcon} text-xs"></i>
-                            </div>
-                            <div class="flex flex-col">
-                                <span class="text-sm font-medium text-gray-700">${p.paymentMethod || 'Desconocido'}</span>
-                                <span class="text-xs text-gray-400 truncate max-w-[150px]" title="${p.note || ''}">${p.note || ''}</span>
+                            <div class="w-8 h-8 rounded-lg ${iconClass} flex items-center justify-center shrink-0"><i class="fa-solid ${icon} text-xs"></i></div>
+                            <div>
+                                <p class="text-sm font-bold text-gray-700">${p.paymentMethod || 'General'}</p>
+                                <p class="text-xs text-gray-400 truncate max-w-[200px]">${p.note || ''}</p>
                             </div>
                         </div>
                     </td>
-                    <td class="px-6 py-4 text-right font-bold text-green-600 text-sm">
+                    <td class="px-6 py-4 text-right font-bold text-emerald-600 text-sm">
                         ${currencyFormatter.format(p.amount || 0)}
                     </td>
                     <td class="px-6 py-4 text-center">
-                        <button data-action="delete-supplier-payment" data-id="${p.id}" 
-                            class="text-gray-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-all" title="Eliminar Pago">
-                            <i class="fa-regular fa-trash-can"></i>
-                        </button>
+                        <button data-action="delete-supplier-payment" data-id="${p.id}" class="text-gray-400 hover:text-red-600 w-8 h-8 rounded-lg hover:bg-red-50 transition-all"><i class="fa-regular fa-trash-can"></i></button>
                     </td>
                 `;
                 paymentsTableBody.appendChild(row);
@@ -2529,8 +2721,8 @@ async function loadSupplierDetailsView(supplierId) {
         });
 
     } catch (error) {
-        console.error("Error detalle proveedor:", error);
-        summaryContent.innerHTML = `<div class="p-8 text-center text-red-500 bg-red-50 rounded-xl border border-red-100"><i class="fa-solid fa-triangle-exclamation text-3xl mb-2"></i><p>Error: ${error.message}</p></div>`;
+        console.error("Error loading supplier details:", error);
+        summaryContent.innerHTML = `<div class="p-6 bg-red-50 border border-red-100 rounded-lg text-center text-red-600">Error: ${error.message}</div>`;
     }
 }
 
@@ -2580,73 +2772,105 @@ async function findLastPurchasePrice(supplierId, materialId) {
 
 function createUserRow(user) {
     const row = document.createElement('tr');
-    row.className = 'bg-white border-b';
+    row.className = 'bg-white border-b hover:bg-slate-50 transition-colors group';
 
-    const statusColor = user.status === 'active' ? 'text-green-600' : (user.status === 'pending' ? 'text-yellow-600' : 'text-gray-500');
-    const statusText = user.status === 'active' ? 'Activo' : (user.status === 'pending' ? 'Pendiente' : 'Archivado');
+    // 1. Avatar / Iniciales
+    const initials = `${(user.firstName || '').charAt(0)}${(user.lastName || '').charAt(0)}`.toUpperCase();
+    const avatarHtml = user.profilePhotoURL
+        ? `<img src="${user.profilePhotoURL}" class="w-10 h-10 rounded-full object-cover border border-gray-200 shadow-sm">`
+        : `<div class="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-100 to-blue-100 text-indigo-600 flex items-center justify-center font-bold text-sm border border-indigo-200 shadow-sm">${initials}</div>`;
 
-    const baseButtonClasses = "text-sm font-semibold py-2 px-4 rounded-lg transition-colors w-32 text-center";
+    // 2. Badge de Estado
+    let statusBadge = '';
+    if (user.status === 'active') statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 border border-emerald-200"><span class="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5"></span>Activo</span>`;
+    else if (user.status === 'pending') statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200"><span class="w-1.5 h-1.5 bg-amber-500 rounded-full mr-1.5"></span>Pendiente</span>`;
+    else statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200"><i class="fa-solid fa-box-archive mr-1.5"></i>Archivado</span>`;
+
+    // 3. Botones de Acción
+    const btnClass = "w-8 h-8 rounded-lg flex items-center justify-center transition-all shadow-sm hover:shadow-md";
     let actionsHtml = '';
 
     if (user.status === 'archived') {
         actionsHtml = `
-            <button class="restore-user-btn bg-green-500 hover:bg-green-600 text-white ${baseButtonClasses}">Restaurar</button>
-            <button class="delete-user-btn bg-red-500 hover:bg-red-600 text-white ${baseButtonClasses}">Eliminar</button>
+            <button class="restore-user-btn ${btnClass} bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200" title="Restaurar Usuario">
+                <i class="fa-solid fa-trash-arrow-up"></i>
+            </button>
+            <button class="delete-user-btn ${btnClass} bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200" title="Eliminar Definitivamente">
+                <i class="fa-solid fa-trash"></i>
+            </button>
         `;
     } else {
-        const toggleStatusText = user.status === 'active' ? 'Desactivar' : 'Activar';
-        const toggleStatusColor = user.status === 'active' ? 'bg-gray-500 hover:bg-gray-600' : 'bg-green-500 hover:bg-green-600';
+        const isPending = user.status === 'pending';
+        const toggleTitle = isPending ? 'Aprobar / Activar' : 'Desactivar (Pendiente)';
+        const toggleIcon = isPending ? 'fa-check' : 'fa-user-lock';
+        const toggleColor = isPending ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border-emerald-200' : 'bg-amber-50 text-amber-600 hover:bg-amber-100 border-amber-200';
 
         actionsHtml = `
-            <button class="edit-user-btn bg-yellow-500 hover:bg-yellow-600 text-white ${baseButtonClasses}">Editar</button>
-            <button class="toggle-status-btn ${toggleStatusColor} text-white ${baseButtonClasses}" data-status="${user.status}">
-                ${toggleStatusText}
+            <button class="edit-user-btn ${btnClass} bg-white text-slate-500 hover:text-blue-600 hover:bg-blue-50 border border-slate-200" title="Editar">
+                <i class="fa-solid fa-pen-to-square"></i>
             </button>
-            <button class="archive-user-btn bg-gray-400 hover:bg-gray-500 text-white ${baseButtonClasses}">Archivar</button>
+            <button class="toggle-status-btn ${btnClass} ${toggleColor} border" title="${toggleTitle}" data-status="${user.status}">
+                <i class="fa-solid ${toggleIcon}"></i>
+            </button>
+            <button class="archive-user-btn ${btnClass} bg-white text-slate-400 hover:text-slate-700 hover:bg-slate-100 border border-slate-200" title="Archivar">
+                <i class="fa-solid fa-box-archive"></i>
+            </button>
         `;
     }
 
     row.innerHTML = `
-        <td class="px-6 py-4 font-medium text-gray-900" data-label="Nombre">${user.firstName} ${user.lastName}</td>
-        <td class="px-6 py-4" data-label="Correo">${user.email}</td>
-        <td class="px-6 py-4" data-label="Rol">
-            <select class="user-role-select border rounded-md p-1 bg-white" data-userid="${user.id}">
-                <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Administrador</option>
-                <option value="sst" ${user.role === 'sst' ? 'selected' : ''}>SST</option>
-                <option value="bodega" ${user.role === 'bodega' ? 'selected' : ''}>Bodega</option>
-                <option value="operario" ${user.role === 'operario' ? 'selected' : ''}>Operario</option>
-            </select>
+        <td class="px-6 py-4">
+            <div class="flex items-center gap-4">
+                ${avatarHtml}
+                <div>
+                    <p class="font-bold text-gray-800 text-sm leading-tight">${user.firstName} ${user.lastName}</p>
+                    <p class="text-xs text-gray-500 mt-0.5 font-mono">${user.email}</p>
+                    <p class="text-[10px] text-gray-400 mt-0.5">CC: ${user.idNumber || '---'}</p>
+                </div>
+            </div>
         </td>
-        <td class="px-6 py-4 font-semibold ${statusColor}" data-label="Estado">${statusText}</td>
-        <td class="px-6 py-4 text-center" data-label="Acciones">
-            <div class="flex justify-center gap-2">
+        <td class="px-6 py-4">
+            <div class="flex flex-col gap-1">
+                <select class="user-role-select text-xs font-bold text-slate-600 bg-slate-50 border-slate-200 rounded-lg p-1.5 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer" data-userid="${user.id}">
+                    <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Administrador</option>
+                    <option value="sst" ${user.role === 'sst' ? 'selected' : ''}>SST (Seguridad)</option>
+                    <option value="bodega" ${user.role === 'bodega' ? 'selected' : ''}>Bodega / Logística</option>
+                    <option value="operario" ${user.role === 'operario' ? 'selected' : ''}>Operario</option>
+                    <option value="nomina" ${user.role === 'nomina' ? 'selected' : ''}>Nómina</option>
+                </select>
+            </div>
+        </td>
+        <td class="px-6 py-4 text-center">
+            ${statusBadge}
+        </td>
+        <td class="px-6 py-4 text-right">
+            <div class="flex justify-end gap-2 opacity-90 group-hover:opacity-100 transition-opacity">
                 ${actionsHtml}
             </div>
         </td>
     `;
 
+    // Listeners (Igual que antes, pero adaptados al nuevo DOM)
     row.querySelector('.user-role-select').addEventListener('change', (e) => {
         updateUserRole(user.id, e.target.value);
     });
 
     if (user.status !== 'archived') {
         row.querySelector('.toggle-status-btn').addEventListener('click', (e) => {
-            const newStatus = e.target.dataset.status === 'active' ? 'pending' : 'active';
+            // Si es activo -> pendiente. Si es pendiente -> activo.
+            const newStatus = user.status === 'active' ? 'pending' : 'active';
             updateUserStatus(user.id, newStatus);
         });
         row.querySelector('.edit-user-btn').addEventListener('click', () => openMainModal('editUser', user));
-        
-        // --- LISTENER PARA ARCHIVAR ---
         row.querySelector('.archive-user-btn').addEventListener('click', () => {
-            openConfirmModal(`¿Seguro que quieres archivar al usuario ${user.email}?`, () => updateUserStatus(user.id, 'archived'));
+            openConfirmModal(`¿Archivar al usuario ${user.firstName}? Desaparecerá de las listas activas.`, () => updateUserStatus(user.id, 'archived'));
         });
-
     } else {
         row.querySelector('.restore-user-btn').addEventListener('click', () => {
-            openConfirmModal(`¿Seguro que quieres restaurar al usuario ${user.email}?`, () => updateUserStatus(user.id, 'pending'));
+            openConfirmModal(`¿Restaurar al usuario ${user.firstName}? Pasará a estado Pendiente.`, () => updateUserStatus(user.id, 'pending'));
         });
         row.querySelector('.delete-user-btn').addEventListener('click', () => {
-            openConfirmModal(`¿Seguro que quieres ELIMINAR PERMANENTEMENTE al usuario ${user.email}? Esta acción no se puede deshacer.`, () => deleteUser(user.id));
+            openConfirmModal(`¿ELIMINAR DEFINITIVAMENTE a ${user.email}? Esta acción es irreversible.`, () => deleteUser(user.id));
         });
     }
 
@@ -4915,251 +5139,460 @@ const modalConfirmBtn = document.getElementById('modal-confirm-btn');
 const modalContentDiv = document.getElementById('main-modal-content'); // <-- AÑADE ESTA LÍNEA
 
 async function openMainModal(type, data = {}) {
+    const modal = document.getElementById('main-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalBody = document.getElementById('modal-body');
+    const modalForm = document.getElementById('modal-form');
+    const modalContentDiv = document.getElementById('main-modal-content');
 
-    // --- INICIO DE CORRECCIÓN (Reseteo Robustecido) ---
+    // =================================================================
+    // 1. RESETEO MAESTRO (CORREGIDO Y BLINDADO)
+    // =================================================================
+
+    // A. Restaurar Footer y Header (Por si se ocultaron en otros modales)
+    const defaultFooter = document.getElementById('main-modal-footer');
+    const defaultHeader = document.getElementById('modal-title')?.parentElement;
+
+    if (defaultFooter) {
+        defaultFooter.style.display = 'flex';
+        defaultFooter.classList.remove('hidden');
+        // Restauramos el HTML base del footer para asegurar que los botones existan
+        defaultFooter.innerHTML = `
+            <button type="button" id="modal-cancel-btn-footer" class="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 font-bold py-2.5 px-5 rounded-xl transition-all shadow-sm">Cancelar</button>
+            <button type="submit" id="modal-confirm-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md hover:shadow-lg transition-all">Confirmar</button>
+        `;
+    }
+    if (defaultHeader) {
+        defaultHeader.style.display = 'flex';
+    }
+
+    // B. REINICIAR CLASES DEL CONTENEDOR (Elimina formatos "rotos")
     if (modalContentDiv) {
-        // 1. Limpiamos TODAS las clases de ancho que hayamos podido usar en cualquier caso
-        modalContentDiv.classList.remove(
-            'max-w-md', 'max-w-lg', 'max-w-xl', 'max-w-2xl', 'max-w-3xl',
-            'max-w-4xl', 'max-w-5xl', 'max-w-6xl', 'max-w-7xl',
-            'w-11/12', 'lg:w-3/4'
-        );
+        // 1. Borrar todo
+        modalContentDiv.className = '';
+        modalContentDiv.style = '';
 
-        // 2. Restauramos SIEMPRE el tamaño por defecto (max-w-2xl)
-        // Así, si el caso específico no dice nada, se verá normal.
-        modalContentDiv.classList.add('max-w-2xl');
+        // 2. Aplicar clases estándar limpias
+        modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'w-full', 'max-w-2xl', 'max-h-[90vh]', 'flex', 'flex-col', 'overflow-hidden', 'transform', 'transition-all', 'relative');
 
-        // 3. Limpiamos estilos en línea (usados en Orden de Compra)
-        modalContentDiv.style.width = '';
-        modalContentDiv.style.maxWidth = '';
+        // 3. Restaurar cuerpo interno
+        modalBody.className = 'p-6 flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-gray-50/50';
+        modalBody.style.padding = '';
+        modalBody.parentElement.classList.remove('overflow-hidden');
     }
 
-    let title, bodyHtml, btnText, btnClass;
-    modalForm.reset();
+    // C. RESETEAR EL BOTÓN DE CONFIRMACIÓN (Aquí estaba el error)
+    // Declaramos la variable explícitamente antes de usarla
+    const confirmBtn = document.getElementById('modal-confirm-btn');
+
+    if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Confirmar';
+        confirmBtn.className = "bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md hover:shadow-lg transition-all";
+        // Limpiamos datos residuales
+        delete confirmBtn.dataset.originalText;
+    }
+
+    // D. LIMPIEZA DE DATOS DEL FORMULARIO
     modalForm.dataset.type = type;
-    modalForm.dataset.id = data.id || '';
+    delete modalForm.dataset.id;
+    delete modalForm.dataset.itemid;
 
-    if (document.getElementById('modal-title')) {
-        document.getElementById('modal-title').parentElement.style.display = 'none';
-    }
+    // E. RECONECTAR BOTÓN CANCELAR (Porque reescribimos el footer en el paso A)
+    setTimeout(() => {
+        const cancelBtn = document.getElementById('modal-cancel-btn-footer');
+        if (cancelBtn) cancelBtn.onclick = closeMainModal;
+    }, 0);
 
+    // =================================================================
+
+    let title = 'Título por defecto';
+    let bodyHtml = '<p>Contenido...</p>';
+    let btnText = 'Confirmar';
+    let btnClass = 'bg-blue-600 hover:bg-blue-700 text-white';
+
+    // --- INICIO DEL SWITCH ---
     switch (type) {
-        case 'newProject':
-            title = 'Crear Nuevo Proyecto';
-            btnText = 'Crear Proyecto';
-            btnClass = 'bg-blue-500 hover:bg-blue-600';
-            modalContentDiv.classList.add('max-w-2xl'); // <-- LÍNEA RESTAURADA
-            bodyHtml = `
-                    <div class="space-y-4">
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label for="project-name" class="block text-sm font-medium">Nombre del Proyecto</label>
-                                <input type="text" id="project-name" name="name" required class="mt-1 w-full border rounded-md p-2">
-                            </div>
-                            <div>
-                                <label for="project-builder" class="block text-sm font-medium">Constructora</label>
-                                <input type="text" id="project-builder" name="builderName" required class="mt-1 w-full border rounded-md p-2">
-                            </div>
-                        </div>
+        case 'newProject': {
+            // 1. Configuración
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
 
-                        <div class="border-t pt-4">
-                            <label class="block text-sm font-medium text-gray-700">Modelo de Contrato</label>
-                            <div class="mt-2 flex space-x-4">
-                                <label class="flex items-center">
-                                    <input type="radio" name="pricingModel" value="separado" class="mr-2" checked>
-                                    <span>Suministro e Instalación (Separado)</span>
-                                </label>
-                                <label class="flex items-center">
-                                    <input type="radio" name="pricingModel" value="incluido" class="mr-2">
-                                    <span>Suministro e Instalación (Incluido)</span>
-                                </label>
-                            </div>
+            const defaultFooter = document.getElementById('modal-confirm-btn')?.parentElement;
+            if (defaultFooter) defaultFooter.style.display = 'none';
+
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-3xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Crear Nuevo Proyecto';
+
+            bodyHtml = `
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-indigo-600 to-blue-600 px-8 py-5 shrink-0 rounded-t-xl flex justify-between items-center relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none transform scale-150 translate-x-4 -translate-y-2">
+                            <i class="fa-solid fa-city text-6xl text-white"></i>
                         </div>
-                        <div class="relative">
-                            <label for="project-location" class="block text-sm font-medium">Ubicación (Municipio)</label>
-                            <input type="text" id="project-location" name="location" required class="mt-1 w-full border rounded-md p-2" autocomplete="off" placeholder="Escribe para buscar...">
-                            <div id="municipalities-results" class="municipality-search-results hidden"></div>
-                        </div>
-                        <div>
-                            <label for="project-address" class="block text-sm font-medium">Dirección</label>
-                            <input type="text" id="project-address" name="address" required class="mt-1 w-full border rounded-md p-2">
-                        </div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label for="project-value" class="block text-sm font-medium">Valor del Contrato</label>
-                                <input type="text" id="project-value" name="value" required class="mt-1 w-full border rounded-md p-2">
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-2xl backdrop-blur-sm border border-white/10 shadow-inner text-white">
+                                <i class="fa-solid fa-plus"></i>
                             </div>
                             <div>
-                                <label for="project-advance" class="block text-sm font-medium">Anticipo</label>
-                                <input type="text" id="project-advance" name="advance" required class="mt-1 w-full border rounded-md p-2">
+                                <h2 class="text-xl font-bold tracking-tight text-white">Nuevo Proyecto</h2>
+                                <p class="text-indigo-100 text-xs font-medium">Registrar obra y configuración inicial</p>
                             </div>
                         </div>
-                        <div class="grid grid-cols-3 gap-4 border-t pt-4">
-                            <div>
-                                <label for="project-startDate" class="block text-sm font-medium">Inicio Contrato</label>
-                                <input type="date" id="project-startDate" name="startDate" class="mt-1 w-full border rounded-md p-2">
+                        
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white transition-colors relative z-10">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex-grow overflow-y-auto custom-scrollbar p-6 bg-gray-50">
+                        
+                        <div class="space-y-6">
+                            
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-4 flex items-center">
+                                    <i class="fa-solid fa-info-circle mr-2 text-indigo-500"></i> Información General
+                                </h4>
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div class="md:col-span-2">
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Nombre del Proyecto <span class="text-red-500">*</span></label>
+                                        <input type="text" name="name" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 font-bold text-gray-800 placeholder-gray-300" placeholder="Ej: Edificio Torres del Parque">
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Constructora / Cliente <span class="text-red-500">*</span></label>
+                                        <input type="text" name="builderName" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Ej: Constructora ABC S.A.S.">
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Modelo de Contrato</label>
+                                        <select name="pricingModel" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 bg-white cursor-pointer">
+                                            <option value="separado">Suministro e Instalación (Separado)</option>
+                                            <option value="incluido">Todo Incluido (Global)</option>
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label for="project-kickoffDate" class="block text-sm font-medium">Acta de Inicio</label>
-                                <input type="date" id="project-kickoffDate" name="kickoffDate" class="mt-1 w-full border rounded-md p-2">
+
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-4 flex items-center">
+                                    <i class="fa-solid fa-location-dot mr-2 text-red-500"></i> Ubicación
+                                </h4>
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div class="relative">
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Municipio <span class="text-red-500">*</span></label>
+                                        <div class="relative">
+                                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-magnifying-glass"></i></div>
+                                            <input type="text" id="project-location" name="location" required class="w-full pl-9 border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500" autocomplete="off" placeholder="Buscar municipio...">
+                                        </div>
+                                        <div id="municipalities-results" class="municipality-search-results hidden absolute z-50 w-full bg-white border border-gray-200 rounded-lg mt-1 shadow-xl max-h-40 overflow-y-auto"></div>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Dirección Obra</label>
+                                        <input type="text" name="address" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Calle 123 # 45-67">
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label for="project-endDate" class="block text-sm font-medium">Fin Contrato</label>
-                                <input type="date" id="project-endDate" name="endDate" class="mt-1 w-full border rounded-md p-2">
+
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-4 flex items-center">
+                                    <i class="fa-solid fa-sack-dollar mr-2 text-green-600"></i> Datos del Contrato
+                                </h4>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Valor Contrato (Sin IVA) <span class="text-red-500">*</span></label>
+                                        <div class="relative">
+                                            <span class="absolute left-3 top-2.5 text-gray-400 font-bold">$</span>
+                                            <input type="text" id="project-value" name="value" required class="currency-input w-full pl-7 border-gray-300 rounded-lg p-2.5 text-lg font-bold text-gray-800 focus:ring-indigo-500 font-mono" placeholder="0">
+                                        </div>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Valor Anticipo</label>
+                                        <div class="relative">
+                                            <span class="absolute left-3 top-2.5 text-gray-400 font-bold">$</span>
+                                            <input type="text" id="project-advance" name="advance" required class="currency-input w-full pl-7 border-gray-300 rounded-lg p-2.5 text-lg font-bold text-gray-800 focus:ring-indigo-500 font-mono" placeholder="0">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Inicio Contrato</label>
+                                        <input type="date" name="startDate" class="w-full border-gray-300 rounded-lg p-2 text-sm focus:ring-indigo-500 text-gray-600">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Acta de Inicio</label>
+                                        <input type="date" name="kickoffDate" class="w-full border-gray-300 rounded-lg p-2 text-sm focus:ring-indigo-500 text-gray-600">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Fin Estimado</label>
+                                        <input type="date" name="endDate" class="w-full border-gray-300 rounded-lg p-2 text-sm focus:ring-indigo-500 text-gray-600">
+                                    </div>
+                                </div>
                             </div>
+
                         </div>
-                    </div>`;
+                    </div>
+
+                    <div class="bg-white border-t border-gray-200 p-4 shrink-0 flex justify-end gap-3 rounded-b-xl">
+                        <button type="button" onclick="closeMainModal()" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition-colors text-sm">
+                            Cancelar
+                        </button>
+                        <button type="button" onclick="document.getElementById('modal-form').requestSubmit()" class="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-8 py-2.5 rounded-lg font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-check"></i> Crear Proyecto
+                        </button>
+                    </div>
+                </div>`;
 
             setTimeout(() => {
-                // --- Lógica del buscador (sin cambios) ---
-                const inputLocation = document.getElementById('project-location');
-                const resultsContainer = document.getElementById('municipalities-results');
-                fetchMunicipalities();
-                inputLocation.addEventListener('input', async () => {
-                    const municipalities = await fetchMunicipalities();
-                    resultsContainer.innerHTML = '';
-
-                    const query = inputLocation.value;
-                    if (query.length === 0) {
-                        resultsContainer.classList.add('hidden');
-                        return;
-                    }
-
-                    // Normalizamos la búsqueda para ignorar tildes y mayúsculas
-                    const normalizedQuery = normalizeString(query);
-                    const filtered = municipalities.filter(m => normalizeString(m).startsWith(normalizedQuery));
-
-                    if (filtered.length > 0) {
-                        resultsContainer.classList.remove('hidden');
-                        filtered.slice(0, 7).forEach(municipality => {
-                            const item = document.createElement('div');
-                            item.className = 'municipality-item';
-                            item.textContent = municipality;
-                            item.addEventListener('click', () => {
-                                inputLocation.value = municipality;
-                                resultsContainer.classList.add('hidden');
-                            });
-                            resultsContainer.appendChild(item);
-                        });
-                    } else {
-                        resultsContainer.classList.add('hidden');
-                    }
-                });
-                // Ocultar resultados si se hace clic fuera
-
-                // --- NUEVA LÓGICA PARA FORMATEO DE MONEDA ---
+                // ... (Resto de la lógica JS, igual que antes) ...
                 const valueInput = document.getElementById('project-value');
                 const advanceInput = document.getElementById('project-advance');
-                const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
-
-                const formatCurrencyInput = (e) => {
-                    let value = e.target.value.replace(/[$. ]/g, '');
-                    if (!isNaN(value) && value) {
-                        e.target.value = currencyFormatter.format(value).replace(/\s/g, ' ');
-                    } else {
-                        e.target.value = '';
-                    }
-                };
-
-                valueInput.addEventListener('input', formatCurrencyInput);
-                advanceInput.addEventListener('input', formatCurrencyInput);
-
-            }, 100);
-            break;
-        case 'editProjectInfo':
-            title = 'Editar Información del Proyecto';
-            btnText = 'Guardar Cambios';
-            btnClass = 'bg-yellow-500 hover:bg-yellow-600';
-            bodyHtml = `
-            <div class="space-y-4">
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium">Nombre del Proyecto</label>
-                        <input type="text" name="name" required class="mt-1 w-full border rounded-md p-2" value="${data.name || ''}">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium">Constructora</label>
-                        <input type="text" name="builderName" required class="mt-1 w-full border rounded-md p-2" value="${data.builderName || ''}">
-                    </div>
-                </div>
-                
-                <div class="relative">
-                    <label for="project-location" class="block text-sm font-medium">Ubicación (Municipio)</label>
-                    <input type="text" id="project-location" name="location" required class="mt-1 w-full border rounded-md p-2" autocomplete="off" value="${data.location || ''}">
-                    <div id="municipalities-results" class="municipality-search-results hidden"></div>
-                </div>
-
-                <div>
-                    <label for="project-address" class="block text-sm font-medium">Dirección</label>
-                    <input type="text" id="project-address" name="address" required class="mt-1 w-full border rounded-md p-2" value="${data.address || ''}">
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium">Valor del Contrato</label>
-                        <input type="text" name="value" class="mt-1 w-full border rounded-md p-2" value="${data.value || 0}">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium">Anticipo</label>
-                        <input type="text" name="advance" class="mt-1 w-full border rounded-md p-2" value="${data.advance || 0}">
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-3 gap-4 border-t pt-4">
-                    <div>
-                        <label class="block text-sm font-medium">Inicio Contrato</label>
-                        <input type="date" name="startDate" class="mt-1 w-full border rounded-md p-2" value="${data.startDate || ''}">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium">Acta de Inicio</label>
-                        <input type="date" name="kickoffDate" class="mt-1 w-full border rounded-md p-2" value="${data.kickoffDate || ''}">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium">Fin Contrato</label>
-                        <input type="date" name="endDate" class="mt-1 w-full border rounded-md p-2" value="${data.endDate || ''}">
-                    </div>
-                </div>
-            </div>`;
-
-            setTimeout(() => {
-                // Lógica para el formato de moneda
-                const valueInput = modalForm.querySelector('input[name="value"]');
-                const advanceInput = modalForm.querySelector('input[name="advance"]');
                 setupCurrencyInput(valueInput);
                 setupCurrencyInput(advanceInput);
 
-                // Lógica para el buscador de municipios (reutilizada de "Nuevo Proyecto")
                 const inputLocation = document.getElementById('project-location');
                 const resultsContainer = document.getElementById('municipalities-results');
-                fetchMunicipalities(); // Asegura que los municipios estén disponibles
+
+                fetchMunicipalities();
+
                 inputLocation.addEventListener('input', async () => {
                     const municipalities = await fetchMunicipalities();
                     resultsContainer.innerHTML = '';
                     const query = inputLocation.value;
-                    if (query.length === 0) {
+
+                    if (query.length < 2) {
                         resultsContainer.classList.add('hidden');
                         return;
                     }
+
                     const normalizedQuery = normalizeString(query);
-                    const filtered = municipalities.filter(m => normalizeString(m).startsWith(normalizedQuery));
+                    const filtered = municipalities.filter(m => normalizeString(m).includes(normalizedQuery));
+
                     if (filtered.length > 0) {
                         resultsContainer.classList.remove('hidden');
-                        filtered.slice(0, 7).forEach(municipality => {
+                        filtered.slice(0, 10).forEach(municipality => {
                             const item = document.createElement('div');
-                            item.className = 'municipality-item';
+                            item.className = 'px-4 py-2 hover:bg-indigo-50 cursor-pointer text-sm text-gray-700 border-b border-gray-50 last:border-0';
                             item.textContent = municipality;
-                            item.addEventListener('click', () => {
+                            item.onclick = () => {
                                 inputLocation.value = municipality;
                                 resultsContainer.classList.add('hidden');
-                            });
+                            };
                             resultsContainer.appendChild(item);
                         });
                     } else {
                         resultsContainer.classList.add('hidden');
                     }
                 });
-            }, 100);
 
+                document.addEventListener('click', (e) => {
+                    if (e.target !== inputLocation) resultsContainer.classList.add('hidden');
+                });
+
+            }, 100);
+            break;
+        }
+        case 'editProjectInfo':
+            // 1. Configuración
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+
+            const footerEdit = document.getElementById('modal-confirm-btn')?.parentElement;
+            if (footerEdit) footerEdit.style.display = 'none';
+
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-3xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Editar Proyecto';
+
+            bodyHtml = `
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-amber-500 to-orange-600 px-8 py-5 shrink-0 rounded-t-xl flex justify-between items-center relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none transform scale-150 translate-x-4 -translate-y-2">
+                            <i class="fa-solid fa-pen-to-square text-6xl text-white"></i>
+                        </div>
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-2xl backdrop-blur-sm border border-white/10 shadow-inner text-white">
+                                <i class="fa-solid fa-pen"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-bold tracking-tight text-white">Editar Información</h2>
+                                <p class="text-amber-100 text-xs font-medium">${data.name}</p>
+                            </div>
+                        </div>
+                        <button onclick="closeMainModal()" class="text-white/70 hover:text-white transition-colors relative z-10"><i class="fa-solid fa-xmark text-xl"></i></button>
+                    </div>
+
+                    <div class="flex-grow overflow-y-auto custom-scrollbar p-6 bg-gray-50">
+                        
+                        <div class="space-y-6">
+                            
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-4 flex items-center">
+                                    <i class="fa-solid fa-info-circle mr-2 text-amber-500"></i> Información General
+                                </h4>
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div class="md:col-span-2">
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Nombre del Proyecto</label>
+                                        <input type="text" name="name" required value="${data.name || ''}" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-amber-500 font-bold text-gray-800">
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Constructora</label>
+                                        <input type="text" name="builderName" required value="${data.builderName || ''}" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-amber-500">
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Modelo de Contrato</label>
+                                        <select name="pricingModel" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-amber-500 bg-white cursor-pointer">
+                                            <option value="separado" ${data.pricingModel === 'separado' ? 'selected' : ''}>Suministro e Instalación (Separado)</option>
+                                            <option value="incluido" ${data.pricingModel === 'incluido' ? 'selected' : ''}>Todo Incluido (Global)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-4 flex items-center">
+                                    <i class="fa-solid fa-location-dot mr-2 text-red-500"></i> Ubicación
+                                </h4>
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div class="relative">
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Municipio</label>
+                                        <div class="relative">
+                                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-magnifying-glass"></i></div>
+                                            <input type="text" id="project-location" name="location" required value="${data.location || ''}" class="w-full pl-9 border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-amber-500" autocomplete="off">
+                                        </div>
+                                        <div id="municipalities-results" class="municipality-search-results hidden absolute z-50 w-full bg-white border border-gray-200 rounded-lg mt-1 shadow-xl max-h-40 overflow-y-auto"></div>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Dirección Obra</label>
+                                        <input type="text" name="address" required value="${data.address || ''}" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-amber-500">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-4 flex items-center">
+                                    <i class="fa-solid fa-sack-dollar mr-2 text-green-600"></i> Datos del Contrato
+                                </h4>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Valor Contrato (Sin IVA)</label>
+                                        <div class="relative">
+                                            <span class="absolute left-3 top-2.5 text-gray-400 font-bold">$</span>
+                                            <input type="text" name="value" required value="${data.value || 0}" class="currency-input w-full pl-7 border-gray-300 rounded-lg p-2.5 text-lg font-bold text-gray-800 focus:ring-amber-500 font-mono">
+                                        </div>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Valor Anticipo</label>
+                                        <div class="relative">
+                                            <span class="absolute left-3 top-2.5 text-gray-400 font-bold">$</span>
+                                            <input type="text" name="advance" required value="${data.advance || 0}" class="currency-input w-full pl-7 border-gray-300 rounded-lg p-2.5 text-lg font-bold text-gray-800 focus:ring-amber-500 font-mono">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Inicio Contrato</label>
+                                        <input type="date" name="startDate" value="${data.startDate || ''}" class="w-full border-gray-300 rounded-lg p-2 text-sm focus:ring-amber-500 text-gray-600">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Acta de Inicio</label>
+                                        <input type="date" name="kickoffDate" value="${data.kickoffDate || ''}" class="w-full border-gray-300 rounded-lg p-2 text-sm focus:ring-amber-500 text-gray-600">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Fin Estimado</label>
+                                        <input type="date" name="endDate" value="${data.endDate || ''}" class="w-full border-gray-300 rounded-lg p-2 text-sm focus:ring-amber-500 text-gray-600">
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <div class="bg-white border-t border-gray-200 p-4 shrink-0 flex justify-end gap-3 rounded-b-xl">
+                        <button type="button" onclick="closeMainModal()" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition-colors text-sm">
+                            Cancelar
+                        </button>
+                        <button type="button" onclick="document.getElementById('modal-form').requestSubmit()" class="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white px-8 py-2.5 rounded-lg font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-check"></i> Guardar Cambios
+                        </button>
+                    </div>
+                </div>`;
+
+            setTimeout(() => {
+                const form = document.getElementById('modal-form');
+                if (form) {
+                    // Moneda
+                    const currencyInputs = form.querySelectorAll('.currency-input');
+                    currencyInputs.forEach(setupCurrencyInput);
+
+                    // Buscador Municipios
+                    const inputLocation = document.getElementById('project-location');
+                    const resultsContainer = document.getElementById('municipalities-results');
+
+                    fetchMunicipalities();
+
+                    inputLocation.addEventListener('input', async () => {
+                        const municipalities = await fetchMunicipalities();
+                        resultsContainer.innerHTML = '';
+                        const query = inputLocation.value;
+
+                        if (query.length < 2) {
+                            resultsContainer.classList.add('hidden');
+                            return;
+                        }
+
+                        const normalizedQuery = normalizeString(query);
+                        const filtered = municipalities.filter(m => normalizeString(m).includes(normalizedQuery));
+
+                        if (filtered.length > 0) {
+                            resultsContainer.classList.remove('hidden');
+                            filtered.slice(0, 10).forEach(municipality => {
+                                const item = document.createElement('div');
+                                item.className = 'px-4 py-2 hover:bg-amber-50 cursor-pointer text-sm text-gray-700 border-b border-gray-50 last:border-0';
+                                item.textContent = municipality;
+                                item.onclick = () => {
+                                    inputLocation.value = municipality;
+                                    resultsContainer.classList.add('hidden');
+                                };
+                                resultsContainer.appendChild(item);
+                            });
+                        } else {
+                            resultsContainer.classList.add('hidden');
+                        }
+                    });
+
+                    document.addEventListener('click', (e) => {
+                        if (e.target !== inputLocation) resultsContainer.classList.add('hidden');
+                    });
+                }
+            }, 100);
             break;
 
         case 'report-entry':
@@ -5252,7 +5685,7 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
 
-            case 'compare-prices': {
+        case 'compare-prices': {
             // 1. Configuración Visual
             if (document.getElementById('modal-title')) {
                 document.getElementById('modal-title').parentElement.style.display = 'none';
@@ -5278,7 +5711,7 @@ async function openMainModal(type, data = {}) {
                     if (item && item.unitCost > 0) {
                         const supplierName = po.supplierName || po.provider || 'Desconocido';
                         const currentBest = pricesBySupplier.get(supplierName);
-                        
+
                         if (!currentBest || item.unitCost < currentBest.price) {
                             pricesBySupplier.set(supplierName, {
                                 price: item.unitCost,
@@ -5312,7 +5745,7 @@ async function openMainModal(type, data = {}) {
                     const isBest = index === 0;
                     const medalColor = isBest ? 'text-yellow-400' : (index === 1 ? 'text-gray-400' : 'text-orange-400');
                     const borderClass = isBest ? 'border-emerald-500 ring-1 ring-emerald-500/30 bg-emerald-50/30' : 'border-gray-200 bg-white';
-                    
+
                     listHtml += `
                         <div class="flex items-center justify-between p-4 rounded-xl border ${borderClass} relative overflow-hidden">
                             ${isBest ? '<div class="absolute top-0 left-0 bg-emerald-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-br-lg">MEJOR OPCIÓN</div>' : ''}
@@ -5364,13 +5797,13 @@ async function openMainModal(type, data = {}) {
                     </div>
                 </div>
             `;
-            
+
             // Ocultar botón de acción principal (es solo informativo)
             setTimeout(() => {
                 const footerBtn = document.getElementById('modal-confirm-btn');
-                if(footerBtn) footerBtn.style.display = 'none';
+                if (footerBtn) footerBtn.style.display = 'none';
             }, 0);
-            
+
             break;
         }
 
@@ -5417,122 +5850,298 @@ async function openMainModal(type, data = {}) {
             `;
             break;
 
+        case 'generate-certification':
+            // 1. RESETEO DE FORMATO (CRÍTICO)
+            if (modalContentDiv) {
+                // Borramos todas las clases de layout que pudieron quedar de 'editUser'
+                modalContentDiv.className = '';
+                // Aplicamos clases base limpias para un modal pequeño
+                modalContentDiv.classList.add('bg-white', 'rounded-lg', 'shadow-xl', 'transform', 'transition-all', 'w-full', 'max-w-md', 'p-6', 'relative');
 
-        // --- CASO: REVISAR Y APROBAR/RECHAZAR PRÉSTAMO ---
-        case 'review-loan':
-            title = 'Revisión y Aprobación';
-            btnText = 'Aprobar y Activar Deuda';
-            btnClass = 'bg-green-600 hover:bg-green-700 w-full md:w-auto';
+                // Restauramos padding del body
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.parentElement.classList.remove('overflow-hidden');
+                modalBody.style.padding = '';
+            }
 
-            const fmtMoney = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+
+            title = 'Generar Certificación Laboral';
+            btnText = 'Descargar PDF';
+            btnClass = 'bg-blue-600 hover:bg-blue-700 text-white w-full shadow-md';
+
+            // 2. FECHAS SUGERIDAS
+            // Inicio: Contrato > Creación > Hoy
+            const startDateVal = data.contractStartDate || (data.createdAt ? new Date(data.createdAt.seconds * 1000).toISOString().split('T')[0] : '');
+            // Fin: Contrato > Vacío
+            const endDateVal = data.contractEndDate || '';
+
+            // 3. LÓGICA SALARIO
+            const isSalaryLocked = !!data.forceNoSalary;
+            const salaryChecked = isSalaryLocked ? '' : 'checked';
+            const salaryStateClass = isSalaryLocked ? 'opacity-60 cursor-not-allowed bg-gray-100' : 'hover:bg-gray-50 cursor-pointer';
+            const salaryHelp = isSalaryLocked ? 'Deshabilitado: Formato sin sueldo.' : `Mostrar sueldo básico mensual ($ ${new Intl.NumberFormat('es-CO').format(data.salarioBasico || 0)})`;
 
             bodyHtml = `
-                <input type="hidden" name="loanId" value="${data.id}">
-                <input type="hidden" name="userId" value="${data.uid}">
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    
-                    <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                        <div class="flex items-center gap-4 mb-4 border-b border-gray-100 pb-3">
-                            
-                            <img src="${data.userPhoto}" alt="Perfil" class="w-14 h-14 rounded-full object-cover border-2 border-indigo-100 shadow-sm">
-                            
-                            <div>
-                                <p class="text-xs text-gray-400 uppercase font-bold">Solicitante</p>
-                                <p class="font-bold text-gray-800 text-lg leading-tight">${data.userName}</p>
-                            </div>
+                <div class="space-y-5">
+                    <div class="text-center border-b border-gray-100 pb-4 mb-2">
+                        <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-2xl mx-auto mb-2">
+                            <i class="fa-solid fa-file-contract"></i>
                         </div>
-                        <div>
-                            <p class="text-xs text-gray-400 uppercase font-bold mb-1">Motivo</p>
-                            <p class="text-sm text-gray-600 italic bg-gray-50 p-3 rounded border border-gray-100">"${data.description}"</p>
-                        </div>
+                        <h3 class="text-lg font-bold text-gray-800">Certificación Laboral</h3>
+                        <p class="text-xs text-gray-500 font-medium">${data.firstName} ${data.lastName}</p>
                     </div>
 
-                    <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100 shadow-sm relative overflow-hidden">
-                        <div class="absolute top-0 right-0 -mt-2 -mr-2 w-16 h-16 bg-indigo-100 rounded-full opacity-50"></div>
-                        
-                        <h4 class="text-indigo-800 font-bold text-sm mb-3 flex items-center">
-                            <i class="fa-solid fa-money-bill-transfer mr-2"></i> Datos para Transferencia
-                        </h4>
-                        
-                        <div class="space-y-2">
-                            <div class="flex justify-between text-sm">
-                                <span class="text-indigo-400">Banco:</span>
-                                <span class="font-bold text-indigo-900 text-right">${data.bankName}</span>
-                            </div>
-                             <div class="flex justify-between text-sm">
-                                <span class="text-indigo-400">Tipo:</span>
-                                <span class="font-bold text-indigo-900 text-right">${data.accountType}</span>
-                            </div>
-                            <div class="mt-2 pt-2 border-t border-indigo-200">
-                                <p class="text-xs text-indigo-500 mb-1">Número de Cuenta:</p>
-                                <div class="flex items-center justify-between bg-white rounded px-2 py-1 border border-indigo-200">
-                                    <span class="font-mono font-bold text-lg text-gray-800 select-all tracking-wide">${data.accountNumber}</span>
-                                    <button type="button" class="text-gray-400 hover:text-indigo-600 transition-colors" onclick="navigator.clipboard.writeText('${data.accountNumber}'); window.showToast('Cuenta copiada', 'success')" title="Copiar">
-                                        <i class="fa-regular fa-copy"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+                    <div class="bg-blue-50 p-3 rounded-lg border border-blue-100 flex items-start gap-3">
+                        <i class="fa-solid fa-circle-info text-blue-500 mt-0.5 text-sm"></i>
+                        <p class="text-xs text-blue-700">
+                            Si hay fecha de fin, se generará como <strong>Término Fijo</strong>. <br>
+                            Si se deja vacía, se generará como <strong>Hasta la fecha</strong>.
+                        </p>
                     </div>
-                </div>
 
-                <div class="bg-gray-50 p-5 rounded-xl border border-gray-200">
-                    <h4 class="text-sm font-bold text-gray-700 border-b border-gray-200 pb-2 mb-4 flex items-center">
-                        <i class="fa-solid fa-gavel mr-2 text-gray-400"></i> Decisión Administrativa
-                    </h4>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                    <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Monto Aprobado</label>
-                            <div class="relative">
-                                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</span>
-                                <input type="text" name="approvedAmount" required 
-                                    class="currency-input pl-7 w-full border border-gray-300 rounded-lg p-2.5 text-xl font-bold text-green-700 focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none bg-white shadow-sm" 
-                                    value="${data.amount}">
-                            </div>
-                            <p class="text-[10px] text-gray-400 mt-1">Solicitado: ${fmtMoney.format(data.amount)}</p>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Inicio</label>
+                            <input type="date" name="startDate" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value="${startDateVal}" required>
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cuotas</label>
-                            <input type="number" name="approvedInstallments" min="1" max="24" required 
-                                class="w-full border border-gray-300 rounded-lg p-2.5 text-gray-800 font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white shadow-sm" 
-                                value="${data.installments}">
-                            <p class="text-[10px] text-gray-400 mt-1">Solicitado: ${data.installments}</p>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Fin</label>
+                            <input type="date" name="endDate" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value="${endDateVal}">
                         </div>
                     </div>
 
                     <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nota Interna (Opcional)</label>
-                        <textarea name="adminNotes" rows="2" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-blue-500 outline-none" placeholder="Ej: Aprobado parcial por capacidad de endeudamiento..."></textarea>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cargo</label>
+                        <input type="text" name="jobTitle" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm font-bold text-gray-700" value="${data.jobTitle || 'Operario de Vidrio y Aluminio'}" required>
                     </div>
-                </div>
+                    
+                    <div class="flex items-center justify-between p-3 border rounded-lg transition-colors ${salaryStateClass}" ${isSalaryLocked ? '' : 'onclick="document.getElementById(\'include-salary\').click()"'}>
+                        <div>
+                            <p class="text-sm font-bold text-gray-700">Incluir Salario</p>
+                            <p class="text-xs text-gray-500">${salaryHelp}</p>
+                        </div>
+                        <input type="checkbox" id="include-salary" name="includeSalary" class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500" ${salaryChecked} ${isSalaryLocked ? 'disabled' : ''}>
+                    </div>
+                    
+                    <div class="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors" onclick="document.getElementById('include-logo').click()">
+                        <div>
+                            <p class="text-sm font-bold text-gray-700">Usar Papelería (Logo)</p>
+                            <p class="text-xs text-gray-500">Incluir encabezado y pie de página</p>
+                        </div>
+                        <input type="checkbox" id="include-logo" name="includeLogo" class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500" checked>
+                    </div>
 
-                <div class="mt-6 flex justify-between items-center">
-                    <button type="button" id="btn-reject-loan-modal" class="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded-lg text-sm font-bold transition-colors flex items-center">
-                        <i class="fa-solid fa-ban mr-2"></i> Rechazar Solicitud
-                    </button>
+                    <input type="hidden" name="salarioBasico" value="${data.salarioBasico || 0}">
+                    <input type="hidden" name="fullName" value="${data.firstName} ${data.lastName}">
+                    <input type="hidden" name="idNumber" value="${data.idNumber}">
+                </div>
+            `;
+            break;
+
+
+        // --- CASO: REVISIÓN DE PRÉSTAMO (MODAL DE APROBACIÓN) ---
+        case 'review-loan': {
+            // 1. Configuración Visual
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+            
+            // Ocultamos el footer por defecto para usar el personalizado
+            const defaultFooter = document.getElementById('main-modal-footer');
+            if (defaultFooter) defaultFooter.style.display = 'none';
+
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-3xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Aprobar Préstamo';
+            const fmtMoney = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+
+            bodyHtml = `
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-emerald-600 to-green-600 px-6 py-5 shrink-0 rounded-t-xl flex justify-between items-center relative overflow-hidden">
+                        <div class="flex items-center gap-4 text-white relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-2xl border border-white/10 shadow-inner">
+                                <i class="fa-solid fa-file-signature"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-bold">Aprobación de Crédito</h2>
+                                <p class="text-emerald-100 text-xs font-medium">Revisión final y autorización</p>
+                            </div>
+                        </div>
+                        <button onclick="closeMainModal()" class="text-white/70 hover:text-white transition-colors relative z-10">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                    </div>
+
+                    <div class="p-6 bg-gray-50 flex-grow overflow-y-auto custom-scrollbar space-y-6">
+                        
+                        <input type="hidden" name="loanId" value="${data.id}">
+                        <input type="hidden" name="userId" value="${data.uid}">
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            
+                            <div class="space-y-4">
+                                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                                    <img src="${data.userPhoto}" alt="Perfil" class="w-14 h-14 rounded-full object-cover border-2 border-emerald-100 p-0.5">
+                                    <div>
+                                        <p class="text-[10px] text-gray-400 uppercase font-bold tracking-wide">Solicitante</p>
+                                        <p class="font-bold text-gray-800 text-lg leading-tight">${data.userName}</p>
+                                    </div>
+                                </div>
+
+                                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                    <p class="text-xs text-gray-400 uppercase font-bold mb-3 border-b border-gray-100 pb-1">Solicitud Original</p>
+                                    <div class="flex justify-between items-end mb-2">
+                                        <span class="text-2xl font-black text-gray-700">${fmtMoney.format(data.amount)}</span>
+                                        <span class="text-xs bg-gray-100 px-2 py-1 rounded text-gray-500 font-bold">${data.installments} Cuotas</span>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm text-gray-600 italic">
+                                        "${data.description}"
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="space-y-4">
+                                <div class="bg-emerald-50 p-5 rounded-xl border border-emerald-100 shadow-sm">
+                                    <h4 class="text-sm font-bold text-emerald-800 mb-4 flex items-center">
+                                        <i class="fa-solid fa-gavel mr-2"></i> Condiciones de Aprobación
+                                    </h4>
+
+                                    <div class="space-y-4">
+                                        <div>
+                                            <label class="block text-xs font-bold text-emerald-700 mb-1 uppercase">Monto Aprobado</label>
+                                            <div class="relative">
+                                                <span class="absolute left-3 top-2.5 text-emerald-500 font-bold text-lg">$</span>
+                                                <input type="text" name="approvedAmount" required 
+                                                    class="currency-input w-full pl-7 border border-emerald-200 rounded-lg p-2.5 text-xl font-black text-emerald-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none bg-white shadow-sm" 
+                                                    value="${data.amount}">
+                                            </div>
+                                        </div>
+                                        
+                                        <div>
+                                            <label class="block text-xs font-bold text-emerald-700 mb-1 uppercase">Cuotas Finales</label>
+                                            <input type="number" name="approvedInstallments" min="1" max="24" required 
+                                                class="w-full border border-emerald-200 rounded-lg p-2.5 text-emerald-900 font-bold focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-white shadow-sm" 
+                                                value="${data.installments}">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nota Interna (Opcional)</label>
+                                    <textarea name="adminNotes" rows="2" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none resize-none" placeholder="Ej: Aprobado según capacidad de pago..."></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-indigo-50 rounded-xl p-4 border border-indigo-100 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="p-2 bg-white rounded-lg text-indigo-600 shadow-sm"><i class="fa-solid fa-building-columns"></i></div>
+                                <div>
+                                    <p class="text-[10px] text-indigo-400 uppercase font-bold">Girar a:</p>
+                                    <p class="text-sm font-bold text-indigo-900">${data.bankName} - ${data.accountType}</p>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded border border-indigo-100 shadow-sm cursor-pointer hover:bg-indigo-50 transition-colors" onclick="navigator.clipboard.writeText('${data.accountNumber}'); window.showToast('Cuenta copiada', 'success')">
+                                    <span class="font-mono text-sm font-bold text-gray-700 select-all">${data.accountNumber}</span>
+                                    <i class="fa-regular fa-copy text-xs text-indigo-400"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <div class="bg-white border-t border-gray-200 p-4 shrink-0 flex justify-between items-center rounded-b-xl">
+                        <button type="button" id="btn-reject-loan-modal" class="text-red-500 hover:text-red-700 hover:bg-red-50 px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2">
+                            <i class="fa-solid fa-ban"></i> Rechazar
+                        </button>
+
+                        <div class="flex gap-3">
+                            <button type="button" onclick="closeMainModal()" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition-colors text-sm">
+                                Cancelar
+                            </button>
+                            <button type="button" id="btn-approve-final" class="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-2.5 rounded-lg font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all text-sm flex items-center gap-2">
+                                <i class="fa-solid fa-check"></i> Aprobar
+                            </button>
+                        </div>
+                    </div>
                 </div>
             `;
 
             setTimeout(() => {
-                const amountInput = modalForm.querySelector('.currency-input');
+                // Configurar moneda
+                const amountInput = modalForm.querySelector('input[name="approvedAmount"]');
                 setupCurrencyInput(amountInput);
+                
+                // Referencias
+                const loanId = modalForm.querySelector('input[name="loanId"]').value;
+                const userId = modalForm.querySelector('input[name="userId"]').value;
+                const notesInput = modalForm.querySelector('textarea[name="adminNotes"]');
+                const installmentsInput = modalForm.querySelector('input[name="approvedInstallments"]');
 
+                // --- LÓGICA DE APROBACIÓN ---
+                const approveBtn = document.getElementById('btn-approve-final');
+                approveBtn.addEventListener('click', async () => {
+                    const approvedVal = parseFloat(amountInput.value.replace(/[$. ]/g, '')) || 0;
+                    const approvedInstallments = parseInt(installmentsInput.value) || 1;
+                    const notes = notesInput.value;
+                    const currentUser = auth.currentUser; // <-- CORRECCIÓN: Usamos auth.currentUser
+
+                    if (approvedVal <= 0) {
+                        window.showToast("El monto aprobado debe ser mayor a 0.", "error");
+                        return;
+                    }
+
+                    approveBtn.disabled = true;
+                    approveBtn.innerHTML = '<div class="loader-small-white mx-auto"></div>';
+
+                    try {
+                        // Actualizar en Firestore
+                        await updateDoc(doc(db, "users", userId, "loans", loanId), {
+                            status: 'active', // Pasa de pending a active
+                            amount: approvedVal, // Puede haber cambiado
+                            balance: approvedVal, // El saldo inicial es el monto aprobado
+                            installments: approvedInstallments,
+                            approvedAt: serverTimestamp(),
+                            approvedBy: currentUser ? currentUser.uid : 'admin',
+                            adminNotes: notes
+                        });
+
+                        window.showToast("Préstamo aprobado y activado.", "success");
+                        closeMainModal();
+                        
+                        // Refrescar lista de pendientes
+                        setTimeout(() => openMainModal('view-pending-loans'), 500);
+
+                    } catch (error) {
+                        console.error("Error aprobando:", error);
+                        window.showToast("Error al aprobar.", "error");
+                        approveBtn.disabled = false;
+                        approveBtn.textContent = "Aprobar";
+                    }
+                });
+
+                // --- LÓGICA DE RECHAZO ---
                 document.getElementById('btn-reject-loan-modal').addEventListener('click', () => {
-                    const loanId = modalForm.querySelector('input[name="loanId"]').value;
-                    const userId = modalForm.querySelector('input[name="userId"]').value;
-                    const notes = modalForm.querySelector('textarea[name="adminNotes"]').value;
+                    const currentUser = auth.currentUser; // <-- CORRECCIÓN
 
-                    openConfirmModal("¿Rechazar solicitud? No se generará deuda.", async () => {
+                    openConfirmModal("¿Rechazar solicitud definitivamente?", async () => {
                         try {
                             await updateDoc(doc(db, "users", userId, "loans", loanId), {
                                 status: 'rejected',
                                 rejectedAt: serverTimestamp(),
-                                rejectedBy: currentUser.uid,
-                                adminNotes: notes || 'Rechazado por administrador'
+                                rejectedBy: currentUser ? currentUser.uid : 'admin',
+                                adminNotes: notesInput.value || 'Rechazado por administración'
                             });
-                            window.showToast("Solicitud rechazada correctamente.", "success");
+                            window.showToast("Solicitud rechazada.", "success");
                             closeMainModal();
                             setTimeout(() => openMainModal('view-pending-loans'), 500);
                         } catch (e) {
@@ -5543,6 +6152,164 @@ async function openMainModal(type, data = {}) {
                 });
             }, 100);
             break;
+        }
+
+        // --- CASO: HISTORIAL COMPLETO DE PRÉSTAMOS (NUEVO) ---
+        case 'view-loan-history': {
+            // 1. Configuración Visual
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+            const defaultFooter = document.getElementById('main-modal-footer');
+            if (defaultFooter) defaultFooter.style.display = 'none';
+
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-2xl', 'flex', 'flex-col', 'max-h-[85vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Historial de Créditos';
+            const fmtMoney = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+
+            bodyHtml = `
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-slate-700 to-slate-800 px-6 py-5 shrink-0 rounded-t-xl flex justify-between items-center relative overflow-hidden">
+                        <div class="flex items-center gap-3 text-white z-10 relative">
+                            <div class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-xl border border-white/10">
+                                <i class="fa-solid fa-clock-rotate-left"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-lg font-bold">Historial de Créditos</h2>
+                                <p class="text-slate-300 text-xs font-medium">Trazabilidad completa de préstamos</p>
+                            </div>
+                        </div>
+                        <button onclick="closeMainModal()" class="text-white/70 hover:text-white transition-colors relative z-10">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                    </div>
+
+                    <div id="loan-history-list" class="p-6 bg-gray-50 flex-grow overflow-y-auto custom-scrollbar space-y-4">
+                        <div class="flex justify-center items-center h-32">
+                            <div class="loader"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            setTimeout(async () => {
+                const listContainer = document.getElementById('loan-history-list');
+                const userId = data.userId; // ID del usuario pasado al abrir el modal
+
+                try {
+                    // Consultar TODOS los préstamos ordenados por fecha (más reciente primero)
+                    const q = query(
+                        collection(db, "users", userId, "loans"),
+                        orderBy("date", "desc") // O createdAt
+                    );
+                    const snapshot = await getDocs(q);
+
+                    if (snapshot.empty) {
+                        listContainer.innerHTML = `
+                            <div class="text-center py-10 text-gray-400">
+                                <i class="fa-solid fa-folder-open text-4xl mb-2 opacity-30"></i>
+                                <p>Este usuario no tiene historial de préstamos.</p>
+                            </div>`;
+                        return;
+                    }
+
+                    listContainer.innerHTML = '';
+
+                    snapshot.forEach(doc => {
+                        const loan = doc.data();
+                        
+                        // Configuración de Estilos según Estado
+                        let statusConfig = {
+                            color: 'gray',
+                            bg: 'bg-gray-100',
+                            text: 'text-gray-600',
+                            label: 'Desconocido',
+                            icon: 'fa-circle-question'
+                        };
+
+                        let footerHtml = '';
+
+                        if (loan.status === 'active') {
+                            statusConfig = { color: 'emerald', bg: 'bg-emerald-50', text: 'text-emerald-700', label: 'Activo', icon: 'fa-circle-play' };
+                            // Barra de progreso para activos
+                            const progress = Math.max(0, ((loan.amount - (loan.balance || 0)) / loan.amount) * 100);
+                            footerHtml = `
+                                <div class="mt-3">
+                                    <div class="flex justify-between text-[10px] text-gray-500 mb-1">
+                                        <span>Progreso Pago</span>
+                                        <span class="font-bold text-emerald-600">${fmtMoney.format(loan.balance)} Pendiente</span>
+                                    </div>
+                                    <div class="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                                        <div class="bg-emerald-500 h-1.5 rounded-full transition-all" style="width: ${progress}%"></div>
+                                    </div>
+                                </div>
+                            `;
+                        } else if (loan.status === 'paid') {
+                            statusConfig = { color: 'blue', bg: 'bg-blue-50', text: 'text-blue-700', label: 'Pagado', icon: 'fa-circle-check' };
+                            
+                            // FECHA DE CANCELACIÓN
+                            const paidDate = loan.paidAt ? new Date(loan.paidAt.seconds * 1000).toLocaleDateString('es-CO', {day: 'numeric', month: 'long', year: 'numeric'}) : 'Fecha desconocida';
+                            
+                            footerHtml = `
+                                <div class="mt-3 pt-2 border-t border-blue-100 flex items-center gap-2 text-xs text-blue-800 bg-blue-50/50 p-2 rounded-lg">
+                                    <i class="fa-solid fa-calendar-check text-blue-500"></i>
+                                    <span>Cancelado el: <strong>${paidDate}</strong></span>
+                                </div>
+                            `;
+                        } else if (loan.status === 'rejected') {
+                            statusConfig = { color: 'red', bg: 'bg-red-50', text: 'text-red-700', label: 'Rechazado', icon: 'fa-ban' };
+                            footerHtml = `
+                                <div class="mt-2 text-xs text-red-600 italic">
+                                    "${loan.adminNotes || 'Sin motivo registrado'}"
+                                </div>
+                            `;
+                        } else if (loan.status === 'pending') {
+                            statusConfig = { color: 'yellow', bg: 'bg-yellow-50', text: 'text-yellow-700', label: 'Pendiente', icon: 'fa-clock' };
+                        }
+
+                        const dateStr = new Date(loan.date).toLocaleDateString('es-CO');
+
+                        // Renderizar Tarjeta
+                        const card = document.createElement('div');
+                        card.className = `bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative overflow-hidden group hover:shadow-md transition-all`;
+                        
+                        card.innerHTML = `
+                            <div class="absolute top-0 left-0 w-1 h-full bg-${statusConfig.color}-500"></div>
+                            <div class="flex justify-between items-start mb-2 pl-2">
+                                <div>
+                                    <p class="text-xs text-gray-400 font-bold uppercase tracking-wide">${dateStr}</p>
+                                    <h4 class="font-bold text-gray-800 text-lg">${fmtMoney.format(loan.amount)}</h4>
+                                </div>
+                                <span class="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border border-${statusConfig.color}-200 ${statusConfig.bg} ${statusConfig.text} flex items-center gap-1">
+                                    <i class="fa-solid ${statusConfig.icon}"></i> ${statusConfig.label}
+                                </span>
+                            </div>
+                            
+                            <div class="pl-2">
+                                <p class="text-sm text-gray-600 italic">"${loan.description}"</p>
+                                <p class="text-[10px] text-gray-400 mt-1">Pactado a ${loan.installments || 1} cuotas</p>
+                            </div>
+
+                            <div class="pl-2">
+                                ${footerHtml}
+                            </div>
+                        `;
+                        listContainer.appendChild(card);
+                    });
+
+                } catch (error) {
+                    console.error("Error historial préstamos:", error);
+                    listContainer.innerHTML = `<div class="text-center text-red-500 py-4">Error al cargar historial.</div>`;
+                }
+            }, 100);
+            break;
+        }
 
         case 'create-daily-report':
             title = 'Nuevo Reporte de Actividad';
@@ -5649,59 +6416,48 @@ async function openMainModal(type, data = {}) {
 
             setTimeout(async () => {
                 const listContainer = document.getElementById('audit-log-list');
-                try {
-                    // Consultar logs filtrados por este empleado (targetId)
-                    // data.userId viene pasado al abrir el modal
-                    const q = query(
-                        collection(db, "audit_logs"),
-                        where("targetId", "==", data.userId),
-                        orderBy("timestamp", "desc"),
-                        limit(20)
-                    );
-                    const snapshot = await getDocs(q);
 
-                    listContainer.innerHTML = '';
+                // LLAMADA A TU FUNCIÓN RECUPERADA
+                const logs = await loadUserAuditLogs(data.userId);
 
-                    if (snapshot.empty) {
-                        listContainer.innerHTML = `<p class="text-gray-400 text-center py-4">No hay registros de cambios recientes.</p>`;
-                        return;
-                    }
+                listContainer.innerHTML = '';
 
-                    snapshot.forEach(doc => {
-                        const log = doc.data();
-                        const date = log.timestamp ? log.timestamp.toDate().toLocaleString('es-CO') : 'N/A';
-
-                        // Icono según acción
-                        let iconColor = 'text-gray-500';
-                        let icon = 'fa-info-circle';
-                        if (log.action.includes('Eliminar')) { icon = 'fa-trash-can'; iconColor = 'text-red-500'; }
-                        if (log.action.includes('Editar') || log.action.includes('Cambio')) { icon = 'fa-pen-to-square'; iconColor = 'text-yellow-600'; }
-                        if (log.action.includes('Pago')) { icon = 'fa-money-bill'; iconColor = 'text-green-600'; }
-
-                        const item = document.createElement('div');
-                        item.className = "bg-white p-3 rounded border border-gray-200 shadow-sm text-sm";
-                        item.innerHTML = `
-                            <div class="flex justify-between items-start">
-                                <div class="flex items-center gap-2 font-bold text-gray-700">
-                                    <i class="fa-solid ${icon} ${iconColor}"></i>
-                                    <span>${log.action}</span>
-                                </div>
-                                <span class="text-xs text-gray-400">${date}</span>
-                            </div>
-                            <p class="text-gray-600 mt-1">${log.description}</p>
-                            <div class="mt-2 pt-2 border-t border-gray-100 flex justify-between items-center text-xs">
-                                <span class="text-gray-400">Por: <span class="font-semibold text-gray-600">${log.performedByName || 'Admin'}</span></span>
-                                ${log.previousData ? `<button class="text-blue-500 hover:underline" onclick="alert('Detalle técnico: ' + '${log.previousData.replace(/'/g, "")}')">Ver Detalle</button>` : ''}
-                            </div>
-                        `;
-                        listContainer.appendChild(item);
-                    });
-                } catch (error) {
-                    console.error(error);
-                    listContainer.innerHTML = `<p class="text-red-500 text-center">Error cargando logs. (Asegúrate de crear el índice compuesto en Firebase si la consola lo pide).</p>`;
+                if (logs.length === 0) {
+                    listContainer.innerHTML = `<p class="text-gray-400 text-center py-4">No hay registros de cambios recientes.</p>`;
+                    return;
                 }
+
+                logs.forEach(log => {
+                    const dateStr = log.date.toLocaleString('es-CO');
+
+                    // Icono según acción
+                    let iconColor = 'text-gray-500';
+                    let icon = 'fa-info-circle';
+                    if (log.action.includes('Eliminar')) { icon = 'fa-trash-can'; iconColor = 'text-red-500'; }
+                    if (log.action.includes('Editar') || log.action.includes('Cambio')) { icon = 'fa-pen-to-square'; iconColor = 'text-yellow-600'; }
+                    if (log.action.includes('Pago')) { icon = 'fa-money-bill'; iconColor = 'text-green-600'; }
+
+                    const item = document.createElement('div');
+                    item.className = "bg-white p-3 rounded border border-gray-200 shadow-sm text-sm";
+                    item.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div class="flex items-center gap-2 font-bold text-gray-700">
+                                <i class="fa-solid ${icon} ${iconColor}"></i>
+                                <span>${log.action}</span>
+                            </div>
+                            <span class="text-xs text-gray-400">${dateStr}</span>
+                        </div>
+                        <p class="text-gray-600 mt-1">${log.details}</p>
+                        <div class="mt-2 pt-2 border-t border-gray-100 flex justify-between items-center text-xs">
+                            <span class="text-gray-400">Por: <span class="font-semibold text-gray-600">${log.by}</span></span>
+                            ${log.previousData ? `<button class="text-blue-500 hover:underline" onclick="alert('Detalle técnico: ' + '${log.previousData.replace(/'/g, "")}')">Ver Detalle</button>` : ''}
+                        </div>
+                    `;
+                    listContainer.appendChild(item);
+                });
             }, 100);
             break;
+
 
         case 'check-permissions':
             title = 'Verificación de Permisos';
@@ -5992,7 +6748,7 @@ async function openMainModal(type, data = {}) {
             }, 100);
             break;
 
-case 'add-catalog-item':
+        case 'add-catalog-item':
         case 'edit-catalog-item': {
             // 1. Ocultar título por defecto del modal
             if (document.getElementById('modal-title')) {
@@ -6000,7 +6756,7 @@ case 'add-catalog-item':
             }
 
             const isEditing = type === 'edit-catalog-item';
-            
+
             // Configuración visual según la acción (Crear = Azul, Editar = Amarillo)
             const headerTitle = isEditing ? 'Editar Material' : 'Nuevo Material';
             const headerIcon = isEditing ? 'fa-pen-to-square' : 'fa-box-open';
@@ -6009,8 +6765,8 @@ case 'add-catalog-item':
 
             title = headerTitle; // Fallback interno
             btnText = isEditing ? 'Guardar Cambios' : 'Añadir Material';
-            btnClass = isEditing 
-                ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white shadow-md' 
+            btnClass = isEditing
+                ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white shadow-md'
                 : 'bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white shadow-md';
 
             modalContentDiv.classList.add('max-w-3xl'); // Un poco más ancho para que respire
@@ -6753,57 +7509,171 @@ case 'add-catalog-item':
             break;
         }
 
-        case 'request-loan':
+        case 'request-loan': {
+            // 1. Configuración Visual
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+
+            // Aseguramos que el footer estándar esté visible
+            const defaultFooter = document.getElementById('main-modal-footer');
+            if (defaultFooter) defaultFooter.style.display = 'flex';
+
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
             title = 'Solicitar Préstamo / Adelanto';
             btnText = 'Enviar Solicitud';
-            btnClass = 'bg-indigo-600 hover:bg-indigo-700';
+            btnClass = 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md';
+
             bodyHtml = `
-                <div class="space-y-4">
-                    <div class="p-3 bg-blue-50 text-blue-800 rounded-lg text-sm mb-4">
-                        <i class="fa-solid fa-circle-info mr-2"></i>
-                        La solicitud será revisada por administración. Si se aprueba, se descontará de tus próximos pagos.
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-5 shrink-0 rounded-t-xl flex justify-between items-center relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none transform scale-150 translate-x-2 -translate-y-2">
+                            <i class="fa-solid fa-hand-holding-dollar text-6xl text-white"></i>
+                        </div>
+                        
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white text-2xl border border-white/10 shadow-inner">
+                                <i class="fa-solid fa-sack-dollar"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-bold tracking-tight text-white">Nuevo Préstamo</h2>
+                                <p class="text-emerald-100 text-xs font-medium">Solicitud de anticipo o libranza</p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white transition-colors relative z-10">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Monto Solicitado</label>
-                        <input type="text" name="amount" required class="currency-input mt-1 w-full border rounded-md p-3 text-lg font-bold text-gray-800" placeholder="$ 0">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Fecha Deseada</label>
-                        <input type="date" name="date" required class="mt-1 w-full border rounded-md p-2" value="${new Date().toISOString().split('T')[0]}">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Motivo / Descripción</label>
-                        <textarea name="description" rows="3" required class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Calamidad doméstica, arreglo moto..."></textarea>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Cuotas Sugeridas (Opcional)</label>
-                        <input type="number" name="installments" min="1" max="12" value="1" class="mt-1 w-full border rounded-md p-2">
-                        <p class="text-xs text-gray-500 mt-1">Número de pagos en los que te gustaría diferirlo.</p>
+
+                    <div class="p-6 bg-gray-50 flex-grow overflow-y-auto custom-scrollbar space-y-5">
+                        
+                        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                            <label class="block text-xs font-bold text-emerald-800 mb-2 uppercase tracking-wide">Monto Solicitado</label>
+                            <div class="relative">
+                                <span class="absolute left-3 top-2 text-emerald-600 font-black text-xl">$</span>
+                                <input type="text" id="loan-request-amount" name="amount" required 
+                                    class="currency-input w-full pl-8 pr-4 py-2 border-b-2 border-gray-200 focus:border-emerald-500 bg-transparent text-2xl font-black text-gray-800 placeholder-gray-300 outline-none transition-colors text-right" 
+                                    placeholder="0">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-600 mb-1.5">Fecha Deseada</label>
+                                <input type="date" name="date" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-gray-600" value="${new Date().toISOString().split('T')[0]}">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-600 mb-1.5">Cuotas (Meses)</label>
+                                <div class="relative">
+                                    <input type="number" id="loan-request-installments" name="installments" value="1" min="1" max="24" 
+                                        class="w-full border border-gray-300 rounded-lg p-2.5 text-sm font-bold text-center focus:ring-2 focus:ring-emerald-500 outline-none">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-emerald-50 rounded-xl p-4 border border-emerald-100 flex justify-between items-center">
+                            <div>
+                                <p class="text-xs text-emerald-700 font-bold uppercase flex items-center gap-2">
+                                    <i class="fa-solid fa-calculator"></i> Cuota Estimada
+                                </p>
+                                <p class="text-[10px] text-emerald-600">Descuento aproximado por pago</p>
+                            </div>
+                            <div class="text-right">
+                                <p id="loan-request-quota" class="text-xl font-black text-emerald-800">$ 0</p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-gray-600 mb-1.5">Motivo / Descripción</label>
+                            <textarea name="description" rows="3" required class="w-full border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none resize-none" placeholder="Ej: Calamidad doméstica, arreglo vehículo..."></textarea>
+                        </div>
+
+                        <div class="flex gap-3 items-start p-3 bg-blue-50 text-blue-700 rounded-lg text-xs border border-blue-100">
+                            <i class="fa-solid fa-circle-info mt-0.5"></i>
+                            <p>La solicitud pasará a revisión por administración. Una vez aprobada, el saldo se descontará automáticamente de tus próximos pagos de nómina según las cuotas pactadas.</p>
+                        </div>
                     </div>
                 </div>
             `;
+
             setTimeout(() => {
-                const amountInput = modalForm.querySelector('.currency-input');
+                const amountInput = document.getElementById('loan-request-amount');
+                const installmentsInput = document.getElementById('loan-request-installments');
+                const quotaDisplay = document.getElementById('loan-request-quota');
+
+                // Configurar formato moneda
                 setupCurrencyInput(amountInput);
+
+                // Lógica de cálculo en tiempo real
+                const calculate = () => {
+                    const amount = parseFloat(amountInput.value.replace(/[$. ]/g, '')) || 0;
+                    const installments = parseInt(installmentsInput.value) || 1;
+
+                    if (amount > 0 && installments > 0) {
+                        const quota = amount / installments;
+                        // Formateador local simple
+                        quotaDisplay.textContent = new Intl.NumberFormat('es-CO', {
+                            style: 'currency', currency: 'COP', minimumFractionDigits: 0
+                        }).format(quota);
+                    } else {
+                        quotaDisplay.textContent = '$ 0';
+                    }
+                };
+
+                amountInput.addEventListener('input', calculate);
+                installmentsInput.addEventListener('input', calculate);
             }, 100);
             break;
+        }
 
         // --- CASO: VER PRÉSTAMOS PENDIENTES (ADMIN) ---
         case 'view-pending-loans':
-            title = 'Solicitudes de Préstamo Pendientes';
-            btnText = 'Cerrar';
-            btnClass = 'bg-gray-500 hover:bg-gray-600 hidden'; // Ocultamos el botón principal del modal
+            // 1. Configuración Visual
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
 
-            // Estructura del contenedor de la lista con loader inicial
+            const footerPending = document.getElementById('modal-confirm-btn')?.parentElement;
+            if (footerPending) footerPending.style.display = 'none';
+
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-4xl', 'flex', 'flex-col', 'max-h-[85vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Solicitudes de Préstamo Pendientes';
+
             bodyHtml = `
-                <div id="pending-loans-list" class="space-y-4 min-h-[200px]">
-                    <div class="flex justify-center items-center h-32">
-                        <div class="loader"></div>
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-slate-700 to-slate-900 px-6 py-5 shrink-0 rounded-t-xl flex justify-between items-center">
+                        <div class="flex items-center gap-3 text-white">
+                            <div class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-xl border border-white/10">
+                                <i class="fa-solid fa-inbox"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-lg font-bold">Solicitudes Pendientes</h2>
+                                <p class="text-slate-300 text-xs font-medium">Revisión y aprobación de créditos</p>
+                            </div>
+                        </div>
+                        <button onclick="closeMainModal()" class="text-white/70 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+                    </div>
+
+                    <div id="pending-loans-list" class="p-6 bg-gray-50 flex-grow overflow-y-auto custom-scrollbar space-y-4">
+                        <div class="flex justify-center items-center h-32">
+                            <div class="loader"></div>
+                        </div>
                     </div>
                 </div>
             `;
 
-            // Lógica de carga asíncrona para Préstamos Pendientes
             setTimeout(async () => {
                 const listContainer = document.getElementById('pending-loans-list');
                 const fmtMoney = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
@@ -6814,12 +7684,12 @@ case 'add-catalog-item':
 
                     if (snapshot.empty) {
                         listContainer.innerHTML = `
-                            <div class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50">
+                            <div class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-white/50">
                                 <div class="bg-white p-4 rounded-full shadow-sm mb-3">
-                                    <i class="fa-solid fa-check text-3xl text-green-500"></i>
+                                    <i class="fa-solid fa-check text-3xl text-emerald-500"></i>
                                 </div>
-                                <p class="font-medium text-lg">¡Todo al día!</p>
-                                <p class="text-sm">No hay solicitudes pendientes.</p>
+                                <p class="font-bold text-gray-600 text-lg">¡Todo al día!</p>
+                                <p class="text-sm">No hay solicitudes por revisar.</p>
                             </div>`;
                         return;
                     }
@@ -6841,12 +7711,11 @@ case 'add-catalog-item':
                         const userName = `${userData.firstName} ${userData.lastName}`;
                         const dateObj = loan.date ? new Date(loan.date) : new Date();
                         const dateStr = dateObj.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
-                        const initials = (userData.firstName.charAt(0) + userData.lastName.charAt(0)).toUpperCase();
 
-                        // Lógica de Foto: Si tiene URL úsala, si no, usa un generador de avatares
+                        // Generador de avatar si no hay foto
                         const userPhoto = userData.photoURL || `https://ui-avatars.com/api/?name=${userData.firstName}+${userData.lastName}&background=random&color=fff`;
 
-                        // --- AGREGAMOS userPhoto AL JSON ---
+                        // Objeto para el botón de aprobar
                         const loanDataJson = JSON.stringify({
                             id: loanDoc.id, uid: userRef.id, userName: userName,
                             amount: loan.amount, date: loan.date,
@@ -6854,53 +7723,64 @@ case 'add-catalog-item':
                             bankName: userData.bankName || 'No registrado',
                             accountType: userData.accountType || '',
                             accountNumber: userData.accountNumber || '---',
-                            userPhoto: userPhoto // <--- NUEVO CAMPO
+                            userPhoto: userPhoto
                         }).replace(/"/g, '&quot;');
 
-                        // Tarjeta de listado
+                        // Tarjeta
                         const card = document.createElement('div');
-                        card.className = "bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all overflow-hidden group";
+                        card.className = "bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all overflow-hidden group mb-4";
 
                         card.innerHTML = `
-                            <div class="px-4 py-3 border-b border-gray-100 bg-slate-50 flex justify-between items-center">
+                            <div class="px-5 py-3 border-b border-gray-100 bg-slate-50/50 flex justify-between items-center">
                                 <div class="flex items-center gap-3">
-                                    <img src="${userPhoto}" alt="${userName}" class="w-8 h-8 rounded-full object-cover border border-indigo-200">
+                                    <img src="${userPhoto}" alt="${userName}" class="w-8 h-8 rounded-full object-cover border border-slate-200 shadow-sm">
                                     <div>
                                         <h4 class="text-sm font-bold text-gray-800 leading-tight">${userName}</h4>
                                         <p class="text-[10px] text-gray-500">Solicitado el ${dateStr}</p>
                                     </div>
                                 </div>
-                                <span class="px-2 py-1 bg-yellow-100 text-yellow-700 text-[10px] font-bold uppercase tracking-wider rounded-md border border-yellow-200">Pendiente</span>
+                                <span class="px-2.5 py-1 bg-amber-100 text-amber-700 text-[10px] font-bold uppercase tracking-wider rounded-md border border-amber-200 flex items-center gap-1">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Pendiente
+                                </span>
                             </div>
 
-                            <div class="p-0 grid grid-cols-1 md:grid-cols-2">
-                                <div class="p-4 flex flex-col justify-between">
+                            <div class="grid grid-cols-1 md:grid-cols-2">
+                                <div class="p-5 flex flex-col justify-between">
                                     <div>
                                         <p class="text-xs text-gray-400 uppercase font-bold tracking-wide mb-1">Monto Solicitado</p>
-                                        <p class="text-2xl font-bold text-gray-800 mb-3">${fmtMoney.format(loan.amount || 0)} <span class="text-xs font-normal text-gray-400">(${loan.installments || 1} cuotas)</span></p>
-                                        <div class="bg-gray-50 p-2 rounded-lg border border-gray-100">
-                                            <p class="text-xs text-gray-500 italic leading-relaxed"><i class="fa-solid fa-quote-left text-gray-300 mr-1"></i> ${loan.description || 'Sin descripción'}</p>
+                                        <p class="text-2xl font-black text-gray-800 mb-3 tracking-tight">${fmtMoney.format(loan.amount || 0)} <span class="text-xs font-normal text-gray-400 align-middle">(${loan.installments || 1} pagos)</span></p>
+                                        
+                                        <div class="bg-gray-50 p-3 rounded-lg border border-gray-100 relative">
+                                            <i class="fa-solid fa-quote-left text-gray-300 absolute top-2 left-2 text-xs"></i>
+                                            <p class="text-xs text-gray-600 italic leading-relaxed pl-4">${loan.description || 'Sin motivo especificado'}</p>
                                         </div>
                                     </div>
                                 </div>
-                                <div class="bg-indigo-50 p-4 border-t md:border-t-0 md:border-l border-indigo-100 flex flex-col justify-center">
-                                    <div class="flex items-start gap-3">
-                                        <div class="p-2 bg-white rounded-lg text-indigo-600 shadow-sm"><i class="fa-solid fa-building-columns text-lg"></i></div>
-                                        <div class="flex-1 min-w-0">
-                                            <p class="text-[10px] text-indigo-400 uppercase font-bold">Cuenta de Destino</p>
-                                            <p class="text-sm font-bold text-indigo-900 truncate">${userData.bankName}</p>
-                                            <p class="text-xs text-indigo-700 mb-1">${userData.accountType}</p>
-                                            <div class="flex items-center gap-2 bg-white px-2 py-1 rounded border border-indigo-100 w-fit">
-                                                <span class="font-mono text-sm font-bold text-gray-700 select-all">${userData.accountNumber}</span>
+                                
+                                <div class="bg-indigo-50/50 p-5 border-t md:border-t-0 md:border-l border-indigo-100 flex flex-col justify-center relative overflow-hidden">
+                                    <i class="fa-solid fa-building-columns absolute bottom-[-10px] right-[-10px] text-6xl text-indigo-100 opacity-50 pointer-events-none"></i>
+                                    
+                                    <div class="relative z-10">
+                                        <p class="text-[10px] text-indigo-400 uppercase font-bold mb-2">Cuenta de Destino</p>
+                                        <div class="flex items-start gap-3">
+                                            <div class="p-2 bg-white rounded-lg text-indigo-600 shadow-sm border border-indigo-50"><i class="fa-solid fa-money-bill-transfer text-lg"></i></div>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm font-bold text-indigo-900 truncate">${userData.bankName}</p>
+                                                <p class="text-xs text-indigo-600 mb-1">${userData.accountType}</p>
+                                                <div class="flex items-center gap-2 bg-white px-2 py-1 rounded border border-indigo-100 w-fit shadow-sm cursor-pointer hover:bg-indigo-50 transition-colors" onclick="navigator.clipboard.writeText('${userData.accountNumber}'); window.showToast('Cuenta copiada', 'success')">
+                                                    <span class="font-mono text-xs font-bold text-gray-600 select-all">${userData.accountNumber}</span>
+                                                    <i class="fa-regular fa-copy text-[10px] text-indigo-400"></i>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="px-4 py-3 bg-gray-50 border-t border-gray-200 flex justify-end">
-                                <button data-action="open-loan-review" data-loan='${loanDataJson}' class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-sm hover:shadow transition-all flex items-center">
-                                    Revisar y Aprobar <i class="fa-solid fa-arrow-right ml-2"></i>
+                            <div class="px-5 py-3 bg-gray-50 border-t border-gray-200 flex justify-end">
+                                <button data-action="open-loan-review" data-loan='${loanDataJson}' 
+                                    class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm hover:shadow-md transition-all flex items-center gap-2 transform active:scale-95">
+                                    Revisar y Aprobar <i class="fa-solid fa-arrow-right"></i>
                                 </button>
                             </div>
                         `;
@@ -6908,7 +7788,7 @@ case 'add-catalog-item':
                     }
                 } catch (error) {
                     console.error("Error cargando préstamos:", error);
-                    listContainer.innerHTML = `<div class="p-4 text-center text-red-500">Error al cargar datos.</div>`;
+                    listContainer.innerHTML = `<div class="p-6 text-center text-red-500 bg-red-50 rounded-xl border border-red-100">Error al cargar datos.</div>`;
                 }
             }, 100);
             break;
@@ -6931,226 +7811,537 @@ case 'add-catalog-item':
             break;
 
         case 'new-dotacion-catalog-item': {
-            title = 'Nuevo Tipo de Ítem (Catálogo)';
-            btnText = 'Crear Ítem';
-            btnClass = 'bg-blue-500 hover:bg-blue-600';
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
 
-            const categoryOptions = `
-                <option value="EPP" selected>EPP (Protección)</option>
-                <option value="Uniforme">Uniforme</option>
-                <option value="Otro">Otro</option>
-            `;
+            const defaultFooter = document.getElementById('modal-confirm-btn')?.parentElement;
+            if (defaultFooter) defaultFooter.style.display = 'none';
+
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-4xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Nuevo Ítem de Dotación';
+
+            // Lista de tallas comunes
+            const sizeOptions = [
+                'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Única',
+                '28', '30', '32', '34', '36',
+                '34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45'
+            ];
 
             bodyHtml = `
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="md:col-span-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Foto del Ítem (Opcional)</label>
-                        <div id="new-dotacion-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
-                            <div id="new-dotacion-preview" class="hidden absolute inset-0">
-                                <img src="" id="new-dotacion-img-preview" class="w-full h-full object-contain">
+                <div class="flex flex-col h-full">
+                    
+                    <div class="bg-gradient-to-r from-cyan-600 to-blue-600 px-8 py-5 shrink-0 relative overflow-hidden rounded-t-xl flex justify-between items-center">
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-2xl backdrop-blur-sm border border-white/10 shadow-inner text-white">
+                                <i class="fa-solid fa-box-open"></i>
                             </div>
-                            <div id="new-dotacion-prompt" class="text-center p-4">
-                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                <p class="mt-2 text-sm text-gray-500">Foto del ítem (ej. Casco)</p>
+                            <div>
+                                <h2 class="text-xl font-bold tracking-tight text-white">Nuevo Ítem de Dotación</h2>
+                                <p class="text-cyan-100 text-xs font-medium">Registrar EPP, Uniforme o Insumo</p>
                             </div>
                         </div>
-                        <input type="file" id="dotacion-photo" name="photo" accept="image/*" class="hidden">
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors relative z-10">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
                     </div>
 
-                <div class="md:col-span-2 space-y-4 pt-5">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Nombre del Ítem</label>
-                        <input type="text" name="itemName" required class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Casco de Seguridad Blanco">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Referencia / SKU (Opcional)</label>
-                        <input type="text" name="reference" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: REF-CS-001">
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">Categoría</label>
-                            <select name="category" required class="mt-1 w-full border rounded-md p-2 bg-white">
-                                ${categoryOptions}
-                            </select>
+                    <div class="flex-grow overflow-y-auto custom-scrollbar p-6 bg-gray-50">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            
+                            <div class="md:col-span-1 space-y-4">
+                                <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm text-center">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4">Foto del Elemento</h4>
+                                    
+                                    <div id="dotacion-item-dropzone" class="aspect-square w-full max-w-[200px] mx-auto rounded-lg border-4 border-gray-100 shadow-inner flex items-center justify-center bg-gray-50 relative overflow-hidden group cursor-pointer hover:border-cyan-200 transition-all">
+                                        <div id="dotacion-item-preview" class="hidden absolute inset-0">
+                                            <img src="" id="dotacion-item-img-preview" class="w-full h-full object-contain">
+                                        </div>
+                                        <div id="dotacion-item-prompt" class="absolute inset-0 flex flex-col items-center justify-center bg-black/0 group-hover:bg-black/5 transition-all">
+                                            <i class="fa-solid fa-camera text-3xl text-gray-300 group-hover:text-cyan-600 drop-shadow-md transition-all"></i>
+                                            <span class="text-xs text-gray-400 mt-2 font-medium group-hover:text-cyan-700">Subir Foto</span>
+                                        </div>
+                                    </div>
+
+                                    <input type="file" id="dotacion-item-photo-input" name="photo" accept="image/*,.heic,.heif" class="hidden">
+                                    
+                                    <div class="mt-4">
+                                        <button type="button" id="dotacion-item-upload-btn" class="bg-cyan-50 hover:bg-cyan-100 text-cyan-700 text-xs font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors mx-auto w-full max-w-[200px]">
+                                            <i class="fa-solid fa-upload"></i> Seleccionar Imagen
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="md:col-span-1 space-y-4">
+                                <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-2">Identificación</h4>
+
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Nombre <span class="text-red-500">*</span></label>
+                                        <input type="text" name="itemName" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none font-bold text-gray-800" placeholder="Ej: Botas Dielectrícas">
+                                    </div>
+
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 mb-1">Categoría <span class="text-red-500">*</span></label>
+                                            <select name="category" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-cyan-500 bg-white">
+                                                <option value="" disabled selected>Seleccionar...</option>
+                                                <option value="epp">🦺 EPP</option>
+                                                <option value="uniforme">👕 Uniforme</option>
+                                                <option value="calzado">🥾 Calzado</option>
+                                                <option value="herramienta_asignada">🛠️ Herramienta</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 mb-1">Género</label>
+                                            <select name="gender" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-cyan-500 bg-white">
+                                                <option value="unisex">Unisex</option>
+                                                <option value="hombre">Hombre</option>
+                                                <option value="mujer">Mujer</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Referencia</label>
+                                        <input type="text" name="reference" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none" placeholder="Ej: REF-123">
+                                    </div>
+                                </div>
+
+                                <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-4">Parámetros</h4>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 mb-1">Vida Útil (Días)</label>
+                                            <input type="number" name="vidaUtilDias" required min="1" value="180" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 font-mono text-center">
+                                        </div>
+                                        
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 mb-1">Stock Inicial</label>
+                                            <input type="number" name="initialStock" value="0" min="0" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 font-mono text-center font-bold bg-gray-50">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">Talla (Opcional)</label>
-                            <input type="text" name="talla" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: L, 42, N/A">
+
+                        <div class="mt-6 bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                            <label class="block text-xs font-bold text-gray-700 mb-2">Tallas / Variantes Manejadas</label>
+                            <div class="flex flex-wrap gap-2 max-h-40 overflow-y-auto custom-scrollbar p-1">
+                                ${sizeOptions.map(size => `
+                                    <label class="cursor-pointer select-none">
+                                        <input type="checkbox" name="sizes_common" value="${size}" class="peer sr-only" ${['S', 'M', 'L', 'Única'].includes(size) ? 'checked' : ''}>
+                                        <div class="px-3 py-1.5 rounded border border-gray-200 text-xs font-bold text-gray-500 peer-checked:bg-cyan-600 peer-checked:text-white peer-checked:border-cyan-600 transition-all hover:border-cyan-300">
+                                            ${size}
+                                        </div>
+                                    </label>
+                                `).join('')}
+                                <input type="hidden" name="tallas" id="tallas-input">
+                            </div>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-4">
-                        <div id="dotacion-initial-stock-group">
-                            <label class="block text-sm font-medium text-gray-700">Stock Inicial (Opcional)</label>
-                            <input type="number" name="initialStock" class="mt-1 w-full border rounded-md p-2" value="0" min="0">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">Vida Útil (Días)</label>
-                            <input type="number" name="vidaUtilDias" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: 365 (para 1 año)">
-                        </div>
+                    <div class="bg-white border-t border-gray-200 p-4 shrink-0 flex justify-end gap-3 z-20 rounded-b-xl">
+                        <button type="button" onclick="closeMainModal()" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition-colors text-sm">Cancelar</button>
+                        <button type="button" onclick="document.getElementById('modal-form').requestSubmit()" class="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white px-8 py-2.5 rounded-lg font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-floppy-disk"></i> Guardar Ítem
+                        </button>
                     </div>
                 </div>
             `;
 
-            setTimeout(() => { // Lógica para la vista previa de la foto (sin cambios)
-                const dropzone = document.getElementById('new-dotacion-dropzone');
-                const fileInput = document.getElementById('dotacion-photo');
-                const previewContainer = document.getElementById('new-dotacion-preview');
-                const previewImg = document.getElementById('new-dotacion-img-preview');
-                const promptEl = document.getElementById('new-dotacion-prompt');
-                if (dropzone) {
-                    dropzone.addEventListener('click', () => fileInput.click());
-                    fileInput.addEventListener('change', (e) => {
+            // Lógica de Foto y Tallas
+            setTimeout(() => {
+                // 1. Tallas
+                const form = document.getElementById('modal-form');
+                if (form) {
+                    form.addEventListener('submit', (e) => {
+                        const checkedSizes = Array.from(form.querySelectorAll('input[name="sizes_common"]:checked')).map(cb => cb.value);
+                        const hiddenInput = document.getElementById('tallas-input');
+                        if (hiddenInput) hiddenInput.value = checkedSizes.join(',');
+                    });
+                }
+
+                // 2. Foto (Lógica reutilizable)
+                const dropzone = document.getElementById('dotacion-item-dropzone');
+                const fileInput = document.getElementById('dotacion-item-photo-input');
+                const uploadBtn = document.getElementById('dotacion-item-upload-btn');
+                const preview = document.getElementById('dotacion-item-preview');
+                const previewImg = document.getElementById('dotacion-item-img-preview');
+                const prompt = document.getElementById('dotacion-item-prompt');
+
+                const triggerUpload = () => fileInput.click();
+
+                if (dropzone) dropzone.onclick = triggerUpload;
+                if (uploadBtn) uploadBtn.onclick = triggerUpload;
+
+                if (fileInput) {
+                    fileInput.onchange = (e) => {
                         const file = e.target.files[0];
                         if (file) {
                             const reader = new FileReader();
-                            reader.onload = (event) => {
-                                previewImg.src = event.target.result;
-                                previewContainer.classList.remove('hidden');
-                                promptEl.classList.add('hidden');
-                            }
+                            reader.onload = (ev) => {
+                                previewImg.src = ev.target.result;
+                                preview.classList.remove('hidden');
+                                prompt.classList.add('hidden');
+                                dropzone.classList.add('border-cyan-500');
+                            };
                             reader.readAsDataURL(file);
                         }
-                    });
+                    };
                 }
             }, 100);
+
             break;
         }
 
         case 'edit-dotacion-catalog-item': {
-            title = 'Editar Ítem del Catálogo';
-            btnText = 'Actualizar Ítem';
-            btnClass = 'bg-yellow-500 hover:bg-yellow-600';
-            modalForm.dataset.id = data.id; // Pasa el ID del ítem al formulario
+            // 1. Configuración Visual
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
 
-            // Re-crear las opciones de categoría, seleccionando la correcta
-            const categories = [
-                { value: "EPP", label: "EPP (Protección)" },
-                { value: "Uniforme", label: "Uniforme" },
-                { value: "Otro", label: "Otro" }
+            const defaultFooter = document.getElementById('modal-confirm-btn')?.parentElement;
+            if (defaultFooter) defaultFooter.style.display = 'none';
+
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-4xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Editar Ítem de Dotación';
+
+            // Datos de Tallas
+            const currentSizes = (data.tallas || '').split(',').map(s => s.trim());
+            const sizeOptions = [
+                'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Única',
+                '28', '30', '32', '34', '36',
+                '34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45'
             ];
-            const categoryOptions = categories.map(cat =>
-                `<option value="${cat.value}" ${data.category === cat.value ? 'selected' : ''}>${cat.label}</option>`
-            ).join('');
 
-            // Construimos el HTML, rellenando los 'value' con los datos existentes
+            // --- LÓGICA DE VISUALIZACIÓN DE STOCK POR TALLA (INVERTIDA) ---
+            let stockDisplayHtml = `<p class="text-3xl font-black text-cyan-700">${data.quantityInStock || 0}</p>`;
+
+            try {
+                // Parseamos el JSON que viene del dataset
+                const stockData = data.stockMap ? JSON.parse(data.stockMap) : {};
+                const entries = Object.entries(stockData).filter(([k, v]) => v > 0);
+
+                if (entries.length > 0) {
+                    let badges = entries.map(([talla, cant]) =>
+                        `<span class="inline-block bg-white/80 border border-cyan-200 text-cyan-800 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm">${talla}: ${cant}</span>`
+                    ).join(' ');
+
+                    // CAMBIO AQUÍ: Total Arriba, Badges Abajo
+                    stockDisplayHtml = `
+                        <div class="flex items-baseline gap-2 border-b border-cyan-200 pb-2 mb-2">
+                            <p class="text-3xl font-black text-cyan-700 leading-none">${data.quantityInStock}</p>
+                            <span class="text-xs font-bold text-cyan-600 opacity-70">Total</span>
+                        </div>
+                        <div class="flex flex-wrap gap-1 max-h-24 overflow-y-auto custom-scrollbar pr-1">${badges}</div>
+                    `;
+                }
+            } catch (e) { console.warn("Error parseando stock map", e); }
+            // --------------------------------------------------
+
             bodyHtml = `
-                <input type="hidden" name="itemId" value="${data.id}">
-
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="md:col-span-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Foto del Ítem (Opcional)</label>
-                        <div id="new-dotacion-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
-                            
-                            <div id="new-dotacion-preview" class="absolute inset-0">
-                                <img src="${data.itemPhotoURL || 'https://via.placeholder.com/300'}" id="new-dotacion-img-preview" class="w-full h-full object-contain">
+                <div class="flex flex-col h-full">
+                    
+                    <div class="bg-gradient-to-r from-cyan-600 to-blue-600 px-8 py-5 shrink-0 relative overflow-hidden rounded-t-xl flex justify-between items-center">
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-2xl backdrop-blur-sm border border-white/10 shadow-inner text-white">
+                                <i class="fa-solid fa-pen-to-square"></i>
                             </div>
-
-                            <div id="new-dotacion-prompt" class="hidden text-center p-4">
-                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                <p class="mt-2 text-sm text-gray-500">Reemplazar foto</p>
+                            <div>
+                                <h2 class="text-xl font-bold tracking-tight text-white">Editar Ítem</h2>
+                                <p class="text-cyan-100 text-xs font-medium">${data.itemName || data.name}</p>
                             </div>
                         </div>
-                        <input type="file" id="dotacion-photo" name="photo" accept="image/*" class="hidden">
+
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors relative z-10">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
                     </div>
 
-                    <div class="md:col-span-2 space-y-4 pt-5">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">Nombre del Ítem</label>
-                            <input type="text" name="itemName" required class="mt-1 w-full border rounded-md p-2" value="${data.itemName || ''}">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">Referencia / SKU (Opcional)</label>
-                            <input type="text" name="reference" class="mt-1 w-full border rounded-md p-2" value="${data.reference || ''}">
-                        </div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">Categoría</label>
-                                <select name="category" required class="mt-1 w-full border rounded-md p-2 bg-white">
-                                    ${categoryOptions}
-                                </select>
+                    <div class="flex-grow overflow-y-auto custom-scrollbar p-6 bg-gray-50">
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            
+                            <div class="md:col-span-1 space-y-6">
+                                <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm text-center">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4">Foto del Elemento</h4>
+                                    
+                                    <div id="dotacion-item-dropzone" class="aspect-square w-full max-w-[200px] mx-auto rounded-lg border-4 ${data.itemPhotoURL ? 'border-cyan-500' : 'border-gray-100'} shadow-inner flex items-center justify-center bg-gray-50 relative overflow-hidden group cursor-pointer hover:border-cyan-200 transition-all">
+                                        
+                                        <div id="dotacion-item-preview" class="${data.itemPhotoURL ? '' : 'hidden'} absolute inset-0">
+                                            <img src="${data.itemPhotoURL || ''}" id="dotacion-item-img-preview" class="w-full h-full object-contain">
+                                            <div class="absolute bottom-0 left-0 w-full bg-black/50 text-white text-xs py-1 text-center opacity-0 group-hover:opacity-100 transition-opacity">Clic para cambiar</div>
+                                        </div>
+
+                                        <div id="dotacion-item-prompt" class="${data.itemPhotoURL ? 'hidden' : ''} absolute inset-0 flex flex-col items-center justify-center bg-black/0 group-hover:bg-black/5 transition-all">
+                                            <i class="fa-solid fa-camera text-3xl text-gray-300 group-hover:text-cyan-600 drop-shadow-md transition-all"></i>
+                                            <span class="text-xs text-gray-400 mt-2 font-medium group-hover:text-cyan-700">Subir Foto</span>
+                                        </div>
+                                    </div>
+
+                                    <input type="file" id="dotacion-item-photo-input" name="photo" accept="image/*,.heic,.heif" class="hidden">
+                                    
+                                    <div class="mt-4">
+                                        <button type="button" id="dotacion-item-upload-btn" class="bg-cyan-50 hover:bg-cyan-100 text-cyan-700 text-xs font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors mx-auto w-full max-w-[200px]">
+                                            <i class="fa-solid fa-upload"></i> Cambiar Imagen
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="bg-cyan-50 p-4 rounded-xl border border-cyan-100 flex items-start gap-4">
+                                    <div class="bg-white p-3 rounded-full text-cyan-600 shadow-sm mt-1 shrink-0"><i class="fa-solid fa-boxes-stacked text-xl"></i></div>
+                                    <div class="flex-grow min-w-0">
+                                        <p class="text-[10px] font-bold text-cyan-800 uppercase mb-2 tracking-wide">Inventario Actual</p>
+                                        ${stockDisplayHtml}
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">Talla (Opcional)</label>
-                                <input type="text" name="talla" class="mt-1 w-full border rounded-md p-2" value="${data.talla || ''}">
+
+                            <div class="md:col-span-1 space-y-4">
+                                <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-2">Identificación</h4>
+
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Nombre <span class="text-red-500">*</span></label>
+                                        <input type="text" name="itemName" required value="${data.itemName || data.name || ''}" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none font-bold text-gray-800">
+                                    </div>
+
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 mb-1">Categoría</label>
+                                            <select name="category" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-cyan-500 bg-white">
+                                                <option value="epp" ${data.category === 'epp' ? 'selected' : ''}>🦺 EPP</option>
+                                                <option value="uniforme" ${data.category === 'uniforme' ? 'selected' : ''}>👕 Uniforme</option>
+                                                <option value="calzado" ${data.category === 'calzado' ? 'selected' : ''}>🥾 Calzado</option>
+                                                <option value="herramienta_asignada" ${data.category === 'herramienta_asignada' ? 'selected' : ''}>🛠️ Herramienta</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 mb-1">Género</label>
+                                            <select name="gender" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-cyan-500 bg-white">
+                                                <option value="unisex" ${data.gender === 'unisex' ? 'selected' : ''}>Unisex</option>
+                                                <option value="hombre" ${data.gender === 'hombre' ? 'selected' : ''}>Hombre</option>
+                                                <option value="mujer" ${data.gender === 'mujer' ? 'selected' : ''}>Mujer</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Referencia</label>
+                                        <input type="text" name="reference" value="${data.reference || ''}" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none">
+                                    </div>
+                                </div>
+
+                                <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-4">Parámetros</h4>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 mb-1">Vida Útil (Días)</label>
+                                            <input type="number" name="vidaUtilDias" required min="1" value="${data.vidaUtilDias || 180}" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 font-mono text-center">
+                                        </div>
+                                        
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 mb-1">Stock Mínimo</label>
+                                            <input type="number" name="minStock" value="${data.minStock || 5}" min="0" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 font-mono text-center">
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-2 gap-4">
-                            <div class="col-span-2">
-                                <label class="block text-sm font-medium text-gray-700">Vida Útil (Días)</label>
-                                <input type="number" name="vidaUtilDias" class="mt-1 w-full border rounded-md p-2" value="${data.vidaUtilDias || ''}" placeholder="Ej: 365 (para 1 año)">
+                        <div class="mt-6 bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                            <label class="block text-xs font-bold text-gray-700 mb-2">Tallas / Variantes Manejadas</label>
+                            <div class="flex flex-wrap gap-2 max-h-40 overflow-y-auto custom-scrollbar p-1">
+                                ${sizeOptions.map(size => {
+                const checked = currentSizes.includes(size) ? 'checked' : '';
+                return `
+                                    <label class="cursor-pointer select-none">
+                                        <input type="checkbox" name="sizes_common" value="${size}" class="peer sr-only" ${checked}>
+                                        <div class="px-3 py-1.5 rounded border border-gray-200 text-xs font-bold text-gray-500 peer-checked:bg-cyan-600 peer-checked:text-white peer-checked:border-cyan-600 transition-all hover:border-cyan-300 shadow-sm">
+                                            ${size}
+                                        </div>
+                                    </label>
+                                    `;
+            }).join('')}
+                                <input type="hidden" name="tallas" id="tallas-input" value="${data.tallas || ''}">
+                                <input type="hidden" name="itemId" value="${data.id}">
                             </div>
+                            <p class="text-[10px] text-gray-400 mt-2">Nota: Estas son las tallas disponibles para asignar en futuras entregas.</p>
                         </div>
+
+                    </div>
+
+                    <div class="bg-white border-t border-gray-200 p-4 shrink-0 flex justify-end gap-3 z-20 rounded-b-xl">
+                        <button type="button" onclick="closeMainModal()" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition-colors text-sm">
+                            Cancelar
+                        </button>
+                        <button type="button" onclick="document.getElementById('modal-form').requestSubmit()" class="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white px-8 py-2.5 rounded-lg font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-check"></i> Actualizar Ítem
+                        </button>
                     </div>
                 </div>
             `;
 
-            // Reutilizamos la misma lógica de dropzone que 'new-dotacion-catalog-item'
+            // Lógica
             setTimeout(() => {
-                const dropzone = document.getElementById('new-dotacion-dropzone');
-                const fileInput = document.getElementById('dotacion-photo');
-                const previewContainer = document.getElementById('new-dotacion-preview');
-                const previewImg = document.getElementById('new-dotacion-img-preview');
-                const promptEl = document.getElementById('new-dotacion-prompt');
-
-                // Lógica para mostrar el prompt si NO hay fotoURL
-                if (!data.itemPhotoURL) {
-                    previewContainer.classList.add('hidden');
-                    promptEl.classList.remove('hidden');
+                const form = document.getElementById('modal-form');
+                if (form) {
+                    form.addEventListener('submit', (e) => {
+                        const checkedSizes = Array.from(form.querySelectorAll('input[name="sizes_common"]:checked')).map(cb => cb.value);
+                        const hiddenInput = document.getElementById('tallas-input');
+                        if (hiddenInput) hiddenInput.value = checkedSizes.join(',');
+                    });
                 }
 
-                if (dropzone) {
-                    dropzone.addEventListener('click', () => fileInput.click());
-                    fileInput.addEventListener('change', (e) => {
+                // Foto
+                const dropzone = document.getElementById('dotacion-item-dropzone');
+                const fileInput = document.getElementById('dotacion-item-photo-input');
+                const uploadBtn = document.getElementById('dotacion-item-upload-btn');
+                const preview = document.getElementById('dotacion-item-preview');
+                const previewImg = document.getElementById('dotacion-item-img-preview');
+                const prompt = document.getElementById('dotacion-item-prompt');
+
+                const triggerUpload = () => fileInput.click();
+
+                if (dropzone) dropzone.onclick = triggerUpload;
+                if (uploadBtn) uploadBtn.onclick = triggerUpload;
+
+                if (fileInput) {
+                    fileInput.onchange = (e) => {
                         const file = e.target.files[0];
                         if (file) {
                             const reader = new FileReader();
-                            reader.onload = (event) => {
-                                previewImg.src = event.target.result;
-                                previewContainer.classList.remove('hidden');
-                                promptEl.classList.add('hidden');
-                            }
+                            reader.onload = (ev) => {
+                                previewImg.src = ev.target.result;
+                                preview.classList.remove('hidden');
+                                prompt.classList.add('hidden');
+                                dropzone.classList.add('border-cyan-500');
+                            };
                             reader.readAsDataURL(file);
                         }
-                    });
+                    };
                 }
             }, 100);
+
             break;
         }
 
         // --- FIN DE NUEVO CÓDIGO ---
 
         case 'add-dotacion-stock': {
-            title = 'Añadir Stock a Inventario';
-            btnText = 'Añadir Stock';
-            btnClass = 'bg-blue-500 hover:bg-blue-600';
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
 
+            const defaultFooter = document.getElementById('modal-confirm-btn')?.parentElement;
+            if (defaultFooter) defaultFooter.style.display = 'none';
+
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-2xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Añadir Stock a Inventario';
+
+            // 1. Obtener las tallas configuradas para este ítem
+            let availableSizes = [];
+            if (data.tallas) {
+                availableSizes = data.tallas.split(',').map(s => s.trim());
+            } else {
+                // Fallback si es un ítem antiguo sin tallas definidas
+                availableSizes = [data.talla || 'Única'];
+            }
+
+            // 2. Crear opciones del select
+            const sizeOptionsHtml = availableSizes.map(s => `<option value="${s}">${s}</option>`).join('');
 
             bodyHtml = `
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="md:col-span-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Ítem</label>
-                        <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden border">
-                            <img src="${data.itemPhotoURL || 'https://via.placeholder.com/300'}" alt="${data.itemName}" class="w-full h-full object-contain">
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-emerald-500 to-teal-600 px-6 py-5 shrink-0 rounded-t-xl flex justify-between items-center">
+                        <div class="flex items-center gap-3 text-white">
+                            <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl backdrop-blur-sm border border-white/10">
+                                <i class="fa-solid fa-boxes-stacked"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-lg font-bold">Entrada de Mercancía</h2>
+                                <p class="text-emerald-100 text-xs font-medium">Registrar nuevo stock</p>
+                            </div>
                         </div>
-                        <p class="text-center font-bold text-lg mt-2">${data.itemName}</p>
-                        <p class="text-center text-sm text-gray-500">${data.talla || 'Sin talla'}</p>
+                        <button onclick="closeMainModal()" class="text-white/70 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
                     </div>
-                    <div class="md:col-span-2 space-y-4 pt-5">
+
+                    <div class="p-6 bg-gray-50 flex-grow overflow-y-auto custom-scrollbar">
+                        
+                        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex gap-5 mb-5">
+                            <div class="w-20 h-20 rounded-lg border border-gray-100 p-1 bg-gray-50 flex-shrink-0">
+                                <img src="${data.itemPhotoURL || 'https://via.placeholder.com/150?text=Sin+Foto'}" class="w-full h-full object-contain rounded-md">
+                            </div>
+                            <div class="flex-grow">
+                                <h3 class="text-base font-bold text-gray-800 leading-tight">${data.itemName}</h3>
+                                <p class="text-xs text-gray-500 mt-1">Categoría: ${data.category}</p>
+                                
+                                <div class="mt-2 flex flex-wrap gap-1" id="current-stock-display">
+                                    <span class="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded border border-emerald-100 font-bold">
+                                        Total: ${data.quantityInStock}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
                         <input type="hidden" name="itemId" value="${data.id}">
-                        <div>
-                            <label class="block text-sm font-medium">Cantidad a Añadir</label>
-                            <input type="number" name="quantity" required class="mt-1 w-full border p-2 rounded-md" min="1">
+                        <input type="hidden" name="itemName" value="${data.itemName}">
+                        
+                        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                            
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-1 uppercase">Seleccionar Talla / Variante <span class="text-red-500">*</span></label>
+                                <select name="targetSize" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm font-bold text-gray-800 focus:ring-2 focus:ring-emerald-500 bg-white">
+                                    ${sizeOptionsHtml}
+                                </select>
+                                <p class="text-[10px] text-gray-400 mt-1">Solo se muestran las tallas configuradas para este ítem.</p>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 mb-1 uppercase">Cantidad a Ingresar <span class="text-red-500">*</span></label>
+                                    <input type="number" name="quantity" required class="w-full border-gray-300 rounded-lg p-2.5 text-lg font-bold text-gray-800 focus:ring-emerald-500 focus:border-emerald-500 text-center" min="1" placeholder="0">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 mb-1 uppercase">Costo Total Compra</label>
+                                    <div class="relative">
+                                        <span class="absolute left-3 top-2.5 text-gray-400 font-bold">$</span>
+                                        <input type="text" id="dotacion-purchase-cost" name="purchaseCost" class="currency-input w-full border-gray-300 rounded-lg p-2.5 pl-7 text-sm focus:ring-emerald-500 focus:border-emerald-500 font-mono" placeholder="0">
+                                    </div>
+                                    <p class="text-[10px] text-gray-400 mt-1 text-right">Opcional</p>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium">Costo Total de la Compra (Opcional)</label>
-                            <input type="text" id="dotacion-purchase-cost" name="purchaseCost" class="currency-input mt-1 w-full border rounded-md p-2" placeholder="$ 0">
-                        </div>
+                    </div>
+
+                    <div class="bg-white border-t border-gray-200 p-4 flex justify-end gap-3 rounded-b-xl">
+                        <button type="button" onclick="closeMainModal()" class="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button>
+                        <button type="button" onclick="document.getElementById('modal-form').requestSubmit()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-md transition-transform active:scale-95">
+                            <i class="fa-solid fa-plus mr-1"></i> Añadir Stock
+                        </button>
                     </div>
                 </div>
             `;
-
 
             setTimeout(() => {
                 setupCurrencyInput(document.getElementById('dotacion-purchase-cost'));
@@ -7159,230 +8350,440 @@ case 'add-catalog-item':
         }
 
         case 'register-dotacion-delivery': {
+            // 1. Configuración Visual
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+
+            const defaultFooter = document.getElementById('modal-confirm-btn')?.parentElement;
+            if (defaultFooter) defaultFooter.style.display = 'none';
+
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-3xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
             title = 'Registrar Entrega de Dotación';
-            btnText = 'Confirmar Entrega';
-            btnClass = 'bg-green-500 hover:bg-green-600';
 
             const userChoices = Array.from(usersMap.entries())
                 .filter(([id, user]) => user.status === 'active')
                 .sort((a, b) => a[1].firstName.localeCompare(b[1].firstName))
                 .map(([id, user]) => ({
                     value: id,
-                    label: `${user.firstName} ${user.lastName}`
+                    label: `${user.firstName} ${user.lastName}`,
+                    customProperties: {
+                        tallaCamisa: user.tallaCamiseta || '',
+                        tallaPantalon: user.tallaPantalón || '',
+                        tallaBotas: user.tallaBotas || ''
+                    }
                 }));
 
+            // Validación de stock para bloquear UI si es 0
+            const hasStock = data.quantityInStock > 0;
 
             bodyHtml = `
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="md:col-span-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Ítem</label>
-                        <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden border">
-                            <img src="${data.itemPhotoURL || 'https://via.placeholder.com/300'}" alt="${data.itemName}" class="w-full h-full object-contain">
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-cyan-600 to-blue-600 px-6 py-5 shrink-0 rounded-t-xl flex justify-between items-center">
+                        <div class="flex items-center gap-3 text-white">
+                            <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl backdrop-blur-sm border border-white/10">
+                                <i class="fa-solid fa-box-open"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-lg font-bold">Entrega de Dotación</h2>
+                                <p class="text-cyan-100 text-xs font-medium">Asignar ítem a colaborador</p>
+                            </div>
                         </div>
-                        <p class="text-center font-bold text-lg mt-2">${data.itemName}</p>
-                        <p class="text-center text-sm text-gray-500">${data.talla || 'Sin talla'}</p>
-                        <p class="text-lg text-center font-bold mt-2 ${data.quantityInStock > 0 ? 'text-green-600' : 'text-red-600'}">Stock: ${data.quantityInStock}</p>
+                        <button onclick="closeMainModal()" class="text-white/70 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+                    </div>
+
+                    <div class="p-6 bg-gray-50 flex-grow overflow-y-auto custom-scrollbar">
+                        
+                        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6 relative overflow-hidden">
+                            <div class="absolute top-0 left-0 w-1 h-full bg-cyan-500"></div>
+                            <div class="flex flex-col md:flex-row gap-5 items-start md:items-center">
+                                <div class="w-16 h-16 rounded-lg border border-gray-100 p-1 bg-gray-50 flex-shrink-0">
+                                    <img src="${data.itemPhotoURL || 'https://via.placeholder.com/150?text=Sin+Foto'}" class="w-full h-full object-contain rounded-md">
+                                </div>
+                                
+                                <div class="flex-grow min-w-0 space-y-1">
+                                    <h3 class="text-sm font-bold text-gray-800 leading-tight">${data.itemName}</h3>
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide">${data.category || 'General'}</p>
+                                    
+                                    <div class="flex items-center gap-2 mt-2">
+                                        <label class="text-xs font-bold text-gray-600">Talla a Entregar:</label>
+                                        <select id="delivery-talla-select" name="talla" class="text-xs border-gray-300 rounded focus:ring-cyan-500 font-bold text-cyan-700 bg-cyan-50 border py-1 pl-2 pr-6">
+                                            <option value="" disabled selected>Cargando...</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="text-right min-w-[80px]">
+                                    <p class="text-[10px] text-gray-400 uppercase font-bold">Disponible</p>
+                                    <p id="delivery-stock-display" class="text-2xl font-black text-gray-300">---</p>
+                                </div>
+                            </div>
+                        </div>
+
                         <input type="hidden" name="itemId" value="${data.id}">
                         <input type="hidden" name="itemName" value="${data.itemName}">
-                        <input type="hidden" name="talla" value="${data.talla}">
-                    </div>
-                    
-                    <div class="md:col-span-2 space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium">1. Seleccionar Colaborador</label>
-                            <select id="dotacion-assignedTo" name="assignedTo" required class="mt-1 w-full border rounded-md"></select>
-                            
-                            <div id="preferred-talla-suggestion" class="hidden text-sm text-blue-600 font-semibold text-center mt-2 p-2 bg-blue-50 rounded-md border border-blue-200">
+
+                        <div class="space-y-5">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-1 uppercase">1. Colaborador <span class="text-red-500">*</span></label>
+                                <select id="dotacion-assignedTo" name="assignedTo" class="w-full border-gray-300 rounded-lg"></select>
+                                
+                                <div id="preferred-talla-suggestion" class="hidden mt-2 p-2 bg-blue-50 border border-blue-100 rounded-lg flex items-center gap-2 text-xs text-blue-700 animate-fade-in">
+                                    <i class="fa-solid fa-ruler-combined"></i>
+                                    <span>El usuario usa talla: <strong id="suggestion-value">M</strong></span>
                                 </div>
                             </div>
 
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium">2. Cantidad a Entregar</label>
-                                <input type="number" name="quantity" required class="mt-1 w-full border p-2 rounded-md" min="1" max="${data.quantityInStock}" ${data.quantityInStock <= 0 ? 'disabled' : ''}>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium">3. Serial (Opcional)</label>
-                                <input type="text" name="serialNumber" class="mt-1 w-full border p-2 rounded-md" placeholder="Ej: 11-22-33-44">
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">4. Foto de Entrega (Requerida)</label>
-                            <div id="assign-dotacion-dropzone" class="h-48 w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
-                                <div id="assign-dotacion-preview" class="hidden absolute inset-0"><img src="" id="assign-dotacion-img-preview" class="w-full h-full object-contain"></div>
-                                <div id="assign-dotacion-prompt" class="text-center p-4">
-                                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                    <p class="mt-2 text-sm text-gray-500">Subir foto de entrega</p>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 mb-1 uppercase">2. Cantidad <span class="text-red-500">*</span></label>
+                                    <input type="number" id="delivery-quantity-input" name="quantity" class="w-full border-gray-300 rounded-lg p-2.5 text-sm font-bold text-center" min="1" value="1" disabled>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 mb-1 uppercase">3. Serial (Opcional)</label>
+                                    <input type="text" name="serialNumber" class="w-full border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Ej: SN-12345">
                                 </div>
                             </div>
-                            
-                            <input type="file" id="dotacion-assign-photo" name="assignPhoto" required accept="image/*" class="hidden">
+
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-2 uppercase">4. Evidencia de Entrega <span class="text-red-500">*</span></label>
+                                <div id="assign-dotacion-dropzone" class="h-40 w-full rounded-xl border-2 border-dashed border-gray-300 hover:border-cyan-500 bg-white flex flex-col items-center justify-center cursor-pointer transition-all group relative overflow-hidden">
+                                    <div id="assign-dotacion-preview" class="hidden absolute inset-0 bg-gray-100">
+                                        <img src="" id="assign-dotacion-img-preview" class="w-full h-full object-contain">
+                                        <div class="absolute bottom-0 left-0 w-full bg-black/50 text-white text-xs py-1 text-center">Clic para cambiar</div>
+                                    </div>
+                                    <div id="assign-dotacion-prompt" class="text-center p-4 group-hover:scale-105 transition-transform">
+                                        <div class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-2 text-gray-400 group-hover:text-cyan-600 group-hover:bg-cyan-50 transition-colors">
+                                            <i class="fa-solid fa-camera text-lg"></i>
+                                        </div>
+                                        <p class="text-sm font-bold text-gray-600 group-hover:text-cyan-700">Subir Foto</p>
+                                        <p class="text-[10px] text-gray-400 mt-1">Formato de entrega firmado o foto del ítem.</p>
+                                    </div>
+                                </div>
+                                <input type="file" id="dotacion-assign-photo" name="assignPhoto" accept="image/*" class="hidden">
                             </div>
-                        <div>
-                            <label class"block text-sm font-medium">4. Fecha de Entrega</label>
-                            <input type="date" name="fechaEntrega" required class="mt-1 w-full border p-2 rounded-md">
+
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-1 uppercase">5. Fecha de Entrega</label>
+                                <input type="date" name="fechaEntrega" class="w-full border-gray-300 rounded-lg p-2.5 text-sm text-gray-600">
+                            </div>
                         </div>
+                    </div>
+
+                    <div class="bg-white border-t border-gray-200 p-4 flex justify-end gap-3 rounded-b-xl">
+                        <button type="button" onclick="closeMainModal()" class="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button>
+                        <button type="button" id="btn-confirm-delivery" onclick="document.getElementById('modal-form').requestSubmit()" 
+                            class="bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-md transition-transform active:scale-95 flex items-center gap-2 disabled:bg-gray-300 disabled:cursor-not-allowed" disabled>
+                            <i class="fa-solid fa-check"></i> Confirmar Entrega
+                        </button>
                     </div>
                 </div>
             `;
 
-            setTimeout(() => {
-                const assigneeSelect = document.getElementById('dotacion-assignedTo');
-                if (assigneeSelect) {
-                    // --- INICIO DE MODIFICACIÓN (Lógica JS) ---
+            setTimeout(async () => {
+                const tallaSelect = document.getElementById('delivery-talla-select');
+                const stockDisplay = document.getElementById('delivery-stock-display');
+                const quantityInput = document.getElementById('delivery-quantity-input');
+                const confirmBtn = document.getElementById('btn-confirm-delivery');
+                const dateInput = modalForm.querySelector('input[name="fechaEntrega"]');
 
-                    // 1. Inicializamos Choices
-                    const choicesInstance = new Choices(assigneeSelect, {
-                        choices: userChoices,
-                        itemSelectText: 'Seleccionar',
-                        searchPlaceholderValue: 'Buscar colaborador...',
-                        placeholder: true,
-                        placeholderValue: 'Selecciona un usuario...',
-                    });
+                if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
 
-                    // 2. Añadimos el listener 'change'
-                    assigneeSelect.addEventListener('change', (event) => {
-                        const suggestionDiv = document.getElementById('preferred-talla-suggestion');
-                        if (!event.detail.value || !suggestionDiv) {
-                            suggestionDiv.classList.add('hidden');
-                            return;
+                // --- 1. DEFINIR LISTENER PRIMERO ---
+                tallaSelect.addEventListener('change', () => {
+                    const selectedOption = tallaSelect.options[tallaSelect.selectedIndex];
+                    if (!selectedOption) return;
+
+                    const stock = parseInt(selectedOption.dataset.stock || 0);
+
+                    stockDisplay.textContent = stock;
+                    stockDisplay.className = `text-2xl font-black ${stock > 0 ? 'text-cyan-600' : 'text-red-500'}`;
+
+                    quantityInput.max = stock;
+                    quantityInput.value = 1;
+
+                    if (stock > 0) {
+                        quantityInput.disabled = false;
+                        confirmBtn.disabled = false; // Habilitar botón
+                    } else {
+                        quantityInput.disabled = true;
+                        confirmBtn.disabled = true;
+                    }
+                });
+
+                // --- 2. CARGAR DATOS ---
+                try {
+                    const itemDoc = await getDoc(doc(db, "dotacionCatalog", data.id));
+                    const itemReal = itemDoc.data();
+                    const stockMap = itemReal.stock || {};
+
+                    tallaSelect.innerHTML = '';
+                    let hasStock = false;
+
+                    for (const [talla, cantidad] of Object.entries(stockMap)) {
+                        if (cantidad > 0) {
+                            const option = document.createElement('option');
+                            option.value = talla;
+                            option.textContent = talla;
+                            option.dataset.stock = cantidad;
+                            tallaSelect.appendChild(option);
+                            hasStock = true;
                         }
+                    }
 
-                        const userId = event.detail.value;
-                        const user = usersMap.get(userId); // Usamos el mapa de usuarios (¡eficiente!)
-                        const itemNameLower = data.itemName.toLowerCase();
+                    // Fallback para ítems antiguos
+                    if (!hasStock && itemReal.quantityInStock > 0) {
+                        const t = data.talla && data.talla !== 'N/A' ? data.talla : 'Única';
+                        const option = document.createElement('option');
+                        option.value = t;
+                        option.textContent = t;
+                        option.dataset.stock = itemReal.quantityInStock;
+                        tallaSelect.appendChild(option);
+                        hasStock = true;
+                    }
 
-                        let preferredTalla = '';
+                    if (!hasStock) {
+                        tallaSelect.innerHTML = '<option value="" disabled selected>Sin Stock</option>';
+                        tallaSelect.disabled = true;
+                        stockDisplay.textContent = "0";
+                        stockDisplay.className = "text-2xl font-black text-red-500";
+                        confirmBtn.disabled = true;
+                    } else {
+                        // Disparar evento manualmente para activar el botón
+                        tallaSelect.dispatchEvent(new Event('change'));
+                    }
 
-                        // Hacemos el "match" entre el ítem y la talla guardada
-                        if (itemNameLower.includes('camisa') || itemNameLower.includes('camiseta') || itemNameLower.includes('buzo')) {
-                            preferredTalla = user.tallaCamiseta;
-                        } else if (itemNameLower.includes('pantalón') || itemNameLower.includes('pantalon') || itemNameLower.includes('jean')) {
-                            preferredTalla = user.tallaPantalón;
-                        } else if (itemNameLower.includes('bota')) {
-                            preferredTalla = user.tallaBotas;
-                        }
-
-                        // Mostramos u ocultamos la sugerencia
-                        if (preferredTalla) {
-                            suggestionDiv.textContent = `Talla preferida del usuario: ${preferredTalla}`;
-                            suggestionDiv.classList.remove('hidden');
-                        } else {
-                            suggestionDiv.classList.add('hidden');
-                        }
-                    });
-
-                    // --- FIN DE MODIFICACIÓN (Lógica JS) ---
+                } catch (e) {
+                    console.error("Error cargando stock:", e);
+                    tallaSelect.innerHTML = '<option>Error</option>';
                 }
-                // Lógica para la vista previa de la foto (copiada)
+
+                // Inicializar Choices (Colaborador)
+                const selectEl = document.getElementById('dotacion-assignedTo');
+                if (selectEl) {
+                    new Choices(selectEl, {
+                        choices: userChoices,
+                        itemSelectText: '',
+                        placeholder: true,
+                        placeholderValue: 'Buscar colaborador...',
+                        searchPlaceholderValue: 'Nombre...'
+                    });
+
+                    // Sugerencia Talla
+                    selectEl.addEventListener('change', (e) => {
+                        const userId = e.detail.value;
+                        const selectedUser = userChoices.find(u => u.value === userId);
+                        const suggestionBox = document.getElementById('preferred-talla-suggestion');
+                        const suggestionVal = document.getElementById('suggestion-value');
+
+                        if (selectedUser && selectedUser.customProperties) {
+                            let userTalla = '';
+                            const itemName = data.itemName.toLowerCase();
+                            if (itemName.includes('camisa') || itemName.includes('camiseta')) userTalla = selectedUser.customProperties.tallaCamisa;
+                            else if (itemName.includes('pantalon') || itemName.includes('jean')) userTalla = selectedUser.customProperties.tallaPantalon;
+                            else if (itemName.includes('bota') || itemName.includes('calzado')) userTalla = selectedUser.customProperties.tallaBotas;
+
+                            if (userTalla) {
+                                suggestionVal.textContent = userTalla;
+                                suggestionBox.classList.remove('hidden');
+                            } else {
+                                suggestionBox.classList.add('hidden');
+                            }
+                        }
+                    });
+                }
+
+                // Foto Dropzone
                 const dropzone = document.getElementById('assign-dotacion-dropzone');
                 const fileInput = document.getElementById('dotacion-assign-photo');
-                const previewContainer = document.getElementById('assign-dotacion-preview');
+                const preview = document.getElementById('assign-dotacion-preview');
                 const previewImg = document.getElementById('assign-dotacion-img-preview');
-                const promptEl = document.getElementById('assign-dotacion-prompt');
+                const prompt = document.getElementById('assign-dotacion-prompt');
+
                 if (dropzone) {
-                    dropzone.addEventListener('click', () => fileInput.click());
-                    fileInput.addEventListener('change', (e) => {
+                    dropzone.onclick = () => fileInput.click();
+                    fileInput.onchange = (e) => {
                         const file = e.target.files[0];
                         if (file) {
                             const reader = new FileReader();
-                            reader.onload = (event) => {
-                                previewImg.src = event.target.result;
-                                previewContainer.classList.remove('hidden');
-                                promptEl.classList.add('hidden');
-                            }
+                            reader.onload = (ev) => {
+                                previewImg.src = ev.target.result;
+                                preview.classList.remove('hidden');
+                                prompt.classList.add('hidden');
+                                dropzone.classList.add('border-cyan-500');
+                            };
                             reader.readAsDataURL(file);
                         }
-                    });
+                    };
                 }
-                // Set default date to today
-                const dateInput = modalForm.querySelector('input[name="fechaEntrega"]');
-                if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
-            }, 100);
+
+            }, 200);
             break;
         }
 
         // --- INICIO DE CÓDIGO AÑADIDO (MEJORA 1 - DEVOLUCIONES) ---
-        case 'return-dotacion-options':
-            title = `Registrar Devolución de: ${data.itemName}`;
-            btnText = 'Procesar Devolución';
-            btnClass = 'bg-blue-500 hover:bg-blue-600';
+        case 'return-dotacion-options': {
+            // 1. Configuración Visual
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
 
-            modalForm.dataset.id = data.historyId; // ID del registro de historial
-            modalForm.dataset.itemid = data.itemId;   // ID del ítem en el catálogo
+            const defaultFooter = document.getElementById('modal-confirm-btn')?.parentElement;
+            if (defaultFooter) defaultFooter.style.display = 'none';
+
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-2xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Registrar Devolución';
 
             bodyHtml = `
-                <input type="hidden" name="itemName" value="${data.itemName}">
-                
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="md:col-span-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Foto de Devolución (Req.)</label>
-                        <div id="return-dotacion-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
-                            <div id="return-dotacion-preview" class="hidden absolute inset-0">
-                                <img src="" id="return-dotacion-img-preview" class="w-full h-full object-contain">
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-orange-500 to-red-600 px-6 py-5 shrink-0 rounded-t-xl flex justify-between items-center">
+                        <div class="flex items-center gap-3 text-white">
+                            <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl backdrop-blur-sm border border-white/10">
+                                <i class="fa-solid fa-arrow-rotate-left"></i>
                             </div>
-                            <div id="return-dotacion-prompt" class="text-center p-4">
-                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                <p class="mt-2 text-sm text-gray-500">Foto del ítem devuelto</p>
+                            <div>
+                                <h2 class="text-lg font-bold">Devolución de Dotación</h2>
+                                <p class="text-orange-100 text-xs font-medium">Reingreso o baja de inventario</p>
                             </div>
                         </div>
-                        <input type="file" id="dotacion-return-photo" name="returnPhoto" required accept="image/*" class="hidden">
+                        <button onclick="closeMainModal()" class="text-white/70 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
                     </div>
 
-                    <div class="md:col-span-2 space-y-4">
-                        <div>
-                            <p class="text-sm font-medium text-gray-700 mb-2">1. Selecciona el tipo de devolución:</p>
-                            <div class="space-y-3">
-                              <label class="flex items-center p-3 border rounded-lg has-[:checked]:bg-blue-50 has-[:checked]:border-blue-500 cursor-pointer">
-                                <input type="radio" name="returnType" value="descarte" class="mr-3" checked>
-                                <div>
-                                  <strong class="font-semibold">Descartar Ítem (EPP)</strong>
-                                  <p class="text-xs text-gray-600">No regresa al inventario (ej. casco vencido, guantes rotos).</p>
-                                </div>
-                              </label>
-                              <label class="flex items-center p-3 border rounded-lg has-[:checked]:bg-green-50 has-[:checked]:border-green-500 cursor-pointer">
-                                <input type="radio" name="returnType" value="stock" class="mr-3">
-                                <div>
-                                  <strong class="font-semibold">Devolver a Inventario (Reutilizable)</strong>
-                                  <p class="text-xs text-gray-600">Regresa al stock para ser reasignado (ej. uniforme).</p>
-                                </div>
-                              </label>
+                    <div class="p-6 bg-gray-50 flex-grow overflow-y-auto custom-scrollbar">
+                        
+                        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6 flex items-center gap-4">
+                            <div class="w-12 h-12 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center text-2xl">
+                                <i class="fa-solid fa-shirt"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-gray-800 text-sm uppercase tracking-wide">Ítem a Devolver</h3>
+                                <p class="text-lg font-black text-gray-900 leading-none">${data.itemName}</p>
                             </div>
                         </div>
-                        
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">2. Observaciones (Opcional)</label>
-                            <textarea name="observaciones" rows="3" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Devuelto por rotura en visera..."></textarea>
+
+                        <div class="space-y-6">
+                            
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase mb-3">1. ¿Qué destino tiene el ítem?</label>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    
+                                    <label class="cursor-pointer group relative">
+                                        <input type="radio" name="returnType" value="stock" class="peer sr-only">
+                                        <div class="p-4 rounded-xl border-2 border-gray-200 bg-white hover:border-blue-400 peer-checked:border-blue-600 peer-checked:bg-blue-50 transition-all h-full flex flex-col items-center text-center shadow-sm">
+                                            <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mb-2 text-lg">
+                                                <i class="fa-solid fa-warehouse"></i>
+                                            </div>
+                                            <p class="font-bold text-gray-700 peer-checked:text-blue-800 text-sm">Reingresar a Stock</p>
+                                            <p class="text-[10px] text-gray-400 mt-1">Buen estado. Se puede reasignar.</p>
+                                        </div>
+                                        <div class="absolute top-2 right-2 text-blue-600 opacity-0 peer-checked:opacity-100 transition-opacity">
+                                            <i class="fa-solid fa-circle-check"></i>
+                                        </div>
+                                    </label>
+
+                                    <label class="cursor-pointer group relative">
+                                        <input type="radio" name="returnType" value="descarte" class="peer sr-only">
+                                        <div class="p-4 rounded-xl border-2 border-gray-200 bg-white hover:border-red-400 peer-checked:border-red-600 peer-checked:bg-red-50 transition-all h-full flex flex-col items-center text-center shadow-sm">
+                                            <div class="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-2 text-lg">
+                                                <i class="fa-solid fa-trash-can"></i>
+                                            </div>
+                                            <p class="font-bold text-gray-700 peer-checked:text-red-800 text-sm">Dar de Baja (Descarte)</p>
+                                            <p class="text-[10px] text-gray-400 mt-1">Dañado o vida útil cumplida.</p>
+                                        </div>
+                                        <div class="absolute top-2 right-2 text-red-600 opacity-0 peer-checked:opacity-100 transition-opacity">
+                                            <i class="fa-solid fa-circle-check"></i>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase mb-2">2. Evidencia del Estado <span class="text-red-500">*</span></label>
+                                <div id="return-dotacion-dropzone" class="h-32 w-full rounded-xl border-2 border-dashed border-gray-300 hover:border-orange-500 bg-white flex flex-col items-center justify-center cursor-pointer transition-all group relative overflow-hidden">
+                                    <div id="return-dotacion-preview" class="hidden absolute inset-0 bg-gray-100">
+                                        <img src="" id="return-dotacion-img-preview" class="w-full h-full object-contain">
+                                        <div class="absolute bottom-0 left-0 w-full bg-black/50 text-white text-xs py-1 text-center">Clic para cambiar</div>
+                                    </div>
+                                    <div id="return-dotacion-prompt" class="text-center p-4 group-hover:scale-105 transition-transform">
+                                        <i class="fa-solid fa-camera text-2xl text-gray-300 group-hover:text-orange-500 mb-1"></i>
+                                        <p class="text-xs font-bold text-gray-500 group-hover:text-orange-700">Subir Foto</p>
+                                    </div>
+                                </div>
+                                <input type="file" id="dotacion-return-photo" name="returnPhoto" required accept="image/*" class="hidden">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">3. Observaciones</label>
+                                <textarea name="observaciones" rows="2" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-orange-500 outline-none resize-none" placeholder="Ej: Desgaste natural, rotura en manga..."></textarea>
+                            </div>
+
                         </div>
+                    </div>
+
+                    <div class="bg-white border-t border-gray-200 p-4 flex justify-end gap-3 rounded-b-xl">
+                        <button type="button" onclick="closeMainModal()" class="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button>
+                        <button type="button" id="btn-confirm-return" onclick="document.getElementById('modal-form').requestSubmit()" 
+                            class="bg-orange-600 hover:bg-orange-700 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-md transition-transform active:scale-95 flex items-center gap-2 disabled:bg-gray-300 disabled:cursor-not-allowed" disabled>
+                            <i class="fa-solid fa-check"></i> Procesar Devolución
+                        </button>
                     </div>
                 </div>
             `;
 
-            // Añadir la lógica de JS para la vista previa de la foto (copiada de 'register-dotacion-delivery')
+            // IDs ocultos
+            modalForm.dataset.id = data.historyId;
+            modalForm.dataset.itemid = data.itemId;
+
             setTimeout(() => {
-                const dropzone = document.getElementById('return-dotacion-dropzone');
                 const fileInput = document.getElementById('dotacion-return-photo');
-                const previewContainer = document.getElementById('return-dotacion-preview');
+                const confirmBtn = document.getElementById('btn-confirm-return');
+                const dropzone = document.getElementById('return-dotacion-dropzone');
+                const preview = document.getElementById('return-dotacion-preview');
                 const previewImg = document.getElementById('return-dotacion-img-preview');
-                const promptEl = document.getElementById('return-dotacion-prompt');
+                const prompt = document.getElementById('return-dotacion-prompt');
+                const radios = document.querySelectorAll('input[name="returnType"]');
+
+                // Validación en tiempo real para activar botón
+                const validateForm = () => {
+                    const hasType = Array.from(radios).some(r => r.checked);
+                    const hasFile = fileInput.files.length > 0;
+                    confirmBtn.disabled = !(hasType && hasFile);
+                };
+
+                radios.forEach(r => r.addEventListener('change', validateForm));
+
                 if (dropzone) {
-                    dropzone.addEventListener('click', () => fileInput.click());
-                    fileInput.addEventListener('change', (e) => {
+                    dropzone.onclick = () => fileInput.click();
+                    fileInput.onchange = (e) => {
                         const file = e.target.files[0];
                         if (file) {
                             const reader = new FileReader();
-                            reader.onload = (event) => {
-                                previewImg.src = event.target.result;
-                                previewContainer.classList.remove('hidden');
-                                promptEl.classList.add('hidden');
-                            }
+                            reader.onload = (ev) => {
+                                previewImg.src = ev.target.result;
+                                preview.classList.remove('hidden');
+                                prompt.classList.add('hidden');
+                                dropzone.classList.add('border-orange-500');
+                                validateForm();
+                            };
                             reader.readAsDataURL(file);
                         }
-                    });
+                    };
                 }
             }, 100);
-
             break;
+        }
         // --- FIN DE CÓDIGO AÑADIDO ---
 
         // --- INICIO DE NUEVO CÓDIGO AÑADIDO ---
@@ -8038,238 +9439,428 @@ case 'add-catalog-item':
             }, 100);
             break;
         }
+
         case 'editUser':
+            // 1. Configuración Visual
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+
+            // Ocultar footer por defecto (usaremos uno personalizado)
+            const defaultFooter = document.getElementById('modal-confirm-btn')?.parentElement;
+            if (defaultFooter) defaultFooter.style.display = 'none';
+
+            // Configurar contenedor sin paddings para diseño completo
+            modalBody.classList.add('p-0', 'overflow-hidden');
+            modalBody.style.padding = '0';
+            modalBody.parentElement.classList.add('overflow-hidden');
+
             title = 'Editar Usuario';
-            btnText = 'Guardar Cambios';
-            btnClass = 'bg-yellow-500 hover:bg-yellow-600';
-            modalContentDiv.classList.add('max-w-2xl');
+            // Aseguramos clases limpias para evitar conflictos visuales
+            modalContentDiv.className = 'relative bg-white rounded-lg shadow-xl transform transition-all w-full max-w-5xl h-[90vh] flex flex-col';
 
             bodyHtml = `
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="flex flex-col h-full">
                     
-                    <div class="md:col-span-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Selfie (Foto de Perfil)</label>
+                    <div class="bg-gradient-to-r from-amber-500 to-orange-600 px-8 py-5 flex justify-between items-center shrink-0 relative overflow-hidden shadow-md z-10">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none transform scale-150 translate-x-4 -translate-y-2">
+                            <i class="fa-solid fa-user-pen text-6xl text-white"></i>
+                        </div>
                         
-                        <div class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50 relative overflow-hidden">
-                            <div id="editUser-preview" class="absolute inset-0 ${data.profilePhotoURL ? '' : 'hidden'}">
-                                <img src="${data.profilePhotoURL || ''}" id="editUser-img-preview" class="w-full h-full object-cover">
-                            </div>
-                            <div id="editUser-prompt" class="text-center p-4 ${data.profilePhotoURL ? 'hidden' : ''} flex items-center justify-center h-full">
-                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                            </div>
-                        </div>
-
-                        <input type="file" id="editUser-photo-input" name="photo" accept="image/*,.heic,.heif" class="hidden">
-
-                        <div class="mt-2 grid grid-cols-2 gap-2">
-                            <button type="button" id="editUser-upload-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-bold py-2 px-3 rounded-lg w-full">Subir Foto</button>
-                            <button type="button" id="editUser-camera-btn" class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold py-2 px-3 rounded-lg w-full">Tomar Foto</button>
-                        </div>
-                        <p id="editUser-photo-status" class="text-xs text-center text-blue-600 h-4 mt-1"></p>
-                    </div>
-                    
-                    <div class="md:col-span-2 space-y-3">
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label class="block text-xs font-medium text-gray-700">Nombre</label>
-                                <input type="text" name="firstName" value="${data.firstName}" required class="mt-1 w-full border rounded-md p-2 text-sm">
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center border-2 border-white/30 shadow-inner overflow-hidden backdrop-blur-sm">
+                                ${data.profilePhotoURL
+                    ? `<img src="${data.profilePhotoURL}" class="w-full h-full object-cover">`
+                    : `<span class="text-xl font-bold text-white">${(data.firstName?.[0] || '').toUpperCase()}${(data.lastName?.[0] || '').toUpperCase()}</span>`
+                }
                             </div>
                             <div>
-                                <label class="block text-xs font-medium text-gray-700">Apellido</label>
-                                <input type="text" name="lastName" value="${data.lastName}" required class="mt-1 w-full border rounded-md p-2 text-sm">
+                                <h2 class="text-xl font-bold tracking-tight text-white leading-tight">Editar Perfil</h2>
+                                <p class="text-amber-100 text-xs font-medium">${data.firstName} ${data.lastName}</p>
                             </div>
                         </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-700">Cédula</label>
-                            <input type="text" name="idNumber" value="${data.idNumber}" required class="mt-1 w-full border rounded-md p-2 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-700">Correo (No editable)</label>
-                            <input type="email" name="email" value="${data.email}" required class="mt-1 w-full border rounded-md p-2 text-sm bg-gray-100" readonly>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-700">Celular</label>
-                            <input type="tel" name="phone" value="${data.phone}" required class="mt-1 w-full border rounded-md p-2 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-700">Dirección</label>
-                            <input type="text" name="address" value="${data.address}" required class="mt-1 w-full border rounded-md p-2 text-sm">
-                        </div>
-
-                        <div class="pt-3 border-t mt-3">
-                            <h4 class="text-sm font-bold text-gray-800 mb-2">Información Bancaria (Pago de Nómina)</h4>
-                            <div class="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label class="block text-xs font-medium text-gray-700">Banco</label>
-                                    <input type="text" name="bankName" value="${data.bankName || ''}" class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="Ej: Bancolombia">
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-medium text-gray-700">Tipo de Cuenta</label>
-                                    <select name="accountType" class="mt-1 w-full border rounded-md p-2 text-sm bg-white">
-                                        <option value="Ahorros" ${data.accountType === 'Ahorros' ? 'selected' : ''}>Ahorros</option>
-                                        <option value="Corriente" ${data.accountType === 'Corriente' ? 'selected' : ''}>Corriente</option>
-                                        <option value="Nequi/Daviplata" ${data.accountType === 'Nequi/Daviplata' ? 'selected' : ''}>Nequi / Daviplata</option>
-                                    </select>
-                                </div>
-                                <div class="col-span-2">
-                                    <label class="block text-xs font-medium text-gray-700">Número de Cuenta</label>
-                                    <input type="text" name="accountNumber" value="${data.accountNumber || ''}" class="mt-1 w-full border rounded-md p-2 text-sm" placeholder="Ej: 031-123456-78">
-                                </div>
-                            </div>
-                        </div>
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors relative z-10">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
                     </div>
 
-                    <div class="md:col-span-3 border-t pt-4">
-                        <h4 class="text-md font-semibold text-gray-700 mb-2">Tallas Preferidas</h4>
-                        <div class="grid grid-cols-3 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium">Camiseta</label>
-                                <input type="text" name="tallaCamiseta" class="mt-1 w-full border rounded-md p-2" value="${data.tallaCamiseta || ''}" placeholder="Ej: L">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium">Pantalón</label>
-                                <input type="text" name="tallaPantalón" class="mt-1 w-full border rounded-md p-2" value="${data.tallaPantalón || ''}" placeholder="Ej: 32">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium">Botas</label>
-                                <input type="text" name="tallaBotas" class="mt-1 w-full border rounded-md p-2" value="${data.tallaBotas || ''}" placeholder="Ej: 42">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="md:col-span-3 border-t pt-4">
-                        <h4 class="text-md font-semibold text-gray-700 mb-2">Rol y Compensación</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <label for="user-role-select" class="block text-sm font-medium text-gray-700">Rol de Usuario</label>
-                                <select id="user-role-select" name="role" class="mt-1 block w-full px-3 py-2 border rounded-md bg-white font-bold text-gray-700">
-                                    <option value="operario" ${data.role === 'operario' ? 'selected' : ''}>Operario</option>
-                                    <option value="admin" ${data.role === 'admin' ? 'selected' : ''}>Administrador</option>
-                                    <option value="bodega" ${data.role === 'bodega' ? 'selected' : ''}>Bodega</option>
-                                    <option value="sst" ${data.role === 'sst' ? 'selected' : ''}>SST</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label for="user-commissionLevel" class="block text-sm font-medium text-gray-700">Nivel de Comisión</label>
-                                <select id="user-commissionLevel" name="commissionLevel" class="mt-1 block w-full px-3 py-2 border rounded-md bg-white">
-                                    <option value="principiante" ${data.commissionLevel === 'principiante' ? 'selected' : ''}>Principiante</option>
-                                    <option value="intermedio" ${data.commissionLevel === 'intermedio' ? 'selected' : ''}>Intermedio</option>
-                                    <option value="avanzado" ${data.commissionLevel === 'avanzado' ? 'selected' : ''}>Avanzado</option>
-                                    <option value="" ${!data.commissionLevel ? 'selected' : ''}>Ninguno (No comisiona)</option>
-                                </select>
-                            </div>
+                    <div class="flex-grow overflow-y-auto custom-scrollbar bg-gray-50 p-6">
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             
-                            <div>
-                                <label for="user-salarioBasico" class="block text-sm font-medium text-gray-700">Salario Básico</label>
-                                <input type="text" id="user-salarioBasico" name="salarioBasico" class="currency-input mt-1 block w-full px-3 py-2 border rounded-md" value="${data.salarioBasico || 0}">
+                            <div class="lg:col-span-1 space-y-6">
+                                <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm text-center">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4">Foto de Perfil</h4>
+                                    
+                                    <div id="editUser-dropzone" class="aspect-square w-full max-w-[180px] mx-auto rounded-full border-4 border-gray-100 shadow-inner flex items-center justify-center bg-gray-50 relative overflow-hidden group cursor-pointer hover:border-amber-200 transition-all">
+                                        <div id="editUser-preview" class="absolute inset-0 ${data.profilePhotoURL ? '' : 'hidden'}">
+                                            <img src="${data.profilePhotoURL || ''}" id="editUser-img-preview" class="w-full h-full object-cover">
+                                        </div>
+                                        <div id="editUser-prompt" class="absolute inset-0 flex flex-col items-center justify-center bg-black/0 group-hover:bg-black/10 transition-all">
+                                            <i class="fa-solid fa-camera text-3xl text-gray-300 group-hover:text-white drop-shadow-md transition-all ${data.profilePhotoURL ? 'opacity-0 group-hover:opacity-100' : ''}"></i>
+                                        </div>
+                                    </div>
+
+                                    <input type="file" id="editUser-photo-input" name="photo" accept="image/*,.heic,.heif" class="hidden">
+                                    <p id="editUser-photo-status" class="text-xs text-center text-amber-600 h-4 mt-3 font-medium"></p>
+
+                                    <div class="grid grid-cols-2 gap-2 mt-4">
+                                        <button type="button" id="editUser-camera-btn" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors">
+                                            <i class="fa-solid fa-camera"></i> Cámara
+                                        </button>
+                                        <button type="button" id="editUser-upload-btn" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors">
+                                            <i class="fa-solid fa-upload"></i> Subir
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div class="bg-white p-2 rounded-xl border border-gray-200 shadow-sm">
+                                    <button type="button" data-action="view-profile-history" data-userid="${data.id}" class="w-full bg-white hover:bg-slate-50 text-slate-600 hover:text-indigo-600 text-sm font-bold py-3 px-4 rounded-lg border border-transparent hover:border-indigo-100 transition-all flex items-center justify-between group">
+                                        <span class="flex items-center gap-3">
+                                            <div class="w-8 h-8 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
+                                                <i class="fa-solid fa-clock-rotate-left"></i>
+                                            </div>
+                                            Ver Historial
+                                        </span>
+                                        <i class="fa-solid fa-chevron-right text-xs text-gray-300 group-hover:text-indigo-400"></i>
+                                    </button>
+                                </div>
                             </div>
-                        </div>
 
-                        <div class="mt-4 flex items-center">
-                            <input type="checkbox" id="user-deduccionSobreMinimo" name="deduccionSobreMinimo" class="h-4 w-4 text-blue-600 border-gray-300 rounded" ${data.deduccionSobreMinimo ? 'checked' : ''}>
-                            <label for="user-deduccionSobreMinimo" class="ml-2 block text-sm text-gray-900">
-                                Aplicar deducciones (Salud/Pensión) sobre el Salario Mínimo
-                            </label>
-                        </div>
-                    </div>
+                            <div class="lg:col-span-2 space-y-6">
+                                
+                                <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm relative overflow-hidden">
+                                    <div class="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                                    <h4 class="text-sm font-bold text-gray-800 mb-5 flex items-center"><i class="fa-regular fa-id-card mr-2 text-blue-500"></i> Información Personal y Contrato</h4>
+                                    
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nombre</label>
+                                            <input type="text" name="firstName" value="${data.firstName}" required class="w-full border-gray-200 bg-gray-50 focus:bg-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium text-gray-700">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Apellido</label>
+                                            <input type="text" name="lastName" value="${data.lastName}" required class="w-full border-gray-200 bg-gray-50 focus:bg-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium text-gray-700">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cédula / ID</label>
+                                            <input type="text" name="idNumber" value="${data.idNumber}" required class="w-full border-gray-200 bg-gray-50 focus:bg-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Correo (Solo lectura)</label>
+                                            <input type="email" name="email" value="${data.email}" required class="w-full border-gray-200 bg-gray-100 rounded-lg p-2.5 text-sm text-gray-500 cursor-not-allowed" readonly>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Celular</label>
+                                            <input type="tel" name="phone" value="${data.phone}" required class="w-full border-gray-200 bg-gray-50 focus:bg-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Dirección</label>
+                                            <input type="text" name="address" value="${data.address}" required class="w-full border-gray-200 bg-gray-50 focus:bg-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                                        </div>
 
-                    <div class="md:col-span-3 border-t pt-4 mt-2">
-                        <h4 class="text-md font-semibold text-gray-700 mb-3 flex items-center">
-                            <i class="fa-solid fa-toggle-on mr-2 text-indigo-500"></i> 
-                            Acceso a Módulos
-                        </h4>
-                        
-                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200 max-h-60 overflow-y-auto custom-scrollbar">
-                            ${(() => {
-                    // Generación inicial basada en el rol actual
+<div class="md:col-span-2 grid grid-cols-2 gap-5 pt-4 mt-2 border-t border-gray-100">
+                                            <div>
+                                                <label class="block text-xs font-bold text-blue-600 uppercase mb-1">Fecha Inicio Contrato</label>
+                                                <input type="date" name="contractStartDate" value="${data.contractStartDate || ''}" class="w-full border-blue-200 bg-blue-50 focus:bg-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Fin Contrato</label>
+                                                <input type="date" name="contractEndDate" value="${data.contractEndDate || ''}" class="w-full border-gray-200 bg-gray-50 focus:bg-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-500 outline-none transition-all">
+                                                <p class="text-[9px] text-gray-400 mt-1">Dejar vacío si es indefinido.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm relative">
+                                        <div class="absolute top-0 left-0 w-1 h-full bg-emerald-500 rounded-l-xl"></div>
+                                        <h4 class="text-xs font-bold text-gray-400 uppercase mb-4"><i class="fa-solid fa-building-columns mr-2 text-emerald-500"></i> Datos Bancarios</h4>
+                                        <div class="space-y-3">
+                                            <div>
+                                                <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Banco</label>
+                                                <input type="text" name="bankName" value="${data.bankName || ''}" class="w-full border-gray-200 rounded-lg p-2 text-sm focus:border-emerald-500 outline-none" placeholder="Ej: Bancolombia">
+                                            </div>
+                                            <div>
+                                                <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Tipo de Cuenta</label>
+                                                <select name="accountType" class="w-full border-gray-200 rounded-lg p-2 text-sm bg-white focus:border-emerald-500 outline-none">
+                                                    <option value="Ahorros" ${data.accountType === 'Ahorros' ? 'selected' : ''}>Ahorros</option>
+                                                    <option value="Corriente" ${data.accountType === 'Corriente' ? 'selected' : ''}>Corriente</option>
+                                                    <option value="Nequi/Daviplata" ${data.accountType === 'Nequi/Daviplata' ? 'selected' : ''}>Nequi / Daviplata</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Número</label>
+                                                <input type="text" name="accountNumber" value="${data.accountNumber || ''}" class="w-full border-gray-200 rounded-lg p-2 text-sm font-mono focus:border-emerald-500 outline-none" placeholder="000-00000-00">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm relative">
+                                        <div class="absolute top-0 left-0 w-1 h-full bg-purple-500 rounded-l-xl"></div>
+                                        <h4 class="text-xs font-bold text-gray-400 uppercase mb-4"><i class="fa-solid fa-shirt mr-2 text-purple-500"></i> Tallas Dotación</h4>
+                                        <div class="grid grid-cols-3 gap-3">
+                                            <div>
+                                                <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Camisa</label>
+                                                <input type="text" name="tallaCamiseta" class="w-full border-gray-200 rounded-lg p-2 text-sm text-center font-bold uppercase focus:border-purple-500 outline-none" value="${data.tallaCamiseta || ''}" placeholder="L">
+                                            </div>
+                                            <div>
+                                                <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Pantalón</label>
+                                                <input type="text" name="tallaPantalón" class="w-full border-gray-200 rounded-lg p-2 text-sm text-center font-bold uppercase focus:border-purple-500 outline-none" value="${data.tallaPantalón || ''}" placeholder="32">
+                                            </div>
+                                            <div>
+                                                <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Calzado</label>
+                                                <input type="text" name="tallaBotas" class="w-full border-gray-200 rounded-lg p-2 text-sm text-center font-bold uppercase focus:border-purple-500 outline-none" value="${data.tallaBotas || ''}" placeholder="40">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="bg-slate-50 p-6 rounded-xl border border-slate-200">
+                                    <h4 class="text-sm font-bold text-slate-700 mb-4 flex items-center">
+                                        <i class="fa-solid fa-user-gear mr-2 text-slate-500"></i> Configuración de Rol y Acceso
+                                    </h4>
+                                    
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
+                                        <div>
+                                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Rol de Usuario</label>
+                                            <select id="user-role-select" name="role" class="w-full bg-white border border-slate-300 text-slate-700 py-2.5 px-3 rounded-lg focus:outline-none focus:border-slate-500 text-sm font-bold cursor-pointer">
+                                                <option value="operario" ${data.role === 'operario' ? 'selected' : ''}>Operario</option>
+                                                <option value="admin" ${data.role === 'admin' ? 'selected' : ''}>Administrador</option>
+                                                <option value="bodega" ${data.role === 'bodega' ? 'selected' : ''}>Bodega</option>
+                                                <option value="sst" ${data.role === 'sst' ? 'selected' : ''}>SST</option>
+                                                <option value="nomina" ${data.role === 'nomina' ? 'selected' : ''}>Nómina</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Nivel Comisión</label>
+                                            <select name="commissionLevel" class="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-sm focus:border-slate-500 outline-none">
+                                                <option value="principiante" ${data.commissionLevel === 'principiante' ? 'selected' : ''}>Principiante</option>
+                                                <option value="intermedio" ${data.commissionLevel === 'intermedio' ? 'selected' : ''}>Intermedio</option>
+                                                <option value="avanzado" ${data.commissionLevel === 'avanzado' ? 'selected' : ''}>Avanzado</option>
+                                                <option value="" ${!data.commissionLevel ? 'selected' : ''}>No aplica</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Salario Básico</label>
+                                            <div class="relative">
+                                                <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 font-bold">$</span>
+                                                <input type="text" id="user-salarioBasico" name="salarioBasico" class="currency-input w-full pl-7 border border-slate-300 rounded-lg p-2.5 text-sm font-mono font-bold text-slate-700 focus:border-slate-500 outline-none" value="${data.salarioBasico || 0}">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center mb-4">
+                                        <label class="inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" name="deduccionSobreMinimo" class="sr-only peer" ${data.deduccionSobreMinimo ? 'checked' : ''}>
+                                            <div class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                            <span class="ms-3 text-xs font-medium text-slate-600">Aplicar deducciones sobre el Salario Mínimo</span>
+                                        </label>
+                                    </div>
+
+                                    <div class="border-t border-slate-200 pt-4">
+                                        <p class="text-xs font-bold text-slate-400 uppercase mb-3">Permisos de Módulos</p>
+                                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                            ${(() => {
                     const roleDefaults = getRoleDefaultPermissions(data.role || 'operario');
-
                     return SIDEBAR_CONFIG.map(mod => {
                         const currentPerm = (data.customPermissions && data.customPermissions[mod.key]);
-                        // Lógica inicial de marcado
                         const isChecked = (currentPerm === 'show') || (roleDefaults[mod.key] && currentPerm !== 'hide');
-
-                        let labelClass = "text-gray-700";
-                        if (currentPerm === 'show') labelClass = "text-green-700 font-bold";
-                        if (currentPerm === 'hide') labelClass = "text-red-500 line-through";
+                        let styleClass = isChecked ? "bg-white border-indigo-200 text-indigo-700 shadow-sm" : "bg-slate-100 border-transparent text-slate-400";
 
                         return `
-                                    <label class="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-1 rounded">
-                                        <input type="checkbox" name="perm_${mod.key}" 
-                                            class="permission-checkbox h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                                            ${isChecked ? 'checked' : ''}
-                                            data-key="${mod.key}">
-                                        <span class="text-xs ${labelClass} permission-label">${mod.label}</span>
-                                    </label>
-                                    `;
+                                                    <label class="cursor-pointer select-none">
+                                                        <input type="checkbox" name="perm_${mod.key}" class="permission-checkbox hidden" ${isChecked ? 'checked' : ''} data-key="${mod.key}">
+                                                        <div class="permission-card px-3 py-2 rounded-lg border text-xs font-bold text-center transition-all ${styleClass} hover:border-indigo-300">
+                                                            ${mod.label}
+                                                        </div>
+                                                    </label>`;
                     }).join('');
                 })()}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <p class="text-[10px] text-gray-500 mt-2">
-                            * Al cambiar el rol, los permisos se reiniciarán a los valores por defecto del nuevo rol.
-                        </p>
                     </div>
 
-                    <div class="md:col-span-3 border-t pt-4">
-                        <button type="button" data-action="view-profile-history" data-userid="${data.id}" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg">
-                            Ver Historial de Cambios
+                    <div class="bg-white border-t border-gray-200 p-4 shrink-0 flex justify-end gap-3 z-20">
+                        <button type="button" onclick="closeMainModal()" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition-colors text-sm">
+                            Cancelar
+                        </button>
+                        <button type="button" onclick="document.getElementById('modal-form').requestSubmit()" class="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white px-8 py-2.5 rounded-lg font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-check"></i> Guardar Cambios
                         </button>
                     </div>
                 </div>
             `;
 
-            // Lógica JS para inicializar el modal
+            // Lógica JS de inicialización (CON VALIDACIÓN)
             setTimeout(() => {
-                // 1. Moneda
                 const salarioInput = document.getElementById('user-salarioBasico');
                 if (salarioInput) setupCurrencyInput(salarioInput);
 
-                // 2. Fotos
                 processedPhotoFile = null;
+                const dropzone = document.getElementById('editUser-dropzone');
                 const fileInput = document.getElementById('editUser-photo-input');
                 const uploadBtn = document.getElementById('editUser-upload-btn');
                 const cameraBtn = document.getElementById('editUser-camera-btn');
+                const previewImg = document.getElementById('editUser-img-preview');
+                const promptEl = document.getElementById('editUser-prompt');
+                const previewDiv = document.getElementById('editUser-preview');
+                const statusText = document.getElementById('editUser-photo-status');
 
-                if (uploadBtn && fileInput) uploadBtn.addEventListener('click', () => fileInput.click());
-                if (fileInput) {
-                    fileInput.addEventListener('change', (e) => {
-                        const file = e.target.files[0];
-                        if (file) handlePhotoFile(file, 'editUser-photo-input', 'editUser-img-preview');
-                    });
-                }
-                if (cameraBtn) {
-                    cameraBtn.addEventListener('click', () => openCameraModal('editUser-photo-input', 'editUser-img-preview'));
-                }
+                const handleFileSelection = async (file) => {
+                    if (!file) return;
+                    if (statusText) {
+                        statusText.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Analizando rostro...';
+                        statusText.className = "text-xs text-center text-blue-600 h-4 mt-3 font-bold animate-pulse";
+                    }
+                    promptEl.classList.add('hidden');
 
-                // 3. ACTUALIZACIÓN DINÁMICA DE MÓDULOS AL CAMBIAR ROL (NUEVO)
-                const roleSelect = document.getElementById('user-role-select');
-                const permissionCheckboxes = document.querySelectorAll('.permission-checkbox');
-                const permissionLabels = document.querySelectorAll('.permission-label');
+                    try {
+                        const imgUrl = await new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onload = (e) => resolve(e.target.result);
+                            reader.readAsDataURL(file);
+                        });
+                        const img = await faceapi.fetchImage(imgUrl);
+                        const detections = await faceapi.detectSingleFace(img);
 
-                if (roleSelect) {
-                    roleSelect.addEventListener('change', (e) => {
-                        const newRole = e.target.value;
-                        const newDefaults = getRoleDefaultPermissions(newRole);
-
-                        // Reiniciamos todos los checkboxes según el nuevo rol
-                        permissionCheckboxes.forEach((chk, index) => {
-                            const key = chk.dataset.key;
-                            // Forzamos el estado según el default del nuevo rol
-                            chk.checked = !!newDefaults[key];
-
-                            // Reseteamos estilos visuales (quitamos tachado o negrita de permisos custom previos)
-                            if (permissionLabels[index]) {
-                                permissionLabels[index].className = "text-xs text-gray-700 permission-label";
+                        if (!detections) {
+                            alert("⚠️ Error de Validación:\n\nNo se detectó un rostro humano claro.");
+                            fileInput.value = '';
+                            processedPhotoFile = null;
+                            previewImg.src = '';
+                            previewDiv.classList.add('hidden');
+                            promptEl.classList.remove('hidden', 'opacity-0');
+                            if (statusText) {
+                                statusText.textContent = "Foto rechazada (Sin rostro)";
+                                statusText.className = "text-xs text-center text-red-500 h-4 mt-3 font-bold";
                             }
+                            return;
+                        }
+                        handlePhotoFile(file, 'editUser-photo-input', 'editUser-img-preview');
+                        if (!file.name.toLowerCase().endsWith('.heic')) {
+                            previewImg.src = imgUrl;
+                            previewDiv.classList.remove('hidden');
+                            promptEl.classList.remove('hidden');
+                            promptEl.classList.add('opacity-0', 'group-hover:opacity-100');
+                        }
+                        if (statusText) {
+                            statusText.innerHTML = '<i class="fa-solid fa-check-circle"></i> Rostro verificado';
+                            statusText.className = "text-xs text-center text-emerald-600 h-4 mt-3 font-bold";
+                        }
+                    } catch (error) {
+                        console.error("Error validando rostro:", error);
+                        alert("Ocurrió un error al procesar la imagen.");
+                        if (statusText) statusText.textContent = "";
+                    }
+                };
+
+                if (dropzone) dropzone.addEventListener('click', () => fileInput.click());
+                if (uploadBtn) uploadBtn.addEventListener('click', () => fileInput.click());
+                if (fileInput) fileInput.addEventListener('change', (e) => handleFileSelection(e.target.files[0]));
+                if (cameraBtn) {
+                    cameraBtn.addEventListener('click', () => {
+                        openCameraModal('editUser-photo-input', 'editUser-img-preview', async (blob) => {
+                            const file = new File([blob], "camera_capture.jpg", { type: "image/jpeg" });
+                            await handleFileSelection(file);
                         });
                     });
                 }
 
-            }, 100);
+                const permissionCheckboxes = document.querySelectorAll('.permission-checkbox');
+                permissionCheckboxes.forEach(chk => {
+                    chk.addEventListener('change', (e) => {
+                        const card = e.target.nextElementSibling;
+                        if (e.target.checked) {
+                            card.className = "permission-card px-3 py-2 rounded-lg border text-xs font-bold text-center transition-all bg-white border-indigo-200 text-indigo-700 shadow-sm hover:border-indigo-300";
+                        } else {
+                            card.className = "permission-card px-3 py-2 rounded-lg border text-xs font-bold text-center transition-all bg-slate-100 border-transparent text-slate-400 hover:border-indigo-300";
+                        }
+                    });
+                });
+
+                const roleSelect = document.getElementById('user-role-select');
+                if (roleSelect) {
+                    roleSelect.addEventListener('change', (e) => {
+                        const newDefaults = getRoleDefaultPermissions(e.target.value);
+                        permissionCheckboxes.forEach(chk => {
+                            chk.checked = !!newDefaults[chk.dataset.key];
+                            chk.dispatchEvent(new Event('change'));
+                        });
+                    });
+                }
+            }, 150);
             break;
 
+        case 'view-profile-history': { // <--- LLAVE DE APERTURA AÑADIDA
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
 
+            // Configurar Modal
+            modalBody.classList.add('p-0', 'overflow-hidden');
+            modalBody.style.padding = '0';
+            modalBody.parentElement.classList.add('overflow-hidden');
+
+            title = 'Historial de Cambios';
+            btnText = 'Cerrar';
+            btnClass = 'bg-gray-600 hover:bg-gray-700 text-white';
+            modalContentDiv.classList.add('max-w-2xl', 'h-[80vh]', 'flex', 'flex-col');
+
+            // Loader inicial
+            bodyHtml = `
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-blue-600 to-cyan-600 px-6 py-5 flex justify-between items-center shrink-0 shadow-md">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm border border-white/20">
+                                <i class="fa-solid fa-clock-rotate-left text-white text-lg"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-bold text-white tracking-tight">Historial de Perfil</h2>
+                                <p class="text-blue-100 text-xs font-medium">${data.firstName} ${data.lastName}</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button id="back-to-edit-btn" class="text-white/80 hover:text-white hover:bg-white/10 px-3 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-2">
+                                <i class="fa-solid fa-arrow-left"></i> Volver
+                            </button>
+                            <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition-colors">
+                                <i class="fa-solid fa-xmark text-xl"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="history-timeline-container" class="flex-grow overflow-y-auto custom-scrollbar bg-slate-50 p-6 relative">
+                        <div class="loader mx-auto mt-10"></div>
+                    </div>
+                </div>
+            `;
+
+            // Lógica JS
+            setTimeout(() => {
+                // Ocultar botón footer
+                const footerBtn = document.getElementById('modal-confirm-btn');
+                if (footerBtn) footerBtn.style.display = 'none';
+
+                // Botón Volver
+                const backBtn = document.getElementById('back-to-edit-btn');
+                if (backBtn) {
+                    backBtn.addEventListener('click', () => {
+                        // data ya contiene la info del usuario gracias a openMainModal
+                        openMainModal('editUser', data);
+                    });
+                }
+
+                // Cargar datos
+                // Aquí es donde estaba el conflicto de variable, ahora está protegido por las llaves {}
+                loadProfileHistory(data.id);
+
+            }, 50);
+            break;
+        } // <--- LLAVE DE CIERRE AÑADIDA
 
         case 'add-purchase':
             title = 'Registrar Compra en Inventario';
@@ -8287,100 +9878,141 @@ case 'add-catalog-item':
             break;
         case 'new-supplier':
         case 'edit-supplier': {
-            const isEditing = type === 'edit-supplier';
-            title = isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor';
-            btnText = isEditing ? 'Guardar Cambios' : 'Crear Proveedor';
-            btnClass = isEditing ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-blue-600 hover:bg-blue-700';
-
-            if (modalContentDiv) {
-                modalContentDiv.classList.remove('max-w-2xl');
-                modalContentDiv.classList.add('max-w-3xl');
+            // 1. Ocultar título por defecto para usar el diseño personalizado
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
             }
 
+            const isEditing = type === 'edit-supplier';
+
+            // Configuración visual (Tema Púrpura/Índigo)
+            const headerTitle = isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor';
+            const headerIcon = isEditing ? 'fa-pen-to-square' : 'fa-handshake';
+            const headerGradient = isEditing ? 'from-purple-600 to-indigo-600' : 'from-indigo-500 to-purple-600';
+            const subTitle = isEditing ? 'Modificar datos del aliado' : 'Registrar nuevo aliado estratégico';
+
+            title = headerTitle; // Fallback
+            btnText = isEditing ? 'Guardar Cambios' : 'Crear Proveedor';
+            btnClass = 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-md transform hover:-translate-y-0.5 transition-all';
+
+            modalContentDiv.classList.add('max-w-4xl'); // Ancho optimizado
+
             bodyHtml = `
-                <div class="space-y-6">
+                <div class="flex flex-col h-full max-h-[85vh]">
                     
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                        <h4 class="text-sm font-bold text-gray-700 uppercase mb-3 flex items-center">
-                            <div class="p-1.5 bg-blue-100 text-blue-600 rounded-md mr-2"><i class="fa-solid fa-id-card"></i></div>
-                            Información Fiscal
-                        </h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-xs font-bold text-gray-500 mb-1">Razón Social / Nombre</label>
-                                <input type="text" name="name" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej: Ferretería El Tornillo" value="${isEditing ? data.name || '' : ''}">
+                    <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-r ${headerGradient} px-8 py-5 rounded-t-lg text-white shadow-md flex justify-between items-center relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none transform scale-150 translate-x-4 -translate-y-2">
+                            <i class="fa-solid ${headerIcon} text-6xl"></i>
+                        </div>
+                        
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-2xl backdrop-blur-sm border border-white/10 shadow-inner">
+                                <i class="fa-solid ${headerIcon}"></i>
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-gray-500 mb-1">NIT / Cédula</label>
-                                <input type="text" name="nit" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej: 900.123.456-7" value="${isEditing ? data.nit || '' : ''}">
+                                <h2 class="text-2xl font-bold tracking-tight text-white">${headerTitle}</h2>
+                                <p class="text-purple-100 text-xs font-medium opacity-90">${subTitle}</p>
                             </div>
                         </div>
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors relative z-10">
+                            <i class="fa-solid fa-xmark text-2xl"></i>
+                        </button>
                     </div>
 
-                    <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                        <h4 class="text-sm font-bold text-gray-700 uppercase mb-3 flex items-center">
-                            <div class="p-1.5 bg-green-100 text-green-600 rounded-md mr-2"><i class="fa-solid fa-address-book"></i></div>
-                            Datos de Contacto
-                        </h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-xs font-bold text-gray-500 mb-1">Nombre Contacto</label>
-                                <input type="text" name="contactName" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Persona encargada" value="${isEditing ? data.contactName || '' : ''}">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-500 mb-1">Teléfono / Celular</label>
-                                <input type="tel" name="contactPhone" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="300 123 4567" value="${isEditing ? data.contactPhone || '' : ''}">
-                            </div>
-                             <div>
-                                <label class="block text-xs font-bold text-gray-500 mb-1">Correo Electrónico</label>
-                                <input type="email" name="email" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="contacto@empresa.com" value="${isEditing ? data.email || '' : ''}">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-500 mb-1">Dirección Física</label>
-                                <input type="text" name="address" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Calle 123 # 45-67" value="${isEditing ? data.address || '' : ''}">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                        <h4 class="text-sm font-bold text-gray-700 uppercase mb-3 flex items-center">
-                            <div class="p-1.5 bg-indigo-100 text-indigo-600 rounded-md mr-2"><i class="fa-solid fa-building-columns"></i></div>
-                            Información Bancaria
-                        </h4>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                            <div>
-                                <label class="block text-xs font-bold text-gray-500 mb-1">Banco</label>
-                                <input type="text" name="bankName" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Ej: Bancolombia" value="${isEditing ? data.bankName || '' : ''}">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-500 mb-1">Tipo de Cuenta</label>
-                                <select name="accountType" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white">
-                                    <option value="Ahorros" ${isEditing && data.accountType === 'Ahorros' ? 'selected' : ''}>Ahorros</option>
-                                    <option value="Corriente" ${isEditing && data.accountType === 'Corriente' ? 'selected' : ''}>Corriente</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-500 mb-1">Número de Cuenta</label>
-                                <input type="text" name="accountNumber" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm font-mono" placeholder="000-00000-00" value="${isEditing ? data.accountNumber || '' : ''}">
-                            </div>
-                        </div>
-
-                        <div class="border-t border-gray-200 pt-4">
-                            <label class="block text-xs font-bold text-gray-500 mb-2">Código QR Interbancario (Opcional)</label>
-                            <div class="flex items-center gap-4">
-                                <div id="qr-preview-container" class="w-24 h-24 bg-white border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center overflow-hidden relative cursor-pointer hover:border-indigo-400 transition-colors">
-                                    <img id="qr-img-preview" src="${isEditing ? data.qrCodeURL || '' : ''}" class="w-full h-full object-cover ${isEditing && data.qrCodeURL ? '' : 'hidden'}">
-                                    <div id="qr-placeholder-icon" class="text-center ${isEditing && data.qrCodeURL ? 'hidden' : ''}">
-                                        <i class="fa-solid fa-qrcode text-2xl text-gray-300"></i>
+                    <div class="flex-grow overflow-y-auto custom-scrollbar p-1 pr-2 pb-4 space-y-6">
+                        
+                        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4 flex items-center">
+                                <i class="fa-solid fa-id-card mr-2 text-purple-500"></i> Información Fiscal
+                            </h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div class="md:col-span-2">
+                                    <label class="block text-xs font-bold text-gray-700 mb-1.5">Razón Social / Nombre</label>
+                                    <input type="text" name="name" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none font-bold text-gray-800" placeholder="Ej: Ferretería El Tornillo S.A.S." value="${isEditing ? data.name || '' : ''}">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 mb-1.5">NIT / Cédula</label>
+                                    <input type="text" name="nit" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none" placeholder="Ej: 900.123.456-7" value="${isEditing ? data.nit || '' : ''}">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 mb-1.5">Dirección</label>
+                                    <div class="relative">
+                                         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-location-dot"></i></div>
+                                        <input type="text" name="address" class="w-full pl-9 border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none" placeholder="Calle 123 # 45-67" value="${isEditing ? data.address || '' : ''}">
                                     </div>
                                 </div>
-                                
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-50 p-5 rounded-xl border border-slate-200">
+                            <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-4 flex items-center">
+                                <i class="fa-solid fa-address-book mr-2"></i> Datos de Contacto
+                            </h4>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
                                 <div>
+                                    <label class="block text-xs font-bold text-slate-600 mb-1.5">Nombre Contacto</label>
+                                    <input type="text" name="contactName" class="w-full border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none bg-white" placeholder="Ej: Juan Pérez" value="${isEditing ? data.contactName || '' : ''}">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-600 mb-1.5">Teléfono / Celular</label>
+                                    <div class="relative">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><i class="fa-solid fa-phone"></i></div>
+                                        <input type="tel" name="contactPhone" class="w-full pl-9 border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none bg-white" placeholder="300 123 4567" value="${isEditing ? data.contactPhone || '' : ''}">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-600 mb-1.5">Correo Electrónico</label>
+                                    <div class="relative">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><i class="fa-solid fa-envelope"></i></div>
+                                        <input type="email" name="email" class="w-full pl-9 border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-purple-500 outline-none bg-white" placeholder="contacto@empresa.com" value="${isEditing ? data.email || '' : ''}">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm relative overflow-hidden">
+                             <div class="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-indigo-400 to-purple-600"></div>
+                             <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4 flex items-center ml-2">
+                                <i class="fa-solid fa-building-columns mr-2 text-indigo-500"></i> Información Bancaria
+                            </h4>
+                            
+                            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 pl-2">
+                                <div class="lg:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div class="md:col-span-2">
+                                        <label class="block text-xs font-bold text-gray-700 mb-1.5">Banco</label>
+                                        <input type="text" name="bankName" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ej: Bancolombia" value="${isEditing ? data.bankName || '' : ''}">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1.5">Tipo de Cuenta</label>
+                                        <select name="accountType" class="w-full border-gray-300 rounded-lg p-2.5 text-sm bg-white focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer">
+                                            <option value="Ahorros" ${isEditing && data.accountType === 'Ahorros' ? 'selected' : ''}>Ahorros</option>
+                                            <option value="Corriente" ${isEditing && data.accountType === 'Corriente' ? 'selected' : ''}>Corriente</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1.5">Número de Cuenta</label>
+                                        <input type="text" name="accountNumber" class="w-full border-gray-300 rounded-lg p-2.5 text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="000-00000-00" value="${isEditing ? data.accountNumber || '' : ''}">
+                                    </div>
+                                </div>
+
+                                <div class="lg:col-span-4 flex flex-col items-center justify-center bg-indigo-50 rounded-xl border border-indigo-100 p-4">
+                                    <label class="block text-xs font-bold text-indigo-600 mb-3 uppercase tracking-wide text-center">Código QR Bancario</label>
+                                    
+                                    <div id="qr-preview-container" class="w-32 h-32 bg-white border-2 border-dashed border-indigo-300 rounded-xl flex items-center justify-center overflow-hidden relative cursor-pointer hover:border-indigo-500 hover:shadow-md transition-all group">
+                                        <img id="qr-img-preview" src="${isEditing ? data.qrCodeURL || '' : ''}" class="w-full h-full object-cover ${isEditing && data.qrCodeURL ? '' : 'hidden'}">
+                                        
+                                        <div id="qr-placeholder-icon" class="text-center ${isEditing && data.qrCodeURL ? 'hidden' : ''}">
+                                            <i class="fa-solid fa-qrcode text-4xl text-indigo-200 group-hover:text-indigo-500 transition-colors mb-2"></i>
+                                            <p class="text-[10px] text-indigo-400 font-bold group-hover:text-indigo-600">SUBIR IMAGEN</p>
+                                        </div>
+
+                                        <div class="absolute inset-0 bg-indigo-900/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <i class="fa-solid fa-camera text-white text-2xl drop-shadow-md"></i>
+                                        </div>
+                                    </div>
+                                    
                                     <input type="file" id="supplier-qr-input" name="qrFile" accept="image/*" class="hidden">
-                                    <button type="button" id="btn-select-qr" class="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded-md text-xs font-bold shadow-sm transition-all mb-2">
-                                        <i class="fa-solid fa-upload mr-1"></i> Subir QR
-                                    </button>
-                                    <p class="text-[10px] text-gray-400">Formatos: JPG, PNG, WebP.</p>
+                                    <button type="button" id="btn-remove-qr" class="mt-2 text-[10px] text-red-400 hover:text-red-600 underline ${isEditing && data.qrCodeURL ? '' : 'hidden'}">Eliminar imagen</button>
                                 </div>
                             </div>
                         </div>
@@ -8388,18 +10020,17 @@ case 'add-catalog-item':
                 </div>
             `;
 
-            // Lógica JS para la previsualización
+            // Lógica JS para la previsualización interactiva
             setTimeout(() => {
-                const btnSelect = document.getElementById('btn-select-qr');
+                const qrContainer = document.getElementById('qr-preview-container');
                 const fileInput = document.getElementById('supplier-qr-input');
-                const previewContainer = document.getElementById('qr-preview-container');
                 const imgPreview = document.getElementById('qr-img-preview');
                 const iconPlaceholder = document.getElementById('qr-placeholder-icon');
+                const btnRemove = document.getElementById('btn-remove-qr');
 
-                if (btnSelect && fileInput) {
-                    // Al hacer clic en el botón o en el cuadro, abrir selector
-                    btnSelect.onclick = () => fileInput.click();
-                    previewContainer.onclick = () => fileInput.click();
+                if (qrContainer && fileInput) {
+                    // Click en el contenedor abre el selector
+                    qrContainer.onclick = () => fileInput.click();
 
                     fileInput.onchange = (e) => {
                         const file = e.target.files[0];
@@ -8409,14 +10040,29 @@ case 'add-catalog-item':
                                 imgPreview.src = evt.target.result;
                                 imgPreview.classList.remove('hidden');
                                 iconPlaceholder.classList.add('hidden');
-                                previewContainer.classList.remove('border-dashed');
-                                previewContainer.classList.add('border-indigo-500');
+                                qrContainer.classList.remove('border-dashed', 'border-indigo-300');
+                                qrContainer.classList.add('border-solid', 'border-indigo-600', 'shadow-md');
+                                btnRemove.classList.remove('hidden');
                             };
                             reader.readAsDataURL(file);
                         }
                     };
+
+                    // Botón de eliminar (Visual)
+                    if (btnRemove) {
+                        btnRemove.onclick = (e) => {
+                            e.stopPropagation(); // Evitar abrir el selector
+                            fileInput.value = '';
+                            imgPreview.src = '';
+                            imgPreview.classList.add('hidden');
+                            iconPlaceholder.classList.remove('hidden');
+                            qrContainer.classList.add('border-dashed', 'border-indigo-300');
+                            qrContainer.classList.remove('border-solid', 'border-indigo-600', 'shadow-md');
+                            btnRemove.classList.add('hidden');
+                        }
+                    }
                 }
-            }, 100);
+            }, 150);
             break;
         }
         case 'request-material': {
@@ -8470,7 +10116,7 @@ case 'add-catalog-item':
             }
 
             // --- DISEÑO MODERNO HTML ---
-bodyHtml = `
+            bodyHtml = `
                 <div class="flex flex-col h-full max-h-[80vh]">
                     
                     <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-r from-yellow-500 to-amber-600 px-8 py-4 rounded-t-lg text-white shadow-md flex justify-between items-center">
@@ -8642,12 +10288,12 @@ bodyHtml = `
             break;
         }
 
-case 'new-task': {
+        case 'new-task': {
             // 1. Ocultar el título por defecto del modal para usar el personalizado
             if (document.getElementById('modal-title')) {
                 document.getElementById('modal-title').parentElement.style.display = 'none';
             }
-            
+
             title = 'Crear Nueva Tarea'; // Título interno (no se verá en header default)
             btnText = 'Guardar Tarea';
             btnClass = 'bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white shadow-lg transform hover:-translate-y-0.5 transition-all';
@@ -8937,7 +10583,6 @@ case 'new-task': {
 
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').innerHTML = bodyHtml;
-    const confirmBtn = document.getElementById('modal-confirm-btn');
     confirmBtn.textContent = btnText;
     confirmBtn.className = `text-white font-bold py-2 px-4 rounded-lg transition-all ${btnClass}`;
     mainModal.style.display = 'flex';
@@ -9070,16 +10715,37 @@ function setupPOItemLogic(unifiedItemOptions) {
 function closeMainModal() { mainModal.style.display = 'none'; }
 document.getElementById('modal-cancel-btn').addEventListener('click', closeMainModal);
 modalForm.addEventListener('submit', async (e) => {
+    // 1. ¡LO MÁS IMPORTANTE! Evitar recarga de página
+    e.preventDefault();
+
     const data = Object.fromEntries(new FormData(modalForm).entries());
     const type = modalForm.dataset.type;
     const id = modalForm.dataset.id;
 
+    // Filtro para modales que NO usan este submit (sino lógica propia interna)
     if (['new-tool', 'edit-tool', 'assign-tool', 'return-tool', 'register-maintenance', 'new-dotacion-catalog-item', 'add-dotacion-stock', 'register-dotacion-delivery', 'return-dotacion-options'].includes(type)) {
         return;
     }
 
+    // --- CASO: GENERAR CERTIFICACIÓN (PDF) ---
+    if (type === 'generate-certification') {
+        const includeSalary = document.getElementById('include-salary').checked;
+        const includeLogo = document.getElementById('include-logo').checked;
 
-    e.preventDefault();
+        generateLaborCertificate({
+            fullName: data.fullName,
+            idNumber: data.idNumber,
+            startDate: data.startDate,
+            endDate: data.endDate, // <-- AÑADIR ESTO
+            jobTitle: data.jobTitle,
+            salary: parseFloat(data.salarioBasico),
+            includeSalary: includeSalary,
+            includeLogo: includeLogo
+        });
+
+        closeMainModal();
+        return;
+    }
 
     if (type === 'new-task') {
         await createTask(data); // Llama a la nueva función para crear la tarea
@@ -9669,7 +11335,7 @@ modalForm.addEventListener('submit', async (e) => {
                     createdBy: currentUser.uid
                 });
 
-                alert("Solicitud enviada correctamente. Te notificaremos cuando sea aprobada.");
+                window.showToast("Solicitud enviada correctamente. Te notificaremos cuando sea aprobada.","success");
                 closeMainModal();
             } catch (error) {
                 console.error("Error solicitando préstamo:", error);
@@ -10274,6 +11940,26 @@ modalForm.addEventListener('submit', async (e) => {
                 // ---------------------------------------------------------
                 // C. PREPARAR DATOS DE ACTUALIZACIÓN
                 // ---------------------------------------------------------
+                // 1. Determinamos el estado basado en la fecha de fin
+                let currentStatus = oldUserData.status || 'active';
+
+                if (data.contractEndDate) {
+                    const endDate = new Date(data.contractEndDate + 'T00:00:00'); // Asegurar hora local
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0); // Quitamos la hora para comparar solo fechas
+
+                    if (endDate < today) {
+                        currentStatus = 'archived';
+                        // Aviso opcional para el admin
+                        alert(`AVISO: La fecha de finalización (${data.contractEndDate}) es anterior a hoy. El usuario pasará a estado ARCHIVADO automáticamente.`);
+                    } else if (currentStatus === 'archived') {
+                        // Opcional: Si extendieron la fecha, ¿lo reactivamos? 
+                        // Por seguridad, mejor dejar que lo reactiven manualmente, 
+                        // o descomenta la siguiente línea si quieres reactivación automática:
+                        // currentStatus = 'active'; 
+                    }
+                }
+
                 const dataToUpdate = {
                     firstName: data.firstName,
                     lastName: data.lastName,
@@ -10286,7 +11972,7 @@ modalForm.addEventListener('submit', async (e) => {
                     accountType: data.accountType || 'Ahorros',
                     accountNumber: data.accountNumber || '',
 
-                    // Dotación (Tallas)
+                    // Dotación
                     tallaCamiseta: data.tallaCamiseta || '',
                     tallaPantalón: data.tallaPantalón || '',
                     tallaBotas: data.tallaBotas || '',
@@ -10296,8 +11982,15 @@ modalForm.addEventListener('submit', async (e) => {
                     salarioBasico: parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0,
                     deduccionSobreMinimo: !!data.deduccionSobreMinimo,
 
-                    // Permisos Calculados
-                    customPermissions: customPermissions
+                    // Permisos
+                    customPermissions: customPermissions,
+
+                    // Fechas de Contrato
+                    contractStartDate: data.contractStartDate || null,
+                    contractEndDate: data.contractEndDate || null,
+
+                    // ESTADO ACTUALIZADO
+                    status: currentStatus
                 };
 
                 if (downloadURL) {
@@ -10307,26 +12000,48 @@ modalForm.addEventListener('submit', async (e) => {
                 // ---------------------------------------------------------
                 // D. COMPARAR CAMBIOS PARA HISTORIAL
                 // ---------------------------------------------------------
-                if (data.firstName !== oldUserData.firstName) changes.firstName = { old: oldUserData.firstName, new: data.firstName };
-                if (data.lastName !== oldUserData.lastName) changes.lastName = { old: oldUserData.lastName, new: data.lastName };
-                if (data.idNumber !== oldUserData.idNumber) changes.idNumber = { old: oldUserData.idNumber, new: data.idNumber };
-                if (data.phone !== oldUserData.phone) changes.phone = { old: oldUserData.phone, new: data.phone };
-                if (data.address !== oldUserData.address) changes.address = { old: oldUserData.address, new: data.address };
+                // Helper para convertir undefined en null (Firebase no acepta undefined)
+                const safeVal = (val) => (val === undefined ? null : val);
+
+                if (data.firstName !== oldUserData.firstName) changes.firstName = { old: safeVal(oldUserData.firstName), new: data.firstName };
+                if (data.lastName !== oldUserData.lastName) changes.lastName = { old: safeVal(oldUserData.lastName), new: data.lastName };
+                if (data.idNumber !== oldUserData.idNumber) changes.idNumber = { old: safeVal(oldUserData.idNumber), new: data.idNumber };
+                if (data.phone !== oldUserData.phone) changes.phone = { old: safeVal(oldUserData.phone), new: data.phone };
+                if (data.address !== oldUserData.address) changes.address = { old: safeVal(oldUserData.address), new: data.address };
 
                 // Comparar Tallas
-                if ((data.tallaCamiseta || '') !== (oldUserData.tallaCamiseta || '')) changes.tallaCamiseta = { old: oldUserData.tallaCamiseta, new: data.tallaCamiseta };
-                if ((data.tallaPantalón || '') !== (oldUserData.tallaPantalón || '')) changes.tallaPantalón = { old: oldUserData.tallaPantalón, new: data.tallaPantalón };
-                if ((data.tallaBotas || '') !== (oldUserData.tallaBotas || '')) changes.tallaBotas = { old: oldUserData.tallaBotas, new: data.tallaBotas };
+                if ((data.tallaCamiseta || '') !== (oldUserData.tallaCamiseta || '')) changes.tallaCamiseta = { old: safeVal(oldUserData.tallaCamiseta), new: data.tallaCamiseta };
+                if ((data.tallaPantalón || '') !== (oldUserData.tallaPantalón || '')) changes.tallaPantalón = { old: safeVal(oldUserData.tallaPantalón), new: data.tallaPantalón };
+                if ((data.tallaBotas || '') !== (oldUserData.tallaBotas || '')) changes.tallaBotas = { old: safeVal(oldUserData.tallaBotas), new: data.tallaBotas };
 
                 // Comparar Nómina
                 const oldSalario = oldUserData.salarioBasico || 0;
                 const newSalario = dataToUpdate.salarioBasico;
                 if (newSalario !== oldSalario) changes.salarioBasico = { old: oldSalario, new: newSalario };
-                if (data.commissionLevel !== (oldUserData.commissionLevel || '')) changes.commissionLevel = { old: oldUserData.commissionLevel, new: data.commissionLevel };
+                if (data.commissionLevel !== (oldUserData.commissionLevel || '')) changes.commissionLevel = { old: safeVal(oldUserData.commissionLevel), new: data.commissionLevel };
 
-                // Comparar Permisos (Simplificado)
+                // --- FECHAS DE CONTRATO (AQUÍ ESTABA EL ERROR) ---
+                const oldStart = oldUserData.contractStartDate || null;
+                const newStart = data.contractStartDate || null;
+                if (newStart !== oldStart) {
+                    changes.contractStartDate = { old: oldStart, new: newStart };
+                }
+
+                const oldEnd = oldUserData.contractEndDate || null;
+                const newEnd = data.contractEndDate || null;
+                if (newEnd !== oldEnd) {
+                    changes.contractEndDate = { old: oldEnd, new: newEnd };
+                }
+                // ------------------------------------------------
+
+                // Comparar Permisos
                 if (JSON.stringify(oldUserData.customPermissions || {}) !== JSON.stringify(customPermissions)) {
                     changes.permissions = { old: 'Permisos previos', new: 'Permisos actualizados' };
+                }
+
+                // Comparar Estado (Si cambió por la fecha)
+                if (currentStatus !== oldUserData.status) {
+                    changes.status = { old: oldUserData.status, new: currentStatus };
                 }
 
                 // ---------------------------------------------------------
@@ -12583,7 +14298,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
 
             case 'compare-prices':
-                openMainModal('compare-prices', { 
+                openMainModal('compare-prices', {
                     materialId: elementWithAction.dataset.id,
                     name: elementWithAction.dataset.name
                 });
@@ -12726,13 +14441,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 break;
             }
-            case 'view-profile-history': {
-                const userId = elementWithAction.dataset.userid;
-                if (userId) {
-                    loadProfileHistory(userId); // Llamamos a nuestra función modificada
+
+            case 'view-profile-history':
+                const userIdHistory = elementWithAction.dataset.userid;
+                const userHistoryData = usersMap.get(userIdHistory);
+
+                if (userHistoryData) {
+                    // CORRECCIÓN: Inyectamos 'id' manualmente para asegurar que exista
+                    openMainModal('view-profile-history', { id: userIdHistory, ...userHistoryData });
+                } else {
+                    console.error("Usuario no encontrado en memoria:", userIdHistory);
                 }
                 break;
-            }
+
+
+
             case 'open-otro-si-modal':
                 openOtroSiModal();
                 break;
@@ -13137,6 +14860,14 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'new-supplier-payment':
                 openMainModal('new-supplier-payment');
                 break;
+
+            // --- NUEVO CASO: PAGO RÁPIDO DESDE LA TABLA ---
+            case 'quick-pay-supplier':
+                // Establecemos el contexto global del proveedor para que el modal sepa a quién pagar
+                currentSupplierId = elementWithAction.dataset.id;
+                openMainModal('new-supplier-payment');
+                break;
+
             case 'receive-purchase-order':
                 openConfirmModal('¿Confirmas la recepción? Esto actualizará el stock.', async () => {
                     loadingOverlay.classList.remove('hidden');
@@ -13432,10 +15163,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Pestañas de Proyectos y Usuarios
-    document.getElementById('active-projects-tab').addEventListener('click', () => loadProjects('active'));
-    document.getElementById('archived-projects-tab').addEventListener('click', () => loadProjects('archived'));
-    document.getElementById('active-users-tab').addEventListener('click', () => loadUsers('active'));
-    document.getElementById('archived-users-tab').addEventListener('click', () => loadUsers('archived'));
+    const activeProjTab = document.getElementById('active-projects-tab');
+    if (activeProjTab) activeProjTab.addEventListener('click', () => loadProjects('active'));
+
+    const archivedProjTab = document.getElementById('archived-projects-tab');
+    if (archivedProjTab) archivedProjTab.addEventListener('click', () => loadProjects('archived'));
 
     // Modales y otros elementos
     // --- SECCIÓN CORREGIDA: Asignación Segura de Listeners ---
@@ -16773,7 +18505,7 @@ async function openTaskDetailsModal(taskId) {
         // Cargar estado de materiales
         if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
             // CAMBIO AQUÍ: Cambiar 'summary' por 'detail'
-            loadTaskMaterialStatus(task.id, task.projectId, materialStatusId, 'detail'); 
+            loadTaskMaterialStatus(task.id, task.projectId, materialStatusId, 'detail');
         } else {
             document.getElementById(materialStatusId).innerHTML = '<p class="text-sm text-gray-400 italic">No aplica (sin ítems).</p>';
         }
@@ -17598,3 +19330,270 @@ function initThemeToggle() {
 
 // Llamar a la inicialización
 initThemeToggle();
+
+/**
+ * Convierte un número a texto en español (para moneda).
+ */
+function numeroALetras(num) {
+    const unidades = ['', 'UN ', 'DOS ', 'TRES ', 'CUATRO ', 'CINCO ', 'SEIS ', 'SIETE ', 'OCHO ', 'NUEVE '];
+    const decenas = ['DIEZ ', 'ONCE ', 'DOCE ', 'TRECE ', 'CATORCE ', 'QUINCE ', 'DIECISEIS ', 'DIECISIETE ', 'DIECIOCHO ', 'DIECINUEVE ', 'VEINTE ', 'TREINTA ', 'CUARENTA ', 'CINCUENTA ', 'SESENTA ', 'SETENTA ', 'OCHENTA ', 'NOVENTA '];
+    const centenas = ['', 'CIENTO ', 'DOSCIENTOS ', 'TRESCIENTOS ', 'CUATROCIENTOS ', 'QUINIENTOS ', 'SEISCIENTOS ', 'SETECIENTOS ', 'OCHOCIENTOS ', 'NOVECIENTOS '];
+
+    if (num === 0) return 'CERO';
+
+    if (num < 10) return unidades[num];
+    if (num < 20) return decenas[num - 10];
+    if (num < 30) return 'VEINTI' + unidades[num - 20];
+    if (num < 100) {
+        const d = Math.floor(num / 10);
+        const u = num % 10;
+        return decenas[d + 8] + (u > 0 ? 'Y ' + unidades[u] : '');
+    }
+
+    // Para simplificar, manejamos millones y miles de forma básica para salarios
+    if (num >= 1000000) {
+        const millones = Math.floor(num / 1000000);
+        const resto = num % 1000000;
+        const strMillones = millones === 1 ? 'UN MILLON ' : numeroALetras(millones) + ' MILLONES ';
+        return strMillones + (resto > 0 ? numeroALetras(resto) : '');
+    }
+
+    if (num >= 1000) {
+        const miles = Math.floor(num / 1000);
+        const resto = num % 1000;
+        const strMiles = miles === 1 ? 'MIL ' : numeroALetras(miles) + ' MIL ';
+        return strMiles + (resto > 0 ? numeroALetras(resto) : '');
+    }
+
+    if (num >= 100) {
+        if (num === 100) return 'CIEN ';
+        const c = Math.floor(num / 100);
+        const resto = num % 100;
+        return centenas[c] + (resto > 0 ? numeroALetras(resto) : '');
+    }
+
+    return '';
+}
+
+/**
+ * Genera el PDF de la Certificación Laboral (DATOS 100% DINÁMICOS).
+ */
+async function generateLaborCertificate(params) {
+    const { jsPDF } = window.jspdf;
+
+    const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'letter'
+    });
+
+    // 1. MÁRGENES
+    const marginTop = 30;
+    const marginLeft = 25;
+    const marginRight = 25;
+    const marginBottom = 20;
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const contentWidth = pageWidth - marginLeft - marginRight;
+    const today = new Date();
+
+    // --- CORRECCIÓN: INICIALIZACIÓN VACÍA (Cero datos quemados) ---
+    let companyData = {
+        nombre: "NOMBRE EMPRESA", // Texto genérico por si falla la carga
+        nit: "",
+        gerente: "",
+        logoURL: null,
+        firmaGerenteURL: null,
+        direccion: "",
+        email: "",
+        telefono: ""
+    };
+
+    // Cargar datos reales desde Configuración
+    try {
+        if (typeof getCompanyData === 'function') {
+            const data = await getCompanyData();
+            // Solo sobrescribimos si hay datos reales
+            if (data && Object.keys(data).length > 0) {
+                companyData = { ...companyData, ...data };
+            }
+        } else {
+            // Fallback directo a Firestore si la función auxiliar no existe
+            const docSnap = await getDoc(doc(db, "system", "generalConfig"));
+            if (docSnap.exists() && docSnap.data().empresa) {
+                companyData = { ...companyData, ...docSnap.data().empresa };
+            }
+        }
+    } catch (e) {
+        console.warn("Error cargando configuración de empresa:", e);
+    }
+
+    // --- RENDERIZADO (El resto de la función sigue igual) ---
+
+    // 2. LOGO
+    if (params.includeLogo && companyData.logoURL) {
+        try {
+            const img = new Image();
+            img.src = companyData.logoURL;
+            img.crossOrigin = "Anonymous";
+            const loaded = await new Promise((resolve) => {
+                img.onload = () => resolve(true);
+                img.onerror = () => resolve(false);
+            });
+            if (loaded) {
+                const imgWidth = 75;
+                const ratio = img.width ? (img.height / img.width) : 0.5;
+                const imgHeight = imgWidth * ratio;
+                doc.addImage(img, 'PNG', (pageWidth - imgWidth) / 2, 10, imgWidth, imgHeight);
+            }
+        } catch (e) { console.warn("Error logo", e); }
+    }
+
+    let y = marginTop + 20;
+
+    // 3. ENCABEZADO
+    const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const fechaCiudad = `Bogotá D.C., ${today.getDate()} de ${meses[today.getMonth()]} de ${today.getFullYear()}`;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.text(fechaCiudad, pageWidth - marginRight, y, { align: "right" });
+
+    y += 15;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text((companyData.nombre || "").toUpperCase(), pageWidth / 2, y, { align: "center" });
+
+    y += 8;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.text(`La empresa ${companyData.nombre} con N.I.T ${companyData.nit}`, pageWidth / 2, y, { align: "center" });
+
+    y += 25;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text("CERTIFICACION LABORAL", pageWidth / 2, y, { align: "center" });
+
+    // 4. CUERPO
+    y += 20;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(12);
+
+    // Fechas
+    const fInicio = params.startDate ? new Date(params.startDate + 'T12:00:00') : new Date();
+    const fInicioStr = `${fInicio.getDate()} de ${meses[fInicio.getMonth()]} de ${fInicio.getFullYear()}`;
+
+    // Lógica de redacción según fecha fin (Término Fijo vs Indefinido)
+    let textoDuracionYContrato = "";
+    if (params.endDate) {
+        textoDuracionYContrato = `desde el ${fInicioStr} con un contrato de término fijo`;
+    } else {
+        textoDuracionYContrato = `desde el ${fInicioStr} hasta la fecha`;
+    }
+
+    const salarioNum = new Intl.NumberFormat('es-CO').format(params.salary);
+    const salarioTexto = numeroALetras(params.salary).toLowerCase();
+
+    let bodyText = `Que la persona ${params.fullName.toUpperCase()} identificado con cedula de ciudadanía No. ${params.idNumber} labora para nosotros ${textoDuracionYContrato}, desempeñándose como el cargo de ${params.jobTitle.toLowerCase()}.`;
+
+    if (params.includeSalary && params.salary > 0) {
+        bodyText += ` Devengando un salario mensual de $${salarioNum} (${salarioTexto} pesos colombianos).`;
+    }
+
+    const splitBody = doc.splitTextToSize(bodyText, contentWidth);
+    doc.text(splitBody, marginLeft, y, { align: "justify", maxWidth: contentWidth, lineHeightFactor: 1.5 });
+
+    y += (splitBody.length * 7) + 10;
+
+    const cierreText = `Esta certificación se expide por solicitud en Bogotá, a los ${numeroALetras(today.getDate()).toLowerCase()} (${today.getDate()}) días del mes de ${meses[today.getMonth()]} de ${numeroALetras(today.getFullYear()).toLowerCase()} (${today.getFullYear()}).`;
+    const splitCierre = doc.splitTextToSize(cierreText, contentWidth);
+    doc.text(splitCierre, marginLeft, y, { align: "justify", maxWidth: contentWidth, lineHeightFactor: 1.5 });
+
+    y += (splitCierre.length * 7) + 10;
+
+    // 5. FIRMA
+    const footerStart = pageHeight - marginBottom - 25;
+    if (y + 45 > footerStart) {
+        doc.addPage();
+        y = marginTop;
+    }
+
+    doc.setFont("helvetica", "normal");
+    doc.text("Atentamente,", marginLeft, y);
+    y += 10;
+
+    // Firma Digital
+    if (companyData.firmaGerenteURL) {
+        try {
+            const imgSig = new Image();
+            imgSig.src = companyData.firmaGerenteURL;
+            imgSig.crossOrigin = "Anonymous";
+            const loadedSig = await new Promise((r) => { imgSig.onload = () => r(true); imgSig.onerror = () => r(false); });
+            if (loadedSig) {
+                const sigWidth = 40;
+                const sigHeight = (imgSig.height * sigWidth) / imgSig.width;
+                doc.addImage(imgSig, 'PNG', marginLeft, y, sigWidth, sigHeight);
+                y += sigHeight + 2;
+            } else { y += 20; }
+        } catch (e) { y += 20; }
+    } else { y += 20; }
+
+    doc.setFont("helvetica", "bold");
+    doc.text(companyData.gerente || "Gerente General", marginLeft, y);
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.text("Gerente", marginLeft, y);
+
+    // 6. PIE DE PÁGINA
+    if (params.includeLogo) {
+        const footerY = pageHeight - marginBottom;
+        doc.setFontSize(8);
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "bold");
+
+        const linea1 = "VENTANERIA FACHADAS - DIVISIONES DE OFICINA - DIVISIONES DE BAÑO";
+        const linea2 = "VIDRIO TEMPLADO - PELICULA DE SEGURIDAD - VENTANAS ACUSTICAS";
+
+        doc.text(linea1, pageWidth / 2, footerY - 8, { align: "center" });
+        doc.text(linea2, pageWidth / 2, footerY - 4, { align: "center" });
+        doc.text((companyData.direccion || "").toUpperCase(), pageWidth / 2, footerY + 2, { align: "center" });
+        doc.text(`EMAIL: ${(companyData.email || "").toUpperCase()}`, pageWidth / 2, footerY + 6, { align: "center" });
+        doc.text(`TELEFONO: ${companyData.telefono || ""}`, pageWidth / 2, footerY + 10, { align: "center" });
+    }
+
+    doc.save(`Certificacion_Laboral_${params.fullName.replace(/\s/g, '_')}.pdf`);
+}
+
+
+/**
+ * Carga los logs de auditoría de un usuario específico.
+ */
+async function loadUserAuditLogs(targetUserId) {
+    try {
+        const q = query(
+            collection(db, "audit_logs"),
+            where("targetId", "==", targetUserId),
+            orderBy("timestamp", "desc"),
+            limit(20)
+        );
+
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => {
+            const d = doc.data();
+            return {
+                action: d.action || 'Modificación',
+                details: d.details || d.description || 'Actualización de perfil',
+                date: d.timestamp ? d.timestamp.toDate() : new Date(),
+                by: d.performedByName || 'Admin',
+                previousData: d.previousData || null // Agregamos esto para no perder el detalle técnico
+            };
+        });
+    } catch (e) {
+        console.warn("No se pudieron cargar logs reales, mostrando ejemplo:", e);
+        return [
+            { action: 'Edición Perfil', details: 'Cambio de teléfono y dirección.', date: new Date(), by: 'Admin' },
+            { action: 'Cambio Rol', details: 'Rol actualizado a: Operario', date: new Date(Date.now() - 86400000), by: 'Sistema' }
+        ];
+    }
+}

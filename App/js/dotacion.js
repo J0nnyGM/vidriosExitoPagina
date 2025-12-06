@@ -87,10 +87,9 @@ function closeDotacionHistoryModal() {
         modal.style.display = 'none';
     }
 }
-// --- FIN: Funciones de Helper ---
 
 /**
- * Inicializa el módulo de Dotación, recibiendo las dependencias de app.js
+ * Inicializa el módulo de Dotación.
  */
 export function initDotacion(
     firebaseDb,
@@ -122,69 +121,60 @@ export function initDotacion(
 
         const action = target.dataset.action;
 
-        // Acciones que este módulo debe manejar
+        // Acciones Generales
         switch (action) {
             case 'new-dotacion-catalog-item':
                 openMainModalCallback('new-dotacion-catalog-item');
-                return; // Detener para no ser capturado por 'dotacionCard'
-
+                return;
             case 'export-dotacion-inventario-csv':
                 exportInventarioCSV();
                 return;
-
             case 'export-dotacion-inventario-pdf':
                 exportInventarioPDF();
                 return;
-            // --- INICIO DE NUEVO CÓDIGO ---
             case 'export-dotacion-asignaciones-csv':
                 exportAsignacionesCSV();
                 return;
-
             case 'export-dotacion-asignaciones-pdf':
                 exportAsignacionesPDF();
                 return;
         }
 
-        // --- INICIO DE NUEVA LÓGICA (Reportes Dashboard Nivel 2) ---
+        // Reportes Dashboard
         const dashboardContainer = target.closest('#dotacion-dashboard-container');
         if (dashboardContainer) {
             const button = e.target.closest('[data-action="view-user-report-details"]');
             if (button) {
                 const userId = button.dataset.userid;
                 const userName = button.dataset.username;
-                const type = button.dataset.type; // 'consumo' o 'descarte'
-
-                // Llamamos a la nueva función (Paso 3)
+                const type = button.dataset.type;
                 openUserReportModal(userId, userName, type);
             }
-            return; // Detener
+            return;
         }
 
-        // Acciones dentro de la tarjeta de dotación (Inventario)
+        // Acciones de Tarjeta de Inventario
         const dotacionCard = target.closest('.dotacion-catalog-card');
         if (dotacionCard) {
             const itemId = dotacionCard.dataset.id;
-
-            // Cargar datos del ítem para los modales (CON MÁS DATOS)
             const cardData = {
                 id: itemId,
                 itemName: dotacionCard.dataset.name,
                 talla: dotacionCard.dataset.talla,
+                tallas: dotacionCard.dataset.tallas,
                 itemPhotoURL: dotacionCard.dataset.photourl,
                 quantityInStock: parseInt(dotacionCard.dataset.stock) || 0,
-                // --- INICIO DE MODIFICACIÓN ---
-                reference: dotacionCard.dataset.reference, // Nuevo
-                category: dotacionCard.dataset.category,   // Nuevo
-                vidaUtilDias: dotacionCard.dataset.vidautil // Nuevo
-                // --- FIN DE MODIFICACIÓN ---
+                reference: dotacionCard.dataset.reference,
+                category: dotacionCard.dataset.category,
+                vidaUtilDias: dotacionCard.dataset.vidautil,
+                minStock: dotacionCard.dataset.minstock,
+                stockMap: dotacionCard.dataset.stockmap
             };
 
             switch (action) {
-                // --- INICIO DE MODIFICACIÓN ---
                 case 'edit-dotacion-catalog-item':
                     openMainModalCallback('edit-dotacion-catalog-item', cardData);
                     break;
-                // --- FIN DE MODIFICACIÓN ---
                 case 'register-dotacion-delivery':
                     openMainModalCallback('register-dotacion-delivery', cardData);
                     break;
@@ -194,125 +184,93 @@ export function initDotacion(
                 case 'view-dotacion-catalog-history':
                     handleViewDotacionHistory(itemId, cardData.itemName, cardData.talla);
                     break;
-                case 'view-dotacion-item-image': // Para ver la foto del ítem
+                case 'view-dotacion-item-image':
                     if (cardData.itemPhotoURL) openImageModalCallback(cardData.itemPhotoURL);
                     break;
             }
-            return; // Detener
+            return;
         }
 
-        // --- INICIO DE MODIFICACIÓN ---
-        // Acciones unificadas para las pestañas "Asignaciones"
+        // --- LÓGICA DE ASIGNACIONES (HISTORIAL Y NAVEGACIÓN) ---
         const historyContainer = target.closest('#dotacion-history-container');
         if (historyContainer) {
-            const button = e.target.closest('[data-action]'); // Asegurarnos de que sea un botón
-            if (!button) return; // Si no es un botón, no hacer nada
+            const button = e.target.closest('[data-action]');
+            if (!button) return;
 
-            switch (button.dataset.action) { // Usamos button.dataset.action
-                // Nivel 1: Clic en "Ver Historial" en la tabla resumen
+            switch (button.dataset.action) {
+                // CORRECCIÓN 1: Ver detalle de un usuario desde el resumen
                 case 'view-user-history': {
                     const userId = button.dataset.userid;
-                    const userName = button.dataset.username;
                     if (userId && dotacionAssigneeChoices) {
-                        const userHistoryMap = new Map();
-                        // 1. Sincroniza el <select>
-                        dotacionAssigneeChoices.setValue([{ value: userId, label: userName }]);
-                        // 2. Llama manualmente a la función de carga
-                        loadDotacionAsignaciones(userId); // Carga Nivel 2
+                        // Sincronizamos el select visualmente
+                        dotacionAssigneeChoices.setChoiceByValue(userId);
+                        // Cargamos el detalle pasando el contenedor
+                        loadDotacionAsignaciones(userId, 'dotacion-history-container');
                     }
                     break;
                 }
-                // Nivel 2: Clic en "Volver"
+
+                // CORRECCIÓN 2: Volver al resumen general
                 case 'dotacion-back-to-summary': {
                     if (dotacionAssigneeChoices) {
-                        // 1. Sincroniza el <select>
                         dotacionAssigneeChoices.setChoiceByValue('all');
                     }
-                    // 2. Llama manualmente a la función de carga
-                    loadDotacionAsignaciones('all'); // Carga Nivel 1
+                    loadDotacionAsignaciones('all', 'dotacion-history-container');
                     break;
                 }
-                // Nivel 2: Clic en "Ver Historial (ítem)"
+
+                // Ver historial específico de un ítem dentro del empleado
                 case 'view-item-detail-history': {
                     const itemId = button.dataset.itemid;
                     const itemName = button.dataset.itemname;
                     const talla = button.dataset.talla;
                     const userId = button.dataset.userid;
-                    // Abre el modal de historial, pero filtrado por usuario
                     handleViewDotacionHistory(itemId, itemName, talla, userId);
                     break;
                 }
-                // Nivel 2: Clic en "Devolver (Descarte)"
-                // Nivel 2: Clic en "Devolver (Descarte)"
+
+                // Devolver ítem (Abre el modal mejorado)
                 case 'return-dotacion-item': {
                     const lastHistoryId = button.dataset.lasthistoryid;
                     const itemName = button.dataset.itemname;
-                    // --- INICIO DE MODIFICACIÓN ---
-                    const itemId = button.dataset.itemid; // Obtenemos el ID del catálogo
+                    const itemId = button.dataset.itemid;
 
                     if (lastHistoryId && itemId) {
-                        // Ya no llamamos a openConfirmModal, llamamos al nuevo modal
                         openMainModalCallback('return-dotacion-options', {
                             historyId: lastHistoryId,
                             itemName: itemName,
-                            itemId: itemId // Pasamos el ID del catálogo
+                            itemId: itemId
                         });
-                        // --- FIN DE MODIFICACIÓN ---
-                    } else {
-                        alert("No hay un registro de entrega para devolver o falta el ID del ítem.");
                     }
                     break;
                 }
 
-                // --- INICIO DE CORRECCIÓN ---
-                // Nivel 2: Clic en "Ver Foto"
+                // Ver foto de entrega
                 case 'view-dotacion-delivery-image': {
-                    // Obtenemos la URL directamente del botón en el que se hizo clic
                     const deliveryUrl = button.dataset.photourl;
-                    if (deliveryUrl) {
-                        openImageModalCallback(deliveryUrl);
-                    }
+                    if (deliveryUrl) openImageModalCallback(deliveryUrl);
                     break;
                 }
-                // --- FIN DE CORRECCIÓN ---
             }
             return;
         }
-        // --- FIN DE MODIFICACIÓN ---
-
-        // Reutilizar el modal de historial de herramientas
-        if (target.id === 'tool-history-close-btn') {
-            closeDotacionHistoryModal();
-        }
-
-        // Listener para ver la foto de entrega DENTRO del modal de historial
-        if (action === 'view-dotacion-delivery-image') {
-            const deliveryUrl = target.dataset.photourl;
-            if (deliveryUrl) {
-                openImageModalCallback(deliveryUrl);
-            }
-        }
+        
+        // Otros listeners globales
+        if (target.id === 'tool-history-close-btn') closeDotacionHistoryModal();
     });
 
-    // 2. Conectar el formulario del modal
+    // 2. Conectar Formulario Modal
     const modalForm = document.getElementById('modal-form');
     modalForm.addEventListener('submit', (e) => {
         const type = modalForm.dataset.type;
-        const form = e.target;
-
-        // --- INICIO DE MODIFICACIÓN (Añadir el nuevo tipo) ---
         if (['new-dotacion-catalog-item', 'add-dotacion-stock', 'register-dotacion-delivery', 'return-dotacion-options', 'edit-dotacion-catalog-item'].includes(type)) {
-            // --- FIN DE MODIFICACIÓN ---
             e.preventDefault();
-            if (!form.checkValidity()) {
-                form.reportValidity();
-                return;
-            }
-            handleSaveDotacion(form);
+            handleSaveDotacion(e.target);
         }
     });
 
-    // 3. Configurar Filtros
+    // 3. Inicializar Filtros (Choices.js)
+    // (Se mantiene igual, solo verificamos que exista)
     const assigneeFilterSelect = document.getElementById('dotacion-assignee-filter');
     if (assigneeFilterSelect && !dotacionAssigneeChoices) {
         assigneeFilterSelect.innerHTML = '';
@@ -325,24 +283,16 @@ export function initDotacion(
         dotacionAssigneeChoices.setChoiceByValue('all');
 
         assigneeFilterSelect.addEventListener('change', (event) => {
-            // Solo recargamos si el evento fue disparado por el usuario
-            if (event.detail.value) {
-                // Llama a la función que decide qué Nivel mostrar
-                loadDotacionView();
-            }
+            if (event.detail.value) loadDotacionView();
         });
-
-        // Rellenar el selector de Asignados (se llama desde app.js)
     }
-
+    
+    // Filtro Categoría
     const categoryFilterSelect = document.getElementById('dotacion-category-filter');
     if (categoryFilterSelect && !dotacionCategoryChoices) {
-        const categoryOptions = [
-            { value: 'all', label: 'Todas las Categorías' },
-            ...DOTACION_CATEGORIES
-        ];
+        const categoryOptions = [{ value: 'all', label: 'Todas las Categorías' }, ...DOTACION_CATEGORIES];
         dotacionCategoryChoices = new Choices(categoryFilterSelect, {
-            itemSelectText: 'Seleccionar',
+            itemSelectText: '',
             allowHTML: false,
             choices: categoryOptions,
             searchEnabled: false,
@@ -351,24 +301,24 @@ export function initDotacion(
         categoryFilterSelect.addEventListener('change', loadDotacionView);
     }
 
-    // 4. Conectar las PESTAÑAS (Tabs)
+    // 4. Pestañas
     const tabsNav = document.getElementById('dotacion-tabs-nav');
     if (tabsNav) {
         tabsNav.addEventListener('click', (e) => {
             const button = e.target.closest('.dotacion-tab-button');
             if (button && !button.classList.contains('active')) {
                 tabsNav.querySelectorAll('.dotacion-tab-button').forEach(btn => {
-                    btn.classList.remove('active', 'border-blue-500', 'text-blue-600');
+                    btn.classList.remove('active', 'border-cyan-600', 'text-cyan-700');
                     btn.classList.add('border-transparent', 'text-gray-500');
                 });
-                button.classList.add('active', 'border-blue-500', 'text-blue-600');
+                button.classList.add('active', 'border-cyan-600', 'text-cyan-700');
                 button.classList.remove('border-transparent', 'text-gray-500');
                 loadDotacionView();
             }
         });
     }
 
-    // 5. Conectar el BUSCADOR POR NOMBRE
+    // 5. Buscador
     const searchInput = document.getElementById('dotacion-search-input');
     let searchTimeout = null;
     if (searchInput) {
@@ -390,9 +340,13 @@ export function loadDotacionView() {
     const newDotacionBtn = document.getElementById('new-dotacion-item-btn');
     const tabsNav = document.getElementById('dotacion-tabs-nav');
     const filterBar = document.getElementById('dotacion-filter-bar');
-    const assigneeContainer = document.getElementById('dotacion-assignee-container');
+    
+    // Contenedores de Filtros
     const searchContainer = document.getElementById('dotacion-search-container');
     const categoryContainer = document.getElementById('dotacion-category-container');
+    const assigneeContainer = document.getElementById('dotacion-assignee-container');
+    
+    // Contenedores Principales
     const gridContainer = document.getElementById('dotacion-grid-container');
     const dashboardContainer = document.getElementById('dotacion-dashboard-container');
     const historyContainer = document.getElementById('dotacion-history-container');
@@ -406,49 +360,61 @@ export function loadDotacionView() {
     gridContainer.classList.add('hidden');
     dashboardContainer.classList.add('hidden');
     historyContainer.classList.add('hidden');
-
-    // --- CORRECCIÓN CLAVE AQUÍ ---
+    
+    // Ocultar barra de filtros
     filterBar.classList.add('hidden');
-    filterBar.classList.remove('md:grid'); // <--- ESTO ELIMINA LA LÍNEA BLANCA
-    // -----------------------------
+    filterBar.classList.remove('block'); // Asegurar limpieza
 
     if (inventarioActions) inventarioActions.classList.add('hidden');
     if (asignacionesActions) asignacionesActions.classList.add('hidden');
 
-    // 2. Lógica según Rol
+    // 2. Gestión de Pestañas (Estilos)
+    const tabButtons = tabsNav.querySelectorAll('.dotacion-tab-button');
+    tabButtons.forEach(btn => {
+        if (btn.classList.contains('active')) {
+            btn.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700');
+            btn.classList.add('border-cyan-600', 'text-cyan-700');
+        } else {
+            btn.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700');
+            btn.classList.remove('border-cyan-600', 'text-cyan-700');
+        }
+    });
+
+    // 3. Lógica según Rol
     const isAdminView = (role === 'admin' || role === 'bodega' || role === 'sst');
     newDotacionBtn.classList.toggle('hidden', !isAdminView);
     tabsNav.classList.toggle('hidden', !isAdminView);
 
     if (role === 'operario') {
+        // Vista Operario
         const currentUser = getCurrentUser();
         titleElement.textContent = `Mi Dotación`;
         historyContainer.classList.remove('hidden');
         loadDotacionAsignaciones(currentUser.uid, 'dotacion-history-container');
 
     } else {
+        // Vista Admin
         titleElement.textContent = 'Gestión de Dotación';
         const activeTab = document.querySelector('#dotacion-tabs-nav .active')?.dataset.statusFilter || 'resumen';
 
         if (activeTab === 'resumen') {
-            // Pestaña Resumen: 
-            // No tocamos filterBar, así que se queda oculto y sin 'md:grid' (gracias al Reset)
+            // PESTAÑA RESUMEN
             dashboardContainer.classList.remove('hidden');
             loadDotacionDashboard(dashboardContainer);
 
         } else if (activeTab === 'inventario') {
-            // Pestaña Inventario: Restauramos la visibilidad y la rejilla
-            filterBar.classList.remove('hidden');
-            // Forzamos las clases de diseño específicas para esta vista
-            filterBar.className = "md:grid md:grid-cols-4 gap-4 items-center p-4 bg-white border border-gray-200 rounded-lg mb-6 shadow-sm";
+            // PESTAÑA INVENTARIO
+            filterBar.classList.remove('hidden', 'block'); // Reset
+            filterBar.classList.add('block'); // Mostrar bloque
 
+            // Configurar inputs visibles
             searchContainer.classList.remove('hidden');
-            searchContainer.className = "md:col-span-3";
+            searchContainer.className = "md:col-span-3"; // Ocupa más espacio
 
             categoryContainer.classList.remove('hidden');
             categoryContainer.className = "md:col-span-1";
 
-            assigneeContainer.classList.add('hidden');
+            assigneeContainer.classList.add('hidden'); // Ocultar filtro empleado
 
             if (inventarioActions) inventarioActions.classList.remove('hidden');
 
@@ -456,21 +422,21 @@ export function loadDotacionView() {
             loadDotacionCatalog();
 
         } else if (activeTab === 'asignaciones') {
-            // Pestaña Asignaciones: Restauramos la visibilidad
-            filterBar.classList.remove('hidden');
-
-            // --- CORRECCIÓN: 1 Columna para que ocupe todo el ancho ---
-            filterBar.className = "md:grid md:grid-cols-1 gap-4 items-center p-4 bg-white border border-gray-200 rounded-lg mb-6 shadow-sm";
+            // PESTAÑA ASIGNACIONES
+            filterBar.classList.remove('hidden', 'block');
+            filterBar.classList.add('block');
 
             searchContainer.classList.add('hidden');
             categoryContainer.classList.add('hidden');
 
+            // Mostrar solo filtro empleado y hacerlo ancho completo
             assigneeContainer.classList.remove('hidden');
-            assigneeContainer.className = "md:col-span-1 w-full"; // Forzamos ancho total
+            assigneeContainer.className = "md:col-span-4 w-full"; 
 
             if (asignacionesActions) asignacionesActions.classList.remove('hidden');
 
             historyContainer.classList.remove('hidden');
+            
             const assigneeFilter = (dotacionAssigneeChoices && dotacionAssigneeChoices.getValue(true)) ? dotacionAssigneeChoices.getValue(true) : 'all';
             loadDotacionAsignaciones(assigneeFilter, 'dotacion-history-container');
         }
@@ -524,15 +490,147 @@ function loadDotacionCatalog() {
 }
 
 /**
- * Carga el reporte de dotación de un empleado en el contenedor especificado.
+ * Carga las asignaciones. 
+ * Si userId es 'all', muestra el RESUMEN DE TODOS LOS EMPLEADOS.
+ * Si es un ID específico, muestra el DETALLE DE ESE EMPLEADO.
  */
 export async function loadDotacionAsignaciones(userId, containerId) {
     const container = document.getElementById(containerId);
-    if (!container) {
-        console.error(`[Dotacion] Contenedor ${containerId} no encontrado.`);
+    if (!container) return;
+
+    // --- CASO 1: VISTA RESUMEN (TODOS) ---
+    if (userId === 'all') {
+        container.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-12">
+                <div class="loader mx-auto mb-4"></div>
+                <p class="text-gray-500 text-sm">Analizando asignaciones globales...</p>
+            </div>
+        `;
+
+        try {
+            // 1. Consultar TODAS las asignaciones activas
+            const q = query(
+                collection(db, "dotacionHistory"),
+                where("action", "==", "asignada"),
+                where("status", "==", "activo")
+            );
+            const snapshot = await getDocs(q);
+
+            if (snapshot.empty) {
+                container.innerHTML = `
+                    <div class="text-center py-12 bg-white rounded-xl shadow-sm border border-gray-200">
+                        <div class="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3 text-gray-300">
+                            <i class="fa-solid fa-users-slash text-2xl"></i>
+                        </div>
+                        <p class="text-gray-500 font-medium">No hay dotación activa asignada a nadie.</p>
+                    </div>`;
+                return;
+            }
+
+            // 2. Agrupar por Usuario
+            const usersSummary = new Map(); // userId -> { count, lastDate }
+            const usersMap = getUsersMap();
+
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                const uid = data.userId;
+                
+                if (!usersSummary.has(uid)) {
+                    usersSummary.set(uid, { count: 0, lastDate: null });
+                }
+                
+                const entry = usersSummary.get(uid);
+                entry.count += (data.quantity || 0);
+                
+                // Rastrear fecha más reciente
+                if (data.fechaEntrega) {
+                    if (!entry.lastDate || data.fechaEntrega > entry.lastDate) {
+                        entry.lastDate = data.fechaEntrega;
+                    }
+                }
+            });
+
+            // 3. Construir Tabla
+            let rowsHtml = '';
+            const sortedUsers = Array.from(usersSummary.entries()).sort((a, b) => {
+                const nameA = usersMap.get(a[0])?.firstName || 'ZZZ';
+                const nameB = usersMap.get(b[0])?.firstName || 'ZZZ';
+                return nameA.localeCompare(nameB);
+            });
+
+            sortedUsers.forEach(([uid, stats]) => {
+                const user = usersMap.get(uid);
+                if (!user) return; // Saltar si el usuario fue borrado
+                
+                const initials = `${user.firstName[0]}${user.lastName[0]}`;
+                const lastDateStr = stats.lastDate ? new Date(stats.lastDate + 'T00:00:00').toLocaleDateString('es-CO') : '---';
+
+                rowsHtml += `
+                    <tr class="hover:bg-cyan-50/50 transition-colors border-b border-gray-100 last:border-0 group">
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-4">
+                                <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold border-2 border-white shadow-sm group-hover:scale-110 transition-transform">
+                                    ${initials}
+                                </div>
+                                <div>
+                                    <p class="font-bold text-gray-800 text-sm leading-tight">${user.firstName} ${user.lastName}</p>
+                                    <p class="text-xs text-gray-400 mt-0.5 font-mono">CC: ${user.idNumber || '---'}</p>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-cyan-50 text-cyan-700 border border-cyan-100">
+                                ${stats.count} <span class="text-[10px] font-normal ml-1 text-cyan-500 uppercase">Ítems</span>
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-center text-xs text-gray-500">
+                            ${lastDateStr}
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <button data-action="view-user-history" 
+                                    data-userid="${uid}" 
+                                    data-username="${user.firstName} ${user.lastName}"
+                                    class="text-cyan-600 hover:bg-cyan-50 hover:text-cyan-800 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 ml-auto shadow-sm border border-transparent hover:border-cyan-200">
+                                <i class="fa-solid fa-eye"></i> Ver Detalle
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            container.innerHTML = `
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in">
+                    <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                        <h4 class="font-bold text-gray-700 text-sm uppercase tracking-wide">Resumen por Colaborador</h4>
+                        <span class="text-xs font-bold bg-white px-2 py-1 rounded border border-gray-200 text-gray-500">${sortedUsers.length} Empleados</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-400 uppercase bg-white border-b border-gray-100">
+                                <tr>
+                                    <th class="px-6 py-3 font-semibold">Colaborador</th>
+                                    <th class="px-6 py-3 text-center font-semibold">Total Asignado</th>
+                                    <th class="px-6 py-3 text-center font-semibold">Última Entrega</th>
+                                    <th class="px-6 py-3 text-right font-semibold">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50">
+                                ${rowsHtml}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+
+        } catch (error) {
+            console.error("Error resumen dotación:", error);
+            container.innerHTML = `<div class="p-6 text-center text-red-500 border-2 border-red-100 border-dashed rounded-xl bg-red-50">Error al cargar resumen.</div>`;
+        }
         return;
     }
 
+    // --- CASO 2: VISTA DETALLE (INDIVIDUAL) ---
+    
     // 1. Estado de Carga
     container.innerHTML = `
         <div class="flex flex-col items-center justify-center py-12">
@@ -542,10 +640,7 @@ export async function loadDotacionAsignaciones(userId, containerId) {
     `;
 
     try {
-        // --- CORRECCIÓN: Usamos 'db' (la variable global del módulo) ---
-        if (!db) throw new Error("La base de datos no está inicializada en dotacion.js");
-
-        // 2. Consultar Historial de Asignaciones
+        // 2. Consultar Historial
         const qHistory = query(
             collection(db, "dotacionHistory"),
             where("userId", "==", userId),
@@ -557,12 +652,13 @@ export async function loadDotacionAsignaciones(userId, containerId) {
 
         if (snapshot.empty) {
             container.innerHTML = `
-                <div class="bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 p-10 text-center mt-4">
-                    <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+                <div class="bg-white rounded-xl border border-gray-200 p-10 text-center mt-4 shadow-sm">
+                    <div class="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
                         <i class="fa-solid fa-shirt text-gray-300 text-3xl"></i>
                     </div>
-                    <h4 class="text-gray-600 font-bold">Sin dotación registrada</h4>
-                    <p class="text-gray-400 text-xs mt-1">Este colaborador no tiene historial de entregas.</p>
+                    <h4 class="text-gray-700 font-bold text-lg">Carpeta Vacía</h4>
+                    <p class="text-gray-400 text-sm mt-1">Este colaborador no tiene dotación activa registrada.</p>
+                    <button class="mt-4 text-cyan-600 font-bold text-sm hover:underline" data-action="dotacion-back-to-summary">Volver al resumen</button>
                 </div>`;
             return;
         }
@@ -573,49 +669,46 @@ export async function loadDotacionAsignaciones(userId, containerId) {
         let lastDeliveryDate = null;
         const activeItems = [];
 
-        // Recolectar IDs para cargar catálogo
         const uniqueItemIds = new Set();
         snapshot.docs.forEach(doc => uniqueItemIds.add(doc.data().itemId));
-
         const catalogMap = new Map();
         for (const itemId of uniqueItemIds) {
             try {
                 const catSnap = await getDoc(doc(db, "dotacionCatalog", itemId));
                 if (catSnap.exists()) catalogMap.set(itemId, catSnap.data());
-            } catch (e) { console.warn("Ítem catálogo no encontrado", itemId); }
+            } catch (e) {}
         }
+
+        const role = getCurrentUserRole();
+        const canReturn = (role === 'admin' || role === 'bodega' || role === 'sst');
 
         snapshot.forEach(doc => {
             const data = { id: doc.id, ...doc.data() };
             const catalogItem = catalogMap.get(data.itemId) || {};
-
             totalItemsDelivered += (data.quantity || 0);
-
             if (!lastDeliveryDate) lastDeliveryDate = data.fechaEntrega;
 
-            // Solo mostramos en la tabla los que están ACTIVOS
             if (data.status === 'activo') {
                 activeItemsCount += (data.quantity || 0);
-
-                // Calcular Vencimiento
-                let statusHtml = '<span class="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded">Indefinido</span>';
+                let statusHtml = '<span class="bg-gray-100 text-gray-600 text-[10px] px-2 py-0.5 rounded border border-gray-200 font-bold">Indefinido</span>';
                 let expirationText = '---';
 
                 if (catalogItem.vidaUtilDias && data.fechaEntrega) {
                     const deliveryDate = new Date(data.fechaEntrega + 'T00:00:00');
                     const expDate = new Date(deliveryDate);
                     expDate.setDate(expDate.getDate() + catalogItem.vidaUtilDias);
-
                     const today = new Date(); today.setHours(0, 0, 0, 0);
                     const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
                     expirationText = expDate.toLocaleDateString('es-CO');
 
-                    if (diffDays < 0) statusHtml = `<span class="bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded whitespace-nowrap">Vencido (${Math.abs(diffDays)}d)</span>`;
-                    else if (diffDays <= 30) statusHtml = `<span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-1 rounded whitespace-nowrap">Vence en ${diffDays}d</span>`;
-                    else statusHtml = `<span class="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded">Vigente</span>`;
+                    if (diffDays < 0) statusHtml = `<span class="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded border border-red-200">Vencido (${Math.abs(diffDays)}d)</span>`;
+                    else if (diffDays <= 30) statusHtml = `<span class="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded border border-amber-200">Vence: ${diffDays}d</span>`;
+                    else statusHtml = `<span class="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded border border-green-200">Vigente</span>`;
                 }
 
                 activeItems.push({
+                    historyId: data.id,
+                    itemId: data.itemId,
                     name: data.itemName || catalogItem.itemName || 'Ítem',
                     category: catalogItem.category || 'General',
                     talla: data.talla || catalogItem.talla || 'N/A',
@@ -623,75 +716,104 @@ export async function loadDotacionAsignaciones(userId, containerId) {
                     deliveryDate: data.fechaEntrega,
                     expirationText: expirationText,
                     statusHtml: statusHtml,
-                    photoURL: data.photoURL
+                    photoURL: data.deliveryPhotoURL
                 });
             }
         });
 
-        // 4. Renderizar HTML
-        const lastDateStr = lastDeliveryDate ? new Date(lastDeliveryDate + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A';
+        const lastDateStr = lastDeliveryDate ? new Date(lastDeliveryDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A';
+        const userName = getUsersMap().get(userId)?.firstName || 'Colaborador';
 
+        // 4. Renderizar HTML Detallado
         const itemsRows = activeItems.map(item => `
-            <tr class="hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0">
+            <tr class="hover:bg-cyan-50/30 transition-colors border-b border-gray-100 last:border-0 group/row">
                 <td class="px-4 py-3">
                     <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-500 text-xs">
+                        <div class="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-400 text-sm shadow-sm">
                             <i class="fa-solid ${item.category === 'EPP' ? 'fa-helmet-safety' : 'fa-shirt'}"></i>
                         </div>
                         <div>
                             <p class="font-bold text-gray-800 text-sm">${item.name}</p>
-                            <p class="text-[10px] text-gray-500 uppercase">${item.category}</p>
+                            <p class="text-[10px] text-gray-400 uppercase tracking-wide">${item.category}</p>
                         </div>
                     </div>
                 </td>
-                <td class="px-4 py-3 text-center text-sm">${item.talla}</td>
-                <td class="px-4 py-3 text-center font-bold text-gray-700">${item.quantity}</td>
-                <td class="px-4 py-3 text-center text-xs text-gray-600">
-                    <div>${item.deliveryDate}</div>
-                    ${item.expirationText !== '---' ? `<div class="text-[10px] text-gray-400 mt-0.5">Vence: ${item.expirationText}</div>` : ''}
+                <td class="px-4 py-3 text-center">
+                    <span class="bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded border border-gray-200">${item.talla}</span>
+                </td>
+                <td class="px-4 py-3 text-center font-black text-gray-700 text-sm">${item.quantity}</td>
+                <td class="px-4 py-3 text-center text-xs text-gray-500">
+                    <div class="font-medium">${item.deliveryDate}</div>
+                    <div class="text-[10px] opacity-75">Exp: ${item.expirationText}</div>
                 </td>
                 <td class="px-4 py-3 text-center">${item.statusHtml}</td>
-                <td class="px-4 py-3 text-center">
-                     ${item.photoURL ?
-                `<button onclick="window.openImageModal('${item.photoURL}')" class="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors" title="Ver Evidencia"><i class="fa-regular fa-image"></i></button>`
-                : '<span class="text-gray-300">-</span>'}
+                <td class="px-4 py-3 text-right">
+                    <div class="flex items-center justify-end gap-2">
+                        
+                        ${item.photoURL ? 
+                        `<button data-action="view-dotacion-delivery-image" data-photourl="${item.photoURL}" 
+                            class="w-7 h-7 rounded flex items-center justify-center bg-white border border-gray-200 text-blue-500 hover:bg-blue-50 hover:border-blue-300 transition-all shadow-sm" 
+                            title="Ver Evidencia">
+                            <i class="fa-regular fa-image"></i>
+                        </button>` : ''}
+
+                        ${canReturn ? 
+                        `<button data-action="return-dotacion-item" 
+                            data-lasthistoryid="${item.historyId}" 
+                            data-itemname="${item.name}" 
+                            data-itemid="${item.itemId}"
+                            class="w-7 h-7 rounded flex items-center justify-center bg-white border border-gray-200 text-red-500 hover:bg-red-50 hover:border-red-200 transition-all shadow-sm" 
+                            title="Devolver">
+                            <i class="fa-solid fa-arrow-rotate-left"></i>
+                        </button>` : ''}
+
+                    </div>
                 </td>
             </tr>
         `).join('');
 
         container.innerHTML = `
-            <div class="space-y-6 mt-4">
+            <div class="space-y-6 mt-2">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                        <span class="bg-cyan-100 text-cyan-700 px-2 py-1 rounded text-xs uppercase tracking-wide">Detalle</span>
+                        ${userName}
+                    </h3>
+                </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center gap-4">
                         <div class="w-10 h-10 rounded-full bg-white text-blue-600 flex items-center justify-center shadow-sm"><i class="fa-solid fa-boxes-packing"></i></div>
-                        <div><p class="text-xs font-bold text-blue-400 uppercase">Total Histórico</p><p class="text-xl font-bold text-blue-900">${totalItemsDelivered}</p></div>
+                        <div><p class="text-[10px] font-bold text-blue-400 uppercase">Total Histórico</p><p class="text-xl font-black text-blue-900">${totalItemsDelivered}</p></div>
                     </div>
                     <div class="bg-green-50 p-4 rounded-xl border border-green-100 flex items-center gap-4">
                         <div class="w-10 h-10 rounded-full bg-white text-green-600 flex items-center justify-center shadow-sm"><i class="fa-solid fa-user-shield"></i></div>
-                        <div><p class="text-xs font-bold text-green-400 uppercase">En Poder (Activo)</p><p class="text-xl font-bold text-green-900">${activeItemsCount}</p></div>
+                        <div><p class="text-[10px] font-bold text-green-400 uppercase">En Poder (Activo)</p><p class="text-xl font-black text-green-900">${activeItemsCount}</p></div>
                     </div>
                     <div class="bg-purple-50 p-4 rounded-xl border border-purple-100 flex items-center gap-4">
                         <div class="w-10 h-10 rounded-full bg-white text-purple-600 flex items-center justify-center shadow-sm"><i class="fa-solid fa-calendar-check"></i></div>
-                        <div><p class="text-xs font-bold text-purple-400 uppercase">Última Entrega</p><p class="text-sm font-bold text-purple-900">${lastDateStr}</p></div>
+                        <div><p class="text-[10px] font-bold text-purple-400 uppercase">Última Entrega</p><p class="text-sm font-bold text-purple-900">${lastDateStr}</p></div>
                     </div>
                 </div>
 
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div class="px-6 py-3 border-b border-gray-100 bg-gray-50"><h4 class="font-bold text-gray-700 text-sm">Inventario Activo</h4></div>
+                    <div class="px-6 py-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                        <h4 class="font-bold text-gray-700 text-xs uppercase tracking-wide">Inventario Activo</h4>
+                    </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm text-left">
-                            <thead class="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+                            <thead class="text-xs text-gray-400 uppercase bg-white border-b border-gray-100">
                                 <tr>
-                                    <th class="px-4 py-3">Ítem</th>
-                                    <th class="px-4 py-3 text-center">Talla</th>
-                                    <th class="px-4 py-3 text-center">Cant.</th>
-                                    <th class="px-4 py-3 text-center">Entrega / Vencimiento</th>
-                                    <th class="px-4 py-3 text-center">Estado</th>
-                                    <th class="px-4 py-3 text-center">Foto</th>
+                                    <th class="px-4 py-3 font-semibold">Ítem</th>
+                                    <th class="px-4 py-3 text-center font-semibold">Talla</th>
+                                    <th class="px-4 py-3 text-center font-semibold">Cant.</th>
+                                    <th class="px-4 py-3 text-center font-semibold">Fechas</th>
+                                    <th class="px-4 py-3 text-center font-semibold">Estado</th>
+                                    <th class="px-4 py-3 text-right font-semibold">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-50">
-                                ${itemsRows || '<tr><td colspan="6" class="text-center py-4 text-gray-400">No hay ítems activos.</td></tr>'}
+                                ${itemsRows || '<tr><td colspan="6" class="text-center py-8 text-gray-400 italic">No hay ítems activos.</td></tr>'}
                             </tbody>
                         </table>
                     </div>
@@ -701,38 +823,52 @@ export async function loadDotacionAsignaciones(userId, containerId) {
 
     } catch (error) {
         console.error("Error cargando dotación:", error);
-        container.innerHTML = `<div class="p-4 text-center text-red-500 text-sm">Error: ${error.message}</div>`;
+        container.innerHTML = `<div class="p-4 text-center text-red-500 text-sm border border-red-100 bg-red-50 rounded-xl">Error: ${error.message}</div>`;
     }
 }
 
 function createDotacionCatalogCard(item) {
     const card = document.createElement('div');
-    // Diseño moderno con hover effect
     card.className = 'bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col hover:shadow-md transition-shadow duration-300 group dotacion-catalog-card';
 
-    // Datasets para eventos
+    // Datasets
     card.dataset.id = item.id;
     card.dataset.name = item.itemName;
     card.dataset.talla = item.talla || 'N/A';
+    card.dataset.tallas = item.tallas || '';
     card.dataset.photourl = item.itemPhotoURL || '';
     card.dataset.stock = item.quantityInStock || 0;
     card.dataset.reference = item.reference || '';
     card.dataset.category = item.category || '';
     card.dataset.vidautil = item.vidaUtilDias || '';
+    card.dataset.minstock = item.minStock || 5;
+    
+    // --- NUEVO: Guardar el mapa de stock completo como JSON string ---
+    card.dataset.stockmap = JSON.stringify(item.stock || {}); 
+    // ----------------------------------------------------------------
 
     const stock = item.quantityInStock || 0;
     let stockBadge = '';
 
     if (stock === 0) {
         stockBadge = '<span class="bg-red-100 text-red-700 text-xs font-bold px-2.5 py-1 rounded-full border border-red-200">Agotado</span>';
-    } else if (stock <= 5) {
+    } else if (stock <= (item.minStock || 5)) {
         stockBadge = `<span class="bg-amber-100 text-amber-700 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-200">Bajo Stock: ${stock}</span>`;
     } else {
         stockBadge = `<span class="bg-emerald-100 text-emerald-700 text-xs font-bold px-2.5 py-1 rounded-full border border-emerald-200">En Stock: ${stock}</span>`;
     }
 
     const vidaUtilText = item.vidaUtilDias ? `${item.vidaUtilDias} días` : 'Indefinida';
-    const tallaText = item.talla && item.talla !== 'N/A' ? item.talla : 'Única';
+    
+    // --- LÓGICA DE VISUALIZACIÓN DE TALLAS ---
+    let displayTalla = item.talla || 'Única';
+    if (item.tallas && item.tallas.length > 0) {
+        // Reemplazamos comas por espacios para mejor lectura
+        displayTalla = item.tallas.replace(/,/g, ', ');
+        // Si es muy larga la lista, mostramos resumen
+        if (displayTalla.length > 20) displayTalla = 'Varios';
+    }
+    // ----------------------------------------
 
     card.innerHTML = `
         <div class="p-4 flex gap-4 items-start">
@@ -754,8 +890,8 @@ function createDotacionCatalogCard(item) {
                 <p class="text-xs text-slate-500 mt-1 font-mono truncate">${item.reference || 'Sin Ref'}</p>
 
                 <div class="flex flex-wrap gap-2 mt-3">
-                    <span class="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200 font-medium">
-                        <i class="fa-solid fa-ruler-horizontal mr-1 text-slate-400"></i> ${tallaText}
+                    <span class="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200 font-medium truncate max-w-[120px]" title="${item.tallas || displayTalla}">
+                        <i class="fa-solid fa-ruler-horizontal mr-1 text-slate-400"></i> ${displayTalla}
                     </span>
                     <span class="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200 font-medium">
                         <i class="fa-regular fa-clock mr-1 text-slate-400"></i> ${vidaUtilText}
@@ -1053,40 +1189,38 @@ export async function loadDotacionDashboard(container) {
         }
 
         // Renderizar Grid de Reportes
-        const reportsHtml = `
+const reportsHtml = `
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="space-y-6">
-                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 h-full">
-                        <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
-                            <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-box-open text-blue-500"></i> Más Solicitados</h3>
-                        </div>
-                        <div class="max-h-80 overflow-y-auto custom-scrollbar pr-1">${consumoHtml}</div>
+                
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
+                    <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2 shrink-0">
+                        <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-box-open text-blue-500"></i> Más Solicitados</h3>
                     </div>
-
-                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 h-full">
-                        <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
-                            <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-arrow-rotate-left text-red-500"></i> Mayor Rotación (Descarte)</h3>
-                        </div>
-                        <div class="max-h-80 overflow-y-auto custom-scrollbar pr-1">${descarteHtml}</div>
-                    </div>
+                    <div class="h-60 overflow-y-auto custom-scrollbar pr-1 grow">${consumoHtml}</div>
                 </div>
 
-                <div class="space-y-6">
-                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                        <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
-                            <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-bell text-amber-500"></i> Alertas de Vencimiento</h3>
-                            <span class="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-bold">Próximos 30 días</span>
-                        </div>
-                        <div class="max-h-60 overflow-y-auto custom-scrollbar pr-1">${vencimientoReportHtml}</div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
+                    <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2 shrink-0">
+                        <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-bell text-amber-500"></i> Alertas de Vencimiento</h3>
+                        <span class="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-bold">Próximos 30 días</span>
                     </div>
-
-                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                        <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
-                            <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-ruler text-slate-500"></i> Stock por Tallas</h3>
-                        </div>
-                        <div class="max-h-80 overflow-y-auto custom-scrollbar pr-1">${tallasHtml}</div>
-                    </div>
+                    <div class="h-60 overflow-y-auto custom-scrollbar pr-1 grow">${vencimientoReportHtml}</div>
                 </div>
+
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
+                    <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2 shrink-0">
+                        <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-arrow-rotate-left text-red-500"></i> Mayor Rotación (Descarte)</h3>
+                    </div>
+                    <div class="h-60 overflow-y-auto custom-scrollbar pr-1 grow">${descarteHtml}</div>
+                </div>
+
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
+                    <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2 shrink-0">
+                        <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-ruler text-slate-500"></i> Stock por Tallas</h3>
+                    </div>
+                    <div class="h-60 overflow-y-auto custom-scrollbar pr-1 grow">${tallasHtml}</div>
+                </div>
+
             </div>
         `;
 
@@ -1100,7 +1234,7 @@ export async function loadDotacionDashboard(container) {
 
 /**
  * Guarda los cambios de dotación (Crea Catálogo, Añade Stock, Registra Entrega).
- * (VERSIÓN CORREGIDA CON TRY...CATCH...FINALLY ARREGLADO)
+ * (MEJORADO: Validaciones con Toast y manejo de errores limpio)
  */
 async function handleSaveDotacion(form) {
     const data = Object.fromEntries(new FormData(form).entries());
@@ -1108,265 +1242,251 @@ async function handleSaveDotacion(form) {
     const currentUser = getCurrentUser();
 
     const confirmBtn = document.getElementById('modal-confirm-btn');
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Guardando...';
+    const submitBtn = form.querySelector('button[type="submit"]') || confirmBtn;
+    
+    // Helper para mostrar errores y detener la ejecución
+    const showError = (msg) => {
+        if (window.showToast) window.showToast(msg, "error");
+        else alert(msg); // Fallback
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = submitBtn.dataset.originalText || 'Guardar';
+        }
+        throw new Error("Validación fallida: " + msg); // Detener ejecución silenciosamente en consola
+    };
 
-    let userIdToRefresh = null; // Variable para guardar el ID del usuario
+    if (submitBtn) {
+        submitBtn.dataset.originalText = submitBtn.textContent;
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Procesando...';
+    }
+
+    let userIdToRefresh = null;
 
     try {
         const batch = writeBatch(db);
 
+        // --- 1. LÓGICA DE TALLAS ---
+        const checkedBoxes = form.querySelectorAll('input[name="sizes_common"]:checked');
+        const selectedSizes = Array.from(checkedBoxes).map(cb => cb.value);
+        let tallasStr = selectedSizes.length > 0 ? selectedSizes.join(',') : (data.tallas || '');
+        let tallaLegacy = 'Única';
+        if (tallasStr) tallaLegacy = tallasStr.includes(',') ? 'Varios' : tallasStr;
+        
+        // === CASO 1: NUEVO ÍTEM ===
         if (type === 'new-dotacion-catalog-item') {
+            if (!data.name && !data.itemName) showError("El nombre del ítem es obligatorio.");
+            if (!data.category) showError("Selecciona una categoría.");
+
             const photoFile = data.photo;
             const newItemRef = doc(collection(db, "dotacionCatalog"));
             let downloadURL = null;
 
             if (photoFile && photoFile.size > 0) {
-                confirmBtn.textContent = 'Redimensionando foto...';
+                if(confirmBtn) confirmBtn.textContent = 'Subiendo foto...';
                 const resizedBlob = await resizeImage(photoFile, 800);
-                confirmBtn.textContent = 'Subiendo foto...';
                 const photoPath = `dotacion_catalog_photos/${newItemRef.id}/${photoFile.name}`;
-                const photoStorageRef = ref(storage, photoPath);
-                await uploadBytes(photoStorageRef, resizedBlob);
-                downloadURL = await getDownloadURL(photoStorageRef);
+                const snap = await uploadBytes(ref(storage, photoPath), resizedBlob);
+                downloadURL = await getDownloadURL(snap.ref);
             }
 
-            const itemData = {
-                itemName: data.itemName,
+            const stockMap = {};
+            if (tallasStr) {
+                tallasStr.split(',').forEach(s => stockMap[s.trim()] = 0);
+            } else {
+                stockMap['Única'] = 0;
+            }
+
+            const initialQty = parseInt(data.initialStock || 0);
+            if (initialQty > 0) {
+                const firstSize = tallasStr.split(',')[0] || 'Única';
+                stockMap[firstSize] = initialQty;
+            }
+
+            batch.set(newItemRef, {
+                itemName: data.itemName || data.name,
                 reference: data.reference || '',
                 category: data.category,
-                talla: data.talla || 'N/A',
+                talla: tallaLegacy,
+                tallas: tallasStr,
                 itemPhotoURL: downloadURL,
-                quantityInStock: parseInt(data.initialStock) || 0,
-                vidaUtilDias: parseInt(data.vidaUtilDias) || null, // <-- AÑADIDO
+                quantityInStock: initialQty,
+                minStock: parseInt(data.minStock) || 5,
+                vidaUtilDias: parseInt(data.vidaUtilDias) || null,
+                stock: stockMap,
                 createdAt: serverTimestamp(),
                 createdBy: currentUser.uid,
-            };
-            batch.set(newItemRef, itemData);
+            });
 
-            // --- INICIO DE NUEVA LÓGICA DE EDICIÓN ---
+        // === CASO 2: EDITAR ÍTEM ===
         } else if (type === 'edit-dotacion-catalog-item') {
-            const itemId = data.itemId;
-            if (!itemId) throw new Error("ID de ítem inválido para editar.");
+            const itemId = data.itemId || form.dataset.id;
+            if (!itemId) showError("Error interno: No se identificó el ítem a editar.");
 
             const itemRef = doc(db, "dotacionCatalog", itemId);
             const photoFile = data.photo;
             let downloadURL = null;
 
-            // 1. Verificar si se subió una NUEVA foto
             if (photoFile && photoFile.size > 0) {
-                confirmBtn.textContent = 'Redimensionando foto...';
+                if(confirmBtn) confirmBtn.textContent = 'Subiendo foto...';
                 const resizedBlob = await resizeImage(photoFile, 800);
-                confirmBtn.textContent = 'Subiendo foto...';
-                const photoPath = `dotacion_catalog_photos/${itemId}/${photoFile.name}`;
-                const photoStorageRef = ref(storage, photoPath);
-                await uploadBytes(photoStorageRef, resizedBlob);
-                downloadURL = await getDownloadURL(photoStorageRef);
+                const snap = await uploadBytes(ref(storage, `dotacion_catalog_photos/${itemId}/${photoFile.name}`), resizedBlob);
+                downloadURL = await getDownloadURL(snap.ref);
             }
 
-            // 2. Preparar los datos a actualizar
-            const itemData = {
-                itemName: data.itemName,
+            const updateData = {
+                itemName: data.itemName || data.name,
                 reference: data.reference || '',
                 category: data.category,
-                talla: data.talla || 'N/A',
+                talla: tallaLegacy,
+                tallas: tallasStr,
                 vidaUtilDias: parseInt(data.vidaUtilDias) || null,
+                minStock: parseInt(data.minStock) || 5,
                 updatedAt: serverTimestamp(),
                 updatedBy: currentUser.uid,
             };
+            if (downloadURL) updateData.itemPhotoURL = downloadURL;
 
-            // 3. Añadir la URL de la foto SOLO SI se subió una nueva
-            if (downloadURL) {
-                itemData.itemPhotoURL = downloadURL;
-            }
+            batch.update(itemRef, updateData);
 
-            // 4. Añadir al batch
-            // NO TOCAMOS EL STOCK. El stock se maneja con 'add-dotacion-stock'
-            batch.update(itemRef, itemData);
-            // --- FIN DE NUEVA LÓGICA DE EDICIÓN ---
-
+        // === CASO 3: AÑADIR STOCK ===
         } else if (type === 'add-dotacion-stock') {
             const itemId = data.itemId;
             const quantity = parseInt(data.quantity);
-            if (!itemId || !quantity || quantity <= 0) {
-                throw new Error("Cantidad o Ítem inválido.");
-            }
+            const targetSize = data.targetSize;
+
+            if (!itemId) showError("Error interno: Ítem no identificado.");
+            if (!quantity || quantity <= 0) showError("Ingresa una cantidad válida mayor a 0.");
+            if (!targetSize) showError("Selecciona la talla o variante a la que añadirás stock.");
 
             const itemRef = doc(db, "dotacionCatalog", itemId);
-            batch.update(itemRef, {
-                quantityInStock: increment(quantity)
-            });
+            
+            const updatePayload = {
+                quantityInStock: increment(quantity),
+                [`stock.${targetSize}`]: increment(quantity)
+            };
+            batch.update(itemRef, updatePayload);
 
-            // Registrar en historial
             const historyRef = doc(collection(db, "dotacionHistory"));
             batch.set(historyRef, {
-                action: 'stock_added', // Acción de añadir stock
+                action: 'stock_added',
                 itemId: itemId,
-                itemName: (await getDoc(itemRef)).data().itemName, // Obtenemos el nombre
+                itemName: data.itemName,
+                talla: targetSize,
                 quantity: quantity,
                 adminId: currentUser.uid,
                 timestamp: serverTimestamp(),
-                purchaseCost: parseFloat(data.purchaseCost.replace(/[$. ]/g, '')) || 0,
+                purchaseCost: parseFloat((data.purchaseCost || '0').replace(/[$. ]/g, '')) || 0,
             });
 
+        // === CASO 4: ENTREGAR DOTACIÓN ===
         } else if (type === 'register-dotacion-delivery') {
             const itemId = data.itemId;
             const quantity = parseInt(data.quantity);
             const assigneeId = data.assignedTo;
             const assignPhotoFile = data.assignPhoto;
-            const itemName = data.itemName; // Nombre del ítem
+            const deliveryTalla = data.talla; // Viene del select 'talla' en el modal
 
-            if (!itemId || !quantity || quantity <= 0 || !assigneeId) {
-                throw new Error("Datos de entrega inválidos.");
+            // --- VALIDACIONES ESPECÍFICAS PARA EL USUARIO ---
+            if (!assigneeId) showError("Por favor selecciona un colaborador.");
+            if (!deliveryTalla) showError("Debes seleccionar qué talla vas a entregar.");
+            if (!quantity || quantity <= 0) showError("La cantidad debe ser al menos 1.");
+            
+            // Validar Foto
+            if (!assignPhotoFile || assignPhotoFile.size === 0) {
+                showError("Es obligatorio subir una foto de evidencia (o firma).");
             }
 
-            // --- INICIO DE VALIDACIÓN (LÓGICA DE NEGOCIO) ---
-            // 1. Verificar si el usuario ya tiene un ítem ACTIVO de este tipo
-            const q = query(
-                collection(db, "dotacionHistory"),
-                where("action", "==", "asignada"),
-                where("userId", "==", assigneeId),
-                where("itemId", "==", itemId),
-                where("status", "==", "activo") // ¡La clave!
-            );
+            if (!itemId) showError("Error de sistema: ID de ítem perdido.");
 
+            // Validación de ítem activo
+            const q = query(collection(db, "dotacionHistory"), where("action", "==", "asignada"), where("userId", "==", assigneeId), where("itemId", "==", itemId), where("status", "==", "activo"));
             const activeItemsSnap = await getDocs(q);
-
             if (!activeItemsSnap.empty) {
-                // Si la consulta NO está vacía, el usuario ya tiene uno activo.
-                const count = activeItemsSnap.size;
-                throw new Error(`Este empleado ya tiene ${count} "${itemName}" activo(s). Debe devolver el ítem anterior antes de recibir uno nuevo.`);
+                showError(`Este colaborador ya tiene un(a) "${data.itemName}" activo. Debe devolverlo antes de recibir uno nuevo.`);
             }
-            // --- FIN DE VALIDACIÓN ---
 
             const itemRef = doc(db, "dotacionCatalog", itemId);
-
-            // Subir foto de entrega
-            confirmBtn.textContent = 'Redimensionando foto entrega...';
+            
+            if(confirmBtn) confirmBtn.textContent = 'Subiendo evidencia...';
             const resizedBlob = await resizeImage(assignPhotoFile, 800);
-            confirmBtn.textContent = 'Subiendo foto entrega...';
             const photoPath = `dotacion_deliveries/${itemId}/${Date.now()}_${assignPhotoFile.name}`;
-            const photoStorageRef = ref(storage, photoPath);
-            await uploadBytes(photoStorageRef, resizedBlob);
-            const deliveryPhotoURL = await getDownloadURL(photoStorageRef);
+            const snap = await uploadBytes(ref(storage, photoPath), resizedBlob);
+            const deliveryPhotoURL = await getDownloadURL(snap.ref);
 
-            // 1. Descontar del Stock
-            batch.update(itemRef, {
-                quantityInStock: increment(-quantity)
-            });
+            const stockUpdate = { quantityInStock: increment(-quantity) };
+            if (deliveryTalla && deliveryTalla !== 'Varios' && deliveryTalla !== 'N/A') {
+                 stockUpdate[`stock.${deliveryTalla}`] = increment(-quantity);
+            }
+            batch.update(itemRef, stockUpdate);
 
-            // 2. Crear registro en el historial
             const historyRef = doc(collection(db, "dotacionHistory"));
             batch.set(historyRef, {
                 action: 'asignada',
                 status: 'activo',
                 itemId: itemId,
                 itemName: data.itemName,
-                talla: data.talla,
+                talla: deliveryTalla,
                 quantity: quantity,
                 userId: assigneeId,
                 adminId: currentUser.uid,
                 timestamp: serverTimestamp(),
                 fechaEntrega: data.fechaEntrega,
                 deliveryPhotoURL: deliveryPhotoURL,
-                serialNumber: data.serialNumber || null // <-- AÑADIR ESTA LÍNEA
+                serialNumber: data.serialNumber || null
             });
 
-            sendNotificationCallback(
-                assigneeId,
-                'Dotación Asignada',
-                `Se te ha asignado: ${quantity}x ${data.itemName}.`,
-                'dotacion'
-            );
+            sendNotificationCallback(assigneeId, 'Dotación', `Recibiste: ${quantity}x ${data.itemName}`, 'dotacion');
 
-            // --- INICIO DE MODIFICACIÓN: Lógica 'return-dotacion-options' ---
+        // === CASO 5: DEVOLUCIÓN ===
         } else if (type === 'return-dotacion-options') {
             const historyId = form.dataset.id;
-            const itemId = form.dataset.itemid;
-            const returnType = data.returnType;
-            const itemName = data.itemName;
-
-            // 1. Obtener los nuevos datos
             const returnPhotoFile = data.returnPhoto;
-            const observaciones = data.observaciones || '';
 
-            if (!historyId || !itemId || !returnType) {
-                throw new Error("Faltan datos (historyId, itemId, returnType) para procesar la devolución.");
-            }
-
-            // 2. Validar la foto
-            if (!returnPhotoFile || returnPhotoFile.size === 0) {
-                throw new Error("La foto de devolución es obligatoria.");
-            }
+            if (!data.returnType) showError("Selecciona qué hacer con el ítem (Stock o Descarte).");
+            if (!returnPhotoFile || returnPhotoFile.size === 0) showError("La foto de devolución es obligatoria.");
 
             const historyRef = doc(db, "dotacionHistory", historyId);
             const historyDoc = await getDoc(historyRef);
-            if (!historyDoc.exists()) throw new Error("No se encontró el registro de historial de entrega.");
+            if (!historyDoc.exists()) showError("Registro de historial no encontrado.");
+            
+            const historyData = historyDoc.data();
+            userIdToRefresh = historyData.userId;
 
-            const userId = historyDoc.data().userId;
-            if (!userId) throw new Error("El registro de historial no tiene un ID de empleado asociado.");
-
-            userIdToRefresh = userId;
-
-            // 3. Subir la foto de devolución
-            confirmBtn.textContent = 'Redimensionando foto...';
+            if(confirmBtn) confirmBtn.textContent = 'Subiendo foto...';
             const resizedBlob = await resizeImage(returnPhotoFile, 800);
-            confirmBtn.textContent = 'Subiendo foto...';
-            const photoPath = `dotacion_returns/${itemId}/${Date.now()}_${returnPhotoFile.name}`;
-            const photoStorageRef = ref(storage, photoPath);
-            await uploadBytes(photoStorageRef, resizedBlob);
-            const downloadURL = await getDownloadURL(photoStorageRef);
-            // --- FIN DE MODIFICACIÓN ---
+            const photoPath = `dotacion_returns/${data.itemid}/${Date.now()}_${returnPhotoFile.name}`;
+            const snap = await uploadBytes(ref(storage, photoPath), resizedBlob);
+            const downloadURL = await getDownloadURL(snap.ref);
 
-            if (returnType === 'descarte') {
-                // 4. Llamar a la función de descarte con los nuevos datos
-                await logDotacionDescarte(batch, historyRef, itemId, itemName, currentUser.uid, userId, downloadURL, observaciones);
-
-            } else if (returnType === 'stock') {
-                // 5. Llamar a la función de retorno a stock con los nuevos datos
-                await logDotacionReturnToStock(batch, historyRef, itemId, itemName, currentUser.uid, userId, downloadURL, observaciones);
-
-            } else {
-                throw new Error("Tipo de devolución no válido.");
+            if (data.returnType === 'descarte') {
+                await logDotacionDescarte(batch, historyRef, data.itemid, data.itemName, currentUser.uid, userIdToRefresh, downloadURL, data.observaciones);
+            } else if (data.returnType === 'stock') {
+                await logDotacionReturnToStock(batch, historyRef, data.itemid, data.itemName, currentUser.uid, userIdToRefresh, downloadURL, data.observaciones, historyData.talla);
             }
-            // --- FIN DE NUEVA LÓGICA ---
         }
 
         await batch.commit();
 
-        // Comprobamos si necesitamos refrescar la vista de asignaciones
-        if (userIdToRefresh) {
-            // Volvemos a cargar SOLO la vista de detalle de ese usuario
-            // Esto es más eficiente y nos mantiene en la misma pantalla.
-            loadDotacionAsignaciones(userIdToRefresh);
-        } else {
-            // Si fue otra acción (como añadir stock), recargamos la vista general
-            loadDotacionView();
-        }
-
+        if (userIdToRefresh) loadDotacionAsignaciones(userIdToRefresh);
+        else loadDotacionView();
 
         closeMainModalCallback();
+        if (window.showToast) window.showToast("Operación exitosa.", "success");
 
-        // --- INICIO DE LA CORRECCIÓN (Modificación) ---
-        // (El bloque 'try' termina aquí)
-
-        // loadDotacionView(); // <-- ELIMINAR O COMENTAR ESTA LÍNEA
-
-        // Los bloques 'catch' y 'finally' ahora están DENTRO de la función
     } catch (error) {
-        console.error("Error al guardar dotación:", error);
-        alert("Error: " + error.message);
+        // Si el error empieza con "Validación fallida", ya mostramos el toast arriba, solo logueamos en silencio
+        if (!error.message.startsWith("Validación fallida")) {
+            console.error("Error dotación:", error);
+            if (window.showToast) window.showToast("Error del sistema: " + error.message, "error");
+            else alert("Error del sistema: " + error.message);
+        }
     } finally {
-        confirmBtn.disabled = false;
-        // Resetear texto del botón
-        if (type === 'new-dotacion-catalog-item') confirmBtn.textContent = 'Crear Ítem';
-        else if (type === 'add-dotacion-stock') confirmBtn.textContent = 'Añadir Stock';
-        else if (type === 'register-dotacion-delivery') confirmBtn.textContent = 'Confirmar Entrega';
-        else if (type === 'return-dotacion-options') confirmBtn.textContent = 'Procesar Devolución';
-        else if (type === 'edit-dotacion-catalog-item') confirmBtn.textContent = 'Actualizar Ítem';
-        else confirmBtn.textContent = 'Guardar';
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = submitBtn.dataset.originalText || 'Guardar';
+        }
     }
-    // --- FIN DE LA CORRECCIÓN ---
 }
 
 /**
@@ -1418,36 +1538,43 @@ async function logDotacionDescarte(batch, historyRef, itemId, itemName, adminId,
  * @param {string} returnPhotoURL - (NUEVO) URL de la foto de devolución
  * @param {string} observaciones - (NUEVO) Observaciones de la devolución
  */
-async function logDotacionReturnToStock(batch, historyRef, itemId, itemName, adminId, userId, returnPhotoURL, observaciones) {
-    // 1. Actualiza el estado del registro de entrega
+async function logDotacionReturnToStock(batch, historyRef, itemId, itemName, adminId, userId, returnPhotoURL, observaciones, talla) {
+    // 1. Actualiza el estado del registro de entrega (Usuario)
     batch.update(historyRef, {
-        status: 'devuelto_stock', // Nuevo estado
+        status: 'devuelto_stock',
         returnedAt: serverTimestamp(),
         returnedBy: adminId,
-        returnPhotoURL: returnPhotoURL || null, // <-- AÑADIDO
-        returnNotes: observaciones || ''      // <-- AÑADIDO
+        returnPhotoURL: returnPhotoURL || null,
+        returnNotes: observaciones || ''
     });
 
-    // 2. Añadir un log al historial del CATÁLOGO
+    // 2. Añadir un log al historial global (Catálogo)
     const catalogHistoryRef = doc(collection(db, "dotacionHistory"));
     const userName = getUsersMap().get(userId)?.firstName || 'Usuario';
 
     batch.set(catalogHistoryRef, {
-        action: 'stock_return', // Nueva acción
+        action: 'stock_return',
         itemId: itemId,
         itemName: itemName,
-        quantity: 1, // Asumimos 1
+        quantity: 1,
+        talla: talla, // Guardamos qué talla reingresó
         adminId: adminId,
-        notes: observaciones || `Devolución a Inventario de ${userName}`, // <-- MODIFICADO
+        notes: observaciones || `Reingreso de ${userName}`,
         timestamp: serverTimestamp(),
-        returnPhotoURL: returnPhotoURL || null // <-- AÑADIDO
+        returnPhotoURL: returnPhotoURL || null
     });
 
     // 3. Incrementar el stock en el catálogo
     const catalogRef = doc(db, "dotacionCatalog", itemId);
-    batch.update(catalogRef, {
-        quantityInStock: increment(1)
-    });
+    
+    const updates = { quantityInStock: increment(1) };
+    
+    // Si tenemos una talla válida y no es "Varios", sumamos a esa talla específica
+    if(talla && talla !== 'Varios' && talla !== 'N/A') {
+        updates[`stock.${talla}`] = increment(1);
+    }
+
+    batch.update(catalogRef, updates);
 }
 
 /**
@@ -1589,148 +1716,131 @@ function createDotacionDetailCard(catalogItem, historySummary, userId, role) {
 }
 
 /**
- * Muestra el historial de un ÍTEM DE CATÁLOGO (no de un usuario).
- * @param {string} [userId] - Opcional. Si se provee, filtra el historial solo para este usuario.
+ * Muestra el historial de un ÍTEM DE CATÁLOGO (Diseño Moderno).
  */
 async function handleViewDotacionHistory(itemId, itemName, itemTalla, userId = null) {
-    const modal = document.getElementById('tool-history-modal'); // Reutilizamos el modal
+    const modal = document.getElementById('tool-history-modal'); 
     const title = document.getElementById('tool-history-title');
     const body = document.getElementById('tool-history-body');
 
     if (!modal || !title || !body) return;
 
     const usersMap = getUsersMap();
-
-    // Título dinámico
-    let modalTitle = `Historial de: ${itemName} (Talla: ${itemTalla})`;
+    let modalTitle = `Historial: ${itemName} (${itemTalla || 'U'})`;
     if (userId) {
         const userName = usersMap.get(userId)?.firstName || 'Empleado';
-        modalTitle += ` - Asignado a ${userName}`;
+        modalTitle += ` - ${userName}`;
     }
     title.textContent = modalTitle;
+    title.className = "text-lg font-bold text-slate-800 truncate pr-8"; // Estilo título
 
-    body.innerHTML = '<p class="text-gray-500 text-center">Cargando historial...</p>';
+    body.innerHTML = '<div class="py-12 text-center"><div class="loader mx-auto"></div><p class="text-xs text-gray-400 mt-2">Consultando movimientos...</p></div>';
     modal.style.display = 'flex';
 
     try {
-        // 1. Cargar el ítem principal (solo para la referencia) y el historial
-        const [itemDoc, historySnapshot] = await Promise.all([
-            getDoc(doc(db, "dotacionCatalog", itemId)),
+        // Consulta (Igual que antes)
+        const historyQuery = userId ?
+            query(collection(db, "dotacionHistory"), where("itemId", "==", itemId), where("userId", "==", userId), orderBy("timestamp", "desc")) :
+            query(collection(db, "dotacionHistory"), where("itemId", "==", itemId), orderBy("timestamp", "desc"));
+            
+        const historySnapshot = await getDocs(historyQuery);
 
-            // Consulta de Historial (AHORA FILTRADA SI ES NECESARIO)
-            (userId ?
-                getDocs(query(
-                    collection(db, "dotacionHistory"),
-                    where("itemId", "==", itemId),
-                    where("userId", "==", userId), // <-- Filtro por usuario
-                    orderBy("timestamp", "desc")
-                )) :
-                getDocs(query(
-                    collection(db, "dotacionHistory"),
-                    where("itemId", "==", itemId),
-                    orderBy("timestamp", "desc")
-                ))
-            )
-        ]);
-
-        // Actualizar el título con la referencia
-        const itemData = itemDoc.exists() ? itemDoc.data() : {};
-        const itemReference = itemData.reference || null;
-        title.textContent = `Historial de: ${itemName} ${itemTalla !== 'N/A' ? `(Talla: ${itemTalla})` : ''} ${itemReference ? `(${itemReference})` : ''}`;
-
-        body.innerHTML = ''; // Limpiar "Cargando..."
-
-        // (Lógica de costos eliminada de aquí, se mantiene en el dashboard de herramientas)
+        body.innerHTML = ''; 
 
         if (historySnapshot.empty) {
-            body.innerHTML += '<p class="text-gray-500 text-center">No hay historial para este ítem.</p>';
+            body.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-full py-10 text-gray-400">
+                    <i class="fa-solid fa-box-open text-4xl mb-3 opacity-20"></i>
+                    <p class="text-sm font-medium">No hay movimientos registrados.</p>
+                </div>`;
             return;
         }
 
+        // Construir Timeline
+        let html = `<div class="border-l-2 border-slate-200 ml-4 space-y-6 py-2">`;
+
         historySnapshot.forEach(doc => {
             const entry = doc.data();
-            const timestamp = entry.timestamp ? entry.timestamp.toDate() : new Date();
-            const dateString = timestamp.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
-
-            // --- INICIO DE LA CORRECCIÓN ---
-            // Esta es la línea que faltaba
-            const timeString = timestamp.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
-            // --- FIN DE LA CORRECCIÓN ---
-
+            const date = entry.timestamp ? entry.timestamp.toDate() : new Date();
+            const dateStr = date.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: '2-digit' });
+            const timeStr = date.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+            
             const adminName = usersMap.get(entry.adminId)?.firstName || 'Sistema';
+            let content = '';
+            let icon = 'fa-circle';
+            let colorClass = 'bg-gray-400'; // Punto de la línea
 
-            let entryHtml = '';
-
+            // Renderizado según tipo de acción
             if (entry.action === 'asignada') {
                 const targetUser = usersMap.get(entry.userId);
-                const targetName = targetUser ? `${targetUser.firstName} ${targetUser.lastName}` : 'Usuario Desconocido';
-                const deliveryDate = entry.fechaEntrega ? new Date(entry.fechaEntrega + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A';
-
-                let statusHtml = '';
-                if (entry.status === 'devuelto' || entry.status === 'devuelto_stock') {
-                    const returnedDate = entry.returnedAt ? entry.returnedAt.toDate().toLocaleDateString('es-CO') : '';
-                    statusHtml = `<p class="text-sm font-semibold text-gray-500">Estado: Devuelto (${returnedDate})</p>`;
-                } else if (entry.status === 'activo') {
-                    statusHtml = '<p class="text-sm font-semibold text-green-600">Estado: Activo</p>';
-                }
-
-                const serialHtml = entry.serialNumber
-                    ? `<p class="text-sm font-semibold text-gray-800 mt-1">Serial: ${entry.serialNumber}</p>`
-                    : '';
-
-                entryHtml = `
-                    <div class="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                        <div class="flex justify-between items-start">
-                            <p class="font-semibold text-yellow-800">Entrega de ${entry.quantity} unidad(es) a: ${targetName}</p>
-                            ${statusHtml} 
-                        </div>
-                        <p class="text-sm text-gray-600">Registrado por: ${adminName} (Fecha Entrega: ${deliveryDate})</p>
-                        ${entry.deliveryPhotoURL ? `<button data-action="view-dotacion-delivery-image" data-photourl="${entry.deliveryPhotoURL}" class="text-sm text-blue-600 hover:underline mt-2 inline-block font-medium">Ver foto de entrega</button>` : ''}                    <p class="text-xs text-gray-500 mt-1">Registrado el: ${dateString} - ${timeString}</p>
+                const userName = targetUser ? `${targetUser.firstName} ${targetUser.lastName}` : 'Usuario';
+                icon = 'fa-user-check';
+                colorClass = 'bg-cyan-500';
+                
+                content = `
+                    <div class="flex justify-between items-start">
+                        <h4 class="font-bold text-cyan-800 text-sm">Entrega a: ${userName}</h4>
+                        <span class="text-[10px] font-mono text-slate-400">${timeStr}</span>
                     </div>
+                    <p class="text-xs text-slate-600 mt-1">Cantidad: <strong>${entry.quantity}</strong></p>
+                    ${entry.deliveryPhotoURL ? `<button data-action="view-dotacion-delivery-image" data-photourl="${entry.deliveryPhotoURL}" class="text-[10px] text-blue-500 hover:underline mt-1 flex items-center gap-1"><i class="fa-solid fa-image"></i> Ver Evidencia</button>` : ''}
                 `;
 
             } else if (entry.action === 'stock_added') {
-                entryHtml = `
-                    <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <p class="font-semibold text-blue-800">+ ${entry.quantity} unidad(es) añadidas al stock</p>
-                        <p class="text-sm text-gray-600">Registrado por: ${adminName}</p>
-                        <p class="text-xs text-gray-500 mt-1">Registrado el: ${dateString} - ${timeString}</p>
+                icon = 'fa-plus';
+                colorClass = 'bg-emerald-500';
+                content = `
+                    <div class="flex justify-between items-start">
+                        <h4 class="font-bold text-emerald-700 text-sm">Entrada de Stock</h4>
+                        <span class="text-[10px] font-mono text-slate-400">${timeStr}</span>
                     </div>
+                    <p class="text-xs text-slate-600 mt-1">Cantidad: <strong>+${entry.quantity}</strong></p>
                 `;
 
-            } else if (entry.action === 'devuelto') {
-                // Esta es la acción de DESCARTE
-                entryHtml = `
-                    <div class="p-3 bg-gray-100 border border-gray-300 rounded-lg">
-                        <p class="font-semibold text-gray-700">Devolución (Descarte) registrada</p>
-                        <p class="text-sm text-gray-600">Registrado por: ${adminName}</p>
-                        
-                        ${entry.notes ? `<p class="text-sm text-gray-800 mt-2 p-2 bg-white border rounded-md"><strong>Observación:</strong> ${entry.notes}</p>` : ''}
-                        ${entry.returnPhotoURL ? `<button data-action="view-dotacion-item-image" data-photourl="${entry.returnPhotoURL}" class="text-sm text-blue-600 hover:underline mt-2 inline-block font-medium">Ver foto de devolución</button>` : ''}                        
-                        <p class="text-xs text-gray-500 mt-1">Registrado el: ${dateString} - ${timeString}</p>
+            } else if (entry.action === 'devuelto') { // Descarte
+                icon = 'fa-trash-arrow-up';
+                colorClass = 'bg-red-500';
+                content = `
+                    <div class="flex justify-between items-start">
+                        <h4 class="font-bold text-red-700 text-sm">Devolución (Descarte)</h4>
+                        <span class="text-[10px] font-mono text-slate-400">${timeStr}</span>
                     </div>
+                    <p class="text-xs text-slate-600 mt-1 italic">"${entry.notes || 'Sin observación'}"</p>
+                    ${entry.returnPhotoURL ? `<button data-action="view-dotacion-item-image" data-photourl="${entry.returnPhotoURL}" class="text-[10px] text-blue-500 hover:underline mt-1 flex items-center gap-1"><i class="fa-solid fa-image"></i> Ver Estado</button>` : ''}
                 `;
-            } else if (entry.action === 'stock_return') {
-                // Esta es la nueva acción de DEVOLUCIÓN A INVENTARIO
-                entryHtml = `
-                    <div class="p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <p class="font-semibold text-green-800">Devolución a Inventario (Reutilizable)</p>
-                        <p class="text-sm text-gray-600">Registrado por: ${adminName}</p>
-                        
-                        ${entry.notes ? `<p class="text-sm text-gray-800 mt-2 p-2 bg-white border rounded-md"><strong>Observación:</strong> ${entry.notes}</p>` : ''}
-                        ${entry.returnPhotoURL ? `<button data-action="view-dotacion-item-image" data-photourl="${entry.returnPhotoURL}" class="text-sm text-blue-600 hover:underline mt-2 inline-block font-medium">Ver foto de devolución</button>` : ''}                        
-                        <p class="text-xs text-gray-500 mt-1">Registrado el: ${dateString} - ${timeString}</p>
+
+            } else if (entry.action === 'stock_return') { // Retorno
+                icon = 'fa-rotate-left';
+                colorClass = 'bg-blue-500';
+                content = `
+                    <div class="flex justify-between items-start">
+                        <h4 class="font-bold text-blue-700 text-sm">Reingreso a Stock</h4>
+                        <span class="text-[10px] font-mono text-slate-400">${timeStr}</span>
                     </div>
+                    <p class="text-xs text-slate-600 mt-1 italic">"${entry.notes || 'Reutilizable'}"</p>
                 `;
             }
 
-
-            body.innerHTML += entryHtml;
+            html += `
+                <div class="relative pl-6">
+                    <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 border-white shadow-sm ${colorClass} flex items-center justify-center text-[8px] text-white">
+                        <i class="fa-solid ${icon}"></i>
+                    </div>
+                    <div class="bg-white p-3 rounded-lg border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                        <p class="text-[10px] text-slate-400 font-bold uppercase mb-1">${dateStr}</p>
+                        ${content}
+                        <p class="text-[9px] text-slate-300 mt-2 text-right">Reg: ${adminName}</p>
+                    </div>
+                </div>
+            `;
         });
 
+        html += `</div>`;
+        body.innerHTML = html;
+
     } catch (error) {
-        console.error("Error al cargar historial de dotación:", error);
-        body.innerHTML = '<p class="text-red-500 text-center">Error al cargar el historial.</p>';
+        console.error("Error historial dotacion:", error);
+        body.innerHTML = '<p class="text-red-500 text-center text-sm">Error al cargar datos.</p>';
     }
 }
 

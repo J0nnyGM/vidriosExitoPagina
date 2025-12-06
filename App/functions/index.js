@@ -496,7 +496,7 @@ const recalculateProjectStats = async () => {
     projectsSnapshot.forEach(doc => {
         const project = doc.data();
         stats.total++;
-        
+
         // --- LÓGICA ROBUSTA DE CONTEO ---
         // 1. Si no tiene status, asumimos 'active' por defecto.
         // 2. Convertimos a minúsculas y quitamos espacios para comparar.
@@ -2156,7 +2156,7 @@ exports.checkLateEntriesWarning = onSchedule({
                         token: userData.fcmToken,
                         data: { url: "/dashboard-general", type: "late_entry_warning" }
                     };
-                    
+
                     messagingPromises.push(
                         getMessaging().send(message).catch(e => {
                             if (e.code === 'messaging/registration-token-not-registered') {
@@ -2307,12 +2307,12 @@ exports.sendPushOnNotificationCreate = onDocumentWritten("notifications/{notific
     if (!userId || !notifData.message) return null;
 
     // Evitar bucles: Si es una notificación de sistema interna sin usuario, ignorar
-    if (notifData.type === 'system_log') return null; 
+    if (notifData.type === 'system_log') return null;
 
     try {
         // 2. Obtener el Token FCM del usuario destinatario
         const userDoc = await db.doc(`users/${userId}`).get();
-        
+
         if (!userDoc.exists) return null;
 
         const userData = userDoc.data();
@@ -2325,7 +2325,7 @@ exports.sendPushOnNotificationCreate = onDocumentWritten("notifications/{notific
 
         // 3. Personalizar Título según el tipo
         let title = notifData.title || "Nueva Notificación";
-        
+
         if (notifData.type === 'task_comment') {
             title = "💬 Nuevo Comentario en Tarea";
         } else if (notifData.type === 'admin_urgent_alert') {
@@ -2348,7 +2348,7 @@ exports.sendPushOnNotificationCreate = onDocumentWritten("notifications/{notific
                     channelId: 'urgent_alerts',
                     clickAction: 'FLUTTER_NOTIFICATION_CLICK'
                 },
-                priority: 'high' 
+                priority: 'high'
             },
             // Configuración iOS (Apple)
             apns: {
@@ -2370,7 +2370,7 @@ exports.sendPushOnNotificationCreate = onDocumentWritten("notifications/{notific
             token: fcmToken,
             // Datos para que al tocar la notificación se abra la vista correcta
             data: {
-                url: notifData.link || "/dashboard-general", 
+                url: notifData.link || "/dashboard-general",
                 projectId: notifData.projectId || "",
                 taskId: notifData.taskId || "",
                 type: notifData.type || 'general'
@@ -2407,23 +2407,23 @@ exports.scheduledFirestoreExport = onSchedule({
     memory: '512MiB'
 }, async (event) => {
     const projectId = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT;
-    
+
     // 1. CONFIGURACIÓN
     // ¡IMPORTANTE! Reemplaza esto con el nombre exacto del bucket que creaste en el Paso 1
     // Ejemplo: 'gs://vidriosexito-backups'
-    const BUCKET_NAME = `gs://${projectId}-backups`; 
+    const BUCKET_NAME = `gs://${projectId}-backups`;
 
     const databaseName = client.databasePath(projectId, '(default)');
 
     try {
         console.log(`Iniciando exportación de base de datos para: ${projectId}`);
-        
+
         // 2. Ejecutar la exportación
         const [response] = await client.exportDocuments({
             name: databaseName,
             outputUriPrefix: BUCKET_NAME,
             // Dejar collectionIds vacío exporta TODAS las colecciones
-            collectionIds: [] 
+            collectionIds: []
         });
 
         console.log(`Operación de backup iniciada exitosamente: ${response.name}`);
@@ -2447,7 +2447,7 @@ exports.checkDailyReportWarning = onSchedule({
     // Importante: Ajustamos la zona horaria para asegurar que sea el día correcto
     const now = new Date();
     const colombiaDate = new Date(now.toLocaleString("en-US", { timeZone: "America/Bogota" }));
-    const todayStr = colombiaDate.toISOString().split('T')[0]; 
+    const todayStr = colombiaDate.toISOString().split('T')[0];
 
     try {
         const usersSnapshot = await db.collection("users")
@@ -2470,7 +2470,7 @@ exports.checkDailyReportWarning = onSchedule({
 
             if (reportsSnapshot.empty) {
                 pendingCount++;
-                
+
                 // A. Notificación Interna
                 const notifRef = db.collection("notifications").doc();
                 notificationsBatch.set(notifRef, {
@@ -2495,7 +2495,7 @@ exports.checkDailyReportWarning = onSchedule({
                         token: userData.fcmToken,
                         data: { url: "/dashboard-general", type: "daily_report_alert" }
                     };
-                    messagingPromises.push(getMessaging().send(message).catch(() => {}));
+                    messagingPromises.push(getMessaging().send(message).catch(() => { }));
                 }
             }
         }
@@ -2572,7 +2572,7 @@ exports.checkDailyReportFinal = onSchedule({
                         token: userData.fcmToken,
                         data: { url: "/dashboard-general", type: "daily_report_urgent" }
                     };
-                    messagingPromises.push(getMessaging().send(message).catch(() => {}));
+                    messagingPromises.push(getMessaging().send(message).catch(() => { }));
                 }
             }
         }
@@ -2586,5 +2586,85 @@ exports.checkDailyReportFinal = onSchedule({
 
     } catch (error) {
         console.error("Error en checkDailyReportFinal:", error);
+    }
+});
+
+// ==================================================================
+//      TAREA PROGRAMADA: VERIFICAR CONTRATOS VENCIDOS (DIARIO) - VERSIÓN V2
+// ==================================================================
+exports.checkExpiredContracts = onSchedule({
+    schedule: "0 0 * * *",       // 00:00 todos los días
+    timeZone: "America/Bogota",  // Zona horaria
+}, async (event) => {
+    const db = admin.firestore();
+    const batch = db.batch();
+    
+    // Fecha de hoy a las 00:00:00 para comparar limpiamente
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    console.log(`Iniciando chequeo de contratos vencidos (v2): ${today.toISOString()}`);
+
+    try {
+        // 1. Buscar solo usuarios ACTIVOS
+        const usersSnapshot = await db.collection('users')
+            .where('status', '==', 'active')
+            .get();
+
+        let updatesCount = 0;
+
+        usersSnapshot.forEach(doc => {
+            const userData = doc.data();
+            
+            // Solo verificamos si tiene el campo definido
+            if (userData.contractEndDate) {
+                // Convertimos el string "YYYY-MM-DD" a objeto Date
+                const endDate = new Date(userData.contractEndDate + 'T00:00:00');
+
+                // 2. Si la fecha de fin es MENOR a hoy, se desactiva
+                if (endDate < today) {
+                    const userRef = db.collection('users').doc(doc.id);
+                    
+                    // A. Cambiar estado a 'archived'
+                    batch.update(userRef, { status: 'archived' });
+
+                    // B. Registrar en el Historial del Usuario
+                    const historyRef = userRef.collection('profileHistory').doc();
+                    batch.set(historyRef, {
+                        changes: {
+                            status: { old: 'active', new: 'archived' },
+                            systemNote: `Contrato venció el ${userData.contractEndDate}`
+                        },
+                        changedBy: 'SYSTEM', 
+                        timestamp: admin.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    // C. Registrar en Auditoría Global
+                    const auditRef = db.collection('audit_logs').doc();
+                    batch.set(auditRef, {
+                        action: 'Desactivación Automática',
+                        description: `El sistema archivó al usuario ${userData.firstName} ${userData.lastName} por vencimiento de contrato.`,
+                        targetId: doc.id,
+                        performedBy: 'SYSTEM',
+                        performedByName: 'Sistema Automático',
+                        timestamp: admin.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    updatesCount++;
+                    console.log(`Usuario a desactivar: ${userData.email} (Venció: ${userData.contractEndDate})`);
+                }
+            }
+        });
+
+        // 3. Ejecutar cambios
+        if (updatesCount > 0) {
+            await batch.commit();
+            console.log(`✅ Se desactivaron automáticamente ${updatesCount} usuarios.`);
+        } else {
+            console.log("👍 No se encontraron contratos vencidos hoy.");
+        }
+
+    } catch (error) {
+        console.error("❌ Error verificando contratos:", error);
     }
 });
