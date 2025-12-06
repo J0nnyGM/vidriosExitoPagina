@@ -1822,13 +1822,12 @@ async function loadNominaTab(container) {
 
             <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
                 
-                <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                    <div>
-                        <h3 class="text-lg font-bold text-gray-800">Detalle de Nómina</h3>
-                        <p class="text-xs text-gray-500">Pre-liquidación estimada del mes seleccionado.</p>
-                    </div>
-
-                    <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                        <button data-action="back-to-empleados-from-payment" class="text-slate-500 hover:text-blue-600 font-bold text-sm flex items-center gap-2 transition-colors">
+                            <i class="fa-solid fa-arrow-left"></i> Volver a Lista
+                        </button>
+                        
+                        <div class="flex bg-white rounded-lg shadow-sm border border-gray-200 p-1">
                         
                         <label class="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors h-[42px]">
                             <input type="checkbox" id="toggle-apply-loans" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer">
@@ -3306,19 +3305,25 @@ export async function loadPaymentHistoryView(userId) {
     const accountNumberEl = document.getElementById('ph-account-number');
     const btnPrev = document.getElementById('btn-prev-employee');
     const btnNext = document.getElementById('btn-next-employee');
-    
-    // Inputs del formulario
-    const salarioEl = document.getElementById('payment-salario-basico');
-    const bonificacionEl = document.getElementById('payment-bonificacion-mes');
-    const liquidarCheckbox = document.getElementById('payment-liquidar-bonificacion');
-    const diasPagarInput = document.getElementById('payment-dias-pagar');
-    const conceptoSelect = document.getElementById('payment-concepto');
-    const form = document.getElementById('payment-register-form');
 
     // Estado inicial
     nameEl.textContent = 'Cargando datos...';
     tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-10 text-gray-500"><div class="loader mx-auto"></div></td></tr>`;
     bankInfoContainer.classList.add('hidden');
+
+    // --- 1.5 CORRECCIÓN CRÍTICA: LIMPIAR FORMULARIO AL INICIO ---
+    // Clonamos el formulario AHORA para limpiar listeners viejos antes de asignar los nuevos.
+    const oldForm = document.getElementById('payment-register-form');
+    const newForm = oldForm.cloneNode(true);
+    oldForm.parentNode.replaceChild(newForm, oldForm);
+    
+    // Referencias frescas del NUEVO formulario
+    const form = document.getElementById('payment-register-form'); // Volvemos a buscarlo por ID para asegurar referencia
+    const conceptoSelect = document.getElementById('payment-concepto');
+    const diasPagarInput = document.getElementById('payment-dias-pagar');
+    const salarioEl = document.getElementById('payment-salario-basico');
+    const bonificacionEl = document.getElementById('payment-bonificacion-mes');
+    const liquidarCheckbox = document.getElementById('payment-liquidar-bonificacion');
 
     let user = null;
 
@@ -3342,17 +3347,15 @@ export async function loadPaymentHistoryView(userId) {
             // Selección por defecto
             if (now.getDate() > 15) {
                 conceptoSelect.value = options[1].val; 
+                diasPagarInput.value = 15;
             } else {
                 conceptoSelect.value = options[0].val; 
+                diasPagarInput.value = 15;
             }
 
-            // LÓGICA DE CAMBIO DE DÍAS (FIX)
-            // Reemplazamos el elemento para limpiar listeners viejos de forma segura
-            const newConceptSelect = conceptoSelect.cloneNode(true);
-            conceptoSelect.parentNode.replaceChild(newConceptSelect, conceptoSelect);
-
-            newConceptSelect.addEventListener('change', () => {
-                const val = newConceptSelect.value.toLowerCase();
+            // LÓGICA DE CAMBIO DE DÍAS (AHORA SÍ FUNCIONA PORQUE EL FORMULARIO YA ES EL DEFINITIVO)
+            conceptoSelect.addEventListener('change', () => {
+                const val = conceptoSelect.value.toLowerCase();
                 
                 // Verificamos si es mes completo
                 if (val.includes('mensual') || val.includes('completo')) {
@@ -3386,10 +3389,10 @@ export async function loadPaymentHistoryView(userId) {
             accountNumberEl.textContent = user.accountNumber;
             bankInfoContainer.classList.remove('hidden');
             
-            // Botón de copiar (fix null)
+            // Botón de copiar
             const accountContainer = accountNumberEl.parentElement.parentElement;
             if(accountContainer) {
-                 // Clonar para limpiar eventos previos
+                // Clonamos solo este elemento pequeño para limpiar su evento click
                 const newAccountContainer = accountContainer.cloneNode(true);
                 accountContainer.parentNode.replaceChild(newAccountContainer, accountContainer);
                 newAccountContainer.onclick = () => {
@@ -3446,7 +3449,7 @@ export async function loadPaymentHistoryView(userId) {
             } else { newBtnNext.disabled = true; newBtnNext.className = "p-2 text-gray-300 cursor-not-allowed"; }
         }
 
-        // --- 6. GESTIÓN DE PRÉSTAMOS (FIX ACTUALIZACIÓN) ---
+        // --- 6. GESTIÓN DE PRÉSTAMOS ---
         let loanFieldset = document.getElementById('loan-management-fieldset');
         if (!loanFieldset) {
             const placeholder = document.getElementById('loan-management-fieldset-placeholder');
@@ -3511,9 +3514,8 @@ export async function loadPaymentHistoryView(userId) {
                             </span>
                         </div>
                         <div class="relative w-28 shrink-0">
-                            <div class="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none"><span class="text-gray-400 text-xs">$</span></div>
                             <input type="text" 
-                                class="loan-deduction-input block w-full pl-5 pr-2 py-1 text-right border-gray-300 rounded-md text-sm font-bold text-indigo-700 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-sm" 
+                                class="loan-deduction-input block w-full px-2 py-1 text-right border-gray-300 rounded-md text-sm font-bold text-indigo-700 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-sm" 
                                 value="${currencyFormatter.format(cuotaSugerida)}"
                                 data-loan-id="${loan.id}"
                                 data-balance="${loan.balance}">
@@ -3525,12 +3527,11 @@ export async function loadPaymentHistoryView(userId) {
 
             totalDebtElDisplay.textContent = currencyFormatter.format(totalActiveDebt);
 
-            // --- ACTIVAR LISTENERS DE PRÉSTAMOS ---
-            // Esto es lo que faltaba para que al escribir se actualice el total
+            // --- ACTIVAR LISTENERS DE PRÉSTAMOS (AHORA FUNCIONARÁN BIEN) ---
             activeLoansList.querySelectorAll('.loan-deduction-input').forEach(input => {
                 _setupCurrencyInput(input); // Formato moneda
                 input.addEventListener('input', () => {
-                    // Llamada directa a la función de actualización
+                    // Cuando el usuario escriba, recalculamos el total
                     if (typeof updatePaymentTotal === 'function') updatePaymentTotal(); 
                 }); 
             });
@@ -3581,22 +3582,12 @@ export async function loadPaymentHistoryView(userId) {
         bonificacionEl.classList.remove('text-gray-400', 'line-through');
         liquidarCheckbox.checked = false; liquidarCheckbox.disabled = false;
     }
-
-    // Inicializar Días y disparar lógica de concepto
-    const newConceptSelect = document.getElementById('payment-concepto');
-    if (newConceptSelect) {
-        // Forzamos el evento change para setear los días correctamente al inicio
-        newConceptSelect.dispatchEvent(new Event('change'));
-    } else {
-        // Fallback
-        diasPagarInput.value = 15;
-    }
     
-    // Actualizar totales iniciales (con un pequeño delay para asegurar que el DOM está listo)
-    setTimeout(() => { if (typeof updatePaymentTotal === 'function') updatePaymentTotal(); }, 100);
+    // Actualizar totales iniciales (con un pequeño delay para asegurar que el DOM de préstamos se pintó)
+    setTimeout(() => { if (typeof updatePaymentTotal === 'function') updatePaymentTotal(); }, 200);
 
 
-    // --- 8. HISTORIAL (Sin cambios) ---
+    // --- 8. HISTORIAL DE PAGOS ---
     const q = query(collection(_db, "users", userId, "paymentHistory"), orderBy("createdAt", "desc"));
     unsubscribeEmpleadosTab = onSnapshot(q, (snapshot) => {
         if (snapshot.empty) {
@@ -3629,16 +3620,15 @@ export async function loadPaymentHistoryView(userId) {
         });
     });
 
-    // --- 9. LISTENERS FORMULARIO ---
-    const newForm = form.cloneNode(true);
-    form.parentNode.replaceChild(newForm, form);
-    newForm.addEventListener('submit', (e) => handleRegisterPayment(e, userId));
+    // --- 9. LISTENERS FINALES DEL FORMULARIO ---
+    // Ya clonamos al principio, así que solo agregamos listeners al form "vivo"
+    form.addEventListener('submit', (e) => handleRegisterPayment(e, userId));
 
-    newForm.querySelectorAll('.payment-horas-input, .currency-input, .payment-dias-input, #payment-liquidar-bonificacion').forEach(input => {
+    form.querySelectorAll('.payment-horas-input, .currency-input, .payment-dias-input, #payment-liquidar-bonificacion').forEach(input => {
         input.addEventListener('input', () => { if (typeof updatePaymentTotal === 'function') updatePaymentTotal(); });
         input.addEventListener('change', () => { if (typeof updatePaymentTotal === 'function') updatePaymentTotal(); });
     });
-    newForm.querySelectorAll('.currency-input').forEach(_setupCurrencyInput);
+    form.querySelectorAll('.currency-input').forEach(_setupCurrencyInput);
 }
 
 

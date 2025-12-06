@@ -14293,9 +14293,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 break;
             case 'back-to-empleados-from-payment':
-                loadEmpleadosView(); // Recarga la vista de empleados (para que se actualice la pestaña)
-                showView('empleados');
-                break;
+                    loadEmpleadosView(); // Recarga pestañas y datos
+                    showView('empleados'); // Usa el ID correcto ('empleados')
+                    break;
 
             case 'compare-prices':
                 openMainModal('compare-prices', {
