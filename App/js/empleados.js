@@ -88,6 +88,8 @@ export function initEmpleados(
     // 3. Guardar referencia a función externa
     window.loadDotacionAsignaciones = loadDotacionFunc;
 
+    window.showEmpleadoDetails = showEmpleadoDetails;
+
     // 4. Activar las pestañas (Esto hace que los botones funcionen)
     const tabsNav = document.getElementById('empleados-tabs-nav');
     if (tabsNav) {
@@ -191,8 +193,14 @@ export function loadEmpleadosView() {
 }
 
 // 2. ACTUALIZAR switchEmpleadosTab (Estilos Activos)
+
 function switchEmpleadosTab(tabName) {
-    // Limpiar suscripciones previas para evitar fugas de memoria
+    // 1. Limpiar listener de productividad si existe
+    if (typeof unsubscribeProductividad !== 'undefined' && unsubscribeProductividad) {
+        unsubscribeProductividad();
+        unsubscribeProductividad = null;
+    }
+
     if (unsubscribeEmpleadosTab) {
         unsubscribeEmpleadosTab();
         unsubscribeEmpleadosTab = null;
@@ -1640,9 +1648,131 @@ async function loadGlobalHistoryTab(container) {
     fetchGlobalPayments();
 }
 
+let unsubscribeProductividad = null;
+
 /**
- * Carga el contenido de la pestaña "Productividad" (TABLA ACTUALIZADA).
- * Corrección: Ahora muestra el ROL real del usuario en lugar de un texto fijo.
+ * Muestra la vista de detalle de un empleado específico.
+ * VERSIÓN SEGURA: No se rompe si faltan elementos en el HTML.
+ */
+export async function showEmpleadoDetails(userId) {
+    _showView('empleado-details');
+
+    // --- LIMPIEZA DE COMPONENTES (CORREGIDO) ---
+
+    // 1. Limpiar Gráfica
+    if (typeof destroyActiveChart === 'function') {
+        destroyActiveChart();
+    }
+
+    // 2. Limpiar Mapa de Asistencia
+    // IMPORTANTE: Usamos la variable local 'attendanceMapInstance', SIN 'window.'
+    if (attendanceMapInstance) {
+        attendanceMapInstance.remove();
+        attendanceMapInstance = null;
+        // También limpiamos la capa de marcadores por si acaso
+        if (typeof attendanceMarkersLayer !== 'undefined') attendanceMarkersLayer = null;
+    }
+    // -----------------------------------------------
+
+    // Guardar ID para las pestañas
+    const detailsView = document.getElementById('empleado-details-view');
+    if (detailsView) detailsView.dataset.currentUserId = userId;
+
+    // --- CORRECCIÓN CLAVE: LIMPIAR CONTENEDOR DE PESTAÑAS ---
+    const contentContainer = document.getElementById('empleado-details-content-container');
+    if (contentContainer) {
+        contentContainer.innerHTML = '';
+    }
+
+    const usersMap = _getUsersMap();
+    const user = usersMap.get(userId);
+
+    // Helper seguro
+    const safeSetText = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    };
+
+    if (!user) {
+        safeSetText('empleado-details-name', 'Error: Usuario no encontrado');
+        return;
+    }
+
+    // 1. Renderizar Encabezado
+    const level = user.commissionLevel || 'principiante';
+    const levelText = level.charAt(0).toUpperCase() + level.slice(1);
+
+    safeSetText('empleado-details-name', `${user.firstName} ${user.lastName}`);
+    const nameEl = document.getElementById('empleado-details-name');
+    if (nameEl) nameEl.dataset.userId = userId;
+
+    // Botón Logs
+    if (nameEl) {
+        const headerContainer = nameEl.parentElement;
+        // Limpiar botón previo si existe
+        const oldBtn = headerContainer.querySelector('.btn-audit-log');
+        if (oldBtn) oldBtn.remove();
+
+        const btnAudit = document.createElement('button');
+        btnAudit.className = "btn-audit-log ml-3 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded border border-gray-300 transition-colors align-middle";
+        btnAudit.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-1"></i> Logs';
+        nameEl.insertAdjacentElement('afterend', btnAudit);
+        btnAudit.onclick = () => {
+            if (typeof window.openMainModal === 'function') window.openMainModal('view-audit-logs', { userId: userId });
+        };
+    }
+
+    safeSetText('empleado-details-level', `Nivel: ${levelText}`);
+
+    // (Los textos de cédula, email, etc. se llenarán al cargar la pestaña resumen)
+
+    // 2. Configurar Navegación
+    const tabsNav = document.getElementById('empleado-details-tabs-nav');
+    if (tabsNav) {
+        const newTabsNav = tabsNav.cloneNode(false);
+        tabsNav.parentNode.replaceChild(newTabsNav, tabsNav);
+
+        newTabsNav.innerHTML = `
+            <button data-tab="resumen" class="empleado-details-tab-button active whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm text-blue-600 border-blue-500 hover:text-blue-800 transition-colors">
+                <i class="fa-solid fa-chart-pie mr-2"></i> Resumen
+            </button>
+            <button data-tab="bitacora" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
+                <i class="fa-solid fa-book-journal-whills mr-2"></i> Bitácora
+            </button>
+            <button data-tab="asistencia" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
+                <i class="fa-solid fa-location-dot mr-2"></i> Reporte de Ingreso
+            </button>
+            <button data-tab="documentos" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
+                <i class="fa-solid fa-folder-open mr-2"></i> Expediente
+            </button>
+            <button data-tab="dotacion" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
+                <i class="fa-solid fa-helmet-safety mr-2"></i> Dotación
+            </button>
+        `;
+
+        newTabsNav.addEventListener('click', (e) => {
+            const button = e.target.closest('.empleado-details-tab-button');
+            if (!button) return;
+
+            newTabsNav.querySelectorAll('.empleado-details-tab-button').forEach(btn => {
+                btn.classList.remove('active', 'border-blue-500', 'text-blue-600');
+                btn.classList.add('border-transparent', 'text-gray-500');
+            });
+
+            button.classList.add('active', 'border-blue-500', 'text-blue-600');
+            button.classList.remove('border-transparent', 'text-gray-500');
+
+            const tabName = button.dataset.tab;
+            switchEmpleadoDetailsTab(tabName, userId);
+        });
+    }
+
+    // Carga inicial
+    switchEmpleadoDetailsTab('resumen', userId);
+}
+
+/**
+ * Carga el contenido de la pestaña "Productividad" (TABLA ACTUALIZADA EN TIEMPO REAL).
  */
 async function loadProductividadTab(container) {
 
@@ -1662,6 +1792,7 @@ async function loadProductividadTab(container) {
                         </tr>
                     </thead>
                     <tbody id="empleados-prod-table-body">
+                        <tr><td colspan="6" class="text-center py-10"><div class="loader mx-auto"></div><p class="mt-2 text-gray-500">Sincronizando datos...</p></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1672,6 +1803,12 @@ async function loadProductividadTab(container) {
     // 2. Referencias
     const monthSelector = document.getElementById('empleado-month-selector');
     const tableBody = document.getElementById('empleados-prod-table-body');
+
+    // Limpiar listener anterior si existe
+    if (unsubscribeProductividad) {
+        unsubscribeProductividad();
+        unsubscribeProductividad = null;
+    }
 
     // Función auxiliar días hábiles
     const countBusinessDays = (year, month) => {
@@ -1690,52 +1827,47 @@ async function loadProductividadTab(container) {
         let curDate = new Date(startDate);
         while (curDate <= endDate) {
             const dayOfWeek = curDate.getDay();
-            if (dayOfWeek !== 0) { // Excluir Domingo
-                count++;
-            }
+            if (dayOfWeek !== 0) count++; // Excluir Domingo
             curDate.setDate(curDate.getDate() + 1);
         }
         return count;
     };
 
-    // Carga de datos
-    const loadTableData = async () => {
+    // --- CARGA DE DATOS EN TIEMPO REAL ---
+    const qUsers = query(collection(_db, "users"), where("status", "==", "active"));
+    
+    unsubscribeProductividad = onSnapshot(qUsers, async (snapshot) => {
+        if (snapshot.empty) {
+            tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-gray-500">No se encontraron operarios activos.</td></tr>`;
+            return;
+        }
+
+        // Obtener usuarios activos actualizados
+        const activeUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // Preparar fechas para consulta de stats
         const selectedMonthYear = monthSelector.value;
         const [selYear, selMonth] = selectedMonthYear.split('-').map(Number);
         const currentStatDocId = selectedMonthYear.replace('-', '_');
-
+        
         const startOfMonth = new Date(selYear, selMonth - 1, 1);
         const endOfMonth = new Date(selYear, selMonth, 0, 23, 59, 59);
         const businessDays = countBusinessDays(selYear, selMonth);
 
-        tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10"><div class="loader mx-auto"></div><p class="mt-2 text-gray-500">Calculando reporte...</p></td></tr>`;
+        // Consultar Stats y Asistencia en paralelo para todos los usuarios activos
+        const statPromises = activeUsers.map(op => getDoc(doc(_db, "employeeStats", op.id, "monthlyStats", currentStatDocId)));
+        
+        const attendancePromises = activeUsers.map(op => {
+            const q = query(
+                collection(_db, "users", op.id, "attendance_reports"),
+                where("type", "==", "ingreso"),
+                where("timestamp", ">=", startOfMonth),
+                where("timestamp", "<=", endOfMonth)
+            );
+            return getDocs(q);
+        });
 
         try {
-            const usersMap = _getUsersMap();
-            const activeUsers = [];
-            usersMap.forEach((user, id) => {
-                if (user.status === 'active') {
-                    activeUsers.push({ id, ...user });
-                }
-            });
-
-            if (activeUsers.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-gray-500">No se encontraron operarios activos.</td></tr>`;
-                return;
-            }
-
-            const statPromises = activeUsers.map(op => getDoc(doc(_db, "employeeStats", op.id, "monthlyStats", currentStatDocId)));
-
-            const attendancePromises = activeUsers.map(op => {
-                const q = query(
-                    collection(_db, "users", op.id, "attendance_reports"),
-                    where("type", "==", "ingreso"),
-                    where("timestamp", ">=", startOfMonth),
-                    where("timestamp", "<=", endOfMonth)
-                );
-                return getDocs(q);
-            });
-
             const [statSnapshots, attendanceSnapshots] = await Promise.all([
                 Promise.all(statPromises),
                 Promise.all(attendancePromises)
@@ -1761,19 +1893,15 @@ async function loadProductividadTab(container) {
 
             empleadoData.forEach(data => {
                 const row = document.createElement('tr');
-                row.className = 'bg-white border-b hover:bg-gray-50 cursor-pointer';
+                row.className = 'bg-white border-b hover:bg-gray-50 cursor-pointer transition-colors';
                 row.dataset.action = "view-empleado-details";
                 row.dataset.id = data.id;
 
                 const level = data.commissionLevel || 'principiante';
                 const levelText = level.charAt(0).toUpperCase() + level.slice(1);
-
-                // --- CORRECCIÓN AQUÍ: Usamos data.role ---
                 const roleRaw = data.role || 'operario';
-                // Capitalizar primera letra (ej: "admin" -> "Admin")
                 const roleDisplay = roleRaw.charAt(0).toUpperCase() + roleRaw.slice(1);
 
-                // Estilo visual de días no reportados
                 let missingDaysHtml = `<span class="text-gray-400 font-bold">-</span>`;
                 if (data.missingDays > 0) {
                     missingDaysHtml = `<span class="bg-red-100 text-red-700 px-2 py-1 rounded-full font-bold text-xs">${data.missingDays} días</span>`;
@@ -1792,16 +1920,25 @@ async function loadProductividadTab(container) {
                     <td class="px-6 py-4 text-center">${missingDaysHtml}</td>
                     <td class="px-6 py-4 text-right font-bold text-green-600">${currencyFormatter.format(data.stats.totalBonificacion || 0)}</td>
                 `;
+                
+                // Listener de clic para detalles
+                row.addEventListener('click', () => {
+                     // Asumimos que showEmpleadoDetails está expuesta
+                     if(window.showEmpleadoDetails) window.showEmpleadoDetails(data.id);
+                     else console.warn("Función showEmpleadoDetails no encontrada");
+                });
+
                 tableBody.appendChild(row);
             });
-
-        } catch (error) {
-            console.error("Error al cargar reporte:", error);
-            tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-red-500">Error: ${error.message}</td></tr>`;
+            
+        } catch (err) {
+            console.error("Error procesando datos:", err);
+            tableBody.innerHTML = `<tr><td colspan="6" class="text-center text-red-500">Error de sincronización.</td></tr>`;
         }
-    };
 
-    loadTableData();
+    }, (error) => {
+        console.error("Error en listener de usuarios:", error);
+    });
 }
 
 
@@ -2179,126 +2316,7 @@ function loadEmployeeBitacora(userId, startDateInput = null, endDateInput = null
     });
 }
 
-/**
- * Muestra la vista de detalle de un empleado específico.
- * VERSIÓN SEGURA: No se rompe si faltan elementos en el HTML.
- */
-export async function showEmpleadoDetails(userId) {
-    _showView('empleado-details');
 
-    // --- LIMPIEZA DE COMPONENTES (CORREGIDO) ---
-
-    // 1. Limpiar Gráfica
-    if (typeof destroyActiveChart === 'function') {
-        destroyActiveChart();
-    }
-
-    // 2. Limpiar Mapa de Asistencia
-    // IMPORTANTE: Usamos la variable local 'attendanceMapInstance', SIN 'window.'
-    if (attendanceMapInstance) {
-        attendanceMapInstance.remove();
-        attendanceMapInstance = null;
-        // También limpiamos la capa de marcadores por si acaso
-        if (typeof attendanceMarkersLayer !== 'undefined') attendanceMarkersLayer = null;
-    }
-    // -----------------------------------------------
-
-    // Guardar ID para las pestañas
-    const detailsView = document.getElementById('empleado-details-view');
-    if (detailsView) detailsView.dataset.currentUserId = userId;
-
-    // --- CORRECCIÓN CLAVE: LIMPIAR CONTENEDOR DE PESTAÑAS ---
-    const contentContainer = document.getElementById('empleado-details-content-container');
-    if (contentContainer) {
-        contentContainer.innerHTML = '';
-    }
-
-    const usersMap = _getUsersMap();
-    const user = usersMap.get(userId);
-
-    // Helper seguro
-    const safeSetText = (id, text) => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = text;
-    };
-
-    if (!user) {
-        safeSetText('empleado-details-name', 'Error: Usuario no encontrado');
-        return;
-    }
-
-    // 1. Renderizar Encabezado
-    const level = user.commissionLevel || 'principiante';
-    const levelText = level.charAt(0).toUpperCase() + level.slice(1);
-
-    safeSetText('empleado-details-name', `${user.firstName} ${user.lastName}`);
-    const nameEl = document.getElementById('empleado-details-name');
-    if (nameEl) nameEl.dataset.userId = userId;
-
-    // Botón Logs
-    if (nameEl) {
-        const headerContainer = nameEl.parentElement;
-        // Limpiar botón previo si existe
-        const oldBtn = headerContainer.querySelector('.btn-audit-log');
-        if (oldBtn) oldBtn.remove();
-
-        const btnAudit = document.createElement('button');
-        btnAudit.className = "btn-audit-log ml-3 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded border border-gray-300 transition-colors align-middle";
-        btnAudit.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-1"></i> Logs';
-        nameEl.insertAdjacentElement('afterend', btnAudit);
-        btnAudit.onclick = () => {
-            if (typeof window.openMainModal === 'function') window.openMainModal('view-audit-logs', { userId: userId });
-        };
-    }
-
-    safeSetText('empleado-details-level', `Nivel: ${levelText}`);
-
-    // (Los textos de cédula, email, etc. se llenarán al cargar la pestaña resumen)
-
-    // 2. Configurar Navegación
-    const tabsNav = document.getElementById('empleado-details-tabs-nav');
-    if (tabsNav) {
-        const newTabsNav = tabsNav.cloneNode(false);
-        tabsNav.parentNode.replaceChild(newTabsNav, tabsNav);
-
-        newTabsNav.innerHTML = `
-            <button data-tab="resumen" class="empleado-details-tab-button active whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm text-blue-600 border-blue-500 hover:text-blue-800 transition-colors">
-                <i class="fa-solid fa-chart-pie mr-2"></i> Resumen
-            </button>
-            <button data-tab="bitacora" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
-                <i class="fa-solid fa-book-journal-whills mr-2"></i> Bitácora
-            </button>
-            <button data-tab="asistencia" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
-                <i class="fa-solid fa-location-dot mr-2"></i> Reporte de Ingreso
-            </button>
-            <button data-tab="documentos" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
-                <i class="fa-solid fa-folder-open mr-2"></i> Expediente
-            </button>
-            <button data-tab="dotacion" class="empleado-details-tab-button whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
-                <i class="fa-solid fa-helmet-safety mr-2"></i> Dotación
-            </button>
-        `;
-
-        newTabsNav.addEventListener('click', (e) => {
-            const button = e.target.closest('.empleado-details-tab-button');
-            if (!button) return;
-
-            newTabsNav.querySelectorAll('.empleado-details-tab-button').forEach(btn => {
-                btn.classList.remove('active', 'border-blue-500', 'text-blue-600');
-                btn.classList.add('border-transparent', 'text-gray-500');
-            });
-
-            button.classList.add('active', 'border-blue-500', 'text-blue-600');
-            button.classList.remove('border-transparent', 'text-gray-500');
-
-            const tabName = button.dataset.tab;
-            switchEmpleadoDetailsTab(tabName, userId);
-        });
-    }
-
-    // Carga inicial
-    switchEmpleadoDetailsTab('resumen', userId);
-}
 
 /**
  * Cambia el contenido visible en el detalle del empleado.
@@ -2903,114 +2921,319 @@ async function loadEmpleadoDocumentosTab(userId, container) {
 }
 
 /**
- * Abre el modal de Comprobante de Nómina (Versión Profesional con Ajuste Salarial).
- * @param {object} payment - Objeto con los datos del pago.
- * @param {object} user - Objeto completo del usuario.
+ * Abre el modal de Comprobante de Pago.
+ * ADAPTADO: Incluye Vacaciones, Liquidación detallada, Logos y Firmas dinámicas.
  */
 async function openPaymentVoucherModal(payment, user) {
     const modal = document.getElementById('payment-voucher-modal');
+    
     const earningsList = document.getElementById('voucher-earnings-list');
     const deductionsList = document.getElementById('voucher-deductions-list');
 
     if (!modal) return;
 
-    // --- CAMBIO: Inyectar Encabezado de Empresa ---
-    let empresaHtml = '';
-    try {
-        const configSnap = await getDoc(doc(_db, "system", "generalConfig"));
-        if (configSnap.exists()) {
-            const emp = configSnap.data().empresa || {};
-            const nombre = emp.nombre || 'Vidrios Éxito';
-            const nit = emp.nit ? `NIT: ${emp.nit}` : '';
+    // ============================================================
+    // 1. LIMPIEZA DE DOM
+    // ============================================================
+    const modalBody = modal.querySelector('.p-8') || modal.querySelector('.bg-white');
 
-            empresaHtml = `
-                <div class="text-center mb-4 border-b border-gray-100 pb-2">
-                    <h3 class="text-lg font-bold text-gray-800 uppercase">${nombre}</h3>
-                    <p class="text-xs text-gray-500">${nit}</p>
-                    <p class="text-xs text-gray-400 mt-1">Comprobante de Pago de Nómina</p>
-                </div>
-            `;
+    const existingDynamic = document.getElementById('voucher-dynamic-header');
+    if (existingDynamic) existingDynamic.remove();
+
+    const oldSigs = document.getElementById('voucher-dynamic-signatures');
+    if (oldSigs) oldSigs.remove();
+    
+    const oldDateEl = document.getElementById('voucher-date');
+    if (oldDateEl) oldDateEl.innerHTML = '';
+    
+    const oldContractDates = document.getElementById('voucher-contract-dates');
+    if (oldContractDates) oldContractDates.remove();
+
+    modalBody.querySelectorAll('h3, h2').forEach(el => {
+        if (el.textContent.includes('Comprobante') || (el.id !== 'voucher-concept' && el.id !== 'voucher-employee-name')) {
+             if (!el.id) el.style.display = 'none'; 
         }
-    } catch (e) { console.log("Sin datos de empresa"); }
+    });
 
-    // Insertar el encabezado ANTES del contenido existente del modal body
-    // (Asumimos que hay un contenedor principal, si no, lo inyectamos al principio del body del modal)
-    const modalBody = modal.querySelector('.bg-white.p-6') || modal.querySelector('.p-6'); // Selector genérico del padding del modal
+    // ============================================================
+    // 2. CONFIGURAR TEMA
+    // ============================================================
+    let title = 'COMPROBANTE DE NÓMINA';
+    let subtitle = 'Pago Periódico';
+    let themeColor = 'text-blue-600';
+    let themeBg = 'bg-blue-50';
+    let themeBorder = 'border-blue-200';
+    let icon = 'fa-money-check-dollar';
 
-    // Limpiamos inyecciones previas si las hubiera
-    const existingHeader = document.getElementById('voucher-dynamic-header');
-    if (existingHeader) existingHeader.remove();
+    const concepto = (payment.concepto || '').toLowerCase();
 
-    if (modalBody && empresaHtml) {
-        const headerDiv = document.createElement('div');
-        headerDiv.id = 'voucher-dynamic-header';
-        headerDiv.innerHTML = empresaHtml;
-        modalBody.insertBefore(headerDiv, modalBody.firstChild);
+    if (concepto.includes('prima')) {
+        title = 'PRIMA DE SERVICIOS';
+        subtitle = 'Prestación Social';
+        themeColor = 'text-indigo-700';
+        themeBg = 'bg-indigo-50';
+        themeBorder = 'border-indigo-200';
+        icon = 'fa-gift';
+    } else if (concepto.includes('cesant')) {
+        title = 'CESANTÍAS (FONDO)';
+        subtitle = 'Liquidación Anual';
+        themeColor = 'text-emerald-700';
+        themeBg = 'bg-emerald-50';
+        themeBorder = 'border-emerald-200';
+        icon = 'fa-piggy-bank';
+    } else if (concepto.includes('vacaciones')) {
+        title = 'COMPROBANTE DE VACACIONES';
+        subtitle = 'Novedad de Nómina';
+        themeColor = 'text-cyan-700';
+        themeBg = 'bg-cyan-50';
+        themeBorder = 'border-cyan-200';
+        icon = 'fa-umbrella-beach';
+    } else if (concepto.includes('liquidaci')) {
+        title = 'LIQUIDACIÓN FINAL';
+        subtitle = 'Cierre de Contrato';
+        themeColor = 'text-red-700';
+        themeBg = 'bg-red-50';
+        themeBorder = 'border-red-200';
+        icon = 'fa-door-open';
     }
-    // ---------------------------------------------
 
-    // 1. Llenar datos básicos
-    const dateStr = payment.createdAt ? payment.createdAt.toDate().toLocaleDateString('es-CO') : payment.paymentDate;
-    document.getElementById('voucher-date').textContent = `Fecha: ${dateStr}`;
+    const dateStr = payment.createdAt 
+        ? payment.createdAt.toDate().toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' }) 
+        : payment.paymentDate;
 
-    // Nombre y Cédula
+    // ============================================================
+    // 3. OBTENER DATOS EMPRESA
+    // ============================================================
+    let companyName = "Empresa";
+    let companyNit = "";
+    let companyLogo = null;
+    let managerSignature = null;
+
+    try {
+        if (window.companyHeaderCache) {
+            companyName = window.companyHeaderCache.nombre;
+            companyNit = window.companyHeaderCache.nit;
+            companyLogo = window.companyHeaderCache.logo;
+            managerSignature = window.companyHeaderCache.signature;
+        } else {
+            const snap = await getDoc(doc(_db, "system", "generalConfig"));
+            if(snap.exists()) {
+                const data = snap.data();
+                const emp = data.empresa || {}; 
+                
+                companyName = emp.nombre || companyName;
+                companyNit = emp.nit ? `NIT: ${emp.nit}` : "";
+                
+                // Buscar Logo (Prioridad a tu configuración 'logoURL')
+                companyLogo = emp.logoURL || data.logoURL || emp.empresaLogoURL || data.empresaLogoURL || emp.logo || null;
+                
+                // Buscar Firma
+                managerSignature = emp.firmaGerenteURL || data.firmaGerenteURL || emp.empresaFirmaURL || data.empresaFirmaURL || null;
+                
+                window.companyHeaderCache = { nombre: companyName, nit: companyNit, logo: companyLogo, signature: managerSignature };
+            }
+        }
+    } catch(e) { console.log("Error config", e); }
+
+    // ============================================================
+    // 4. HEADER UI
+    // ============================================================
+    let visualElementHtml = '';
+    if (companyLogo) {
+        visualElementHtml = `<div class="mb-4 flex justify-center"><img src="${companyLogo}" alt="Logo" class="h-24 w-auto object-contain p-1 bg-white"></div>`;
+    } else {
+        visualElementHtml = `<div class="flex justify-center mb-3"><div class="w-14 h-14 ${themeBg} rounded-full flex items-center justify-center ${themeColor} text-2xl shadow-sm border-2 ${themeBorder}"><i class="fa-solid ${icon}"></i></div></div>`;
+    }
+
+    const headerDiv = document.createElement('div');
+    headerDiv.id = 'voucher-dynamic-header';
+    headerDiv.className = `text-center mb-6 pb-4 border-b-2 border-dashed ${themeBorder}`;
+    headerDiv.innerHTML = `${visualElementHtml}<h2 class="text-xl font-black text-gray-800 uppercase tracking-tight leading-none mb-1">${companyName}</h2><p class="text-xs text-gray-500 font-mono mb-4">${companyNit}</p><div class="flex flex-wrap justify-center items-center gap-3"><div class="inline-block ${themeBg} ${themeColor} px-4 py-1.5 rounded-lg border ${themeBorder} shadow-sm"><p class="text-xs font-bold uppercase tracking-widest">${title}</p></div><div class="h-8 w-px bg-gray-300 hidden sm:block"></div><div class="text-left bg-gray-50 px-3 py-1 rounded border border-gray-100"><p class="text-[9px] text-gray-400 uppercase leading-none font-bold">Fecha de Emisión</p><p class="text-xs font-bold text-gray-700 leading-tight mt-0.5">${dateStr}</p></div></div><p class="text-[10px] text-gray-400 mt-2 uppercase tracking-wide">${subtitle}</p>`;
+    
+    if (modalBody.firstChild) modalBody.insertBefore(headerDiv, modalBody.firstChild);
+
+    // ============================================================
+    // 5. DATOS BASE Y HELPERS (IMPORTANTE: Definidos AQUÍ)
+    // ============================================================
     document.getElementById('voucher-employee-name').textContent = `${user.firstName} ${user.lastName}`;
-    document.getElementById('voucher-employee-id').textContent = user.idNumber || 'N/A';
-
+    document.getElementById('voucher-employee-id').textContent = user.idNumber ? `CC: ${user.idNumber}` : '';
     document.getElementById('voucher-concept').textContent = payment.concepto;
-    document.getElementById('voucher-total').textContent = currencyFormatter.format(payment.monto);
+    
+    const totalEl = document.getElementById('voucher-total');
+    totalEl.textContent = currencyFormatter.format(payment.monto);
+    totalEl.className = `text-3xl font-black ${themeColor}`;
 
-    // 2. Limpiar listas
-    earningsList.innerHTML = '';
-    deductionsList.innerHTML = '';
-
-    // 3. Helper de filas
-    const createItemRow = (label, value, isBold = false) => {
-        return `
-            <li class="flex justify-between items-center py-2 border-b border-gray-50 text-sm ${isBold ? 'font-bold text-gray-800' : 'text-gray-600'}">
-                <span>${label}</span>
-                <span>${currencyFormatter.format(value)}</span>
-            </li>`;
+    // Helper: Parsear moneda
+    const parseMoney = (val) => {
+        if (!val) return 0;
+        if (typeof val === 'number') return val;
+        return parseFloat(String(val).replace(/[$. \u00A0]/g, '').replace(',', '.')) || 0;
     };
 
-    // 4. Desglosar datos (Lógica existente)
+    // Helper: Crear Fila (DEFINIDO ANTES DE USAR)
+    const createRow = (label, val, isBold = false, formula = '') => {
+        const displayVal = typeof val === 'number' ? currencyFormatter.format(val) : val;
+        let formulaHtml = formula ? `<div class="text-[9px] text-gray-400 mt-0.5 italic tracking-tight">${formula}</div>` : '';
+
+        return `<li class="flex justify-between items-start py-2 border-b border-gray-50 last:border-0 text-sm">
+            <div class="flex flex-col pr-2">
+                <span class="${isBold ? 'font-bold text-gray-700' : 'text-gray-500'} leading-tight">${label}</span>
+                ${formulaHtml}
+            </div>
+            <span class="font-bold text-gray-800 whitespace-nowrap">${displayVal}</span>
+        </li>`;
+    };
+    
+    earningsList.innerHTML = '';
+    deductionsList.innerHTML = '';
+    const det = payment.details || {};
     const d = payment.desglose || {};
-    const horas = payment.horas || {};
 
-    let displaySalario = d.salarioProrrateado;
-    let displayBonificacion = d.bonificacionM2 || 0;
+    // ============================================================
+    // 6. RENDERIZADO DE CONCEPTOS
+    // ============================================================
 
-    if (d.deduccionSobreMinimo && d.baseDeduccion > 0) {
-        const salarioMinimoProrrateado = d.baseDeduccion;
-        if (displaySalario > salarioMinimoProrrateado) {
-            const excedente = displaySalario - salarioMinimoProrrateado;
-            displaySalario = salarioMinimoProrrateado;
-            displayBonificacion += excedente;
-        }
+    // --- FECHAS DE CONTRATO (Solo Liquidación) ---
+    if (concepto.includes('liquidaci') && det.fechaIngreso && det.fechaRetiro) {
+        const datesDiv = document.createElement('div');
+        datesDiv.id = 'voucher-contract-dates';
+        datesDiv.className = "mb-6 grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border border-gray-100";
+        datesDiv.innerHTML = `
+            <div class="text-center border-r border-gray-200"><p class="text-[10px] text-gray-400 uppercase font-bold">Inicio Contrato</p><p class="text-sm font-bold text-gray-800">${det.fechaIngreso}</p></div>
+            <div class="text-center"><p class="text-[10px] text-gray-400 uppercase font-bold">Fecha Retiro</p><p class="text-sm font-bold text-gray-800">${det.fechaRetiro}</p></div>
+        `;
+        const empBlock = document.getElementById('voucher-employee-name').parentElement.parentElement;
+        empBlock.insertAdjacentElement('afterend', datesDiv);
     }
 
-    // --- INGRESOS ---
-    if (displaySalario > 0) earningsList.innerHTML += createItemRow(`Salario Básico (${payment.diasPagados} días)`, displaySalario);
-    if (d.auxilioTransporteProrrateado > 0) earningsList.innerHTML += createItemRow(`Aux. Transporte`, d.auxilioTransporteProrrateado);
-    if (d.horasExtra > 0) earningsList.innerHTML += createItemRow(`Horas Extra (${horas.totalHorasExtra || 0}h)`, d.horasExtra);
-    if (displayBonificacion > 0) earningsList.innerHTML += createItemRow(`Bonificación / Aux. No Salarial`, displayBonificacion, true);
-    if (d.otros > 0) earningsList.innerHTML += createItemRow(`Otros Pagos`, d.otros);
+    if (concepto.includes('prima')) {
+        earningsList.innerHTML += createRow('Valor Prima', payment.monto, true);
+        if (det.rangoFechas) earningsList.innerHTML += createRow('Periodo', det.rangoFechas);
+        if (det.diasSemestre) earningsList.innerHTML += createRow('Días Liquidados', `${det.diasSemestre}`);
+        if (det.baseCalculo) earningsList.innerHTML += createRow('Base Promedio', det.baseCalculo);
+        deductionsList.innerHTML = '<li class="text-xs text-gray-300 text-center py-2 italic">Sin deducciones</li>';
 
-    // --- DEDUCCIONES ---
-    if (d.deduccionSalud < 0) deductionsList.innerHTML += createItemRow(`Aporte Salud (4%)`, Math.abs(d.deduccionSalud));
-    if (d.deduccionPension < 0) deductionsList.innerHTML += createItemRow(`Aporte Pensión (4%)`, Math.abs(d.deduccionPension));
-    if (d.abonoPrestamos > 0) deductionsList.innerHTML += createItemRow(`Abono a Préstamos`, d.abonoPrestamos, true);
-    if (d.otros < 0) deductionsList.innerHTML += createItemRow(`Otros Descuentos`, Math.abs(d.otros));
+    } else if (concepto.includes('cesant')) {
+        earningsList.innerHTML += createRow('Valor Fondo', payment.monto, true);
+        if (det.periodo) earningsList.innerHTML += createRow('Periodo', det.periodo);
+        if (det.base) earningsList.innerHTML += createRow('Base', det.base);
+        if (det.dias) earningsList.innerHTML += createRow('Días', `${det.dias}`);
+        if (det.interesesCalculados) {
+             earningsList.innerHTML += `<li class="mt-2 p-2 bg-yellow-50 text-xs text-center text-yellow-800 rounded border border-yellow-100">Intereses (12%): <strong>${currencyFormatter.format(det.interesesCalculados)}</strong><br>(Pagados aparte)</li>`;
+        }
+        deductionsList.innerHTML = '<li class="text-xs text-gray-300 text-center py-2 italic">Consignación Fondo</li>';
 
-    if (deductionsList.innerHTML === '') deductionsList.innerHTML = '<li class="py-2 text-gray-400 italic text-center text-xs">No hay deducciones</li>';
+    } else if (concepto.includes('vacaciones')) {
+        // --- VACACIONES ---
+        earningsList.innerHTML += createRow('Pago Vacaciones', payment.monto, true);
+        if (det.diasPagados) earningsList.innerHTML += createRow('Días Pagados', `${det.diasPagados} días`);
+        if (det.tipoVacaciones) {
+            const labelTipo = det.tipoVacaciones === 'dinero' ? 'Compensadas en Dinero' : 'Disfrute (Tiempo)';
+            earningsList.innerHTML += createRow('Modalidad', labelTipo);
+        }
+        if (det.periodoNota) earningsList.innerHTML += createRow('Nota', det.periodoNota);
+        deductionsList.innerHTML = '<li class="text-xs text-gray-300 text-center py-2 italic">Sin deducciones</li>';
 
-    // 5. Mostrar Modal
+    } else if (concepto.includes('liquidaci')) {
+        // --- LIQUIDACIÓN DETALLADA ---
+        const baseP = det.basePrestacional ? currencyFormatter.format(det.basePrestacional) : 'Base';
+        const baseS = det.baseSalarial ? currencyFormatter.format(det.baseSalarial) : 'Salario';
+        const dias = det.diasLiquidados || 'Días';
+
+        // Cesantías
+        if(det.cesantias && parseMoney(det.cesantias) > 0) 
+            earningsList.innerHTML += createRow('Cesantías', det.cesantias, false, `${baseP} x ${dias} / 360`);
+        
+        // Intereses
+        if(det.intereses && parseMoney(det.intereses) > 0) 
+            earningsList.innerHTML += createRow('Intereses Cesantías', det.intereses, false, `12% sobre Cesantías`);
+        
+        // Prima
+        if(det.prima && parseMoney(det.prima) > 0) 
+            earningsList.innerHTML += createRow('Prima Servicios', det.prima, false, `Proporcional (Menos anticipos)`);
+        
+        // Vacaciones
+        if(det.vacaciones && parseMoney(det.vacaciones) > 0) 
+            earningsList.innerHTML += createRow('Vacaciones', det.vacaciones, false, `${baseS} x Días Pend. / 720`);
+        
+        // Indemnización (Solo si > 0)
+        if(parseMoney(det.indemnizacion) > 0) 
+            earningsList.innerHTML += createRow('Indemnización', det.indemnizacion, true, 'Despido sin justa causa');
+
+        // Deducciones
+        let totalDed = 0;
+        if(det.deducciones) totalDed += parseMoney(det.deducciones);
+        if(totalDed > 0) deductionsList.innerHTML += createRow('Préstamos Pendientes', totalDed, true);
+        else deductionsList.innerHTML = '<li class="text-xs text-gray-300 text-center py-2 italic">Sin deducciones</li>';
+
+    } else {
+        // --- NÓMINA NORMAL ---
+        let displaySalario = d.salarioProrrateado;
+        let displayBonificacion = d.bonificacionM2 || 0;
+        let labelSalario = `Salario Básico (${payment.diasPagados} días)`;
+
+        if (d.deduccionSobreMinimo && d.baseDeduccion > 0) {
+             if (displaySalario > d.baseDeduccion) {
+                const excedente = displaySalario - d.baseDeduccion;
+                displaySalario = d.baseDeduccion; 
+                labelSalario = `Salario Básico (Min. Legal)`;
+                displayBonificacion += excedente; 
+            }
+        }
+
+        if (displaySalario > 0) earningsList.innerHTML += createRow(labelSalario, displaySalario);
+        if (d.auxilioTransporteProrrateado > 0) earningsList.innerHTML += createRow('Aux. Transporte', d.auxilioTransporteProrrateado);
+        if (d.horasExtra > 0) earningsList.innerHTML += createRow('Horas Extra', d.horasExtra);
+        
+        if (displayBonificacion > 0) {
+            const labelBono = (d.deduccionSobreMinimo) ? 'Bonificación / Aux. No Salarial' : 'Bonificación';
+            earningsList.innerHTML += createRow(labelBono, displayBonificacion, true);
+        }
+        
+        if (d.otros) earningsList.innerHTML += createRow('Otros', d.otros);
+
+        if (d.deduccionSalud) deductionsList.innerHTML += createRow('Salud', Math.abs(d.deduccionSalud));
+        if (d.deduccionPension) deductionsList.innerHTML += createRow('Pensión', Math.abs(d.deduccionPension));
+        if (d.abonoPrestamos) deductionsList.innerHTML += createRow('Préstamos', d.abonoPrestamos);
+        if (d.otros < 0) deductionsList.innerHTML += createRow('Otras', Math.abs(d.otros));
+    }
+
+    // --- 7. FIRMAS ---
+    const signaturesDiv = document.createElement('div');
+    signaturesDiv.id = 'voucher-dynamic-signatures';
+    signaturesDiv.className = "mt-12 flex justify-around text-center items-end";
+    
+    let managerSigHtml = '<div class="h-16 w-full"></div>';
+    if (managerSignature) {
+        managerSigHtml = `<img src="${managerSignature}" alt="Firma" class="h-16 w-auto object-contain mx-auto mb-1">`;
+    }
+
+    signaturesDiv.innerHTML = `
+        <div class="w-1/3 flex flex-col justify-end">
+            ${managerSigHtml}
+            <div class="border-t border-gray-400 mb-2 w-full"></div>
+            <p class="text-[10px] font-bold text-gray-600 uppercase">Firma Empresa</p>
+            <p class="text-[9px] text-gray-400 truncate">${companyName}</p>
+        </div>
+        <div class="w-1/3 flex flex-col justify-end">
+            <div class="h-16 w-full"></div>
+            <div class="border-t border-gray-400 mb-2 w-full"></div>
+            <p class="text-[10px] font-bold text-gray-600 uppercase">Recibí Conforme</p>
+            <p class="text-[9px] text-gray-400">C.C. ${user.idNumber || '---'}</p>
+        </div>
+    `;
+    modalBody.appendChild(signaturesDiv);
+
+    // --- 8. MOSTRAR ---
     modal.classList.remove('hidden');
     modal.style.display = 'flex';
 
     const closeModal = () => { modal.style.display = 'none'; };
-    document.getElementById('voucher-close-btn').onclick = closeModal;
-    document.getElementById('voucher-close-footer-btn').onclick = closeModal;
+    const btnX = document.getElementById('voucher-close-btn');
+    const btnF = document.getElementById('voucher-close-footer-btn');
+    
+    if(btnX) { const n = btnX.cloneNode(true); btnX.parentNode.replaceChild(n, btnX); n.onclick = closeModal; }
+    if(btnF) { const n = btnF.cloneNode(true); btnF.parentNode.replaceChild(n, btnF); n.onclick = closeModal; }
 }
 
 /** * (FUNCIÓN CORREGIDA) 
@@ -3286,7 +3509,7 @@ function openLoanModal(userId) {
 }
 
 /**
- * (FUNCIÓN MAESTRA CORREGIDA) Carga el historial, datos bancarios y GESTIÓN DE PRÉSTAMOS.
+ * (FUNCIÓN ACTUALIZADA) Carga historial con ANCHO COMPLETO (Full Width).
  */
 export async function loadPaymentHistoryView(userId) {
     _showView('payment-history-view');
@@ -3296,339 +3519,1686 @@ export async function loadPaymentHistoryView(userId) {
         unsubscribeEmpleadosTab = null;
     }
 
-    // --- 1. REFERENCIAS DOM ---
     const nameEl = document.getElementById('payment-history-name');
     const tableBody = document.getElementById('payment-history-table-body');
     const bankInfoContainer = document.getElementById('payment-header-bank-info');
-    const bankNameEl = document.getElementById('ph-bank-name');
-    const accountTypeEl = document.getElementById('ph-account-type');
-    const accountNumberEl = document.getElementById('ph-account-number');
-    const btnPrev = document.getElementById('btn-prev-employee');
-    const btnNext = document.getElementById('btn-next-employee');
-
-    // Estado inicial
+    
     nameEl.textContent = 'Cargando datos...';
-    tableBody.innerHTML = `<tr><td colspan="4" class="text-center py-10 text-gray-500"><div class="loader mx-auto"></div></td></tr>`;
     bankInfoContainer.classList.add('hidden');
 
-    // --- 1.5 CORRECCIÓN CRÍTICA: LIMPIAR FORMULARIO AL INICIO ---
-    // Clonamos el formulario AHORA para limpiar listeners viejos antes de asignar los nuevos.
-    const oldForm = document.getElementById('payment-register-form');
-    const newForm = oldForm.cloneNode(true);
-    oldForm.parentNode.replaceChild(newForm, oldForm);
-    
-    // Referencias frescas del NUEVO formulario
-    const form = document.getElementById('payment-register-form'); // Volvemos a buscarlo por ID para asegurar referencia
-    const conceptoSelect = document.getElementById('payment-concepto');
-    const diasPagarInput = document.getElementById('payment-dias-pagar');
-    const salarioEl = document.getElementById('payment-salario-basico');
-    const bonificacionEl = document.getElementById('payment-bonificacion-mes');
-    const liquidarCheckbox = document.getElementById('payment-liquidar-bonificacion');
-
-    let user = null;
-
     try {
-        // --- 2. GENERAR CONCEPTOS Y LÓGICA DE DÍAS ---
-        if (conceptoSelect) {
-            const now = new Date();
-            const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-            const currentMonth = months[now.getMonth()];
-            const year = now.getFullYear();
-
-            // Opciones limpias
-            const options = [
-                { val: `Primera Quincena de ${currentMonth} ${year}`, text: `1ª Quincena - ${currentMonth}` },
-                { val: `Segunda Quincena de ${currentMonth} ${year}`, text: `2ª Quincena - ${currentMonth}` },
-                { val: `Nómina Mensual ${currentMonth} ${year}`, text: `Mes Completo - ${currentMonth}` }
-            ];
-
-            conceptoSelect.innerHTML = options.map(opt => `<option value="${opt.val}">${opt.text}</option>`).join('');
-            
-            // Selección por defecto
-            if (now.getDate() > 15) {
-                conceptoSelect.value = options[1].val; 
-                diasPagarInput.value = 15;
-            } else {
-                conceptoSelect.value = options[0].val; 
-                diasPagarInput.value = 15;
-            }
-
-            // LÓGICA DE CAMBIO DE DÍAS (AHORA SÍ FUNCIONA PORQUE EL FORMULARIO YA ES EL DEFINITIVO)
-            conceptoSelect.addEventListener('change', () => {
-                const val = conceptoSelect.value.toLowerCase();
-                
-                // Verificamos si es mes completo
-                if (val.includes('mensual') || val.includes('completo')) {
-                    diasPagarInput.value = 30;
-                } else {
-                    diasPagarInput.value = 15;
-                }
-                
-                // Disparamos la actualización de totales
-                if (typeof updatePaymentTotal === 'function') updatePaymentTotal();
-            });
-        }
-        
-        // --- 3. DATOS DEL USUARIO ---
+        // 1. Obtener Datos
         const userRef = doc(_db, "users", userId);
         const userSnap = await getDoc(userRef);
 
-        if (userSnap.exists()) {
-            user = { id: userSnap.id, ...userSnap.data() };
-            _getUsersMap().set(userId, user);
-        } else {
-            throw new Error("Usuario no encontrado.");
-        }
+        if (!userSnap.exists()) throw new Error("Usuario no encontrado.");
+        const user = { id: userSnap.id, ...userSnap.data() };
+        _getUsersMap().set(userId, user);
 
-        // --- 4. UI ENCABEZADO ---
+        // 2. Encabezado UI
         nameEl.textContent = `${user.firstName} ${user.lastName}`;
+        const bankNameEl = document.getElementById('ph-bank-name');
+        const acctNumEl = document.getElementById('ph-account-number');
+        const acctTypeEl = document.getElementById('ph-account-type');
 
-        if (user.bankName && user.accountNumber) {
-            bankNameEl.textContent = user.bankName;
-            accountTypeEl.textContent = user.accountType || 'Cuenta';
-            accountNumberEl.textContent = user.accountNumber;
+        if (user.accountNumber) {
+            bankNameEl.textContent = user.bankName || 'Banco no registrado';
+            acctNumEl.textContent = user.accountNumber;
+            acctTypeEl.textContent = user.accountType || 'Cuenta';
             bankInfoContainer.classList.remove('hidden');
-            
-            // Botón de copiar
-            const accountContainer = accountNumberEl.parentElement.parentElement;
-            if(accountContainer) {
-                // Clonamos solo este elemento pequeño para limpiar su evento click
-                const newAccountContainer = accountContainer.cloneNode(true);
-                accountContainer.parentNode.replaceChild(newAccountContainer, accountContainer);
-                newAccountContainer.onclick = () => {
-                    navigator.clipboard.writeText(user.accountNumber).then(() => {
-                        window.showToast('Número de cuenta copiado', 'success');
-                    });
-                };
-            }
 
-            // Botón Acción Rápida
-            const quickCopyBtn = document.getElementById('btn-quick-copy-bank');
-            if (quickCopyBtn) {
-                const newQuickBtn = quickCopyBtn.cloneNode(true);
-                quickCopyBtn.parentNode.replaceChild(newQuickBtn, quickCopyBtn);
-                newQuickBtn.onclick = () => {
-                    navigator.clipboard.writeText(user.accountNumber).then(() => {
-                        window.showToast('Número de cuenta copiado', 'success');
-                    });
-                };
-            }
+            const setupCopyBtn = (btnId) => {
+                const btn = document.getElementById(btnId);
+                if (btn) {
+                    const newBtn = btn.cloneNode(true);
+                    btn.parentNode.replaceChild(newBtn, btn);
+                    newBtn.onclick = () => {
+                        const textToCopy = user.accountNumber ? user.accountNumber.toString().trim() : '';
+                        navigator.clipboard.writeText(textToCopy).then(() => {
+                            if (window.showToast) window.showToast(`Cuenta ${textToCopy} copiada`, 'success');
+                        });
+                    };
+                }
+            };
+            setupCopyBtn('btn-quick-copy-bank');
+            const acctContainer = acctNumEl.parentElement.parentElement;
+            if(acctContainer) acctContainer.onclick = () => document.getElementById('btn-quick-copy-bank').click();
         } else {
             bankInfoContainer.classList.add('hidden');
         }
 
-        // --- 5. NAVEGACIÓN ---
+        // 3. Navegación
         const usersMap = _getUsersMap();
         const activeUsers = Array.from(usersMap.entries())
             .map(([key, val]) => ({ id: key, ...val }))
             .filter(u => u.status === 'active')
             .sort((a, b) => (a.firstName || '').localeCompare(b.firstName || ''));
 
-        let currentIndex = -1;
-        if (activeUsers.length > 0) currentIndex = activeUsers.findIndex(u => u.id === userId);
+        const currentIndex = activeUsers.findIndex(u => u.id === userId);
+        const btnPrev = document.getElementById('btn-prev-employee');
+        const btnNext = document.getElementById('btn-next-employee');
 
         if (btnPrev) {
             const newBtnPrev = btnPrev.cloneNode(true);
             btnPrev.parentNode.replaceChild(newBtnPrev, btnPrev);
             if (currentIndex > 0) {
-                const prevUser = activeUsers[currentIndex - 1];
                 newBtnPrev.disabled = false;
-                newBtnPrev.className = "p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all";
-                newBtnPrev.onclick = () => loadPaymentHistoryView(prevUser.id);
-            } else { newBtnPrev.disabled = true; newBtnPrev.className = "p-2 text-gray-300 cursor-not-allowed"; }
+                newBtnPrev.classList.remove('opacity-30', 'cursor-not-allowed');
+                newBtnPrev.onclick = () => loadPaymentHistoryView(activeUsers[currentIndex - 1].id);
+            } else {
+                newBtnPrev.disabled = true;
+                newBtnPrev.classList.add('opacity-30', 'cursor-not-allowed');
+            }
         }
 
         if (btnNext) {
             const newBtnNext = btnNext.cloneNode(true);
             btnNext.parentNode.replaceChild(newBtnNext, btnNext);
             if (currentIndex !== -1 && currentIndex < activeUsers.length - 1) {
-                const nextUser = activeUsers[currentIndex + 1];
                 newBtnNext.disabled = false;
-                newBtnNext.className = "p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all";
-                newBtnNext.onclick = () => loadPaymentHistoryView(nextUser.id);
-            } else { newBtnNext.disabled = true; newBtnNext.className = "p-2 text-gray-300 cursor-not-allowed"; }
-        }
-
-        // --- 6. GESTIÓN DE PRÉSTAMOS ---
-        let loanFieldset = document.getElementById('loan-management-fieldset');
-        if (!loanFieldset) {
-            const placeholder = document.getElementById('loan-management-fieldset-placeholder');
-            if (placeholder) {
-                loanFieldset = document.createElement('div');
-                loanFieldset.id = 'loan-management-fieldset';
-                placeholder.appendChild(loanFieldset);
-            }
-        }
-
-        if (loanFieldset) {
-            loanFieldset.className = "border border-gray-200 rounded-lg bg-white shadow-sm overflow-hidden";
-            loanFieldset.innerHTML = `
-                <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-                    <div class="flex items-center gap-2">
-                        <h4 class="text-sm font-bold text-gray-700"><i class="fa-solid fa-hand-holding-dollar mr-2 text-gray-400"></i> Préstamos Activos</h4>
-                        <button type="button" onclick="openMainModal('view-loan-history', { userId: '${userId}' })" class="text-[10px] text-blue-600 hover:underline font-bold bg-blue-50 px-2 py-0.5 rounded">Ver Historial</button>
-                    </div>
-                    <div class="text-right">
-                         <span class="text-[10px] uppercase text-gray-400 font-bold tracking-wider block">Total Deuda</span>
-                         <span id="payment-total-debt" class="text-sm font-bold text-red-600">$ 0</span>
-                    </div>
-                </div>
-                <div id="active-loans-list" class="max-h-60 overflow-y-auto custom-scrollbar divide-y divide-gray-100">
-                    <div class="text-center py-4"><div class="loader-small mx-auto"></div></div>
-                </div>
-                <div class="bg-indigo-50 px-4 py-3 flex justify-between items-center border-t border-indigo-100">
-                    <span class="text-xs font-bold text-indigo-900 uppercase">A Descontar:</span>
-                    <span id="payment-total-loan-deduction-display" class="text-lg font-bold text-indigo-700">$ 0</span>
-                </div>
-            `;
-
-            const activeLoansList = document.getElementById('active-loans-list');
-            const totalDebtElDisplay = document.getElementById('payment-total-debt');
-
-            const loansQuery = query(collection(_db, "users", userId, "loans"), where("status", "==", "active"), orderBy("date", "asc"));
-            const loansSnap = await getDocs(loansQuery);
-
-            let totalActiveDebt = 0;
-            activeLoansList.innerHTML = '';
-
-            if (loansSnap.empty) {
-                activeLoansList.innerHTML = `<div class="py-4 text-center"><p class="text-xs text-gray-400">Sin préstamos activos.</p></div>`;
+                newBtnNext.classList.remove('opacity-30', 'cursor-not-allowed');
+                newBtnNext.onclick = () => loadPaymentHistoryView(activeUsers[currentIndex + 1].id);
             } else {
-                loansSnap.forEach(doc => {
-                    const loan = { id: doc.id, ...doc.data() };
-                    totalActiveDebt += (loan.balance || 0);
-                    
-                    const dateStr = new Date(loan.date).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
-                    
-                    // Cálculo cuota sugerida
-                    const cuotaBase = (loan.amount || loan.balance) / (loan.installments || 1);
-                    const cuotaSugerida = Math.min(cuotaBase, loan.balance);
-
-                    const row = document.createElement('div');
-                    row.className = "px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors";
-                    row.innerHTML = `
-                        <div class="flex flex-col justify-center min-w-0 pr-2">
-                            <span class="text-sm font-bold text-gray-700 truncate" title="${loan.description}">${loan.description}</span>
-                            <span class="text-xs text-gray-500 mt-0.5">
-                                ${dateStr} • Saldo: <span class="text-red-500 font-semibold">${currencyFormatter.format(loan.balance)}</span>
-                            </span>
-                        </div>
-                        <div class="relative w-28 shrink-0">
-                            <input type="text" 
-                                class="loan-deduction-input block w-full px-2 py-1 text-right border-gray-300 rounded-md text-sm font-bold text-indigo-700 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-sm" 
-                                value="${currencyFormatter.format(cuotaSugerida)}"
-                                data-loan-id="${loan.id}"
-                                data-balance="${loan.balance}">
-                        </div>
-                    `;
-                    activeLoansList.appendChild(row);
-                });
+                newBtnNext.disabled = true;
+                newBtnNext.classList.add('opacity-30', 'cursor-not-allowed');
             }
+        }
 
-            totalDebtElDisplay.textContent = currencyFormatter.format(totalActiveDebt);
+        // 4. Inyectar HTML Principal (ESTRUCTURA DE PÁGINA COMPLETA)
+        // Buscamos el contenedor padre del formulario original para reemplazar todo el contenido interno de la vista
+        const mainContainer = document.getElementById('payment-history-view');
+        
+        // --- CAMBIO CLAVE: Eliminamos max-w-7xl y mx-auto del grid ---
+        // También reconstruimos la cabecera de navegación aquí para asegurar que todo el layout fluya
+        
+        // Nota: Mantenemos el botón de "Volver" y los controles de navegación que ya están en el HTML estático (index.html),
+        // pero necesitamos re-inyectar la estructura de columnas con el nuevo ancho.
+        
+        // Buscamos el contenedor específico de las columnas (grid) que está dentro de payment-history-view
+        // Como no tiene ID fácil, lo mejor es reemplazar el contenido dinámico conocido.
+        // Sin embargo, para ser precisos y no romper los listeners de los botones "Volver" que están arriba,
+        // vamos a buscar el div que contiene la clase "grid-cols-12".
 
-            // --- ACTIVAR LISTENERS DE PRÉSTAMOS (AHORA FUNCIONARÁN BIEN) ---
-            activeLoansList.querySelectorAll('.loan-deduction-input').forEach(input => {
-                _setupCurrencyInput(input); // Formato moneda
-                input.addEventListener('input', () => {
-                    // Cuando el usuario escriba, recalculamos el total
-                    if (typeof updatePaymentTotal === 'function') updatePaymentTotal(); 
-                }); 
+        let gridContainer = mainContainer.querySelector('.grid.grid-cols-1.lg\\:grid-cols-12');
+        
+        if (!gridContainer) {
+            // Si no lo encuentra (porque quizás ya lo modificamos o es la primera carga), buscamos por estructura
+            // Ojo: En tu index.html original, este div tiene 'max-w-7xl mx-auto'.
+            // Vamos a forzar el estilo directamente en el elemento si ya existe.
+            const potentialGrids = mainContainer.querySelectorAll('.grid');
+            potentialGrids.forEach(el => {
+                if (el.classList.contains('lg:grid-cols-12')) {
+                    gridContainer = el;
+                }
             });
         }
 
+        if (gridContainer) {
+            // --- APLICAR ANCHO COMPLETO ---
+            gridContainer.classList.remove('max-w-7xl', 'mx-auto');
+            gridContainer.classList.add('w-full');
+            // ------------------------------
+        }
+
+        // 5. Contenedor de Formularios (Tarjeta Izquierda)
+        let paymentFormContainer = document.getElementById('payment-card-container');
+        if (!paymentFormContainer) {
+            const form = document.getElementById('payment-register-form');
+            const dynamicContent = document.getElementById('payment-dynamic-content');
+            
+            if (form) paymentFormContainer = form.parentElement;
+            else if (dynamicContent) paymentFormContainer = dynamicContent.parentElement;
+            else {
+                const fallback = document.querySelector('#payment-register-form');
+                if (fallback) paymentFormContainer = fallback.parentElement;
+            }
+            if (paymentFormContainer) paymentFormContainer.id = 'payment-card-container';
+        }
+
+        if (!paymentFormContainer) { console.error("Error: Contenedor no encontrado"); return; }
+
+        // 6. Inyectar Nuevo Diseño de Pestañas
+        if (!paymentFormContainer.querySelector('nav')) {
+            paymentFormContainer.innerHTML = `
+                <div class="px-4 py-4 border-b border-gray-100 bg-white">
+                    <div class="flex flex-col sm:flex-row justify-between items-center mb-2 px-1">
+                        <span class="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mb-2 sm:mb-0">Tipo de Liquidación</span>
+                    </div>
+                    <nav class="flex p-1.5 space-x-1 bg-slate-100 rounded-xl overflow-x-auto custom-scrollbar" aria-label="Tabs">
+                        <button id="tab-payment-nomina" class="payment-tab-btn active flex-1 min-w-[90px] flex items-center justify-center px-3 py-2 text-xs font-bold rounded-lg transition-all focus:outline-none whitespace-nowrap"><i class="fa-solid fa-money-bill-1-wave mr-2"></i>Nómina</button>
+                        <button id="tab-payment-prima" class="payment-tab-btn flex-1 min-w-[90px] flex items-center justify-center px-3 py-2 text-xs font-medium rounded-lg transition-all focus:outline-none whitespace-nowrap text-gray-500 hover:text-gray-700"><i class="fa-solid fa-gift mr-2"></i>Prima</button>
+                        <button id="tab-payment-cesantias" class="payment-tab-btn flex-1 min-w-[90px] flex items-center justify-center px-3 py-2 text-xs font-medium rounded-lg transition-all focus:outline-none whitespace-nowrap text-gray-500 hover:text-gray-700"><i class="fa-solid fa-piggy-bank mr-2"></i>Cesantías</button>
+                        
+                        <button id="tab-payment-vacaciones" class="payment-tab-btn flex-1 min-w-[90px] flex items-center justify-center px-3 py-2 text-xs font-medium rounded-lg transition-all focus:outline-none whitespace-nowrap text-gray-500 hover:text-cyan-600">
+                            <i class="fa-solid fa-umbrella-beach mr-2"></i>Vacaciones
+                        </button>
+                        
+                        <button id="tab-payment-liquidacion" class="payment-tab-btn flex-1 min-w-[90px] flex items-center justify-center px-3 py-2 text-xs font-medium rounded-lg transition-all focus:outline-none whitespace-nowrap text-gray-500 hover:text-red-600"><i class="fa-solid fa-door-open mr-2"></i>Liquidación</button>
+                    </nav>
+                </div>
+                <div id="payment-dynamic-content" class="p-6 md:p-8 bg-white min-h-[400px]"></div>
+            `;
+        }
+        // --- 7. REINICIALIZAR NAVEGACIÓN Y LISTENERS ---
+        const navContainer = paymentFormContainer.querySelector('nav');
+        const newNav = navContainer.cloneNode(true);
+        navContainer.parentNode.replaceChild(newNav, navContainer);
+
+        const tabs = newNav.querySelectorAll('.payment-tab-btn');
+        const contentDiv = document.getElementById('payment-dynamic-content');
+
+        const switchPaymentTab = (type) => {
+            tabs.forEach(btn => {
+                const isTarget = btn.id === `tab-payment-${type}`;
+                if (isTarget) {
+                    btn.className = "payment-tab-btn active flex-1 min-w-[90px] flex items-center justify-center px-3 py-2 text-xs font-extrabold rounded-lg transition-all bg-white shadow-sm ring-1 ring-black/5 scale-[1.02]";
+                    if(type === 'liquidacion') btn.classList.add('text-red-600');
+                    else if(type === 'cesantias') btn.classList.add('text-emerald-600');
+                    else if(type === 'prima') btn.classList.add('text-indigo-600');
+                    else if(type === 'vacaciones') btn.classList.add('text-cyan-600'); // Color Cyan para vacaciones
+                    else btn.classList.add('text-blue-600'); 
+                } else {
+                    btn.className = "payment-tab-btn flex-1 min-w-[90px] flex items-center justify-center px-3 py-2 text-xs font-medium rounded-lg transition-all text-slate-500 hover:text-slate-700 hover:bg-white/50";
+                }
+            });
+            
+            contentDiv.innerHTML = ''; 
+            switch (type) {
+                case 'nomina': renderStandardPayrollForm(contentDiv, user); break;
+                case 'prima': renderPrimaForm(contentDiv, user); break;
+                case 'cesantias': renderCesantiasForm(contentDiv, user); break;
+                case 'vacaciones': renderVacacionesForm(contentDiv, user); break; // <--- NUEVA FUNCIÓN
+                case 'liquidacion': renderLiquidacionForm(contentDiv, user); break;
+            }
+        };
+
+        newNav.querySelector('#tab-payment-nomina').onclick = () => switchPaymentTab('nomina');
+        newNav.querySelector('#tab-payment-prima').onclick = () => switchPaymentTab('prima');
+        newNav.querySelector('#tab-payment-cesantias').onclick = () => switchPaymentTab('cesantias');
+        newNav.querySelector('#tab-payment-vacaciones').onclick = () => switchPaymentTab('vacaciones');
+        newNav.querySelector('#tab-payment-liquidacion').onclick = () => switchPaymentTab('liquidacion');
+
+        // Default
+        switchPaymentTab('nomina');
+
+        // 8. Cargar Historial
+        loadPaymentHistoryList(userId, tableBody, user); 
+
     } catch (e) {
-        console.error("Error al cargar perfil:", e);
+        console.error("Error loadPaymentHistoryView:", e);
         nameEl.textContent = 'Error';
-        tableBody.innerHTML = `<tr><td colspan="4" class="text-center text-red-500 py-4">${e.message}</td></tr>`;
-        return;
     }
+}
 
-    // --- 7. CONFIGURAR FORMULARIO ---
-    const config = _getPayrollConfig();
-    const salario = parseFloat(user.salarioBasico) || 0;
-    let auxTransporte = 0;
-
-    if (config && config.salarioMinimo && salario > 0) {
-        const limiteSMLV = (config.salarioMinimo) * (config.limiteAuxilioTransporte || 2);
-        if (salario <= limiteSMLV) auxTransporte = config.auxilioTransporte || 0;
-    }
-
-    salarioEl.textContent = currencyFormatter.format(salario) + " (Mensual)";
-    salarioEl.dataset.value = salario;
-    salarioEl.dataset.auxTransporte = auxTransporte;
-    form.dataset.deduccionSobreMinimo = user.deduccionSobreMinimo || false;
-
-    // Bonificación
-    const today = new Date();
-    const currentStatDocId = `${today.getFullYear()}_${String(today.getMonth() + 1).padStart(2, '0')}`;
-    const statRef = doc(_db, "employeeStats", userId, "monthlyStats", currentStatDocId);
-    const statSnap = await getDoc(statRef);
-
-    let bonificacion = 0;
-    let pagada = false;
-    if (statSnap.exists()) {
-        bonificacion = statSnap.data().totalBonificacion || 0;
-        pagada = statSnap.data().bonificacionPagada || false;
-    }
-
-    bonificacionEl.dataset.value = bonificacion;
-    if (pagada) {
-        bonificacionEl.textContent = currencyFormatter.format(bonificacion) + " (Pagada)";
-        bonificacionEl.classList.add('text-gray-400', 'line-through');
-        liquidarCheckbox.checked = true; liquidarCheckbox.disabled = true;
-    } else {
-        bonificacionEl.textContent = currencyFormatter.format(bonificacion);
-        bonificacionEl.classList.remove('text-gray-400', 'line-through');
-        liquidarCheckbox.checked = false; liquidarCheckbox.disabled = false;
+/**
+ * Busca de forma robusta la fecha de INICIO de labores.
+ * Prioridad: contractStartDate > contractDate > fechaIngreso > createdAt
+ */
+function getEmployeeStartDate(user) {
+    // Lista de posibles campos, con contractStartDate como prioridad absoluta
+    const possibleFields = [
+        user.contractStartDate, // <--- TU CAMPO CORRECTO
+        user.contractDate, 
+        user.fechaIngreso, 
+        user.fechaInicio,
+        user.startDate,
+        user.createdAt
+    ];
+    
+    for (const raw of possibleFields) {
+        if (raw) {
+            // Soporte para Timestamp de Firebase
+            if (typeof raw.toDate === 'function') {
+                return raw.toDate();
+            }
+            // Soporte para String/Date estándar
+            const d = new Date(raw);
+            if (!isNaN(d.getTime())) {
+                // Ajuste de zona horaria simple (evitar desfase de 1 día)
+                const userTimezoneOffset = d.getTimezoneOffset() * 60000;
+                return new Date(d.getTime() + userTimezoneOffset);
+            }
+        }
     }
     
-    // Actualizar totales iniciales (con un pequeño delay para asegurar que el DOM de préstamos se pintó)
-    setTimeout(() => { if (typeof updatePaymentTotal === 'function') updatePaymentTotal(); }, 200);
+    // Fallback de seguridad (1 Enero del año actual)
+    return new Date(new Date().getFullYear(), 0, 1);
+}
+
+// --- FORMULARIO NÓMINA ESTÁNDAR (CORREGIDO) ---
+async function renderStandardPayrollForm(container, user) {
+    container.innerHTML = `
+        <form id="payment-register-form" class="space-y-8" data-deduccion-sobre-minimo="${user.deduccionSobreMinimo || false}">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Periodo</label>
+                    <div class="relative">
+                        <select id="payment-concepto" class="w-full border-gray-300 rounded-lg p-3 text-sm font-medium bg-gray-50 focus:bg-white transition-colors cursor-pointer outline-none focus:ring-2 focus:ring-indigo-500"></select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Días</label>
+                        <input type="number" id="payment-dias-pagar" class="payment-dias-input w-full border-gray-300 rounded-lg p-3 text-center font-bold text-gray-700" value="15" min="1" max="30">
+                    </div>
+                    <div class="flex items-end pb-3">
+                         <span id="payment-salario-basico" class="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1.5 rounded-full w-full text-center border border-gray-200" 
+                            data-value="${user.salarioBasico || 0}" 
+                            data-aux-transporte="${_getPayrollConfig()?.auxilioTransporte || 0}">
+                            ${currencyFormatter.format(user.salarioBasico || 0)}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+             <div>
+                <h4 class="text-xs font-black text-emerald-600 uppercase tracking-widest mb-4 border-b border-emerald-100 pb-1 w-fit">Ingresos Adicionales</h4>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="space-y-2">
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" id="payment-liquidar-bonificacion" class="w-4 h-4 text-emerald-600 rounded cursor-pointer focus:ring-emerald-500">
+                            <label for="payment-liquidar-bonificacion" class="text-sm font-bold text-gray-700 cursor-pointer select-none">Pagar Bonificación</label>
+                        </div>
+                        <p id="payment-bonificacion-mes" class="text-sm font-mono text-gray-500 pl-6" data-value="0">$ 0</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1">Horas Extra (Cant.)</label>
+                        <div class="flex items-center gap-2">
+                            <input type="number" id="payment-horas-diurnas" class="payment-horas-input w-20 border-gray-300 rounded-lg p-2 text-center text-sm focus:ring-indigo-500" placeholder="0" min="0">
+                            <span id="payment-total-horas" class="text-sm font-bold text-gray-600 font-mono flex-grow text-right bg-gray-50 p-2 rounded border border-gray-200">$ 0</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1">Otros</label>
+                        <input type="text" id="payment-otros" class="currency-input w-full border-gray-300 rounded-lg p-2 text-right font-mono text-sm focus:ring-emerald-500" placeholder="$ 0">
+                    </div>
+                </div>
+            </div>
+
+            <div id="deductions-container-wrapper" class="bg-red-50/50 rounded-xl p-5 border border-red-100">
+                 <h4 class="text-xs font-black text-rose-600 uppercase tracking-widest mb-4 border-b border-rose-100 pb-1 w-fit">Deducciones</h4>
+                 <div id="loan-management-fieldset-placeholder"></div>
+            </div>
+
+            <div class="bg-slate-800 text-white p-6 rounded-xl shadow-lg flex justify-between items-center transform transition-transform hover:scale-[1.01]">
+                <div>
+                    <p class="text-slate-400 text-xs font-bold uppercase tracking-wider">Neto a Pagar</p>
+                </div>
+                <div class="text-right">
+                    <p id="payment-total-pagar" class="text-4xl font-black tracking-tight text-white">$ 0</p>
+                </div>
+            </div>
+
+            <div class="flex justify-end">
+                <button type="submit" id="payment-submit-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl shadow-md transition-all flex items-center gap-2">
+                    <i class="fa-solid fa-floppy-disk"></i> Registrar Nómina
+                </button>
+            </div>
+        </form>
+    `;
+
+    // 1. Cargar Préstamos
+    await loadActiveLoansForForm(user.id);
+    
+    // 2. Configurar Bonificación (Stats)
+    const today = new Date();
+    const currentStatDocId = `${today.getFullYear()}_${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const statRef = doc(_db, "employeeStats", user.id, "monthlyStats", currentStatDocId);
+    
+    // Default bonif
+    const bonifEl = document.getElementById('payment-bonificacion-mes');
+    const chk = document.getElementById('payment-liquidar-bonificacion');
+    
+    try {
+        const statSnap = await getDoc(statRef);
+        let bonifVal = 0;
+        if(statSnap.exists()) {
+            bonifVal = statSnap.data().totalBonificacion || 0;
+            const pagada = statSnap.data().bonificacionPagada || false;
+            bonifEl.dataset.value = bonifVal;
+            
+            if(pagada) {
+                bonifEl.textContent = currencyFormatter.format(bonifVal) + " (Pagada)";
+                bonifEl.classList.add('line-through', 'text-gray-400');
+                chk.disabled = true;
+                chk.checked = false;
+            } else {
+                bonifEl.textContent = currencyFormatter.format(bonifVal);
+                chk.checked = false; 
+            }
+        }
+    } catch(e) { console.warn("No stats yet"); }
+
+    // 3. Rellenar Select de Periodo (Opciones Inteligentes)
+    const conceptoSelect = document.getElementById('payment-concepto');
+    const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const currentMonth = months[today.getMonth()];
+    const year = today.getFullYear();
+    
+    conceptoSelect.innerHTML = `
+        <option value="Primera Quincena de ${currentMonth} ${year}">1ª Quincena - ${currentMonth}</option>
+        <option value="Segunda Quincena de ${currentMonth} ${year}">2ª Quincena - ${currentMonth}</option>
+        <option value="Nómina Mensual ${currentMonth} ${year}">Mes Completo</option>
+    `;
+
+    // Pre-selección inteligente basada en la fecha del día
+    const dayOfMonth = today.getDate();
+    if (dayOfMonth > 15) {
+        conceptoSelect.value = `Segunda Quincena de ${currentMonth} ${year}`;
+    }
+
+    // --- CORRECCIÓN: LISTENER PARA CAMBIAR DÍAS AUTOMÁTICAMENTE ---
+    conceptoSelect.addEventListener('change', function() {
+        const val = this.value;
+        const daysInput = document.getElementById('payment-dias-pagar');
+        
+        if (val.includes('Mensual') || val.includes('Completo')) {
+            daysInput.value = 30;
+        } else {
+            daysInput.value = 15; // Asume quincena por defecto
+        }
+        
+        // Importante: Recalcular totales inmediatamente
+        updatePaymentTotal();
+    });
+
+    // 4. Listeners Generales
+    const form = document.getElementById('payment-register-form');
+    
+    // Listener unificado para inputs que afectan el cálculo
+    form.addEventListener('input', (e) => {
+        // Si es el input de horas extra, validar negativos en tiempo real
+        if (e.target.id === 'payment-horas-diurnas') {
+            if (e.target.value < 0) e.target.value = 0;
+        }
+        updatePaymentTotal();
+    });
+    
+    form.addEventListener('change', (e) => { // Para checkbox y select
+        updatePaymentTotal();
+    });
+
+    form.addEventListener('submit', (e) => handleRegisterPayment(e, user.id));
+    
+    // 5. Setup Inputs Moneda
+    form.querySelectorAll('.currency-input').forEach(_setupCurrencyInput);
+    
+    // Cálculo inicial
+    updatePaymentTotal();
+}
 
 
-    // --- 8. HISTORIAL DE PAGOS ---
-    const q = query(collection(_db, "users", userId, "paymentHistory"), orderBy("createdAt", "desc"));
-    unsubscribeEmpleadosTab = onSnapshot(q, (snapshot) => {
-        if (snapshot.empty) {
-            tableBody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-xs text-gray-400">Sin pagos previos.</td></tr>`;
+// --- B. FORMULARIO PRIMA DE SERVICIOS (CON FECHAS EXACTAS PARA EL RECIBO) ---
+async function renderPrimaForm(container, user) {
+    const currentYear = new Date().getFullYear();
+    const baseInfo = calculateBaseForBenefits(user);
+    
+    // 1. Obtener Fechas Reales del Contrato
+    const startDate = getEmployeeStartDate(user);
+    
+    let endDate = null;
+    if (user.contractEndDate) {
+        endDate = (typeof user.contractEndDate.toDate === 'function') 
+            ? user.contractEndDate.toDate() 
+            : new Date(user.contractEndDate);
+    }
+
+    const startDateStr = startDate.toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' });
+    
+    const badgeHtml = baseInfo.isMinimum 
+        ? `<span class="bg-orange-100 text-orange-800 text-[10px] font-bold px-2 py-1 rounded border border-orange-200 block mt-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Ajustado a Mínimo</span>`
+        : `<span class="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-1 rounded border border-blue-200 block mt-1">${baseInfo.label}</span>`;
+
+    container.innerHTML = `
+        <form id="prima-form" class="space-y-6">
+            <div class="bg-indigo-50 border-l-4 border-indigo-500 p-4 rounded-r-lg flex justify-between items-center">
+                <div>
+                    <h4 class="font-bold text-indigo-900">Prima de Servicios</h4>
+                    <p class="text-sm text-indigo-700">Calculada según fechas de contrato.</p>
+                </div>
+                <div class="text-right text-xs">
+                    <p class="text-indigo-500 font-bold uppercase">Inicio Contrato</p>
+                    <p class="font-mono font-bold text-indigo-800">${startDateStr}</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Periodo a Liquidar</label>
+                    <select id="prima-periodo-select" class="w-full border-gray-300 rounded-lg p-3 text-sm font-bold text-gray-700 focus:ring-indigo-500 cursor-pointer bg-white shadow-sm">
+                        <option value="1">1° Semestre (Ene - Jun) ${currentYear}</option>
+                        <option value="2">2° Semestre (Jul - Dic) ${currentYear}</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Base Salarial Promedio</label>
+                    <input type="text" id="prima-base" class="currency-input w-full border-gray-300 rounded-lg p-3 font-bold text-right focus:ring-indigo-500" value="${currencyFormatter.format(baseInfo.value)}">
+                    ${badgeHtml}
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Días a Pagar</label>
+                    <input type="number" id="prima-dias" class="w-full border-gray-300 rounded-lg p-3 font-bold text-center focus:ring-indigo-500 bg-gray-50" readonly>
+                    <p id="prima-dias-info" class="text-[10px] text-gray-400 mt-1 italic text-right"></p>
+                </div>
+                <div class="flex flex-col justify-end">
+                    <div class="bg-white border-2 border-indigo-100 p-4 rounded-xl text-right shadow-sm">
+                        <p class="text-xs text-indigo-400 font-bold uppercase tracking-wider">Total Prima</p>
+                        <p id="prima-total" class="text-2xl font-black text-indigo-700">$ 0</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-4">
+                <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-md transition-all flex items-center">
+                    <i class="fa-solid fa-gift mr-2"></i> Registrar Pago de Prima
+                </button>
+            </div>
+        </form>
+    `;
+
+    const inputBase = document.getElementById('prima-base');
+    const inputDias = document.getElementById('prima-dias');
+    const totalEl = document.getElementById('prima-total');
+    const selectPeriodo = document.getElementById('prima-periodo-select');
+    const diasInfo = document.getElementById('prima-dias-info');
+
+    _setupCurrencyInput(inputBase);
+    const currentMonth = new Date().getMonth();
+    if (currentMonth > 5) selectPeriodo.value = "2";
+
+    // Variables para guardar el rango exacto
+    let currentRange = { start: null, end: null };
+
+    const calculateDays = () => {
+        const semestre = selectPeriodo.value; 
+        const year = currentYear;
+        
+        let startPeriod, endPeriod;
+        if (semestre === "1") {
+            startPeriod = new Date(year, 0, 1); // 1 Ene
+            endPeriod = new Date(year, 5, 30);  // 30 Jun
+        } else {
+            startPeriod = new Date(year, 6, 1); // 1 Jul
+            endPeriod = new Date(year, 11, 30); // 30 Dic
+        }
+        
+        startPeriod.setHours(0,0,0,0);
+        endPeriod.setHours(23,59,59,999);
+        const startContract = new Date(startDate); startContract.setHours(0,0,0,0);
+        
+        if (startContract > endPeriod) {
+            inputDias.value = 0;
+            diasInfo.textContent = "Contrato posterior al periodo.";
+            currentRange = { start: null, end: null };
+            calcTotal();
             return;
         }
-        tableBody.innerHTML = '';
-        snapshot.forEach(docSnap => {
-            const payment = docSnap.data();
-            const date = payment.createdAt ? payment.createdAt.toDate().toLocaleDateString('es-CO') : '---';
+
+        // Inicio efectivo:
+        let effectiveStart = startContract > startPeriod ? startContract : startPeriod;
+
+        // Fin efectivo:
+        let effectiveEnd = endPeriod;
+        if (endDate) {
+            const endContract = new Date(endDate); endContract.setHours(23,59,59,999);
+            if (endContract < startPeriod) {
+                inputDias.value = 0;
+                diasInfo.textContent = "Contrato finalizado antes.";
+                currentRange = { start: null, end: null };
+                calcTotal();
+                return;
+            }
+            if (endContract < endPeriod) effectiveEnd = endContract;
+        }
+
+        // Guardamos las fechas exactas para enviarlas al guardar
+        currentRange = { start: effectiveStart, end: effectiveEnd };
+
+        const diffTime = Math.abs(effectiveEnd - effectiveStart);
+        let days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        
+        if (effectiveStart <= startPeriod && effectiveEnd >= endPeriod) days = 180;
+        else days += 1;
+
+        if (days > 180) days = 180;
+        if (days < 0) days = 0;
+
+        inputDias.value = days;
+        
+        if (days === 180) diasInfo.textContent = "Semestre completo.";
+        else diasInfo.textContent = `Proporcional (${effectiveStart.toLocaleDateString()} - ${effectiveEnd.toLocaleDateString()})`;
+        
+        calcTotal();
+    };
+
+    const calcTotal = () => {
+        const base = parseFloat(inputBase.value.replace(/[$. ]/g, '')) || 0;
+        const dias = parseFloat(inputDias.value) || 0;
+        const total = (base * dias) / 360;
+        totalEl.textContent = currencyFormatter.format(total);
+    };
+
+    selectPeriodo.addEventListener('change', calculateDays);
+    inputBase.addEventListener('input', calcTotal);
+    inputDias.addEventListener('input', calcTotal);
+    
+    calculateDays();
+
+    document.getElementById('prima-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const base = parseFloat(inputBase.value.replace(/[$. ]/g, '')) || 0;
+        const dias = parseFloat(inputDias.value) || 0;
+        const total = (base * dias) / 360;
+        const periodoTexto = selectPeriodo.options[selectPeriodo.selectedIndex].text;
+
+        // Formatear fechas para guardar
+        const rangoTexto = currentRange.start && currentRange.end 
+            ? `${currentRange.start.toLocaleDateString('es-CO')} al ${currentRange.end.toLocaleDateString('es-CO')}` 
+            : 'N/A';
+
+        _openConfirmModal(`¿Pagar Prima (${periodoTexto}) por ${currencyFormatter.format(total)}?`, async () => {
+             await saveSpecialPayment(user.id, {
+                tipo: 'Prima de Servicios',
+                periodo: periodoTexto,
+                monto: total,
+                detalles: { 
+                    baseCalculo: base, 
+                    diasSemestre: dias, 
+                    semestre: selectPeriodo.value,
+                    rangoFechas: rangoTexto // <--- AQUÍ GUARDAMOS EL RANGO
+                }
+            });
+        });
+    };
+}
+
+// --- C. FORMULARIO CESANTÍAS (CORTE ANUAL OBLIGATORIO) ---
+async function renderCesantiasForm(container, user) {
+    const baseInfo = calculateBaseForBenefits(user);
+    const currentYear = new Date().getFullYear();
+    const realStartDate = getEmployeeStartDate(user);
+    
+    // --- LÓGICA DE FECHAS ANUALIZADA ---
+    
+    // 1. Determinar Inicio del Periodo a Liquidar (El mayor entre 1 Ene y Contrato)
+    const jan1 = new Date(currentYear, 0, 1);
+    // Si el contrato es viejo, arrancamos el 1 de Enero. Si es nuevo de este año, su fecha real.
+    const effectiveStart = realStartDate > jan1 ? realStartDate : jan1;
+    const startDateVal = effectiveStart.toISOString().split('T')[0];
+
+    // 2. Determinar Fin del Periodo (El menor entre 31 Dic y Fin Contrato si existe)
+    const dec31 = new Date(currentYear, 11, 31);
+    let effectiveEnd = dec31;
+
+    // Si el contrato ya tiene fecha fin y es este año, cortamos ahí
+    if (user.contractEndDate) {
+        const endDate = (typeof user.contractEndDate.toDate === 'function') 
+            ? user.contractEndDate.toDate() 
+            : new Date(user.contractEndDate);
             
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td class="p-4 border-b border-gray-50 block hover:bg-slate-50 transition-colors">
-                    <div class="flex justify-between mb-1">
-                        <span class="text-xs font-bold text-gray-500">${date}</span>
-                        <span class="text-sm font-bold text-indigo-700">${currencyFormatter.format(payment.monto)}</span>
+        if (endDate < dec31) {
+            effectiveEnd = endDate;
+        }
+    }
+    const endDateVal = effectiveEnd.toISOString().split('T')[0];
+    
+    // -------------------------------------
+
+    const badgeHtml = baseInfo.isMinimum 
+        ? `<span class="bg-orange-100 text-orange-800 text-[10px] font-bold px-2 py-1 rounded border border-orange-200 block mt-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Ajustado a Mínimo</span>`
+        : `<span class="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded border border-emerald-200 block mt-1">${baseInfo.label}</span>`;
+
+    container.innerHTML = `
+        <form id="cesantias-form" class="space-y-6">
+            <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+                <h4 class="font-bold text-blue-900">Consignación Anual de Cesantías (${currentYear})</h4>
+                <p class="text-sm text-blue-700">Liquidación del año corriente para traslado al fondo.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="col-span-1 md:col-span-2">
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Base Salarial</label>
+                    <input type="text" id="ces-base" class="currency-input w-full border-gray-300 rounded-lg p-3 font-bold text-right text-gray-800" value="${currencyFormatter.format(baseInfo.value)}">
+                    ${badgeHtml}
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Fecha Inicio (Año ${currentYear})</label>
+                    <input type="date" id="ces-inicio" class="w-full border-gray-300 rounded-lg p-3 text-sm font-medium bg-gray-50" value="${startDateVal}" readonly>
+                    <p class="text-[10px] text-gray-400 mt-1">Automático: 1 Ene o Ingreso.</p>
+                </div>
+                 <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Fecha Corte (Año ${currentYear})</label>
+                    <input type="date" id="ces-fin" class="w-full border-gray-300 rounded-lg p-3 text-sm font-medium" value="${endDateVal}">
+                    <p class="text-[10px] text-gray-400 mt-1">Por defecto: 31 Dic.</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white p-4 rounded-xl border-2 border-blue-600 shadow-lg relative overflow-hidden transform transition-all hover:scale-[1.01]">
+                    <div class="absolute top-0 right-0 bg-blue-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-lg uppercase tracking-wider">A Consignar</div>
+                    <p class="text-xs text-gray-500 mb-1">Días Liquidados: <span id="ces-dias-calc" class="font-bold text-gray-800">0</span></p>
+                    <p class="text-sm font-bold text-gray-700">Valor Cesantías</p>
+                    <p id="ces-valor-fondo" class="text-3xl font-black text-blue-700 mt-1">$ 0</p>
+                    <div class="mt-3 flex items-center text-[10px] text-blue-800 bg-blue-50 p-2 rounded">
+                        <i class="fa-solid fa-building-columns mr-2"></i> Transferir a Fondo (Antes 14 Feb)
                     </div>
-                    <p class="text-xs text-gray-600 truncate">${payment.concepto}</p>
-                    <div class="flex justify-end gap-2 mt-2">
-                         <button class="view-voucher-btn text-[10px] bg-white border border-gray-200 px-2 py-1 rounded hover:bg-blue-50 hover:text-blue-600 transition-colors">Ver</button>
-                         <button data-action="delete-payment" data-user-id="${userId}" data-doc-id="${docSnap.id}" class="text-[10px] text-red-400 hover:text-red-600 px-2 py-1">Eliminar</button>
+                </div>
+
+                <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 border-dashed relative">
+                    <div class="absolute top-0 right-0 bg-gray-200 text-gray-600 text-[10px] font-bold px-3 py-1 rounded-bl-lg uppercase">Informativo</div>
+                    <p class="text-xs text-gray-500 mb-1">Intereses (12%): <span id="ces-valor-intereses" class="font-bold text-gray-800">$ 0</span></p>
+                    
+                    <div class="mt-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded-r text-xs text-yellow-800">
+                        <p class="font-bold"><i class="fa-solid fa-hand-holding-dollar mr-1"></i> ¡Atención!</p>
+                        <p class="mt-1">Pagar directamente al empleado (Nómina Enero).</p>
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" id="btn-save-cesantias" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md transition-all flex items-center justify-center text-lg">
+                <i class="fa-solid fa-file-invoice-dollar mr-2"></i> Registrar Consignación Anual
+            </button>
+        </form>
+    `;
+
+    const inputBase = document.getElementById('ces-base');
+    const inputInicio = document.getElementById('ces-inicio');
+    const inputFin = document.getElementById('ces-fin');
+    
+    _setupCurrencyInput(inputBase);
+
+    const calc = () => {
+        const base = parseFloat(inputBase.value.replace(/[$. ]/g, '')) || 0;
+        const d1 = new Date(inputInicio.value); d1.setHours(0,0,0,0);
+        const d2 = new Date(inputFin.value); d2.setHours(23,59,59,999);
+        
+        // Validación: No permitir fechas fuera del año actual para evitar errores contables
+        if (d2.getFullYear() !== currentYear && d2.getFullYear() !== currentYear + 1) { 
+             // Permitimos Enero del año siguiente como fecha de pago, pero el cálculo es del año anterior
+             // Para simplificar, advertimos si la fecha corte se aleja mucho.
+        }
+
+        if (d1 && d2 && !isNaN(d1) && !isNaN(d2)) {
+            const diffTime = d2.getTime() - d1.getTime();
+            if (diffTime < 0) return null;
+
+            // Días calendario 360 (Aprox) o Calendario real
+            // Usamos calendario real + 1 inclusivo
+            let days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            // Ajuste anual: Si es todo el año, son 360 días
+            // (Si fecha inicio es <= 1 Ene y Fin >= 30 Dic)
+            const isFullYear = (d1.getMonth() === 0 && d1.getDate() === 1) && (d2.getMonth() === 11 && d2.getDate() >= 30);
+            
+            if (isFullYear) days = 360;
+            else if (days > 360) days = 360; // Tope
+
+            document.getElementById('ces-dias-calc').textContent = days;
+
+            const valorCesantias = (base * days) / 360;
+            const valorIntereses = (valorCesantias * days * 0.12) / 360;
+
+            document.getElementById('ces-valor-fondo').textContent = currencyFormatter.format(valorCesantias);
+            document.getElementById('ces-valor-intereses').textContent = currencyFormatter.format(valorIntereses);
+            
+            return { valorCesantias, valorIntereses, days, base };
+        }
+        return null;
+    };
+
+    inputBase.addEventListener('input', calc);
+    inputInicio.addEventListener('change', calc);
+    inputFin.addEventListener('change', calc);
+    calc();
+
+    document.getElementById('cesantias-form').onsubmit = (e) => {
+        e.preventDefault();
+        const data = calc();
+        if(!data || data.valorCesantias <= 0) {
+            window.showToast("Datos inválidos.", "error");
+            return;
+        }
+
+        _openConfirmModal(`Confirmar consignación ANUAL (${currentYear}):\n\nValor Fondo: ${currencyFormatter.format(data.valorCesantias)}\nIntereses a Pagar: ${currencyFormatter.format(data.valorIntereses)}`, async () => {
+             await saveSpecialPayment(user.id, {
+                tipo: `Consignación Cesantías ${currentYear}`,
+                periodo: `${inputInicio.value} al ${inputFin.value}`,
+                monto: data.valorCesantias, 
+                detalles: { 
+                    base: data.base, 
+                    dias: data.days, 
+                    interesesCalculados: data.valorIntereses, 
+                    nota: "Intereses pagados aparte al empleado",
+                    anioLiquidado: currentYear
+                }
+            });
+        });
+    };
+}
+
+// --- D. FORMULARIO LIQUIDACIÓN FINAL (LÓGICA BLINDADA POR PERIODOS) ---
+async function renderLiquidacionForm(container, user) {
+    container.innerHTML = `<div class="py-12 text-center"><div class="loader mx-auto"></div><p class="text-sm text-gray-400 mt-2">Analizando cortes y periodos...</p></div>`;
+
+    try {
+        const config = _getPayrollConfig() || { salarioMinimo: 1300000 }; 
+        const currentYear = new Date().getFullYear();
+        
+        // 1. BASES
+        const baseBenefits = calculateBaseForBenefits(user); 
+        let vacationBase = parseFloat(user.salarioBasico) || 0;
+        let vacationBaseLabel = "Salario Básico";
+        if (user.deduccionSobreMinimo) {
+            vacationBase = config.salarioMinimo;
+            vacationBaseLabel = "Salario Mínimo (Config)";
+        }
+        
+        // 2. CARGA DE DATOS (Traemos TODO el historial para buscar cortes antiguos)
+        const [loansSnap, paymentsSnap] = await Promise.all([
+            getDocs(query(collection(_db, "users", user.id, "loans"), where("status", "==", "active"))),
+            getDocs(query(collection(_db, "users", user.id, "paymentHistory"), orderBy("createdAt", "desc")))
+        ]);
+
+        let totalLoans = 0;
+        loansSnap.forEach(doc => totalLoans += (doc.data().balance || 0));
+
+        // 3. ANÁLISIS DE PERIODOS (AQUÍ ESTÁ LA LÓGICA DE SEPARACIÓN DE AÑOS)
+        let primaPagadaSemestre = 0;
+        let lastCesantiasYear = 0; 
+        let anticiposCesantias = 0; 
+        let diasVacacionesTomados = 0; 
+
+        const payments = paymentsSnap.docs.map(d => d.data());
+
+        // A. Buscar el último año que se cerró (Consignación a Fondo)
+        payments.forEach(p => {
+            const concepto = (p.concepto || '').toLowerCase();
+            const det = p.details || {};
+            if (concepto.includes('fondo') && (concepto.includes('cesant'))) {
+                let year = det.anioLiquidado ? parseInt(det.anioLiquidado) : (p.createdAt ? p.createdAt.toDate().getFullYear() - 1 : 0);
+                if (year > lastCesantiasYear) lastCesantiasYear = year;
+            }
+        });
+
+        // B. Definir Fecha Inicio Cesantías (El corte limpio)
+        const realStartDate = getEmployeeStartDate(user);
+        let cesantiasStartDate = new Date(realStartDate); 
+
+        // Si ya pagamos 2023, arrancamos LIMPIOS el 1 Ene 2024
+        if (lastCesantiasYear > 0) {
+            const potentialStart = new Date(lastCesantiasYear + 1, 0, 1);
+            if (potentialStart > cesantiasStartDate) cesantiasStartDate = potentialStart;
+        }
+        // Normalizar hora para comparaciones exactas
+        cesantiasStartDate.setHours(0,0,0,0);
+
+        // C. Definir Inicio del Semestre Actual (Para la Prima)
+        const startOfCurrentSemester = new Date(currentYear, new Date().getMonth() > 5 ? 6 : 0, 1);
+        startOfCurrentSemester.setHours(0,0,0,0);
+
+        // D. Filtrar pagos (SOLO RESTAR LO QUE PERTENECE AL PERIODO ACTUAL)
+        payments.forEach(p => {
+            const pDate = p.createdAt ? p.createdAt.toDate() : new Date(p.paymentDate);
+            pDate.setHours(0,0,0,0);
+            
+            const concepto = (p.concepto || '').toLowerCase();
+            const det = p.details || {};
+
+            // --- FILTRO DE PRIMA ---
+            // Solo restamos pagos hechos DESPUÉS del inicio del semestre. 
+            // Si pagaste una prima en Enero y estamos en Julio, NO se resta.
+            if (concepto.includes('prima') && pDate >= startOfCurrentSemester) {
+                primaPagadaSemestre += (p.monto || 0);
+            }
+
+            // --- FILTRO DE CESANTÍAS ---
+            // Solo restamos anticipos hechos DESPUÉS del último corte anual.
+            // Si diste un anticipo en 2023 y ya cerraste el año, ese anticipo NO cuenta aquí.
+            if (concepto.includes('cesant') && !concepto.includes('interes') && !concepto.includes('fondo')) {
+                if (pDate >= cesantiasStartDate) {
+                    anticiposCesantias += (p.monto || 0);
+                }
+            }
+
+            // Vacaciones (Acumulado histórico total)
+            if (concepto.includes('vacaciones')) {
+                if (det.diasPagados) diasVacacionesTomados += parseFloat(det.diasPagados);
+                else if (det.dias) diasVacacionesTomados += parseFloat(det.dias);
+            }
+        });
+
+        // 4. FECHAS UI
+        const todayStr = new Date().toISOString().split('T')[0];
+        let agreedEndDate = null;
+        if (user.contractEndDate) {
+            agreedEndDate = (typeof user.contractEndDate.toDate === 'function') 
+                ? user.contractEndDate.toDate() : new Date(user.contractEndDate);
+        }
+        const contractEndStr = agreedEndDate ? agreedEndDate.toISOString().split('T')[0] : '';
+        const defaultContractType = user.contractType || (agreedEndDate ? 'fijo' : 'indefinido');
+
+        // --- RENDERIZADO ---
+        container.innerHTML = `
+            <form id="liq-form" class="space-y-6">
+                <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg flex justify-between items-center">
+                    <div>
+                        <h4 class="font-bold text-red-900">Liquidación Final</h4>
+                        <p class="text-sm text-red-700">Calculando saldo pendiente a la fecha.</p>
+                    </div>
+                    <div class="text-right text-xs">
+                        <p class="text-red-400 font-bold uppercase">Ingreso</p>
+                        <p class="font-mono font-bold text-red-800">${realStartDate.toLocaleDateString('es-CO')}</p>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                     <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Motivo Retiro</label>
+                        <select id="liq-motivo" class="w-full border-gray-300 rounded-lg p-2 text-sm bg-white">
+                            <option value="voluntario">Renuncia Voluntaria</option>
+                            <option value="terminacion">Terminación de Contrato</option>
+                            <option value="justa_causa">Despido Justa Causa</option>
+                            <option value="sin_justa_causa">Despido Sin Justa Causa</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Tipo Contrato</label>
+                        <select id="liq-tipo-contrato" class="w-full border-gray-300 rounded-lg p-2 text-sm bg-white">
+                            <option value="indefinido" ${defaultContractType === 'indefinido' ? 'selected' : ''}>Indefinido</option>
+                            <option value="fijo" ${defaultContractType === 'fijo' ? 'selected' : ''}>Término Fijo</option>
+                        </select>
+                    </div>
+                     <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Retiro</label>
+                        <input type="date" id="liq-fecha-fin" class="w-full border-gray-300 rounded-lg p-2 text-sm font-bold text-gray-700 focus:ring-red-500" value="${todayStr}">
+                    </div>
+                </div>
+                
+                <div id="div-fecha-pactada" class="hidden">
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Fin Pactada</label>
+                    <input type="date" id="liq-fecha-pactada" class="w-full border-gray-300 rounded-lg p-2 text-sm bg-gray-50" value="${contractEndStr}">
+                </div>
+
+                <div class="space-y-4 border-t border-gray-200 pt-4">
+                    <h5 class="font-bold text-gray-700 text-sm">Detalle de Valores</h5>
+                    
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <div class="bg-indigo-50 p-2 rounded border border-indigo-100">
+                            <p class="text-[10px] text-indigo-400 uppercase font-bold">Corte Cesantías</p>
+                            <p class="text-xs font-bold text-indigo-800" id="lbl-inicio-cesantias">${cesantiasStartDate.toLocaleDateString('es-CO')}</p>
+                            <p class="text-[9px] text-indigo-400 italic">Fecha base del cálculo</p>
+                        </div>
+                        <div class="bg-blue-50 p-2 rounded border border-blue-100">
+                             <p class="text-[10px] text-blue-400 uppercase font-bold">Base Prestacional</p>
+                             <p class="text-xs font-bold text-blue-800">${currencyFormatter.format(baseBenefits.value)}</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-12 gap-2 items-center bg-gray-50 p-2 rounded-lg border border-gray-200">
+                        <div class="col-span-5">
+                            <p class="text-xs font-bold text-gray-600">Cesantías</p>
+                            <p class="text-[10px] text-gray-400">Días: <span id="lbl-dias-cesantias">0</span> | Menos: ${currencyFormatter.format(anticiposCesantias)}</p>
+                        </div>
+                        <div class="col-span-7">
+                            <input type="text" id="liq-cesantias" class="currency-input w-full border-gray-200 rounded p-1 text-right text-sm font-bold bg-white" placeholder="$ 0">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-12 gap-2 items-center bg-gray-50 p-2 rounded-lg">
+                        <div class="col-span-5">
+                            <p class="text-xs font-bold text-gray-600">Intereses Cesantías</p>
+                            <p class="text-[10px] text-gray-400">12% sobre saldo Cesantías</p>
+                        </div>
+                        <div class="col-span-7">
+                            <input type="text" id="liq-intereses" class="currency-input w-full border-gray-200 rounded p-1 text-right text-sm font-bold bg-white" placeholder="$ 0">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-12 gap-2 items-center bg-gray-50 p-2 rounded-lg border border-gray-200">
+                        <div class="col-span-5">
+                            <p class="text-xs font-bold text-gray-600">Prima Servicios</p>
+                            <p class="text-[10px] text-gray-400">Semestre Actual | Menos: ${currencyFormatter.format(primaPagadaSemestre)}</p>
+                        </div>
+                        <div class="col-span-7">
+                            <input type="text" id="liq-prima" class="currency-input w-full border-gray-200 rounded p-1 text-right text-sm font-bold bg-white" placeholder="$ 0">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-12 gap-2 items-center bg-blue-50/50 p-2 rounded-lg border border-blue-100">
+                        <div class="col-span-5">
+                            <p class="text-xs font-bold text-gray-600">Vacaciones</p>
+                            <p class="text-[10px] text-gray-400">Total: <span id="lbl-total-vac">0</span> - Tomados: <span class="text-red-500 font-bold">${diasVacacionesTomados.toFixed(1)}</span></p>
+                        </div>
+                        <div class="col-span-7">
+                            <input type="text" id="liq-vacaciones" class="currency-input w-full border-blue-200 rounded p-1 text-right text-sm font-bold text-blue-800 bg-white" placeholder="$ 0">
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-12 gap-2 items-center bg-yellow-50 p-2 rounded-lg border border-yellow-200 transition-colors" id="row-indemnizacion">
+                        <div class="col-span-5">
+                            <p class="text-xs font-bold text-yellow-800">Indemnización</p>
+                            <p class="text-[10px] text-yellow-600" id="lbl-indemnizacion-info">Sin Justa Causa</p>
+                        </div>
+                        <div class="col-span-7">
+                            <input type="text" id="liq-indemnizacion" class="currency-input w-full border-yellow-300 rounded p-1 text-right text-sm font-bold text-yellow-800" placeholder="$ 0">
+                        </div>
+                    </div>
+
+                     <div class="grid grid-cols-12 gap-2 items-center bg-red-50 p-2 rounded-lg border border-red-100">
+                        <div class="col-span-5">
+                            <p class="text-xs font-bold text-red-600">Total Deducciones</p>
+                            <p class="text-[10px] text-red-400">Préstamos pendientes</p>
+                        </div>
+                        <div class="col-span-7">
+                            <input type="text" id="liq-deducciones" class="currency-input w-full border-red-200 rounded p-1 text-right text-sm font-bold text-red-600 bg-white" value="${currencyFormatter.format(totalLoans)}">
+                        </div>
+                    </div>
+                </div>
+
+                 <div class="bg-gray-800 text-white p-5 rounded-xl flex justify-between items-center shadow-lg">
+                    <div>
+                        <span class="block text-[10px] text-gray-400 uppercase tracking-widest">Total a Pagar</span>
+                        <span class="text-xs text-gray-500">Liquidación Neta</span>
+                    </div>
+                    <span id="liq-total" class="font-black text-3xl tracking-tight">$ 0</span>
+                </div>
+
+                <button type="submit" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-gavel mr-2"></i> Finalizar Contrato y Archivar
+                </button>
+            </form>
+        `;
+
+        const inputs = {
+            motivo: document.getElementById('liq-motivo'),
+            tipoContrato: document.getElementById('liq-tipo-contrato'),
+            fecha: document.getElementById('liq-fecha-fin'),
+            fechaPactada: document.getElementById('liq-fecha-pactada'),
+            divFechaPactada: document.getElementById('div-fecha-pactada'),
+            cesantias: document.getElementById('liq-cesantias'),
+            intereses: document.getElementById('liq-intereses'),
+            prima: document.getElementById('liq-prima'),
+            vacaciones: document.getElementById('liq-vacaciones'),
+            indem: document.getElementById('liq-indemnizacion'),
+            deducciones: document.getElementById('liq-deducciones'),
+            total: document.getElementById('liq-total')
+        };
+        
+        container.querySelectorAll('.currency-input').forEach(i => {
+            _setupCurrencyInput(i);
+            i.addEventListener('input', updateLiqTotal);
+        });
+
+        let liquidacionData = { diasCesantias: 0 };
+
+        function calculateValues() {
+            const endDate = new Date(inputs.fecha.value);
+            endDate.setHours(23, 59, 59, 999);
+            if (isNaN(endDate.getTime())) return;
+
+            // 1. DÍAS CESANTÍAS (Desde el corte detectado)
+            const startC = new Date(cesantiasStartDate); startC.setHours(0,0,0,0);
+            const endC = new Date(endDate); endC.setHours(0,0,0,0);
+            
+            const diffTime = Math.abs(endC - startC);
+            // Días calendario + 1
+            let diasCesantias = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; 
+            
+            document.getElementById('lbl-dias-cesantias').textContent = diasCesantias;
+            liquidacionData.diasCesantias = diasCesantias;
+
+            // VALOR CESANTÍAS (NETO: Generado - Anticipos del periodo)
+            const valCesantiasTotal = (baseBenefits.value * diasCesantias) / 360;
+            const valCesantiasNeto = Math.max(0, valCesantiasTotal - anticiposCesantias);
+            inputs.cesantias.value = currencyFormatter.format(valCesantiasNeto);
+
+            // INTERESES (Sobre el NETO que se debe hoy, asumiendo que anticipos pagaron intereses)
+            const valIntereses = (valCesantiasNeto * diasCesantias * 0.12) / 360;
+            inputs.intereses.value = currencyFormatter.format(valIntereses);
+
+
+            // 2. PRIMA (Semestral)
+            const startSemestre = new Date(currentYear, new Date().getMonth() > 5 ? 6 : 0, 1);
+            // Si el contrato empezó en medio del semestre, se usa la fecha contrato
+            const effectiveStartPrima = realStartDate > startSemestre ? realStartDate : startSemestre;
+            
+            const diffPrima = Math.abs(endC - effectiveStartPrima);
+            let diasPrima = Math.ceil(diffPrima / (1000 * 60 * 60 * 24)) + 1;
+            if (diasPrima > 180) diasPrima = 180; // Tope semestral
+
+            const valPrimaTotal = (baseBenefits.value * diasPrima) / 360;
+            const valPrimaNeto = Math.max(0, valPrimaTotal - primaPagadaSemestre);
+            inputs.prima.value = currencyFormatter.format(valPrimaNeto);
+
+
+            // 3. VACACIONES (Históricas)
+            const startHistory = new Date(realStartDate); startHistory.setHours(0,0,0,0);
+            const diffHistory = Math.abs(endC - startHistory);
+            const totalDaysWorked = Math.ceil(diffHistory / (1000 * 60 * 60 * 24)) + 1;
+
+            const totalVacacionesGeneradas = (totalDaysWorked * 15) / 360;
+            const diasVacPendientes = Math.max(0, totalVacacionesGeneradas - diasVacacionesTomados);
+            
+            document.getElementById('lbl-total-vac').textContent = totalVacacionesGeneradas.toFixed(1);
+            inputs.vacaciones.value = currencyFormatter.format((vacationBase / 30) * diasVacPendientes);
+
+
+            // 4. INDEMNIZACIÓN
+            const motivo = inputs.motivo.value;
+            const tipo = inputs.tipoContrato.value;
+            if (tipo === 'fijo') inputs.divFechaPactada.classList.remove('hidden');
+            else inputs.divFechaPactada.classList.add('hidden');
+
+            if (motivo === 'sin_justa_causa') {
+                const indemnizacion = calculateIndemnificationValue(
+                    tipo, realStartDate, endDate,       
+                    inputs.fechaPactada.value ? new Date(inputs.fechaPactada.value) : null,
+                    parseFloat(user.salarioBasico) || 0 
+                );
+                inputs.indem.value = currencyFormatter.format(indemnizacion);
+                document.getElementById('row-indemnizacion').classList.add('bg-yellow-100', 'border-yellow-400');
+                document.getElementById('lbl-indemnizacion-info').textContent = "Calculada Automáticamente";
+            } else {
+                inputs.indem.value = "$ 0";
+                document.getElementById('row-indemnizacion').classList.remove('bg-yellow-100', 'border-yellow-400');
+                document.getElementById('lbl-indemnizacion-info').textContent = "No aplica";
+            }
+            updateLiqTotal();
+        }
+
+        function updateLiqTotal() {
+            let total = 0;
+            ['liq-cesantias', 'liq-intereses', 'liq-prima', 'liq-vacaciones', 'liq-indemnizacion'].forEach(id => {
+                total += parseFloat(document.getElementById(id).value.replace(/[$. ]/g, '')) || 0;
+            });
+            const deductions = parseFloat(inputs.deducciones.value.replace(/[$. ]/g, '')) || 0;
+            inputs.total.textContent = currencyFormatter.format(total - deductions);
+        }
+
+        inputs.fecha.addEventListener('change', calculateValues);
+        inputs.motivo.addEventListener('change', calculateValues);
+        inputs.tipoContrato.addEventListener('change', calculateValues);
+        inputs.fechaPactada.addEventListener('change', calculateValues);
+        calculateValues();
+
+        document.getElementById('liq-form').onsubmit = (e) => {
+            e.preventDefault();
+            const totalText = inputs.total.textContent;
+            const monto = parseFloat(totalText.replace(/[$. \u00A0]/g, '').replace(',', '.')) || 0;
+            
+            const fechaRetiroInput = inputs.fecha.value;
+            let fechaRetiroFmt = fechaRetiroInput;
+            if (fechaRetiroInput) {
+                const parts = fechaRetiroInput.split('-'); 
+                if (parts.length === 3) fechaRetiroFmt = `${parts[2]}/${parts[1]}/${parts[0]}`;
+            }
+
+            _openConfirmModal(`CONFIRMAR LIQUIDACIÓN:\n\nTotal: ${totalText}\n\nEl usuario será ARCHIVADO.`, async () => {
+                 await saveSpecialPayment(user.id, {
+                    tipo: 'Liquidación Final de Contrato',
+                    monto: monto,
+                    detalles: { 
+                        motivo: inputs.motivo.value,
+                        fechaIngreso: realStartDate.toLocaleDateString('es-CO'), 
+                        fechaRetiro: fechaRetiroFmt,
+                        
+                        diasLiquidados: liquidacionData.diasCesantias, 
+                        
+                        cesantias: inputs.cesantias.value,
+                        cesantiasDescontadas: anticiposCesantias,
+                        intereses: inputs.intereses.value,
+                        prima: inputs.prima.value,
+                        primaDescontada: primaPagadaSemestre,
+                        vacaciones: inputs.vacaciones.value,
+                        vacacionesTomadas: diasVacacionesTomados,
+                        indemnizacion: inputs.indem.value,
+                        deducciones: inputs.deducciones.value,
+                        
+                        basePrestacional: baseBenefits.value,
+                        baseSalarial: vacationBase 
+                    }
+                });
+                
+                if (totalLoans > 0) {
+                   const batch = writeBatch(_db);
+                   loansSnap.forEach(doc => batch.update(doc.ref, { status: 'paid', paidAt: serverTimestamp(), note: 'Cancelado Liquidación' }));
+                   await batch.commit();
+                }
+
+                await updateDoc(doc(_db, "users", user.id), { 
+                    status: 'archived', 
+                    contractEndDate: new Date(inputs.fecha.value)
+                });
+                
+                window.showToast("Liquidación registrada.", "success");
+                loadEmpleadosView(); 
+            });
+        };
+
+    } catch (error) {
+        console.error("Error liquidación:", error);
+    }
+}
+
+// --- E. FORMULARIO VACACIONES (NUEVO MÓDULO) ---
+async function renderVacacionesForm(container, user) {
+    container.innerHTML = `<div class="py-12 text-center"><div class="loader mx-auto"></div><p class="text-sm text-gray-400 mt-2">Calculando días disponibles...</p></div>`;
+
+    try {
+        const config = _getPayrollConfig() || { salarioMinimo: 1300000 };
+        
+        // 1. BASE: Vacaciones siempre es sobre el básico (sin auxilio), salvo que sea salario mínimo.
+        let vacationBase = parseFloat(user.salarioBasico) || 0;
+        let vacationBaseLabel = "Salario Básico";
+        if (user.deduccionSobreMinimo) {
+            vacationBase = config.salarioMinimo;
+            vacationBaseLabel = "Salario Mínimo (Config)";
+        }
+
+        // 2. FECHAS
+        const realStartDate = getEmployeeStartDate(user);
+        const today = new Date();
+        const diffTime = Math.abs(today - realStartDate);
+        const daysWorkedTotal = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // Días totales contrato
+
+        // 3. HISTORIAL: Buscar días ya pagados/disfrutados
+        // Buscamos en TOOOODO el historial de pagos
+        const q = query(collection(_db, "users", user.id, "paymentHistory"));
+        const snapshot = await getDocs(q);
+        
+        let diasTomados = 0;
+        snapshot.forEach(doc => {
+            const p = doc.data();
+            const concepto = (p.concepto || '').toLowerCase();
+            const det = p.details || {};
+
+            // Sumamos si es un pago específico de vacaciones o si fue una liquidación final previa
+            if (concepto.includes('vacaciones')) {
+                // Si guardamos "diasPagados" en details, lo usamos. Si no, inferimos por monto (menos preciso)
+                if (det.diasPagados) {
+                    diasTomados += parseFloat(det.diasPagados);
+                } else if (det.dias) {
+                    diasTomados += parseFloat(det.dias); // Compatibilidad
+                }
+            }
+            // También revisar si hubo una liquidación final anterior que pagó vacaciones
+            if (concepto.includes('liquidaci') && det.vacaciones && det.diasLiquidados) {
+                 // Nota: Esto es complejo si se re-contrató. 
+                 // Asumimos que si hay una liquidación, el contrato se reinició y la fecha de inicio cambió.
+                 // Si la fecha de inicio es la misma, sumamos esos días.
+            }
+        });
+
+        // 4. CÁLCULO DE DÍAS
+        // Fórmula: 15 días por cada 360 días trabajados
+        const diasGenerados = (daysWorkedTotal * 15) / 360;
+        const diasPendientes = Math.max(0, diasGenerados - diasTomados);
+        
+        // Valor monetario de los días pendientes
+        const valorPendiente = (vacationBase / 30) * diasPendientes;
+
+
+        // --- HTML UI ---
+        container.innerHTML = `
+            <form id="vacaciones-form" class="space-y-6">
+                <div class="bg-cyan-50 border-l-4 border-cyan-500 p-4 rounded-r-lg flex justify-between items-center">
+                    <div>
+                        <h4 class="font-bold text-cyan-900">Gestión de Vacaciones</h4>
+                        <p class="text-sm text-cyan-700">Disfrute o compensación en dinero.</p>
+                    </div>
+                     <div class="text-right text-xs hidden sm:block">
+                        <p class="text-cyan-500 font-bold uppercase">Base Cálculo</p>
+                        <p class="font-mono font-bold text-cyan-800">${currencyFormatter.format(vacationBase)}</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-4 text-center">
+                    <div class="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                        <p class="text-[10px] text-gray-400 uppercase font-bold">Generados</p>
+                        <p class="text-lg font-bold text-gray-700" title="Total contrato">${diasGenerados.toFixed(1)} <span class="text-xs font-normal">días</span></p>
+                    </div>
+                    <div class="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                        <p class="text-[10px] text-gray-400 uppercase font-bold">Tomados</p>
+                        <p class="text-lg font-bold text-orange-500">${diasTomados.toFixed(1)} <span class="text-xs font-normal">días</span></p>
+                    </div>
+                    <div class="bg-cyan-50 p-3 rounded-lg border border-cyan-200 shadow-sm">
+                        <p class="text-[10px] text-cyan-600 uppercase font-bold">Disponibles</p>
+                        <p class="text-xl font-black text-cyan-700" id="vac-saldo-dias">${diasPendientes.toFixed(1)}</p>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-100 pt-4">
+                    <h5 class="font-bold text-gray-700 text-sm mb-4">Registrar Novedad</h5>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Días a Pagar / Disfrutar</label>
+                            <div class="flex items-center gap-2">
+                                <input type="number" id="vac-dias-pagar" class="w-full border-gray-300 rounded-lg p-3 text-center font-bold text-gray-700 focus:ring-cyan-500" placeholder="0" min="0.5" step="0.5">
+                                <button type="button" id="btn-max-vac" class="bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold px-3 py-3 rounded-lg border border-gray-200">MAX</button>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Valor a Pagar</label>
+                            <input type="text" id="vac-valor" class="currency-input w-full border-gray-300 rounded-lg p-3 font-bold text-right text-cyan-700 focus:ring-cyan-500" value="$ 0">
+                        </div>
+                    </div>
+                    
+                    <div class="mt-4">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Periodo / Nota</label>
+                        <input type="text" id="vac-nota" class="w-full border-gray-300 rounded-lg p-3 text-sm" placeholder="Ej: Vacaciones adelantadas, Semana Santa, etc.">
+                    </div>
+                    
+                     <div class="mt-4 flex gap-4">
+                        <label class="flex items-center gap-2 cursor-pointer bg-gray-50 p-2 rounded border border-gray-100 flex-1">
+                            <input type="radio" name="tipo_vac" value="disfrute" checked class="text-cyan-600 focus:ring-cyan-500">
+                            <div class="text-sm">
+                                <span class="block font-bold text-gray-700">Disfrute (Tiempo)</span>
+                                <span class="block text-[10px] text-gray-400">El empleado sale a descansar.</span>
+                            </div>
+                        </label>
+                         <label class="flex items-center gap-2 cursor-pointer bg-gray-50 p-2 rounded border border-gray-100 flex-1">
+                            <input type="radio" name="tipo_vac" value="dinero" class="text-cyan-600 focus:ring-cyan-500">
+                             <div class="text-sm">
+                                <span class="block font-bold text-gray-700">Compensadas (Dinero)</span>
+                                <span class="block text-[10px] text-gray-400">Se pagan sin dejar de trabajar.</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="bg-gray-800 text-white p-5 rounded-xl flex justify-between items-center shadow-lg">
+                    <div>
+                        <span class="block text-[10px] text-gray-400 uppercase tracking-widest">Total a Girar</span>
+                        <span class="text-xs text-gray-500">Neto Vacaciones</span>
+                    </div>
+                    <span id="vac-total" class="font-black text-3xl tracking-tight">$ 0</span>
+                </div>
+
+                <button type="submit" class="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-umbrella-beach"></i> Registrar Vacaciones
+                </button>
+            </form>
+        `;
+        
+        // Listeners
+        const inputDias = document.getElementById('vac-dias-pagar');
+        const inputValor = document.getElementById('vac-valor');
+        const inputNota = document.getElementById('vac-nota');
+        const displayTotal = document.getElementById('vac-total');
+        
+        _setupCurrencyInput(inputValor);
+
+        // Auto-calcular valor al cambiar días
+        inputDias.addEventListener('input', () => {
+            const dias = parseFloat(inputDias.value) || 0;
+            const valor = (vacationBase / 30) * dias;
+            inputValor.value = currencyFormatter.format(valor);
+            displayTotal.textContent = currencyFormatter.format(valor);
+        });
+
+        // Permitir editar valor manual y actualizar total
+        inputValor.addEventListener('input', () => {
+             displayTotal.textContent = inputValor.value;
+        });
+
+        // Botón MAX
+        document.getElementById('btn-max-vac').onclick = () => {
+            inputDias.value = diasPendientes.toFixed(1);
+            inputDias.dispatchEvent(new Event('input')); // Disparar recalculo
+        };
+
+        // Guardar
+        document.getElementById('vacaciones-form').onsubmit = (e) => {
+            e.preventDefault();
+            const diasAPagar = parseFloat(inputDias.value) || 0;
+            const valorTotal = parseFloat(inputValor.value.replace(/[$. ]/g, '')) || 0;
+            const tipo = document.querySelector('input[name="tipo_vac"]:checked').value;
+            const nota = inputNota.value || (tipo === 'disfrute' ? 'Vacaciones disfrutadas' : 'Vacaciones compensadas en dinero');
+
+            if (diasAPagar <= 0) { window.showToast("Ingresa días válidos.", "error"); return; }
+
+            const tituloConcepto = tipo === 'disfrute' ? 'Pago de Vacaciones (Disfrute)' : 'Vacaciones Compensadas (Dinero)';
+
+            _openConfirmModal(`¿Registrar pago de ${diasAPagar} días de vacaciones por ${currencyFormatter.format(valorTotal)}?`, async () => {
+                await saveSpecialPayment(user.id, {
+                    tipo: tituloConcepto,
+                    monto: valorTotal,
+                    detalles: {
+                        diasPagados: diasAPagar, // CLAVE: Este dato se leerá en la liquidación para descontar
+                        baseCalculo: vacationBase,
+                        tipoVacaciones: tipo,
+                        periodoNota: nota,
+                        saldoAnteriorDias: diasPendientes
+                    }
+                });
+            });
+        };
+
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = `<p class="text-red-500 text-center">Error cargando vacaciones.</p>`;
+    }
+}
+
+/**
+ * Calcula la indemnización por despido sin justa causa (Norma Colombia).
+ * @param {string} type - 'fijo' o 'indefinido'
+ * @param {Date} startDate - Fecha inicio contrato
+ * @param {Date} endDate - Fecha de despido
+ * @param {Date} contractEndDate - Fecha fin pactada (Solo para fijo)
+ * @param {number} salary - Salario base
+ */
+function calculateIndemnificationValue(type, startDate, endDate, contractEndDate, salary) {
+    if (!startDate || !endDate || !salary) return 0;
+    
+    // Normalizar horas
+    const start = new Date(startDate); start.setHours(0,0,0,0);
+    const end = new Date(endDate); end.setHours(0,0,0,0);
+    
+    // Diferencia en días calendario
+    const diffTime = end.getTime() - start.getTime();
+    const daysWorked = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+    if (daysWorked <= 0) return 0;
+
+    // 1. CONTRATO A TÉRMINO FIJO
+    // Valor: Salarios correspondientes al tiempo que falte para terminar el contrato.
+    if (type === 'fijo') {
+        if (!contractEndDate) return 0; // Se requiere fecha fin pactada
+        
+        const pactadoEnd = new Date(contractEndDate); pactadoEnd.setHours(0,0,0,0);
+        
+        // Si el contrato ya venció o la fecha de despido es posterior, no hay indemnización por tiempo restante
+        if (end >= pactadoEnd) return 0;
+
+        const diffRemaining = pactadoEnd.getTime() - end.getTime();
+        const daysRemaining = Math.ceil(diffRemaining / (1000 * 60 * 60 * 24));
+        
+        // Mínimo 15 días según algunas interpretaciones, pero la ley estricta es "lo que falte".
+        // Usaremos el cálculo exacto de días faltantes.
+        return (salary / 30) * daysRemaining;
+    }
+
+    // 2. CONTRATO A TÉRMINO INDEFINIDO
+    // (Para salarios < 10 SMMLV - Regla general Ley 789/2002)
+    // - 30 días por el primer año.
+    // - 20 días por cada año subsiguiente (y proporcionalmente).
+    if (type === 'indefinido') {
+        let indemnizacionDias = 0;
+
+        if (daysWorked <= 360) {
+            // Menos o igual a 1 año: Proporcional a 30 días
+            indemnizacionDias = (30 * daysWorked) / 360;
+        } else {
+            // Más de 1 año
+            // Primer año fijo: 30 días
+            indemnizacionDias = 30;
+            
+            // Tiempo restante
+            const daysRemaining = daysWorked - 360;
+            
+            // 20 días por cada año extra (proporcional)
+            const diasExtra = (20 * daysRemaining) / 360;
+            indemnizacionDias += diasExtra;
+        }
+
+        return (salary / 30) * indemnizacionDias;
+    }
+
+    return 0;
+}
+
+// --- HELPER PARA GUARDAR PAGOS ESPECIALES ---
+async function saveSpecialPayment(userId, data) {
+    const paymentData = {
+        userId: userId,
+        paymentDate: new Date().toISOString().split('T')[0],
+        concepto: data.tipo,
+        monto: data.monto,
+        details: data.detalles || {},
+        createdAt: serverTimestamp(),
+        registeredBy: _getCurrentUserId(),
+        isSpecial: true // Flag para diferenciar en reportes
+    };
+
+    await addDoc(collection(_db, "users", userId, "paymentHistory"), paymentData);
+    window.showToast("Pago registrado correctamente.", "success");
+    loadPaymentHistoryView(userId); // Recargar
+}
+
+/**
+ * Carga los préstamos activos dentro del formulario de nómina para aplicar deducciones.
+ * Se llama automáticamente al renderizar la pestaña "Nómina".
+ */
+async function loadActiveLoansForForm(userId) {
+    const fieldset = document.getElementById('loan-management-fieldset-placeholder');
+    if (!fieldset) return;
+
+    // 1. Mostrar estado de carga
+    fieldset.innerHTML = `
+        <div class="flex justify-center items-center py-4 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+            <div class="loader-small mx-auto"></div>
+            <span class="ml-2 text-xs text-gray-400">Buscando préstamos activos...</span>
+        </div>`;
+
+    try {
+        // 2. Consulta a Firebase (Solo préstamos con status "active")
+        const q = query(
+            collection(_db, "users", userId, "loans"),
+            where("status", "==", "active"),
+            orderBy("date", "asc")
+        );
+        
+        const snapshot = await getDocs(q);
+
+        // 3. Si no hay préstamos, limpiar y salir
+        if (snapshot.empty) {
+            fieldset.innerHTML = `
+                <div class="text-center py-3 bg-green-50 rounded-lg border border-green-100">
+                    <p class="text-xs text-green-700 font-bold"><i class="fa-solid fa-check mr-1"></i> Paz y Salvo</p>
+                    <p class="text-[10px] text-green-600">Este usuario no tiene deudas activas.</p>
+                </div>`;
+            return;
+        }
+
+        // 4. Generar HTML de la lista
+        let html = `<div class="space-y-2">`;
+        let totalDebt = 0;
+
+        snapshot.forEach(doc => {
+            const loan = doc.data();
+            const loanId = doc.id;
+            
+            totalDebt += (loan.balance || 0);
+
+            // Calcular Cuota Sugerida: (Monto Total / Cuotas Pactadas)
+            // Si la cuota sugerida es mayor al saldo restante, usamos el saldo.
+            let installmentVal = (loan.amount / (loan.installments || 1));
+            if (installmentVal > loan.balance) {
+                installmentVal = loan.balance;
+            }
+
+            html += `
+                <div class="flex justify-between items-center bg-white p-2 rounded-lg border border-gray-200 shadow-sm hover:border-indigo-300 transition-colors">
+                    <div class="flex-1 min-w-0 pr-3">
+                        <div class="flex justify-between items-start">
+                            <p class="text-xs font-bold text-gray-700 truncate" title="${loan.description}">
+                                ${loan.description}
+                            </p>
+                            <span class="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded border border-gray-200">
+                                ${new Date(loan.date).toLocaleDateString('es-CO', {month:'short', day:'numeric'})}
+                            </span>
+                        </div>
+                        <div class="flex justify-between items-center mt-1">
+                            <p class="text-[10px] text-gray-400">
+                                Cuotas: ${loan.installments}
+                            </p>
+                            <p class="text-[10px] font-medium text-gray-500">
+                                Saldo: <span class="text-rose-600 font-bold">${currencyFormatter.format(loan.balance)}</span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="w-28">
+                        <label class="block text-[9px] text-indigo-400 font-bold uppercase text-right mb-0.5">A Descontar</label>
+                        <input type="text" 
+                            class="loan-deduction-input w-full border border-gray-300 rounded-md py-1 px-2 text-right text-xs font-bold text-gray-800 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none transition-all"
+                            value="${currencyFormatter.format(installmentVal)}"
+                            data-loan-id="${loanId}"
+                            data-balance="${loan.balance}">
+                    </div>
+                </div>
+            `;
+        });
+
+        html += `</div>`;
+        
+        // Agregar footer con totales dentro del recuadro
+        html += `
+            <div class="mt-3 flex justify-between items-center pt-2 border-t border-red-100">
+                <span class="text-[10px] text-gray-500">Deuda Total: <strong>${currencyFormatter.format(totalDebt)}</strong></span>
+                <div class="text-right">
+                    <span class="text-[10px] font-bold text-rose-500 uppercase mr-1">Total Descuento:</span>
+                    <span id="payment-total-loan-deduction-display" class="text-sm font-black text-rose-700">$ 0</span>
+                </div>
+            </div>
+        `;
+
+        fieldset.innerHTML = html;
+
+        // 5. Configurar Listeners e Inputs
+        const inputs = fieldset.querySelectorAll('.loan-deduction-input');
+        inputs.forEach(input => {
+            // Aplicar formato de moneda al escribir
+            if (_setupCurrencyInput) _setupCurrencyInput(input);
+            
+            // Recalcular el total general de la nómina cuando cambia el valor
+            input.addEventListener('input', () => {
+                if (typeof updatePaymentTotal === 'function') {
+                    updatePaymentTotal();
+                }
+            });
+        });
+
+        // 6. Ejecutar cálculo inicial para que el input muestre el valor correcto en el total
+        if (typeof updatePaymentTotal === 'function') {
+            updatePaymentTotal();
+        }
+
+    } catch (error) {
+        console.error("Error cargando préstamos para formulario:", error);
+        fieldset.innerHTML = `<p class="text-center text-xs text-red-500 py-2">Error al cargar datos de préstamos.</p>`;
+    }
+}
+
+
+// --- LISTADO DE HISTORIAL (CORREGIDO PARA ABRIR COMPROBANTE) ---
+function loadPaymentHistoryList(userId, tableBody, user) {
+    const q = query(collection(_db, "users", userId, "paymentHistory"), orderBy("createdAt", "desc"));
+    
+    // Usamos la variable global de suscripción para poder limpiarla después
+    unsubscribeEmpleadosTab = onSnapshot(q, (snapshot) => {
+        if (snapshot.empty) {
+            tableBody.innerHTML = `<tr><td class="p-8 text-center text-sm text-gray-400 border-b border-gray-50">No hay pagos registrados aún.</td></tr>`;
+            return;
+        }
+        
+        tableBody.innerHTML = '';
+        
+        snapshot.forEach(docSnap => {
+            const payment = { id: docSnap.id, ...docSnap.data() };
+            const date = payment.createdAt ? payment.createdAt.toDate().toLocaleDateString('es-CO') : '---';
+            const isSpecial = payment.isSpecial ? '<span class="inline-block bg-yellow-100 text-yellow-800 text-[9px] font-bold px-1.5 py-0.5 rounded ml-2 uppercase tracking-wide">Especial</span>' : '';
+            
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-slate-50 transition-colors group";
+            tr.innerHTML = `
+                <td class="p-4 border-b border-gray-100">
+                    <div class="flex justify-between items-start mb-1">
+                        <span class="text-xs font-bold text-gray-500 font-mono">${date}</span>
+                        <span class="text-sm font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">${currencyFormatter.format(payment.monto)}</span>
+                    </div>
+                    <p class="text-xs text-gray-700 font-medium truncate max-w-[200px]">${payment.concepto} ${isSpecial}</p>
+                    
+                    <div class="flex justify-end gap-2 mt-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                         <button class="view-voucher-btn text-[10px] font-bold bg-white text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors shadow-sm flex items-center">
+                            <i class="fa-regular fa-eye mr-1"></i> Ver
+                         </button>
+                         <button class="delete-payment-btn text-[10px] font-bold bg-white text-rose-500 border border-rose-200 px-3 py-1.5 rounded-lg hover:bg-rose-50 transition-colors shadow-sm flex items-center">
+                            <i class="fa-solid fa-trash mr-1"></i>
+                         </button>
                     </div>
                 </td>`;
             
-             const viewBtn = row.querySelector('.view-voucher-btn');
-             if(viewBtn) viewBtn.onclick = () => openPaymentVoucherModal(payment, user);
+             // Asignar listeners directamente al elemento creado
+             const viewBtn = tr.querySelector('.view-voucher-btn');
+             const delBtn = tr.querySelector('.delete-payment-btn');
+
+             // CORRECCIÓN PRINCIPAL: Pasamos 'user' que viene como argumento
+             viewBtn.onclick = () => openPaymentVoucherModal(payment, user);
              
-             tableBody.appendChild(row);
+             delBtn.onclick = () => {
+                 _openConfirmModal("¿Eliminar este registro de pago de forma permanente?", async() => {
+                    try {
+                        await deleteDoc(doc(_db, "users", userId, "paymentHistory", payment.id));
+                        window.showToast("Registro eliminado", "success");
+                    } catch(e) {
+                        console.error(e);
+                        window.showToast("Error al eliminar", "error");
+                    }
+                 });
+             };
+             
+             tableBody.appendChild(tr);
         });
     });
+}
 
-    // --- 9. LISTENERS FINALES DEL FORMULARIO ---
-    // Ya clonamos al principio, así que solo agregamos listeners al form "vivo"
-    form.addEventListener('submit', (e) => handleRegisterPayment(e, userId));
-
-    form.querySelectorAll('.payment-horas-input, .currency-input, .payment-dias-input, #payment-liquidar-bonificacion').forEach(input => {
-        input.addEventListener('input', () => { if (typeof updatePaymentTotal === 'function') updatePaymentTotal(); });
-        input.addEventListener('change', () => { if (typeof updatePaymentTotal === 'function') updatePaymentTotal(); });
+// Función global o exportada para borrar
+window.deletePayment = (uid, pid) => {
+    _openConfirmModal("¿Eliminar registro de pago?", async() => {
+        await deleteDoc(doc(_db, "users", uid, "paymentHistory", pid));
     });
-    form.querySelectorAll('.currency-input').forEach(_setupCurrencyInput);
+};
+
+/**
+ * Calcula la base para prestaciones (Prima/Cesantías)
+ * Regla: Si cotiza mínimo -> (SMMLV + Aux). Si no -> (Sueldo + Aux si aplica).
+ */
+function calculateBaseForBenefits(user) {
+    const config = _getPayrollConfig() || { salarioMinimo: 1300000, auxilioTransporte: 162000 }; // Fallback
+    const minWage = config.salarioMinimo;
+    const aux = config.auxilioTransporte;
+    
+    // CASO 1: Empleado configurado para cotizar sobre el mínimo
+    if (user.deduccionSobreMinimo === true) {
+        return {
+            value: minWage + aux,
+            isMinimum: true,
+            label: 'Salario Mínimo + Aux. Transporte'
+        };
+    }
+
+    // CASO 2: Empleado normal
+    let base = parseFloat(user.salarioBasico) || 0;
+    
+    // Regla de ley: Si gana menos de 2 SMMLV, se suma auxilio
+    if (base <= (minWage * 2)) {
+        return {
+            value: base + aux,
+            isMinimum: false,
+            label: 'Salario Básico + Aux. Transporte'
+        };
+    }
+
+    // CASO 3: Gana más de 2 SMMLV (Salario integral o alto sin auxilio)
+    return {
+        value: base,
+        isMinimum: false,
+        label: 'Salario Básico (Sin Auxilio)'
+    };
 }
 
 

@@ -5145,6 +5145,24 @@ async function openMainModal(type, data = {}) {
     const modalForm = document.getElementById('modal-form');
     const modalContentDiv = document.getElementById('main-modal-content');
 
+    const safeDate = (firebaseDate) => {
+            if (!firebaseDate) return '';
+            try {
+                // 1. Si es Timestamp de Firebase
+                if (typeof firebaseDate.toDate === 'function') {
+                    return firebaseDate.toDate().toISOString().split('T')[0];
+                }
+                // 2. Si es objeto Date
+                if (firebaseDate instanceof Date) {
+                    return firebaseDate.toISOString().split('T')[0];
+                }
+                // 3. Si es String (ISO)
+                return String(firebaseDate).split('T')[0];
+            } catch (e) {
+                return ''; // Si falla, retorna vacío para no romper el form
+            }
+        };
+
     // =================================================================
     // 1. RESETEO MAESTRO (CORREGIDO Y BLINDADO)
     // =================================================================
@@ -9454,6 +9472,7 @@ async function openMainModal(type, data = {}) {
             modalBody.classList.add('p-0', 'overflow-hidden');
             modalBody.style.padding = '0';
             modalBody.parentElement.classList.add('overflow-hidden');
+            modalForm.dataset.id = data.id; // <--- ESTA LÍNEA ES CRUCIAL
 
             title = 'Editar Usuario';
             // Aseguramos clases limpias para evitar conflictos visuales
@@ -9558,14 +9577,14 @@ async function openMainModal(type, data = {}) {
                                             <input type="text" name="address" value="${data.address}" required class="w-full border-gray-200 bg-gray-50 focus:bg-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all">
                                         </div>
 
-<div class="md:col-span-2 grid grid-cols-2 gap-5 pt-4 mt-2 border-t border-gray-100">
+                                        <div class="md:col-span-2 grid grid-cols-2 gap-5 pt-4 mt-2 border-t border-gray-100">
                                             <div>
                                                 <label class="block text-xs font-bold text-blue-600 uppercase mb-1">Fecha Inicio Contrato</label>
-                                                <input type="date" name="contractStartDate" value="${data.contractStartDate || ''}" class="w-full border-blue-200 bg-blue-50 focus:bg-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                                                <input type="date" name="contractStartDate" value="${safeDate(data.contractStartDate)}" class="w-full border-blue-200 bg-blue-50 focus:bg-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all">
                                             </div>
                                             <div>
                                                 <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Fin Contrato</label>
-                                                <input type="date" name="contractEndDate" value="${data.contractEndDate || ''}" class="w-full border-gray-200 bg-gray-50 focus:bg-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-500 outline-none transition-all">
+                                                <input type="date" name="contractEndDate" value="${safeDate(data.contractEndDate)}" class="w-full border-gray-200 bg-gray-50 focus:bg-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-gray-500 outline-none transition-all">
                                                 <p class="text-[9px] text-gray-400 mt-1">Dejar vacío si es indefinido.</p>
                                             </div>
                                         </div>
@@ -10577,10 +10596,7 @@ async function openMainModal(type, data = {}) {
             }, 100);
 
             break;
-
-
     }
-
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').innerHTML = bodyHtml;
     confirmBtn.textContent = btnText;
@@ -10718,9 +10734,11 @@ modalForm.addEventListener('submit', async (e) => {
     // 1. ¡LO MÁS IMPORTANTE! Evitar recarga de página
     e.preventDefault();
 
+    const formData = new FormData(modalForm);
     const data = Object.fromEntries(new FormData(modalForm).entries());
     const type = modalForm.dataset.type;
     const id = modalForm.dataset.id;
+    
 
     // Filtro para modales que NO usan este submit (sino lógica propia interna)
     if (['new-tool', 'edit-tool', 'assign-tool', 'return-tool', 'register-maintenance', 'new-dotacion-catalog-item', 'add-dotacion-stock', 'register-dotacion-delivery', 'return-dotacion-options'].includes(type)) {
@@ -11865,6 +11883,7 @@ modalForm.addEventListener('submit', async (e) => {
             break;
         }
         case 'editUser':
+            
             try {
                 modalConfirmBtn.disabled = true;
                 modalConfirmBtn.textContent = 'Guardando...';
