@@ -11,7 +11,8 @@ module.exports = {
     "./js/empleados.js",
     "./js/solicitudes.js",
     "./js/ingresopersonal.js",
-    "./js/herramientas.js" // <-- Asegúrate que esta línea esté
+    "./js/herramientas.js",
+    "./js/cotizaciones.js"
   ],
 
 

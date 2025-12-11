@@ -16,6 +16,7 @@ import { initConfiguracion, loadConfiguracionView } from './configuracion.js';
 import { initCartera, loadCarteraView } from "./cartera.js";
 import { initSolicitudes, loadSolicitudesView } from './solicitudes.js';
 import { handleReportEntry } from './ingresopersonal.js';
+import { initCotizaciones, loadCotizacionesView } from './cotizaciones.js'; // <--- AÑADIR ESTO
 
 // --- CONFIGURACIÓN Y ESTADO ---
 
@@ -439,6 +440,11 @@ const SIDEBAR_CONFIG = [
     { key: 'herramienta', selector: 'a[data-view="herramienta"]', label: 'Herramienta' },
     { key: 'dotacion', selector: 'a[data-view="dotacion"]', label: 'Dotación' },
     { key: 'cartera', selector: 'a[data-view="cartera"]', label: 'Cartera' },
+    
+    // --- NUEVA LÍNEA AGREGADA ---
+    { key: 'cotizaciones', selector: 'a[data-view="cotizaciones"]', label: 'Cotizaciones' },
+    // -----------------------------
+
     { key: 'solicitud', selector: 'a[data-view="solicitud"]', label: 'Solicitud Material' },
     { key: 'empleados', selector: 'a[data-view="empleados"]', label: 'Empleados' },
     { key: 'proveedores', selector: 'a[data-view="proveedores"]', label: 'Proveedores' },
@@ -13740,33 +13746,33 @@ if ('serviceWorker' in navigator) {
 document.addEventListener('DOMContentLoaded', () => {
 
     views = {
-        'dashboard-general': document.getElementById('dashboard-general-view'), // <-- AÑADIR ESTA LÍNEA
+        'dashboard-general': document.getElementById('dashboard-general-view'),
         proyectos: document.getElementById('dashboard-view'),
         tareas: document.getElementById('tareas-view'),
         herramienta: document.getElementById('herramienta-view'),
         dotacion: document.getElementById('dotacion-view'),
         'cartera-view': document.getElementById('cartera-view'),
+        
+        // --- NUEVA VISTA REGISTRADA ---
+        cotizaciones: document.getElementById('cotizaciones-view'),
+        'cotizacion-detalle': document.getElementById('cotizacion-detalle-view'),
+        // ------------------------------
+
         solicitud: document.getElementById('solicitud-view'),
         empleados: document.getElementById('empleados-view'),
-        'empleado-details': document.getElementById('empleado-details-view'), // <-- AÑADIDO
-        'payment-history-view': document.getElementById('payment-history-view'), // <-- AÑADIDO
-        'configuracion-view': document.getElementById('configuracion-view'), // <-- AÑADIDO
+        'empleado-details': document.getElementById('empleado-details-view'),
+        'payment-history-view': document.getElementById('payment-history-view'),
+        'configuracion-view': document.getElementById('configuracion-view'),
         proveedores: document.getElementById('proveedores-view'),
         supplierDetails: document.getElementById('supplier-details-view'),
         adminPanel: document.getElementById('admin-panel-view'),
-
-        // --- INICIO DE LA CORRECCIÓN DEFINITIVA ---
-        // La clave debe tener comillas y guion para coincidir con la llamada showView('project-details')
         'project-details': document.getElementById('project-details-view'),
-        // --- FIN DE LA CORRECCIÓN DEFINITIVA ---
-
         subItems: document.getElementById('sub-items-view'),
         corteDetails: document.getElementById('corte-details-view'),
         catalog: document.getElementById('catalog-view'),
         compras: document.getElementById('compras-view'),
         reports: document.getElementById('reports-view'),
         'material-request-view': document.getElementById('material-request-view'),
-
     };
 
     // Inicializamos el nuevo módulo y le pasamos las dependencias globales
@@ -13825,6 +13831,8 @@ document.addEventListener('DOMContentLoaded', () => {
         db,
         setupCurrencyInput // Pasamos la función global de formato de moneda
     );
+
+    initCotizaciones(db, showView, currentUser); // <--- AÑADIR ESTO
 
     initSolicitudes(
         db,
@@ -15412,7 +15420,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (viewName === 'dotacion') {
                     showView('dotacion');
                     loadDotacionView();
-
+                } else if (viewName === 'cotizaciones') {
+                    loadCotizacionesView();
                 } else if (viewName === 'adminPanel') {
                     showView('adminPanel');
                     loadUsers('active');
