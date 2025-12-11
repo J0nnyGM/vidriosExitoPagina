@@ -437,10 +437,10 @@ async function generarPDF() {
         tableWidth: 'auto' // Deja que autoTable calcule el mejor ajuste
     });
 
-    let finalY = doc.lastAutoTable.finalY; // Sin margen extra para pegar el cuadro
+    let finalY = doc.lastAutoTable.finalY;
 
-     // --- D. CUADRO DE TOTALES (ESTRUCTURA DE TABLA) ---
-    
+    // --- D. CUADRO DE TOTALES (CORREGIDO Y SEGURO) ---
+
     const calculos = calcularTotalesGenerales();
     const bd = calculos.breakdown;
     const aiu = currentConfig.aiu;
@@ -448,149 +448,155 @@ async function generarPDF() {
     let totalsBody = [];
     let totalsHead = null;
     let totalsColumnStyles = {};
+    
+    // 1. Valores por defecto (Fallback) para evitar el error si falla el cálculo
+    let totalsTableWidth = currentConfig.modo === 'MIXTO' ? 120 : 75;
+    let totalsMarginLeft = PAGE_WIDTH - T_MARGIN_RIGHT - totalsTableWidth;
 
+    // 2. Intento de alineación dinámica segura
+    try {
+        const lastTable = doc.lastAutoTable;
+        if (lastTable && lastTable.columns && lastTable.columns.length > 0) {
+            const cols = lastTable.columns;
+            const tableWidth = lastTable.table ? lastTable.table.width : (PAGE_WIDTH - T_MARGIN_LEFT - T_MARGIN_RIGHT);
+            const tableRightX = T_MARGIN_LEFT + tableWidth;
+            const len = cols.length;
+
+            if (currentConfig.modo === 'MIXTO') {
+                // Indices de las últimas 4 columnas (VR.SUM, TOT.SUM, VR.INST, TOT.INST)
+                const idxTotInst = len - 1;
+                const idxVrInst = len - 2;
+                const idxTotSum = len - 3;
+                const idxVrSum = len - 4;
+
+                // VERIFICACIÓN DE SEGURIDAD: Solo accedemos a .width si las columnas existen
+                if (cols[idxVrSum] && cols[idxTotSum] && cols[idxVrInst] && cols[idxTotInst]) {
+                    
+                    const wInst = cols[idxVrInst].width + cols[idxTotInst].width;
+                    let wSum = cols[idxVrSum].width + cols[idxTotSum].width;
+
+                    // Si es muy estrecho, tomar prestado espacio de la columna anterior (M2) si existe
+                    if (wSum < 35 && len > 4 && cols[len - 5]) {
+                        wSum += cols[len - 5].width;
+                    }
+
+                    totalsTableWidth = wSum + wInst;
+                    totalsMarginLeft = tableRightX - totalsTableWidth;
+
+                    totalsColumnStyles = {
+                        0: { cellWidth: wSum * 0.6, halign: 'left' },
+                        1: { cellWidth: wSum * 0.4, halign: 'right' },
+                        2: { cellWidth: wInst * 0.5, halign: 'left' },
+                        3: { cellWidth: wInst * 0.5, halign: 'right' }
+                    };
+                }
+            } else {
+                // Modo AIU o SIMPLE: Alinear con las últimas 2 columnas si es posible
+                if (len >= 2 && cols[len - 1] && cols[len - 2]) {
+                    let wLast = cols[len - 1].width + cols[len - 2].width;
+                    if (wLast < 60) wLast = 70; // Ancho mínimo
+                    
+                    totalsTableWidth = wLast;
+                    totalsMarginLeft = tableRightX - totalsTableWidth;
+                    
+                    totalsColumnStyles = {
+                        0: { halign: 'left', fontStyle: 'bold' },
+                        1: { halign: 'right', fontStyle: 'normal' }
+                    };
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("Alineación automática omitida, usando defecto:", e);
+    }
+
+    // 3. Construcción del contenido (Lógica original mantenida)
     if (currentConfig.modo === 'MIXTO') {
-        // MODO MIXTO: SUMINISTRO + INSTALACIÓN EN DOS BLOQUES SIMÉTRICOS
         const totalInstalacion = bd.directo + bd.vAdmin + bd.vImpr + bd.vUtil + bd.vIvaInst;
         const totalSuministro = bd.totalBaseSum + bd.ivaSum;
 
-        // Encabezado doble: Suministro / Instalación
         totalsHead = [[
-            {
-                content: 'SUMINISTRO',
-                colSpan: 2,
-                styles: { halign: 'center', fontStyle: 'bold' }
-            },
-            {
-                content: 'INSTALACIÓN',
-                colSpan: 2,
-                styles: { halign: 'center', fontStyle: 'bold' }
-            }
+            { content: 'SUMINISTRO', colSpan: 2, styles: { halign: 'center', fontStyle: 'bold', fillColor: [240, 240, 240] } },
+            { content: 'INSTALACIÓN', colSpan: 2, styles: { halign: 'center', fontStyle: 'bold', fillColor: [240, 240, 240] } }
         ]];
 
-        // Cuerpo: se construye por filas, cada lado con su propia columna de valor
         totalsBody = [
             [
-                { content: 'SUB TOTAL', styles: { fontStyle: 'bold' } },
-                { content: _currencyFormatter.format(bd.totalBaseSum), styles: { halign: 'right' } },
-                { content: 'SUB TOTAL', styles: { fontStyle: 'bold' } },
-                { content: _currencyFormatter.format(bd.directo), styles: { halign: 'right' } }
+                { content: 'SUB TOTAL', styles: { fontStyle: 'bold' } }, { content: _currencyFormatter.format(bd.totalBaseSum) },
+                { content: 'COSTO DIRECTO', styles: { fontStyle: 'bold' } }, { content: _currencyFormatter.format(bd.directo) }
             ],
             [
-                { content: 'IVA 19%', styles: { fontStyle: 'bold' } },
-                { content: _currencyFormatter.format(bd.ivaSum), styles: { halign: 'right' } },
-                { content: `ADMINISTRACIÓN ${aiu.admin}%`, styles: { fontStyle: 'bold' } },
-                { content: _currencyFormatter.format(bd.vAdmin), styles: { halign: 'right' } }
+                { content: 'IVA 19%', styles: { fontStyle: 'bold' } }, { content: _currencyFormatter.format(bd.ivaSum) },
+                { content: `ADMIN. ${aiu.admin}%`, styles: { fontStyle: 'bold' } }, { content: _currencyFormatter.format(bd.vAdmin) }
             ],
             [
-                { content: 'TOTAL SUMINISTRO', styles: { fontStyle: 'bold' } },
-                { content: _currencyFormatter.format(totalSuministro), styles: { halign: 'right' } },
-                { content: `IMPREVISTOS ${aiu.imprev}%`, styles: { fontStyle: 'bold' } },
-                { content: _currencyFormatter.format(bd.vImpr), styles: { halign: 'right' } }
+                { content: 'TOTAL SUMINISTRO', styles: { fontStyle: 'bold', fillColor: [230, 230, 230] } },
+                { content: _currencyFormatter.format(totalSuministro), styles: { fontStyle: 'bold', fillColor: [230, 230, 230] } },
+                { content: `IMPREV. ${aiu.imprev}%`, styles: { fontStyle: 'bold' } }, { content: _currencyFormatter.format(bd.vImpr) }
             ],
             [
-                { content: '', styles: {} },
-                { content: '', styles: {} },
-                { content: `UTILIDAD ${aiu.util}%`, styles: { fontStyle: 'bold' } },
-                { content: _currencyFormatter.format(bd.vUtil), styles: { halign: 'right' } }
+                { content: '', styles: { lineWidth: 0 } }, { content: '', styles: { lineWidth: 0 } },
+                { content: `UTILIDAD ${aiu.util}%`, styles: { fontStyle: 'bold' } }, { content: _currencyFormatter.format(bd.vUtil) }
             ],
             [
-                { content: '', styles: {} },
-                { content: '', styles: {} },
-                { content: 'IVA / UTILIDAD', styles: { fontStyle: 'bold' } },
-                { content: _currencyFormatter.format(bd.vIvaInst), styles: { halign: 'right' } }
+                { content: '', styles: { lineWidth: 0 } }, { content: '', styles: { lineWidth: 0 } },
+                { content: 'IVA / UTILIDAD', styles: { fontStyle: 'bold' } }, { content: _currencyFormatter.format(bd.vIvaInst) }
             ],
             [
-                { content: '', styles: {} },
-                { content: '', styles: {} },
-                { content: 'TOTAL INSTALACIÓN', styles: { fontStyle: 'bold' } },
-                { content: _currencyFormatter.format(totalInstalacion), styles: { halign: 'right' } }
+                { content: '', styles: { lineWidth: 0 } }, { content: '', styles: { lineWidth: 0 } },
+                { content: 'TOTAL INSTALACIÓN', styles: { fontStyle: 'bold', fillColor: [230, 230, 230] } },
+                { content: _currencyFormatter.format(totalInstalacion), styles: { fontStyle: 'bold', fillColor: [230, 230, 230] } }
             ],
             [
-                {
-                    content: 'VALOR TOTAL DE LA PROPUESTA',
-                    colSpan: 3,
-                    styles: { fontStyle: 'bold', halign: 'right' }
-                },
-                {
-                    content: _currencyFormatter.format(calculos.totalFinal),
-                    styles: { halign: 'right', fontStyle: 'bold' }
-                }
+                { content: 'VALOR TOTAL DE LA PROPUESTA', colSpan: 3, styles: { fontStyle: 'bold', halign: 'right', fontSize: 9, fillColor: [0, 176, 240], textColor: 255 } },
+                { content: _currencyFormatter.format(calculos.totalFinal), styles: { halign: 'right', fontStyle: 'bold', fontSize: 9, fillColor: [0, 176, 240], textColor: 255 } }
             ]
         ];
-
-        totalsColumnStyles = {
-            0: { cellWidth: 35 },                                   // etiqueta suministro
-            1: { cellWidth: 25, halign: 'right' },                  // valor suministro
-            2: { cellWidth: 35 },                                   // etiqueta instalación
-            3: { cellWidth: 25, halign: 'right' }                   // valor instalación
-        };
-
-    } else if (currentConfig.modo === 'AIU') {
-        // Igual que antes: cuadro sencillo a dos columnas
-        totalsBody.push(["COSTO DIRECTO:", _currencyFormatter.format(bd.directo)]);
-        totalsBody.push([`ADMINISTRACIÓN ${aiu.admin}%:`, _currencyFormatter.format(bd.vAdmin)]);
-        totalsBody.push([`IMPREVISTOS ${aiu.imprev}%:`, _currencyFormatter.format(bd.vImpr)]);
-        totalsBody.push([`UTILIDAD ${aiu.util}%:`, _currencyFormatter.format(bd.vUtil)]);
-        totalsBody.push(["IVA (Sobre Utilidad):", _currencyFormatter.format(bd.vIvaUtil)]);
-        totalsBody.push(["VALOR TOTAL DE LA PROPUESTA:", _currencyFormatter.format(calculos.totalFinal)]);
-
-        totalsColumnStyles = {
-            0: { halign: 'left', fontStyle: 'bold', cellWidth: 40 },
-            1: { halign: 'right', fontStyle: 'normal', cellWidth: 35 }
-        };
-
     } else {
-        // MODO SIMPLE (solo suma + IVA)
-        totalsBody.push(["SUB TOTAL:", _currencyFormatter.format(bd.subtotal)]);
-        totalsBody.push(["IVA (19%):", _currencyFormatter.format(bd.iva)]);
-        totalsBody.push(["VALOR TOTAL DE LA PROPUESTA:", _currencyFormatter.format(calculos.totalFinal)]);
-
-        totalsColumnStyles = {
-            0: { halign: 'left', fontStyle: 'bold', cellWidth: 40 },
-            1: { halign: 'right', fontStyle: 'normal', cellWidth: 35 }
-        };
+        // MODO AIU / SIMPLE
+        if (currentConfig.modo === 'AIU') {
+             totalsBody.push(["COSTO DIRECTO:", _currencyFormatter.format(bd.directo)]);
+             totalsBody.push([`ADMINISTRACIÓN ${aiu.admin}%:`, _currencyFormatter.format(bd.vAdmin)]);
+             totalsBody.push([`IMPREVISTOS ${aiu.imprev}%:`, _currencyFormatter.format(bd.vImpr)]);
+             totalsBody.push([`UTILIDAD ${aiu.util}%:`, _currencyFormatter.format(bd.vUtil)]);
+             totalsBody.push(["IVA (Sobre Utilidad):", _currencyFormatter.format(bd.vIvaUtil)]);
+        } else {
+             totalsBody.push(["SUB TOTAL:", _currencyFormatter.format(bd.subtotal)]);
+             totalsBody.push(["IVA (19%):", _currencyFormatter.format(bd.iva)]);
+        }
+        totalsBody.push([
+            { content: "VALOR TOTAL:", styles: { fillColor: [0, 176, 240], textColor: 255, fontStyle: 'bold' } }, 
+            { content: _currencyFormatter.format(calculos.totalFinal), styles: { fillColor: [0, 176, 240], textColor: 255, fontStyle: 'bold', halign: 'right' } }
+        ]);
     }
 
-    // Altura aproximada del cuadro para decidir si cabe en la página
-    const estimatedBoxHeight = 6 * totalsBody.length; // mm aprox
+    // Verificar salto de página
+    const estimatedBoxHeight = 5 * totalsBody.length + 10;
     if (finalY + estimatedBoxHeight > PAGE_HEIGHT - 30) {
         doc.addPage();
         finalY = 20;
+    } else {
+        finalY += 2;
     }
 
-    const TOTALS_BOX_WIDTH = currentConfig.modo === 'MIXTO' ? 120 : 75;
-    const TOTALS_MARGIN_LEFT = PAGE_WIDTH - T_MARGIN_RIGHT - TOTALS_BOX_WIDTH;
-
-    const totalsTableOptions = {
+    // Dibujar
+    doc.autoTable({
         startY: finalY,
+        head: totalsHead,
         body: totalsBody,
         theme: 'grid',
         styles: {
             font: 'times',
-            fontSize: 8,
+            fontSize: 7,
             cellPadding: 1.5,
-            lineColor: [0, 0, 0],
+            lineColor: [100, 100, 100],
             lineWidth: 0.1,
-            textColor: [0, 0, 0]
+            textColor: 0
         },
         columnStyles: totalsColumnStyles,
-        didParseCell: function (data) {
-            const isLastRow = data.row.index === totalsBody.length - 1;
-            if (isLastRow) {
-                data.cell.styles.fillColor = [230, 230, 230];
-                data.cell.styles.fontStyle = 'bold';
-            }
-        },
-        margin: { left: TOTALS_MARGIN_LEFT }
-    };
-
-    // Solo añadimos head cuando estamos en modo MIXTO
-    if (totalsHead) {
-        totalsTableOptions.head = totalsHead;
-    }
-
-    doc.autoTable(totalsTableOptions);
+        margin: { left: totalsMarginLeft },
+        tableWidth: totalsTableWidth
+    });
 
     finalY = doc.lastAutoTable.finalY + 10;
 
