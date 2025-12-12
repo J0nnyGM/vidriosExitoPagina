@@ -13832,7 +13832,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setupCurrencyInput // Pasamos la función global de formato de moneda
     );
 
-    initCotizaciones(db, showView, currentUser); // <--- AÑADIR ESTO
+    initCotizaciones(db,storage, showView, currentUser); // <--- AÑADIR ESTO
 
     initSolicitudes(
         db,
