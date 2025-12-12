@@ -778,3 +778,30 @@ dl dd span.block:last-child {
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* --- SCROLLBAR MODERNO --- */
+/* Funciona en Chrome, Edge y Safari */
+.modern-scrollbar::-webkit-scrollbar {
+    width: 6px;               /* Ancho vertical */
+    height: 6px;              /* Alto horizontal */
+}
+
+.modern-scrollbar::-webkit-scrollbar-track {
+    background: transparent;  /* Fondo invisible */
+}
+
+.modern-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1; /* Color gris suave (slate-300) */
+    border-radius: 20px;       /* Bordes totalmente redondos */
+    border: 2px solid transparent; /* Espacio para efecto "flotante" */
+    background-clip: content-box;
+}
+
+.modern-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: #94a3b8; /* Color más oscuro al pasar el mouse (slate-400) */
+}
+
+/* Funciona en Firefox */
+.modern-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+}

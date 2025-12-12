@@ -1,6 +1,6 @@
 // Importaciones de Firebase
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateEmail, updateProfile, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
 
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment, limit, serverTimestamp, arrayRemove, documentId } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js"; // <-- AÑADIDO documentId
 
@@ -440,7 +440,7 @@ const SIDEBAR_CONFIG = [
     { key: 'herramienta', selector: 'a[data-view="herramienta"]', label: 'Herramienta' },
     { key: 'dotacion', selector: 'a[data-view="dotacion"]', label: 'Dotación' },
     { key: 'cartera', selector: 'a[data-view="cartera"]', label: 'Cartera' },
-    
+
     // --- NUEVA LÍNEA AGREGADA ---
     { key: 'cotizaciones', selector: 'a[data-view="cotizaciones"]', label: 'Cotizaciones' },
     // -----------------------------
@@ -543,20 +543,27 @@ function showView(viewName, fromHistory = false) {
     }
 
     // 3. ACTUALIZAR SIDEBAR (LÓGICA ROBUSTA)
-    // A. Primero quitamos la clase 'active' de TODOS los enlaces del menú
+    // A. Primero quitamos la clase 'active' y los estilos visuales de TODOS
     document.querySelectorAll('#main-nav .nav-link').forEach(link => {
         link.classList.remove('active');
-        // Opcional: Asegurar que se quiten estilos manuales si los hubiera
+        // Quitamos el "color de activo" para resetear
         link.classList.remove('bg-slate-800', 'text-white');
+        // Restauramos el color gris por defecto (opcional, para asegurar consistencia)
+        link.classList.add('text-slate-500');
     });
 
-    // B. Buscamos el enlace específico que corresponde a esta vista
-    // Usamos el selector de atributo exacto [data-view="nombre"]
+    // B. Buscamos el enlace específico
     const activeLink = document.querySelector(`#main-nav .nav-link[data-view="${viewName}"]`);
 
     if (activeLink) {
         activeLink.classList.add('active');
-        // Aseguramos que el contenedor padre (si es un submenú) esté visible (opcional)
+
+        // --- AQUÍ ESTÁ EL ARREGLO ---
+        // Volvemos a pintar el botón con los colores de "seleccionado"
+        activeLink.classList.remove('text-slate-500'); // Quitamos gris
+        activeLink.classList.add('bg-slate-800', 'text-white'); // Ponemos fondo oscuro y texto blanco
+        // -----------------------------
+
         activeLink.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
@@ -851,10 +858,22 @@ onAuthStateChanged(auth, async (user) => {
 
 async function handleLogin(e) {
     e.preventDefault();
-    const email = document.getElementById('login-email').value;
-    const password = document.getElementById('login-password').value;
-    const errorP = document.getElementById('login-error');
-    errorP.textContent = '';
+
+    // Referencias al DOM (Nuevo Diseño)
+    const emailInput = document.getElementById('login-email');
+    const passwordInput = document.getElementById('login-password');
+    const errorDiv = document.getElementById('login-error'); // Ahora es un div, no un p
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalBtnText = submitBtn.innerHTML;
+
+    // Resetear estado
+    errorDiv.classList.add('hidden');
+    errorDiv.innerHTML = '';
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Ingresando...';
+
+    const email = emailInput.value;
+    const password = passwordInput.value;
 
     try {
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -862,40 +881,81 @@ async function handleLogin(e) {
 
         const userDoc = await getDoc(doc(db, "users", user.uid));
 
-        // --- CAMBIO AQUÍ ---
-        // Verificamos si el estado es 'pending' (pendiente)
+        // --- LÓGICA DE VALIDACIÓN DE ESTADO (TUYA) ---
         if (userDoc.exists() && userDoc.data().status === 'pending') {
-            // Mensaje actualizado
-            errorP.innerHTML = `<span class="font-bold">Acceso denegado:</span><br>Esperando respuesta del administrador para activar la cuenta.`;
-            errorP.className = "text-orange-600 text-sm mt-4 text-center bg-orange-50 p-2 rounded border border-orange-200";
+            // Mostrar error visualmente atractivo
+            errorDiv.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-user-clock text-lg"></i>
+                    <div class="text-left">
+                        <span class="font-bold block">Acceso en espera</span>
+                        Tu cuenta está pendiente de aprobación por el administrador.
+                    </div>
+                </div>
+            `;
+            // Aplicamos estilo naranja para advertencia
+            errorDiv.className = "text-orange-700 text-sm font-medium bg-orange-50 p-4 rounded-xl border border-orange-100 flex justify-center animate-fade-in";
+            errorDiv.classList.remove('hidden');
 
-            await signOut(auth); // Cerramos la sesión inmediatamente
+            await signOut(auth); // Cerramos sesión
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalBtnText;
             return;
         }
-        // -------------------
+        // ----------------------------------------------
+
+        // Si pasa, onAuthStateChanged manejará la redirección
 
     } catch (error) {
         console.error("Error de inicio de sesión:", error.code);
-        errorP.className = "text-red-500 text-sm mt-4 text-center"; // Reset estilo error normal
-        errorP.textContent = "Correo o contraseña incorrectos.";
+
+        // Mostrar error en rojo
+        errorDiv.classList.remove('hidden');
+        errorDiv.className = "text-red-600 text-sm font-medium bg-red-50 p-3 rounded-lg border border-red-100 text-center animate-shake";
+
+        if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+            errorDiv.textContent = "Credenciales incorrectas. Verifica tu correo y contraseña.";
+        } else if (error.code === 'auth/too-many-requests') {
+            errorDiv.textContent = "Demasiados intentos fallidos. Intenta más tarde.";
+        } else {
+            errorDiv.textContent = "No se pudo iniciar sesión. Intenta nuevamente.";
+        }
+
+        // Restaurar botón
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
     }
 }
 
 async function handleRegister(e) {
     e.preventDefault();
-    const errorP = document.getElementById('register-error');
 
+    // Referencias
+    const errorDiv = document.getElementById('register-error');
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalBtnText = submitBtn.innerHTML;
+
+    // Validación Términos
     if (!document.getElementById('accept-terms').checked) {
-        errorP.textContent = 'Debes aceptar el uso de datos personales.';
+        errorDiv.textContent = 'Debes aceptar los términos y condiciones.';
+        errorDiv.classList.remove('hidden');
+        errorDiv.className = "text-red-600 text-sm font-medium bg-red-50 p-3 rounded-lg text-center";
         return;
     }
 
+    // Resetear estado visual
+    errorDiv.classList.add('hidden');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Creando cuenta...';
+
     try {
-        errorP.textContent = '';
         const email = document.getElementById('register-email').value;
         const password = document.getElementById('register-password').value;
 
+        // Crear usuario en Auth
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+
+        // Guardar datos en Firestore (TU LÓGICA)
         await setDoc(doc(db, "users", userCredential.user.uid), {
             firstName: document.getElementById('register-firstName').value,
             lastName: document.getElementById('register-lastName').value,
@@ -903,29 +963,46 @@ async function handleRegister(e) {
             phone: document.getElementById('register-phone').value,
             address: document.getElementById('register-address').value,
             email: email,
-            role: 'operario',
-            status: 'pending',
+            role: 'operario',    // Por defecto operario
+            status: 'pending',   // Por defecto pendiente
             createdAt: new Date()
         });
+
+        // Éxito: Mostrar modal y limpiar
         openRegisterSuccessModal();
+        e.target.reset();
+
     } catch (error) {
         console.error("Error de registro:", error.code);
+
+        errorDiv.classList.remove('hidden');
+        errorDiv.className = "text-red-600 text-sm font-medium bg-red-50 p-3 rounded-lg text-center animate-shake";
+
         if (error.code === 'auth/email-already-in-use') {
-            errorP.textContent = "Este correo electrónico ya está en uso.";
+            errorDiv.textContent = "Este correo electrónico ya está registrado.";
+        } else if (error.code === 'auth/weak-password') {
+            errorDiv.textContent = "La contraseña es muy débil (mínimo 6 caracteres).";
         } else {
-            errorP.textContent = "Error al registrar la cuenta.";
+            errorDiv.textContent = "Ocurrió un error al crear la cuenta.";
         }
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
     }
 }
 
 async function handleLogout() {
     try {
-        activeListeners.forEach(unsubscribe => unsubscribe());
-        activeListeners = [];
+        // Limpieza de listeners activos para evitar fugas de memoria
+        if (window.activeListeners) { // Validación de seguridad
+            window.activeListeners.forEach(unsubscribe => unsubscribe());
+            window.activeListeners = [];
+        }
+
         await signOut(auth);
         console.log('Usuario cerró sesión exitosamente');
 
-        // --- AGREGAR ESTA LÍNEA PARA LIMPIEZA TOTAL ---
+        // Recarga completa para limpiar estado de la SPA
         window.location.reload();
 
     } catch (error) {
@@ -2320,8 +2397,6 @@ function renderUsersList() {
         });
     }
 }
-
-
 
 let unsubscribeSuppliers = null; // Variable global para el listener de proveedores
 
@@ -5152,22 +5227,22 @@ async function openMainModal(type, data = {}) {
     const modalContentDiv = document.getElementById('main-modal-content');
 
     const safeDate = (firebaseDate) => {
-            if (!firebaseDate) return '';
-            try {
-                // 1. Si es Timestamp de Firebase
-                if (typeof firebaseDate.toDate === 'function') {
-                    return firebaseDate.toDate().toISOString().split('T')[0];
-                }
-                // 2. Si es objeto Date
-                if (firebaseDate instanceof Date) {
-                    return firebaseDate.toISOString().split('T')[0];
-                }
-                // 3. Si es String (ISO)
-                return String(firebaseDate).split('T')[0];
-            } catch (e) {
-                return ''; // Si falla, retorna vacío para no romper el form
+        if (!firebaseDate) return '';
+        try {
+            // 1. Si es Timestamp de Firebase
+            if (typeof firebaseDate.toDate === 'function') {
+                return firebaseDate.toDate().toISOString().split('T')[0];
             }
-        };
+            // 2. Si es objeto Date
+            if (firebaseDate instanceof Date) {
+                return firebaseDate.toISOString().split('T')[0];
+            }
+            // 3. Si es String (ISO)
+            return String(firebaseDate).split('T')[0];
+        } catch (e) {
+            return ''; // Si falla, retorna vacío para no romper el form
+        }
+    };
 
     // =================================================================
     // 1. RESETEO MAESTRO (CORREGIDO Y BLINDADO)
@@ -5197,7 +5272,7 @@ async function openMainModal(type, data = {}) {
         modalContentDiv.style = '';
 
         // 2. Aplicar clases estándar limpias
-        modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'w-full', 'max-w-2xl', 'max-h-[90vh]', 'flex', 'flex-col', 'overflow-hidden', 'transform', 'transition-all', 'relative');
+        modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'w-full', 'max-w-2xl', 'max-h-[90vh]', 'flex', 'flex-col', 'overflow-hidden', 'transform', 'transition-all', 'relative', 'overflow-hidden');
 
         // 3. Restaurar cuerpo interno
         modalBody.className = 'p-6 flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-gray-50/50';
@@ -5248,7 +5323,7 @@ async function openMainModal(type, data = {}) {
 
             if (modalContentDiv) {
                 modalContentDiv.className = '';
-                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-3xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-3xl', 'flex', 'flex-col', 'max-h-[90vh]', 'overflow-hidden');
                 modalBody.classList.remove('p-0', 'overflow-hidden');
                 modalBody.style.padding = '0';
             }
@@ -5440,7 +5515,7 @@ async function openMainModal(type, data = {}) {
 
             if (modalContentDiv) {
                 modalContentDiv.className = '';
-                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-3xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalContentDiv.classList.add('overflow-hidden', 'bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-3xl', 'flex', 'flex-col', 'max-h-[90vh]');
                 modalBody.classList.remove('p-0', 'overflow-hidden');
                 modalBody.style.padding = '0';
             }
@@ -5618,6 +5693,214 @@ async function openMainModal(type, data = {}) {
                 }
             }, 100);
             break;
+
+        case 'init-project-from-quote': {
+            // 1. Configuración Visual
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+            const defaultFooter = document.getElementById('main-modal-footer');
+            if (defaultFooter) defaultFooter.style.display = 'none';
+
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                // AGREGADO: clase 'modern-scrollbar' aquí
+                modalContentDiv.classList.add('overflow-hidden', 'bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-3xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Formalizar Proyecto';
+            const quoteData = data;
+            const config = quoteData.config || {};
+
+            // Lógica de modelo (se mantiene igual)
+            let targetModel = 'separado';
+            let targetLabel = 'Suministro e Instalación (Separado)';
+            if (config.modo === 'AIU' || config.modo === 'IVA_GLOBAL') {
+                targetModel = 'incluido';
+                targetLabel = 'Todo Incluido (Global)';
+            }
+
+            bodyHtml = `
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-indigo-600 to-purple-600 px-8 py-5 shrink-0 rounded-t-xl flex justify-between items-center relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none transform scale-150 translate-x-4 -translate-y-2">
+                            <i class="fa-solid fa-rocket text-6xl text-white"></i>
+                        </div>
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-2xl backdrop-blur-sm border border-white/10 shadow-inner text-white">
+                                <i class="fa-solid fa-check-double"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-bold tracking-tight text-white">Formalizar Proyecto</h2>
+                                <p class="text-indigo-100 text-xs font-medium">Crear proyecto basado en cotización</p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white transition-colors relative z-10">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex-grow overflow-y-auto modern-scrollbar p-6 bg-gray-50">
+                        
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex items-start gap-3">
+                            <i class="fa-solid fa-circle-info text-blue-600 mt-1"></i>
+                            <div>
+                                <p class="text-sm text-blue-800 font-bold">Importación Automática</p>
+                                <p class="text-xs text-blue-700">Se creará el proyecto y se importarán automáticamente <strong>${quoteData.items ? quoteData.items.length : 0} ítems</strong> de la cotización.</p>
+                            </div>
+                        </div>
+
+                        <div class="space-y-6">
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-4">Información del Proyecto</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div class="md:col-span-2">
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Nombre del Proyecto</label>
+                                        <input type="text" name="name" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm font-bold text-gray-800" value="${quoteData.proyecto || ''}">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Cliente / Constructora</label>
+                                        <input type="text" name="builderName" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm" value="${quoteData.cliente || ''}">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Modelo de Contrato</label>
+                                        <select name="pricingModel" class="w-full border-gray-300 rounded-lg p-2.5 text-sm bg-gray-100 cursor-not-allowed pointer-events-none" readonly>
+                                            <option value="${targetModel}" selected>${targetLabel}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-4">Ubicación y Fechas</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    
+                                    <div class="relative">
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Municipio</label>
+                                        <input type="text" name="location" id="project-location" required autocomplete="off" 
+                                               class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" 
+                                               placeholder="Escribe para buscar..." value="${quoteData.location || ''}">
+                                        
+                                        <div id="municipalities-results" 
+                                             class="hidden absolute z-50 w-full bg-white border border-gray-200 rounded-lg mt-1 shadow-xl max-h-40 overflow-y-auto modern-scrollbar">
+                                             </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Dirección</label>
+                                        <input type="text" name="address" class="w-full border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Dirección...">
+                                    </div>
+                                     <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Fecha Inicio</label>
+                                        <input type="date" name="startDate" class="w-full border-gray-300 rounded-lg p-2.5 text-sm" value="${quoteData.fecha || ''}">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-4">Valores Financieros</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Valor Contrato (Desde Cotización)</label>
+                                        <div class="relative">
+                                            <span class="absolute left-3 top-2.5 text-gray-400 font-bold">$</span>
+                                            <input type="text" name="value" required class="currency-input w-full pl-7 border-gray-300 rounded-lg p-2.5 text-lg font-bold text-emerald-600 font-mono" value="${quoteData.totalFinal || 0}">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Anticipo Pactado</label>
+                                        <div class="relative">
+                                            <span class="absolute left-3 top-2.5 text-gray-400 font-bold">$</span>
+                                            <input type="text" name="advance" class="currency-input w-full pl-7 border-gray-300 rounded-lg p-2.5 text-lg font-bold text-gray-800 font-mono" placeholder="0">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <input type="hidden" id="hidden-quote-items" value='${JSON.stringify(quoteData.items || []).replace(/'/g, "&#39;")}'>
+                            <input type="hidden" id="hidden-quote-config" value='${JSON.stringify(config).replace(/'/g, "&#39;")}'>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border-t border-gray-200 p-4 shrink-0 flex justify-end gap-3 rounded-b-xl">
+                        <button type="button" onclick="closeMainModal()" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition-colors text-sm">
+                            Cancelar
+                        </button>
+                        <button type="button" onclick="document.getElementById('modal-form').requestSubmit()" class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-8 py-2.5 rounded-lg font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-rocket"></i> Crear Proyecto e Importar
+                        </button>
+                    </div>
+                </div>`;
+
+            // --- LÓGICA DE INICIALIZACIÓN ---
+            setTimeout(() => {
+                const form = document.getElementById('modal-form');
+                if (form) {
+                    // Inicializar inputs de moneda
+                    form.querySelectorAll('.currency-input').forEach(setupCurrencyInput);
+                    const valInput = form.querySelector('input[name="value"]');
+                    if (valInput) valInput.dispatchEvent(new Event('input'));
+
+                    // --- LÓGICA DE MUNICIPIOS ---
+                    const locInput = document.getElementById('project-location');
+                    const resultsDiv = document.getElementById('municipalities-results');
+                    let cachedCities = []; // Caché local para esta instancia del modal
+
+                    if (locInput && resultsDiv) {
+                        locInput.addEventListener('input', async function () {
+                            const query = this.value.toLowerCase();
+
+                            // Ocultar si hay menos de 2 letras
+                            if (query.length < 2) {
+                                resultsDiv.classList.add('hidden');
+                                return;
+                            }
+
+                            // Llamar a tu función (asegúrate de que esté definida globalmente o aquí mismo)
+                            if (cachedCities.length === 0 && typeof fetchMunicipalities === 'function') {
+                                try {
+                                    // Mostramos carga visual pequeña
+                                    resultsDiv.innerHTML = '<div class="p-2 text-xs text-gray-400 text-center">Cargando...</div>';
+                                    resultsDiv.classList.remove('hidden');
+                                    cachedCities = await fetchMunicipalities();
+                                } catch (e) { console.error(e); }
+                            }
+
+                            // Filtrar
+                            const filtered = cachedCities.filter(c => c.toLowerCase().includes(query));
+
+                            // Renderizar Resultados
+                            resultsDiv.innerHTML = '';
+                            if (filtered.length > 0) {
+                                resultsDiv.classList.remove('hidden');
+                                filtered.forEach(city => {
+                                    const div = document.createElement('div');
+                                    div.className = 'px-3 py-2 hover:bg-indigo-50 cursor-pointer text-sm text-gray-700 border-b border-gray-50 last:border-0';
+                                    div.textContent = city;
+                                    div.onclick = () => {
+                                        locInput.value = city;
+                                        resultsDiv.classList.add('hidden');
+                                    };
+                                    resultsDiv.appendChild(div);
+                                });
+                            } else {
+                                resultsDiv.innerHTML = '<div class="p-2 text-xs text-gray-400 text-center">No se encontraron resultados</div>';
+                            }
+                        });
+
+                        // Cerrar al hacer clic fuera
+                        document.addEventListener('click', (e) => {
+                            if (!locInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+                                resultsDiv.classList.add('hidden');
+                            }
+                        });
+                    }
+                    // -----------------------------
+                }
+            }, 100);
+            break;
+        }
 
         case 'report-entry':
             title = 'Reportar Ingreso';
@@ -5880,7 +6163,7 @@ async function openMainModal(type, data = {}) {
                 // Borramos todas las clases de layout que pudieron quedar de 'editUser'
                 modalContentDiv.className = '';
                 // Aplicamos clases base limpias para un modal pequeño
-                modalContentDiv.classList.add('bg-white', 'rounded-lg', 'shadow-xl', 'transform', 'transition-all', 'w-full', 'max-w-md', 'p-6', 'relative');
+                modalContentDiv.classList.add('bg-white', 'rounded-lg', 'shadow-xl', 'transform', 'transition-all', 'w-full', 'max-w-md', 'p-6', 'relative', 'overflow-hidden');
 
                 // Restauramos padding del body
                 modalBody.classList.remove('p-0', 'overflow-hidden');
@@ -5966,20 +6249,21 @@ async function openMainModal(type, data = {}) {
             break;
 
 
+
         // --- CASO: REVISIÓN DE PRÉSTAMO (MODAL DE APROBACIÓN) ---
         case 'review-loan': {
             // 1. Configuración Visual
             if (document.getElementById('modal-title')) {
                 document.getElementById('modal-title').parentElement.style.display = 'none';
             }
-            
+
             // Ocultamos el footer por defecto para usar el personalizado
             const defaultFooter = document.getElementById('main-modal-footer');
             if (defaultFooter) defaultFooter.style.display = 'none';
 
             if (modalContentDiv) {
                 modalContentDiv.className = '';
-                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-3xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-3xl', 'flex', 'flex-col', 'max-h-[90vh]', 'overflow-hidden');
                 modalBody.classList.remove('p-0', 'overflow-hidden');
                 modalBody.style.padding = '0';
             }
@@ -6104,7 +6388,7 @@ async function openMainModal(type, data = {}) {
                 // Configurar moneda
                 const amountInput = modalForm.querySelector('input[name="approvedAmount"]');
                 setupCurrencyInput(amountInput);
-                
+
                 // Referencias
                 const loanId = modalForm.querySelector('input[name="loanId"]').value;
                 const userId = modalForm.querySelector('input[name="userId"]').value;
@@ -6141,7 +6425,7 @@ async function openMainModal(type, data = {}) {
 
                         window.showToast("Préstamo aprobado y activado.", "success");
                         closeMainModal();
-                        
+
                         // Refrescar lista de pendientes
                         setTimeout(() => openMainModal('view-pending-loans'), 500);
 
@@ -6247,7 +6531,7 @@ async function openMainModal(type, data = {}) {
 
                     snapshot.forEach(doc => {
                         const loan = doc.data();
-                        
+
                         // Configuración de Estilos según Estado
                         let statusConfig = {
                             color: 'gray',
@@ -6276,10 +6560,10 @@ async function openMainModal(type, data = {}) {
                             `;
                         } else if (loan.status === 'paid') {
                             statusConfig = { color: 'blue', bg: 'bg-blue-50', text: 'text-blue-700', label: 'Pagado', icon: 'fa-circle-check' };
-                            
+
                             // FECHA DE CANCELACIÓN
-                            const paidDate = loan.paidAt ? new Date(loan.paidAt.seconds * 1000).toLocaleDateString('es-CO', {day: 'numeric', month: 'long', year: 'numeric'}) : 'Fecha desconocida';
-                            
+                            const paidDate = loan.paidAt ? new Date(loan.paidAt.seconds * 1000).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Fecha desconocida';
+
                             footerHtml = `
                                 <div class="mt-3 pt-2 border-t border-blue-100 flex items-center gap-2 text-xs text-blue-800 bg-blue-50/50 p-2 rounded-lg">
                                     <i class="fa-solid fa-calendar-check text-blue-500"></i>
@@ -6302,7 +6586,7 @@ async function openMainModal(type, data = {}) {
                         // Renderizar Tarjeta
                         const card = document.createElement('div');
                         card.className = `bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative overflow-hidden group hover:shadow-md transition-all`;
-                        
+
                         card.innerHTML = `
                             <div class="absolute top-0 left-0 w-1 h-full bg-${statusConfig.color}-500"></div>
                             <div class="flex justify-between items-start mb-2 pl-2">
@@ -7844,7 +8128,7 @@ async function openMainModal(type, data = {}) {
 
             if (modalContentDiv) {
                 modalContentDiv.className = '';
-                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-4xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalContentDiv.classList.add('overflow-hidden', 'bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-4xl', 'flex', 'flex-col', 'max-h-[90vh]');
                 modalBody.classList.remove('p-0', 'overflow-hidden');
                 modalBody.style.padding = '0';
             }
@@ -8812,65 +9096,122 @@ async function openMainModal(type, data = {}) {
 
         // --- INICIO DE NUEVO CÓDIGO AÑADIDO ---
         case 'new-tool': {
-            title = 'Crear Nueva Herramienta';
-            btnText = 'Crear Herramienta';
-            btnClass = 'bg-blue-500 hover:bg-blue-600';
-            modalContentDiv.classList.add('max-w-2xl'); // Aseguramos el tamaño estándar
+            // 1. Ocultar elementos por defecto
+            if (document.getElementById('modal-title')) document.getElementById('modal-title').parentElement.style.display = 'none';
+            const defaultFooter = document.getElementById('modal-confirm-btn')?.parentElement;
+            if (defaultFooter) defaultFooter.style.display = 'none';
 
-            // Opciones de categoría (leídas desde herramientas.js)
+            // 2. Configurar contenedor
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('overflow-hidden', 'bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-3xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Crear Nueva Herramienta';
+
+            // Opciones de categoría
             const categoryOptions = TOOL_CATEGORIES.map(cat =>
                 `<option value="${cat.value}">${cat.label}</option>`
             ).join('');
 
             bodyHtml = `
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        
-                        <div class="md:col-span-1">
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Foto (Requerida)</label>
-                            <div id="new-tool-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
-                                <div id="new-tool-preview" class="hidden absolute inset-0">
-                                    <img src="" id="new-tool-img-preview" class="w-full h-full object-contain">
-                                </div>
-                                <div id="new-tool-prompt" class="text-center p-4">
-                                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3-3a4 4 0 00-5.656 0L28 28M8 32l9-9a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                    <p class="mt-2 text-sm text-gray-500">Foto de la herramienta</p>
-                                </div>
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-blue-600 to-indigo-700 px-8 py-5 shrink-0 rounded-t-xl flex justify-between items-center relative overflow-hidden">
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-2xl backdrop-blur-sm border border-white/10 shadow-inner text-white">
+                                <i class="fa-solid fa-hammer"></i>
                             </div>
-                            <input type="file" id="tool-photo" name="photo" accept="image/*" class="hidden" required> 
+                            <div>
+                                <h2 class="text-xl font-bold tracking-tight text-white">Nueva Herramienta</h2>
+                                <p class="text-blue-100 text-xs font-medium">Registrar activo en inventario</p>
+                            </div>
                         </div>
-                        
-                        <div class="md:col-span-2 space-y-4 pt-5">
-                            <div>
-                                <label for="tool-name" class="block text-sm font-medium text-gray-700">Nombre de la Herramienta</label>
-                                <input type="text" id="tool-name" name="name" required class="mt-1 w-full border rounded-md p-2" placeholder="Ej: Taladro Percutor">
-                            </div>
-                            <div>
-                                <label for="tool-reference" class="block text-sm font-medium text-gray-700">Referencia / Código (Opcional)</label>
-                                <input type="text" id="tool-reference" name="reference" class="mt-1 w-full border rounded-md p-2" placeholder="Ej: DEW-DCD796">
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white transition-colors relative z-10">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex-grow overflow-y-auto custom-scrollbar p-6 bg-gray-50">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            
+                            <div class="md:col-span-1 space-y-3">
+                                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
+                                    <label class="block text-xs font-bold text-gray-400 uppercase mb-3">Foto del Activo</label>
+                                    
+                                    <div id="new-tool-dropzone" class="aspect-square w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all bg-gray-50 relative overflow-hidden group">
+                                        <div id="new-tool-preview" class="hidden absolute inset-0">
+                                            <img src="" id="new-tool-img-preview" class="w-full h-full object-contain">
+                                        </div>
+                                        <div id="new-tool-prompt" class="text-center p-4">
+                                            <div class="w-10 h-10 bg-white rounded-full shadow-sm flex items-center justify-center mx-auto mb-2 text-blue-500 group-hover:scale-110 transition-transform">
+                                                <i class="fa-solid fa-camera"></i>
+                                            </div>
+                                            <p class="text-xs font-bold text-gray-500 group-hover:text-blue-600">Subir Foto</p>
+                                        </div>
+                                    </div>
+                                    <input type="file" id="tool-photo" name="photo" accept="image/*" class="hidden" required> 
+                                </div>
                             </div>
                             
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label for="tool-category" class="block text-sm font-medium text-gray-700">Categoría</label>
-                                    <select id="tool-category" name="category" required class="mt-1 w-full border rounded-md p-2 bg-white">
-                                        <option value="" disabled selected>Seleccione...</option>
-                                        ${categoryOptions}
-                                    </select>
+                            <div class="md:col-span-2 space-y-5">
+                                <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-2">Detalles Generales</h4>
+                                    
+                                    <div>
+                                        <label for="tool-name" class="block text-xs font-bold text-gray-700 mb-1">Nombre de la Herramienta <span class="text-red-500">*</span></label>
+                                        <input type="text" id="tool-name" name="name" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm font-bold text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej: Taladro Percutor Dewalt">
+                                    </div>
+
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label for="tool-reference" class="block text-xs font-bold text-gray-700 mb-1">Referencia / Serial</label>
+                                            <input type="text" id="tool-reference" name="reference" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej: DCD796">
+                                        </div>
+                                        <div>
+                                            <label for="tool-category" class="block text-xs font-bold text-gray-700 mb-1">Categoría <span class="text-red-500">*</span></label>
+                                            <select id="tool-category" name="category" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                                                <option value="" disabled selected>Seleccionar...</option>
+                                                ${categoryOptions}
+                                            </select>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <label for="tool-purchaseDate" class="block text-sm font-medium text-gray-700">Fecha de Compra</label>
-                                    <input type="date" id="tool-purchaseDate" name="purchaseDate" class="mt-1 w-full border rounded-md p-2">
+
+                                <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-2">Adquisición</h4>
+                                    
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label for="tool-purchaseDate" class="block text-xs font-bold text-gray-700 mb-1">Fecha de Compra</label>
+                                            <input type="date" id="tool-purchaseDate" name="purchaseDate" class="w-full border-gray-300 rounded-lg p-2.5 text-sm text-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">
+                                        </div>
+                                        <div>
+                                            <label for="tool-purchaseCost" class="block text-xs font-bold text-gray-700 mb-1">Costo (Opcional)</label>
+                                            <div class="relative">
+                                                <span class="absolute left-3 top-2.5 text-gray-400 font-bold">$</span>
+                                                <input type="text" id="tool-purchaseCost" name="purchaseCost" class="currency-input w-full pl-7 border-gray-300 rounded-lg p-2.5 text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0">
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div>
-                                <label for="tool-purchaseCost" class="block text-sm font-medium text-gray-700">Costo de Adquisición (Opcional)</label>
-                                <input type="text" id="tool-purchaseCost" name="purchaseCost" class="currency-input mt-1 w-full border rounded-md p-2" placeholder="$ 0">
                             </div>
                         </div>
                     </div>
-                `;
 
-            // Lógica JS para el dropzone y el formateo de moneda
+                    <div class="bg-white border-t border-gray-200 p-4 shrink-0 flex justify-end gap-3 rounded-b-xl">
+                        <button type="button" onclick="closeMainModal()" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition-colors text-sm">
+                            Cancelar
+                        </button>
+                        <button type="button" onclick="document.getElementById('modal-form').requestSubmit()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-plus"></i> Crear Herramienta
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            // Lógica JS (se mantiene igual, solo ajustamos IDs si es necesario)
             setTimeout(() => {
                 const dropzone = document.getElementById('new-tool-dropzone');
                 const fileInput = document.getElementById('tool-photo');
@@ -8888,6 +9229,8 @@ async function openMainModal(type, data = {}) {
                                 previewImg.src = event.target.result;
                                 previewContainer.classList.remove('hidden');
                                 promptEl.classList.add('hidden');
+                                dropzone.classList.remove('border-dashed');
+                                dropzone.classList.add('border-blue-500');
                             }
                             reader.readAsDataURL(file);
                         }
@@ -8895,142 +9238,250 @@ async function openMainModal(type, data = {}) {
                 }
 
                 const costInput = document.getElementById('tool-purchaseCost');
-                if (costInput) setupCurrencyInput(costInput); // Función que ya existe en app.js
+                if (costInput) setupCurrencyInput(costInput);
 
                 const dateInput = document.getElementById('tool-purchaseDate');
-                if (dateInput) dateInput.value = new Date().toISOString().split('T')[0]; // Pone la fecha de hoy
+                if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
 
             }, 100);
-
             break;
         }
         // --- FIN DE NUEVO CÓDIGO AÑADIDO ---
 
         case 'edit-tool': {
-            title = 'Editar Herramienta (Info Básica)';
-            btnText = 'Guardar Cambios';
-            btnClass = 'bg-yellow-500 hover:bg-yellow-600';
+            // 1. Ocultar elementos por defecto
+            if (document.getElementById('modal-title')) document.getElementById('modal-title').parentElement.style.display = 'none';
+            const defaultFooter = document.getElementById('modal-confirm-btn')?.parentElement;
+            if (defaultFooter) defaultFooter.style.display = 'none';
 
-            // --- INICIO DE CÓDIGO AÑADIDO ---
+            // 2. Configurar contenedor
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-4xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Editar Herramienta';
+
+            // Opciones de categoría
             const categoryOptions = TOOL_CATEGORIES.map(cat =>
                 `<option value="${cat.value}" ${data.category === cat.value ? 'selected' : ''}>${cat.label}</option>`
             ).join('');
-            // --- FIN DE CÓDIGO AÑADIDO ---
 
             bodyHtml = `
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    
-                    <div class="md:col-span-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Foto Actual</label>
-                        <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden border">
-                            <img src="${data.photoURL || 'https://via.placeholder.com/300'}" 
-                                 alt="${data.name || ''}" 
-                                 class="w-full h-full object-contain">
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-amber-500 to-orange-600 px-8 py-5 shrink-0 rounded-t-xl flex justify-between items-center relative overflow-hidden">
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-2xl backdrop-blur-sm border border-white/10 shadow-inner text-white">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-bold tracking-tight text-white">Editar Herramienta</h2>
+                                <p class="text-amber-100 text-xs font-medium">${data.name || 'Sin Nombre'}</p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white transition-colors relative z-10">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex-grow overflow-y-auto custom-scrollbar p-6 bg-gray-50">
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+                            
+                            <div class="md:col-span-4 space-y-3">
+                                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center h-full flex flex-col justify-center">
+                                    <label class="block text-xs font-bold text-gray-400 uppercase mb-3">Foto Actual</label>
+                                    
+                                    <div class="aspect-square w-full rounded-lg border-4 border-gray-100 bg-gray-50 overflow-hidden relative group shadow-inner mx-auto max-w-[220px]">
+                                        ${data.photoURL
+                    ? `<img src="${data.photoURL}" class="w-full h-full object-contain cursor-zoom-in hover:scale-105 transition-transform duration-500" onclick="openImageModal('${data.photoURL}')">`
+                    : `<div class="flex flex-col items-center justify-center h-full text-gray-300"><i class="fa-solid fa-image text-4xl mb-2"></i><p class="text-xs">Sin imagen</p></div>`
+                }
+                                        ${data.photoURL ? `<div class="absolute bottom-2 right-2 bg-black/50 text-white p-1.5 rounded-lg backdrop-blur-sm"><i class="fa-solid fa-magnifying-glass-plus text-xs"></i></div>` : ''}
+                                    </div>
+                                    
+                                    <div class="mt-4 p-3 bg-amber-50 rounded-lg border border-amber-100">
+                                        <p class="text-[10px] text-amber-700 leading-tight">
+                                            <i class="fa-solid fa-circle-info mr-1"></i>
+                                            Para cambiar la foto, elimina la herramienta y créala de nuevo, o contacta al administrador.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="md:col-span-8 space-y-5">
+                                <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-2">Información Básica</h4>
+                                    
+                                    <div class="grid grid-cols-1 gap-4">
+                                        <div>
+                                            <label for="tool-name" class="block text-xs font-bold text-gray-700 mb-1">Nombre de la Herramienta <span class="text-red-500">*</span></label>
+                                            <input type="text" id="tool-name" name="name" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm font-bold text-gray-800 focus:ring-2 focus:ring-amber-500 outline-none" value="${data.name || ''}">
+                                        </div>
+                                    </div>
+
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label for="tool-reference" class="block text-xs font-bold text-gray-700 mb-1">Referencia / Serial</label>
+                                            <input type="text" id="tool-reference" name="reference" class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-amber-500 outline-none" value="${data.reference || ''}">
+                                        </div>
+                                        <div>
+                                            <label for="tool-category" class="block text-xs font-bold text-gray-700 mb-1">Categoría <span class="text-red-500">*</span></label>
+                                            <select id="tool-category" name="category" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm bg-white focus:ring-2 focus:ring-amber-500 outline-none">
+                                                <option value="" disabled>Seleccione...</option>
+                                                ${categoryOptions}
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-2">Detalles de Adquisición</h4>
+                                    
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label for="tool-purchaseDate" class="block text-xs font-bold text-gray-700 mb-1">Fecha de Compra</label>
+                                            <input type="date" id="tool-purchaseDate" name="purchaseDate" class="w-full border-gray-300 rounded-lg p-2.5 text-sm text-gray-600 focus:ring-2 focus:ring-amber-500 outline-none" value="${data.purchaseDate || ''}">
+                                        </div>
+                                        <div>
+                                            <label for="tool-purchaseCost" class="block text-xs font-bold text-gray-700 mb-1">Costo (Opcional)</label>
+                                            <div class="relative">
+                                                <span class="absolute left-3 top-2.5 text-gray-400 font-bold">$</span>
+                                                <input type="text" id="tool-purchaseCost" name="purchaseCost" class="currency-input w-full pl-7 border-gray-300 rounded-lg p-2.5 text-sm font-mono focus:ring-2 focus:ring-amber-500 outline-none" placeholder="0" value="${data.purchaseCost || 0}">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <p class="text-xs text-gray-400 italic text-center">
+                                    <i class="fa-solid fa-arrows-rotate mr-1"></i> El estado ("En uso", "Disponible") se gestiona automáticamente con las acciones de Asignar/Recibir.
+                                </p>
+                            </div>
                         </div>
                     </div>
-                    
-                    <div class="md:col-span-2 space-y-4 pt-5">
-                        <div>
-                            <label for="tool-name" class="block text-sm font-medium text-gray-700">Nombre de la Herramienta</label>
-                            <input type="text" id="tool-name" name="name" required class="mt-1 w-full border rounded-md p-2" value="${data.name || ''}">
-                        </div>
-                        <div>
-                            <label for="tool-reference" class="block text-sm font-medium text-gray-700">Referencia / Código (Opcional)</label>
-                            <input type="text" id="tool-reference" name="reference" class="mt-1 w-full border rounded-md p-2" value="${data.reference || ''}">
-                        </div>
-                        
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label for="tool-category" class="block text-sm font-medium text-gray-700">Categoría</label>
-                                <select id="tool-category" name="category" required class="mt-1 w-full border rounded-md p-2 bg-white">
-                                    <option value="" disabled>Seleccione...</option>
-                                    ${categoryOptions}
-                                </select>
-                            </div>
-                            <div>
-                                <label for="tool-purchaseDate" class="block text-sm font-medium text-gray-700">Fecha de Compra</label>
-                                <input type="date" id="tool-purchaseDate" name="purchaseDate" class="mt-1 w-full border rounded-md p-2" value="${data.purchaseDate || ''}">
-                            </div>
-                        </div>
-                        <div>
-                            <label for="tool-purchaseCost" class="block text-sm font-medium text-gray-700">Costo de Adquisición (Opcional)</label>
-                            <input type="text" id="tool-purchaseCost" name="purchaseCost" class="currency-input mt-1 w-full border rounded-md p-2" placeholder="$ 0" value="${data.purchaseCost || 0}">
-                        </div>
-                        <p class="text-xs text-gray-500 pt-2">El estado y la asignación se gestionan mediante las acciones "Asignar" y "Recibir".</p>
+
+                    <div class="bg-white border-t border-gray-200 p-4 shrink-0 flex justify-end gap-3 rounded-b-xl">
+                        <button type="button" onclick="closeMainModal()" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition-colors text-sm">
+                            Cancelar
+                        </button>
+                        <button type="button" onclick="document.getElementById('modal-form').requestSubmit()" class="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white px-6 py-2.5 rounded-lg font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-floppy-disk"></i> Guardar Cambios
+                        </button>
                     </div>
                 </div>
             `;
 
-            // --- INICIO DE CÓDIGO AÑADIDO ---
+            // Lógica JS (Formateo de moneda)
             setTimeout(() => {
                 const costInput = document.getElementById('tool-purchaseCost');
-                if (costInput) setupCurrencyInput(costInput); // Aplicar formato al costo existente
+                if (costInput) setupCurrencyInput(costInput);
             }, 100);
-            // --- FIN DE CÓDIGO AÑADIDO ---
+
             break;
         }
 
         case 'assign-tool': {
-            title = 'Asignar Herramienta';
-            btnText = 'Confirmar Asignación';
-            btnClass = 'bg-green-500 hover:bg-green-600';
+            // 1. Ocultar defaults
+            if (document.getElementById('modal-title')) document.getElementById('modal-title').parentElement.style.display = 'none';
+            const defaultFooter = document.getElementById('modal-confirm-btn')?.parentElement;
+            if (defaultFooter) defaultFooter.style.display = 'none';
 
-            // --- INICIO DE CORRECCIÓN ---
-            // Generamos un array de objetos (choices) en lugar de un string HTML
+            // 2. Configurar contenedor
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-3xl', 'flex', 'flex-col', 'max-h-[90vh]');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Asignar Herramienta';
+
+            // Datos de usuarios (Choices)
             const userChoices = Array.from(usersMap.entries())
-                .filter(([id, user]) => user.status === 'active') // Solo usuarios activos
-                .sort((a, b) => a[1].firstName.localeCompare(b[1].firstName)) // Ordenamos alfabéticamente
+                .filter(([id, user]) => user.status === 'active')
+                .sort((a, b) => a[1].firstName.localeCompare(b[1].firstName))
                 .map(([id, user]) => ({
                     value: id,
                     label: `${user.firstName} ${user.lastName}`
                 }));
-            // --- FIN DE CORRECCIÓN ---
 
-            // --- INICIO DE MODIFICACIÓN: FORMATO MODERNO ---
             bodyHtml = `
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    
-                    <div class="md:col-span-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Herramienta</label>
-                        <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden border">
-                            <img src="${data.photoURL || 'https://via.placeholder.com/300'}" 
-                                 alt="${data.name || ''}" 
-                                 class="w-full h-full object-contain">
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-emerald-600 to-teal-700 px-8 py-5 shrink-0 rounded-t-xl flex justify-between items-center relative overflow-hidden">
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-2xl backdrop-blur-sm border border-white/10 shadow-inner text-white">
+                                <i class="fa-solid fa-hand-holding-hand"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-bold tracking-tight text-white">Asignar Herramienta</h2>
+                                <p class="text-emerald-100 text-xs font-medium">Entregar activo a colaborador</p>
+                            </div>
                         </div>
-                        <p class="text-center font-bold text-lg mt-2">${data.name || 'N/A'}</p>
-                        <input type="hidden" name="toolName" value="${data.name || ''}">
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white transition-colors relative z-10">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
                     </div>
-                    
-                    <div class="md:col-span-2 space-y-4">
-                        <div>
-                            <label for="tool-assignedTo" class="block text-sm font-medium">1. Seleccionar Colaborador</label>
-                            <select id="tool-assignedTo" name="assignedTo" required class="mt-1 w-full border rounded-md"></select>
-                        </div>
 
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">2. Foto de Evidencia (Entrega)</label>
-                                <div id="assign-tool-dropzone" class="h-72 w-full rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-500 bg-gray-50 relative overflow-hidden">
-                                <div id="assign-tool-preview" class="hidden absolute inset-0">
-                                    <img src="" id="assign-tool-img-preview" class="w-full h-full object-contain">
+                    <div class="flex-grow overflow-y-auto custom-scrollbar p-6 bg-gray-50">
+                        
+                        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6 flex items-center gap-4">
+                            <div class="w-16 h-16 rounded-lg bg-gray-100 border border-gray-100 shrink-0 p-1">
+                                <img src="${data.photoURL || 'https://via.placeholder.com/150'}" class="w-full h-full object-contain rounded-md">
+                            </div>
+                            <div>
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wide">Activo a entregar</p>
+                                <h3 class="text-lg font-bold text-gray-800 leading-tight">${data.name || 'Herramienta'}</h3>
+                                <p class="text-xs text-gray-500 font-mono mt-0.5">${data.reference || 'Sin referencia'}</p>
+                            </div>
+                        </div>
+                        <input type="hidden" name="toolName" value="${data.name || ''}">
+
+                        <div class="space-y-6">
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <label class="block text-xs font-bold text-gray-700 mb-1 uppercase">1. Seleccionar Colaborador <span class="text-red-500">*</span></label>
+                                <select id="tool-assignedTo" name="assignedTo" required class="w-full"></select>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                    <label class="block text-xs font-bold text-gray-700 mb-3 uppercase">2. Evidencia de Entrega <span class="text-red-500">*</span></label>
+                                    
+                                    <div id="assign-tool-dropzone" class="h-40 w-full rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-emerald-500 hover:bg-emerald-50 transition-all bg-gray-50 relative overflow-hidden group">
+                                        <div id="assign-tool-preview" class="hidden absolute inset-0">
+                                            <img src="" id="assign-tool-img-preview" class="w-full h-full object-contain">
+                                        </div>
+                                        <div id="assign-tool-prompt" class="text-center p-4">
+                                            <div class="w-10 h-10 bg-white rounded-full shadow-sm flex items-center justify-center mx-auto mb-2 text-emerald-500 group-hover:scale-110 transition-transform">
+                                                <i class="fa-solid fa-camera"></i>
+                                            </div>
+                                            <p class="text-xs font-bold text-gray-500 group-hover:text-emerald-700">Subir Foto / Acta</p>
+                                        </div>
+                                    </div>
+                                    <input type="file" id="tool-assign-photo" name="assignPhoto" required accept="image/*" class="hidden">
                                 </div>
-                                <div id="assign-tool-prompt" class="text-center p-4">
-                                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                    <p class="mt-2 text-sm text-gray-500">Subir foto de entrega</p>
+
+                                <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                    <label class="block text-xs font-bold text-gray-700 mb-2 uppercase">3. Observaciones</label>
+                                    <textarea name="assignComments" rows="4" class="w-full border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none resize-none bg-gray-50 focus:bg-white transition-colors" placeholder="Estado actual, accesorios incluidos, etc..."></textarea>
                                 </div>
                             </div>
-                            <input type="file" id="tool-assign-photo" name="assignPhoto" required accept="image/*" class="hidden">
                         </div>
+                    </div>
 
-                        <div>
-                            <label for="tool-assign-comments" class="block text-sm font-medium">3. Observaciones (Opcional)</label>
-                            <textarea id="tool-assign-comments" name="assignComments" rows="2" class="mt-1 w-full border rounded-md p-2" placeholder="Describa el estado de entrega..."></textarea>
-                        </div>
+                    <div class="bg-white border-t border-gray-200 p-4 shrink-0 flex justify-end gap-3 rounded-b-xl">
+                        <button type="button" onclick="closeMainModal()" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition-colors text-sm">
+                            Cancelar
+                        </button>
+                        <button type="button" onclick="document.getElementById('modal-form').requestSubmit()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-lg font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-check"></i> Confirmar Asignación
+                        </button>
                     </div>
                 </div>
             `;
 
-
-            // --- INICIO DE LÓGICA JS AÑADIDA PARA EL PREVIEW ---
+            // Lógica JS (Preview y Choices)
             setTimeout(() => {
                 const dropzone = document.getElementById('assign-tool-dropzone');
                 const fileInput = document.getElementById('tool-assign-photo');
@@ -9038,42 +9489,36 @@ async function openMainModal(type, data = {}) {
                 const previewImg = document.getElementById('assign-tool-img-preview');
                 const promptEl = document.getElementById('assign-tool-prompt');
 
-                if (!dropzone) return; // Seguridad por si el modal se cierra rápido
-
-                // 1. Abrir el selector de archivos al hacer clic en la zona
-                dropzone.addEventListener('click', () => {
-                    fileInput.click();
-                });
-
-                // 2. Mostrar la vista previa cuando se selecciona un archivo
-                fileInput.addEventListener('change', (e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (event) => {
-                            previewImg.src = event.target.result;
-                            previewContainer.classList.remove('hidden');
-                            promptEl.classList.add('hidden');
+                if (dropzone) {
+                    dropzone.addEventListener('click', () => fileInput.click());
+                    fileInput.addEventListener('change', (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                previewImg.src = event.target.result;
+                                previewContainer.classList.remove('hidden');
+                                promptEl.classList.add('hidden');
+                                dropzone.classList.remove('border-dashed');
+                                dropzone.classList.add('border-emerald-500');
+                            }
+                            reader.readAsDataURL(file);
                         }
-                        reader.readAsDataURL(file);
-                    }
-                });
+                    });
+                }
 
                 const assigneeSelect = document.getElementById('tool-assignedTo');
                 if (assigneeSelect) {
                     new Choices(assigneeSelect, {
-                        choices: userChoices, // El array de objetos que creamos
+                        choices: userChoices,
                         itemSelectText: 'Seleccionar',
-                        searchPlaceholderValue: 'Buscar colaborador...',
+                        searchPlaceholderValue: 'Buscar...',
                         placeholder: true,
-                        placeholderValue: 'Selecciona un usuario...',
+                        placeholderValue: 'Buscar colaborador...',
                         allowHTML: false,
                     });
                 }
-
-            }, 100); // Espera a que el modal se renderice
-            // --- FIN DE LÓGICA JS AÑADIDA ---
-
+            }, 100);
             break;
         }
 
@@ -10744,7 +11189,7 @@ modalForm.addEventListener('submit', async (e) => {
     const data = Object.fromEntries(new FormData(modalForm).entries());
     const type = modalForm.dataset.type;
     const id = modalForm.dataset.id;
-    
+
 
     // Filtro para modales que NO usan este submit (sino lógica propia interna)
     if (['new-tool', 'edit-tool', 'assign-tool', 'return-tool', 'register-maintenance', 'new-dotacion-catalog-item', 'add-dotacion-stock', 'register-dotacion-delivery', 'return-dotacion-options'].includes(type)) {
@@ -10770,6 +11215,113 @@ modalForm.addEventListener('submit', async (e) => {
         closeMainModal();
         return;
     }
+
+    if (type === 'init-project-from-quote') {
+        modalConfirmBtn.disabled = true;
+        modalConfirmBtn.textContent = 'Creando Proyecto...';
+
+        try {
+            // 1. Obtener la configuración original de la cotización
+            const configJson = document.getElementById('hidden-quote-config').value;
+            const quoteConfig = JSON.parse(configJson);
+            const quoteMode = quoteConfig.modo || 'MIXTO';
+            const quoteAiu = quoteConfig.aiu || { admin: 10, imprev: 5, util: 5 };
+
+            // 2. Crear el documento del Proyecto
+            const projectData = {
+                name: data.name,
+                builderName: data.builderName,
+                location: data.location || '',
+                address: data.address || '',
+                value: parseFloat(data.value.replace(/[$. ]/g, '')) || 0,
+                advance: parseFloat(data.advance.replace(/[$. ]/g, '')) || 0,
+                startDate: data.startDate,
+                // Leemos el modelo directamente del select (que ya calculamos en el modal)
+                pricingModel: document.querySelector('select[name="pricingModel"]').value,
+                status: 'active',
+                ownerId: currentUser.uid,
+                createdAt: new Date()
+            };
+
+            const projectRef = await addDoc(collection(db, "projects"), projectData);
+            console.log("Proyecto creado con ID:", projectRef.id);
+
+            // 3. Importar Ítems
+            const itemsJson = document.getElementById('hidden-quote-items').value;
+            const items = JSON.parse(itemsJson);
+
+            if (items && items.length > 0) {
+                modalConfirmBtn.textContent = `Importando ${items.length} ítems...`;
+
+                for (const item of items) {
+                    // Datos base del ítem
+                    const itemData = {
+                        name: item.descripcion || 'Ítem sin nombre',
+                        description: item.ubicacion ? `Ubicación: ${item.ubicacion}` : '',
+                        width: parseFloat(item.ancho) || 0,
+                        height: parseFloat(item.alto) || 0,
+                        quantity: parseInt(item.cantidad) || 1,
+                        projectId: projectRef.id
+                    };
+
+                    // LÓGICA DE MAPEO SEGÚN MODELO
+                    if (projectData.pricingModel === 'incluido') {
+                        // --- CASO: TODO INCLUIDO (AIU o IVA GLOBAL) ---
+                        itemData.itemType = 'suministro_instalacion_incluido';
+                        itemData.supplyDetails = {};
+                        itemData.installationDetails = {};
+
+                        itemData.includedDetails = {
+                            // Usamos valor_unitario porque en estos modos es el valor principal
+                            unitPrice: parseFloat(item.valor_unitario) || 0,
+                            // Determinamos el tipo de impuesto según el modo original
+                            taxType: quoteMode === 'AIU' ? 'aiu' : 'iva',
+                            // Copiamos la configuración de AIU por si acaso
+                            aiuA: quoteAiu.admin,
+                            aiuI: quoteAiu.imprev,
+                            aiuU: quoteAiu.util
+                        };
+
+                    } else {
+                        // --- CASO: SEPARADO (MIXTO) ---
+                        itemData.itemType = 'suministro_instalacion';
+                        itemData.includedDetails = {};
+
+                        // Mapeo Suministro
+                        itemData.supplyDetails = {
+                            unitPrice: parseFloat(item.val_suministro) || 0,
+                            taxType: 'iva', // En mixto, suministro suele llevar IVA
+                            aiuA: 0, aiuI: 0, aiuU: 0
+                        };
+
+                        // Mapeo Instalación
+                        itemData.installationDetails = {
+                            unitPrice: parseFloat(item.val_instalacion) || 0,
+                            taxType: 'aiu', // En mixto, instalación suele llevar AIU
+                            aiuA: quoteAiu.admin,
+                            aiuI: quoteAiu.imprev,
+                            aiuU: quoteAiu.util
+                        };
+                    }
+
+                    // Guardar ítem
+                    await addDoc(collection(db, "projects", projectRef.id, "items"), itemData);
+                }
+            }
+
+            alert("¡Proyecto creado e ítems importados exitosamente!");
+            closeMainModal();
+            showDashboard();
+
+        } catch (error) {
+            console.error("Error al crear proyecto desde cotización:", error);
+            alert("Hubo un error: " + error.message);
+        } finally {
+            modalConfirmBtn.disabled = false;
+        }
+        return;
+    }
+
 
     if (type === 'new-task') {
         await createTask(data); // Llama a la nueva función para crear la tarea
@@ -11359,7 +11911,7 @@ modalForm.addEventListener('submit', async (e) => {
                     createdBy: currentUser.uid
                 });
 
-                window.showToast("Solicitud enviada correctamente. Te notificaremos cuando sea aprobada.","success");
+                window.showToast("Solicitud enviada correctamente. Te notificaremos cuando sea aprobada.", "success");
                 closeMainModal();
             } catch (error) {
                 console.error("Error solicitando préstamo:", error);
@@ -11889,7 +12441,7 @@ modalForm.addEventListener('submit', async (e) => {
             break;
         }
         case 'editUser':
-            
+
             try {
                 modalConfirmBtn.disabled = true;
                 modalConfirmBtn.textContent = 'Guardando...';
@@ -13751,8 +14303,8 @@ document.addEventListener('DOMContentLoaded', () => {
         tareas: document.getElementById('tareas-view'),
         herramienta: document.getElementById('herramienta-view'),
         dotacion: document.getElementById('dotacion-view'),
-        'cartera-view': document.getElementById('cartera-view'),
-        
+        'cartera': document.getElementById('cartera-view'),
+
         // --- NUEVA VISTA REGISTRADA ---
         cotizaciones: document.getElementById('cotizaciones-view'),
         'cotizacion-detalle': document.getElementById('cotizacion-detalle-view'),
@@ -13762,7 +14314,7 @@ document.addEventListener('DOMContentLoaded', () => {
         empleados: document.getElementById('empleados-view'),
         'empleado-details': document.getElementById('empleado-details-view'),
         'payment-history-view': document.getElementById('payment-history-view'),
-        'configuracion-view': document.getElementById('configuracion-view'),
+        'configuracion': document.getElementById('configuracion-view'),
         proveedores: document.getElementById('proveedores-view'),
         supplierDetails: document.getElementById('supplier-details-view'),
         adminPanel: document.getElementById('admin-panel-view'),
@@ -13832,7 +14384,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setupCurrencyInput // Pasamos la función global de formato de moneda
     );
 
-    initCotizaciones(db,storage, showView, currentUser); // <--- AÑADIR ESTO
+    initCotizaciones(db, storage, showView, currentUser); // <--- AÑADIR ESTO
 
     initSolicitudes(
         db,
@@ -13850,6 +14402,97 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('po-details-close-btn').addEventListener('click', closePurchaseOrderModal);
     document.getElementById('po-details-cancel-btn').addEventListener('click', closePurchaseOrderModal);
 
+
+    // =============================================================================
+    // LÓGICA DE RECUPERACIÓN DE CONTRASEÑA (Integración Split Screen)
+    // =============================================================================
+
+    // 1. Navegación: Ir a la vista "Olvidé Contraseña" desde Login
+    // Buscamos el enlace por su texto o ID si lo tuviera
+    const loginViewLinks = document.getElementById('login-view')?.querySelectorAll('a');
+    if (loginViewLinks) {
+        loginViewLinks.forEach(link => {
+            if (link.textContent.includes('Olvidaste') || link.textContent.includes('contraseña')) {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    document.getElementById('login-view').classList.add('hidden');
+                    document.getElementById('forgot-password-view').classList.remove('hidden');
+                    // Limpiar estado previo
+                    document.getElementById('reset-email').value = '';
+                    document.getElementById('reset-feedback').classList.add('hidden');
+                });
+            }
+        });
+    }
+
+    // 2. Navegación: Volver al Login desde Recuperación
+    const btnBackToLogin = document.getElementById('back-to-login');
+    if (btnBackToLogin) {
+        btnBackToLogin.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('forgot-password-view').classList.add('hidden');
+            document.getElementById('login-view').classList.remove('hidden');
+        });
+    }
+
+    // 3. Lógica de Envío (Firebase)
+    const forgotForm = document.getElementById('forgot-password-form');
+    if (forgotForm) {
+        forgotForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const emailInput = document.getElementById('reset-email');
+            const email = emailInput.value.trim();
+            const btn = forgotForm.querySelector('button[type="submit"]');
+            const feedbackDiv = document.getElementById('reset-feedback');
+            const originalText = btn.innerHTML;
+
+            if (!email) return;
+
+            // Estado de carga
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Enviando...';
+            feedbackDiv.classList.add('hidden');
+            feedbackDiv.className = "hidden text-sm text-center font-medium p-3 rounded-lg"; // Reset clases
+
+            try {
+                await sendPasswordResetEmail(auth, email);
+
+                // Éxito: Mensaje Verde
+                feedbackDiv.textContent = `✅ Enlace enviado a ${email}. Revisa tu bandeja de entrada.`;
+                feedbackDiv.className = "text-sm text-center font-medium p-3 rounded-lg bg-emerald-50 text-emerald-700 block animate-fade-in border border-emerald-100";
+                forgotForm.reset();
+
+                // Opcional: Volver al login automáticamente después de unos segundos
+                setTimeout(() => {
+                    // Si el usuario sigue en la vista, le sugerimos volver
+                    if (!document.getElementById('forgot-password-view').classList.contains('hidden')) {
+                        btnBackToLogin.click();
+                        // Mostrar mensaje en login (opcional)
+                        const loginError = document.getElementById('login-error');
+                        loginError.innerHTML = `<span class="text-emerald-600">Revisa tu correo para restablecer la contraseña.</span>`;
+                        loginError.classList.remove('hidden');
+                    }
+                }, 5000);
+
+            } catch (error) {
+                console.error("Error recuperación:", error);
+                let msg = "No se pudo enviar el correo.";
+
+                if (error.code === 'auth/user-not-found') msg = "No existe una cuenta con este correo.";
+                if (error.code === 'auth/invalid-email') msg = "El formato del correo no es válido.";
+                if (error.code === 'auth/too-many-requests') msg = "Demasiados intentos. Espera unos minutos.";
+
+                // Error: Mensaje Rojo
+                feedbackDiv.textContent = `❌ ${msg}`;
+                feedbackDiv.className = "text-sm text-center font-medium p-3 rounded-lg bg-red-50 text-red-600 block animate-shake border border-red-100";
+            } finally {
+                // Restaurar botón
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        });
+    }
 
     // Formularios de Autenticación
     document.getElementById('login-form').addEventListener('submit', handleLogin);
@@ -14320,9 +14963,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 break;
             case 'back-to-empleados-from-payment':
-                    loadEmpleadosView(); // Recarga pestañas y datos
-                    showView('empleados'); // Usa el ID correcto ('empleados')
-                    break;
+                loadEmpleadosView(); // Recarga pestañas y datos
+                showView('empleados'); // Usa el ID correcto ('empleados')
+                break;
 
             case 'compare-prices':
                 openMainModal('compare-prices', {
@@ -15450,11 +16093,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 } else if (viewName === 'configuracion') {
                     loadConfiguracionView();
-                    showView('configuracion-view');
+                    showView(viewName);
 
                     // --- CORRECCIÓN AQUÍ ---
                 } else if (viewName === 'cartera') { // Usar viewName, no viewId
                     loadCarteraView();
+                    showView(viewName);
 
                 } else {
                     showView(viewName);
@@ -15919,6 +16563,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Verificamos si la solicitud tiene una Tarea asociada
             if (deliveryModalTitle) {
+                deliveryModalTitle.className = "text-xl font-bold text-gray-800";
                 if (requestData.taskId) {
                     try {
                         const taskSnap = await getDoc(doc(db, "tasks", requestData.taskId));
@@ -15973,17 +16618,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     else description = 'Unidad Completa';
 
                     modalHtml += `
-                        <div class="bg-white p-3 border rounded-md delivery-item-row" 
+                        <div class="bg-white p-4 border border-gray-200 rounded-xl delivery-item-row shadow-sm hover:shadow-md transition-shadow mb-3 flex flex-col sm:flex-row gap-4 items-center" 
                              data-material-id="${item.materialId}" 
                              data-type="${item.type}" 
                              data-length="${item.length || 0}">
-                            <p class="font-semibold text-gray-800">${materialName}</p>
-                            <p class="text-sm text-gray-600">${description}</p>
-                            <div class="flex items-center justify-between mt-2">
-                                <span class="text-sm font-medium">Pendiente: <strong class="text-red-600 text-base">${pendiente}</strong></span>
-                                <div class="w-1/2">
-                                    <label class="block text-xs font-medium text-gray-700">Entregar ahora:</label>
-                                    <input type="number" class="delivery-quantity-input w-full border rounded-md p-2" 
+                            
+                            <div class="flex items-center gap-3 flex-grow min-w-0 w-full sm:w-auto">
+                                <div class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg shrink-0 border border-indigo-100">
+                                    <i class="fa-solid fa-box-open"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <p class="font-bold text-gray-800 text-sm leading-tight truncate" title="${materialName}">${materialName}</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">${description}</p>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
+                                <div class="text-right px-3 border-r border-gray-100">
+                                    <p class="text-[10px] text-gray-400 uppercase font-bold">Pendiente</p>
+                                    <p class="text-lg font-black text-orange-600 leading-none">${pendiente}</p>
+                                </div>
+                                
+                                <div class="w-24">
+                                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Entregar</label>
+                                    <input type="number" class="delivery-quantity-input w-full border border-gray-300 rounded-lg p-1.5 text-center font-bold text-gray-800 focus:ring-2 focus:ring-indigo-500 outline-none" 
                                            max="${pendiente}" min="0" placeholder="0">
                                 </div>
                             </div>

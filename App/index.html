@@ -36,97 +36,277 @@
     </div>
 
     <div id="auth-container" class="hidden">
-        <div id="login-view"
-            class="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
-            <div class="max-w-md w-full bg-white p-8 rounded-lg shadow-lg">
-                <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">Iniciar Sesión</h2>
-                <form id="login-form">
-                    <div class="mb-4">
-                        <label for="login-email" class="block text-sm font-medium text-gray-700">Correo
-                            Electrónico</label>
-                        <input type="email" id="login-email" required
-                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+
+        <div id="login-view" class="min-h-screen bg-white flex">
+            
+            <div class="hidden lg:flex lg:w-1/2 relative bg-slate-900 overflow-hidden">
+                <div class="absolute inset-0 bg-gradient-to-br from-blue-900/40 to-slate-900/60 z-10"></div>
+                <img src="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=2070&auto=format&fit=crop" 
+                    class="absolute inset-0 w-full h-full object-cover opacity-90 animate-fade-in-slow" 
+                    alt="Arquitectura Vidrio">
+                <div class="relative z-20 flex flex-col justify-center items-center h-full text-white px-12 text-center">
+                    <h1 class="text-5xl font-black mb-6 tracking-tight">Vidrios Exito</h1>
+                    <p class="text-lg text-blue-100 font-light max-w-md leading-relaxed">
+                        Transformamos espacios con transparencia y elegancia. Gestiona tus proyectos y cotizaciones en un solo lugar.
+                    </p>
+                </div>
+            </div>
+
+            <div class="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white">
+                <div class="w-full max-w-md space-y-8 animate-fade-in-up">
+                    
+                    <div class="text-center lg:hidden mb-8">
+                        <h2 class="text-3xl font-black text-blue-600">Vidrios Exito</h2>
                     </div>
-                    <div class="mb-6">
-                        <label for="login-password" class="block text-sm font-medium text-gray-700">Contraseña</label>
-                        <input type="password" id="login-password" required
-                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+
+                    <div class="text-center">
+                        <h2 class="text-3xl font-bold text-slate-800 tracking-tight">Bienvenido de nuevo</h2>
+                        <p class="mt-2 text-sm text-slate-500">Ingresa tus credenciales para acceder al sistema</p>
                     </div>
-                    <button type="submit"
-                        class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-all">Ingresar</button>
-                    <p id="login-error" class="text-red-500 text-sm mt-4 text-center"></p>
-                </form>
-                <p class="text-center text-sm text-gray-600 mt-4">
-                    ¿No tienes cuenta? <a href="#" id="show-register"
-                        class="font-medium text-blue-600 hover:text-blue-500">Regístrate</a>
-                </p>
+
+                    <form id="login-form" class="mt-8 space-y-6">
+                        <div class="space-y-5">
+                            <div>
+                                <label for="login-email" class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Correo Electrónico</label>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                        <i class="fa-solid fa-envelope"></i>
+                                    </div>
+                                    <input id="login-email" name="email" type="email" autocomplete="email" required
+                                        class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-slate-700 font-medium placeholder-slate-400"
+                                        placeholder="ejemplo@correo.com">
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between items-center mb-2 ml-1">
+                                    <label for="login-password" class="block text-xs font-bold text-slate-500 uppercase">Contraseña</label>
+                                    <a href="#" class="text-xs font-semibold text-blue-600 hover:text-blue-500">¿Olvidaste tu contraseña?</a>
+                                </div>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                        <i class="fa-solid fa-lock"></i>
+                                    </div>
+                                    <input id="login-password" name="password" type="password" autocomplete="current-password" required
+                                        class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-slate-700 font-medium placeholder-slate-400"
+                                        placeholder="••••••••">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="login-error" class="text-red-500 text-sm text-center font-medium bg-red-50 p-3 rounded-lg hidden"></div>
+
+                        <button type="submit"
+                            class="w-full flex justify-center py-4 px-4 border border-transparent rounded-xl shadow-lg text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transform hover:-translate-y-0.5 transition-all duration-200">
+                            Iniciar Sesión
+                        </button>
+
+                        <p class="text-center text-sm text-slate-600">
+                            ¿Aún no tienes cuenta? 
+                            <a href="#" id="show-register" class="font-bold text-blue-600 hover:text-indigo-600 transition-colors">
+                                Regístrate aquí
+                            </a>
+                        </p>
+                    </form>
+                </div>
             </div>
         </div>
 
-        <div id="register-view"
-            class="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8 hidden">
-            <div class="max-w-md w-full bg-white p-8 rounded-lg shadow-lg">
-                <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">Crear Cuenta</h2>
-                <form id="register-form" class="space-y-4">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label for="register-firstName"
-                                class="block text-sm font-medium text-gray-700">Nombre</label>
-                            <input type="text" id="register-firstName" required
-                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+        <div id="register-view" class="min-h-screen bg-white flex hidden">
+            
+            <div class="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white h-screen overflow-y-auto custom-scrollbar">
+                <div class="w-full max-w-lg space-y-6 animate-fade-in-up py-8">
+                    
+                    <div class="text-center lg:hidden mb-6">
+                        <h2 class="text-2xl font-black text-blue-600">Vidrios Exito</h2>
+                    </div>
+
+                    <div class="text-center mb-8">
+                        <h2 class="text-3xl font-bold text-slate-800 tracking-tight">Crea tu cuenta</h2>
+                        <p class="mt-2 text-sm text-slate-500">Únete a nuestro equipo y comienza a gestionar</p>
+                    </div>
+
+                    <form id="register-form" class="space-y-5">
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Nombre</label>
+                                <input type="text" id="register-firstName" required
+                                    class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                    placeholder="Tu nombre">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Apellido</label>
+                                <input type="text" id="register-lastName" required
+                                    class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                    placeholder="Tu apellido">
+                            </div>
                         </div>
+
                         <div>
-                            <label for="register-lastName"
-                                class="block text-sm font-medium text-gray-700">Apellido</label>
-                            <input type="text" id="register-lastName" required
-                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Cédula de Ciudadanía</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                    <i class="fa-solid fa-id-card"></i>
+                                </div>
+                                <input type="text" id="register-idNumber" required
+                                    class="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                    placeholder="Número de documento">
+                            </div>
                         </div>
-                    </div>
-                    <div>
-                        <label for="register-idNumber" class="block text-sm font-medium text-gray-700">Número de
-                            Cédula</label>
-                        <input type="text" id="register-idNumber" required
-                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label for="register-email" class="block text-sm font-medium text-gray-700">Correo
-                            Electrónico</label>
-                        <input type="email" id="register-email" required
-                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label for="register-phone" class="block text-sm font-medium text-gray-700">Celular</label>
-                        <input type="tel" id="register-phone" required
-                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label for="register-address" class="block text-sm font-medium text-gray-700">Dirección de
-                            Residencia</label>
-                        <input type="text" id="register-address" required
-                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label for="register-password"
-                            class="block text-sm font-medium text-gray-700">Contraseña</label>
-                        <input type="password" id="register-password" required
-                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
-                    </div>
-                    <div class="flex items-center">
-                        <input id="accept-terms" name="accept-terms" type="checkbox" required
-                            class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                        <label for="accept-terms" class="ml-2 block text-sm text-gray-900">Acepto el uso de datos
-                            personales</label>
-                    </div>
-                    <button type="submit"
-                        class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-all">Registrarse</button>
-                    <p id="register-error" class="text-red-500 text-sm text-center"></p>
-                </form>
-                <p class="text-center text-sm text-gray-600 mt-4">
-                    ¿Ya tienes una cuenta? <a href="#" id="show-login"
-                        class="font-medium text-blue-600 hover:text-blue-500">Inicia sesión</a>
-                </p>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Celular</label>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                        <i class="fa-solid fa-mobile-screen"></i>
+                                    </div>
+                                    <input type="tel" id="register-phone" required
+                                        class="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                        placeholder="300 000 0000">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Dirección</label>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                        <i class="fa-solid fa-location-dot"></i>
+                                    </div>
+                                    <input type="text" id="register-address" required
+                                        class="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                        placeholder="Dirección de residencia">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Correo Electrónico</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                    <i class="fa-solid fa-at"></i>
+                                </div>
+                                <input type="email" id="register-email" required
+                                    class="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                    placeholder="correo@ejemplo.com">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Contraseña</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                    <i class="fa-solid fa-key"></i>
+                                </div>
+                                <input type="password" id="register-password" required
+                                    class="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                    placeholder="Mínimo 6 caracteres">
+                            </div>
+                        </div>
+
+                        <div class="flex items-start pt-2">
+                            <div class="flex items-center h-5">
+                                <input id="accept-terms" name="accept-terms" type="checkbox" required
+                                    class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer">
+                            </div>
+                            <div class="ml-3 text-sm">
+                                <label for="accept-terms" class="font-medium text-slate-700 cursor-pointer">Acepto los términos y condiciones</label>
+                                <p class="text-slate-500 text-xs mt-0.5">Autorizo el tratamiento de mis datos personales.</p>
+                            </div>
+                        </div>
+
+                        <div id="register-error" class="text-red-500 text-sm text-center font-medium bg-red-50 p-3 rounded-lg hidden"></div>
+
+                        <button type="submit"
+                            class="w-full flex justify-center py-4 px-4 border border-transparent rounded-xl shadow-lg shadow-emerald-200 text-sm font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transform hover:-translate-y-0.5 transition-all duration-200">
+                            Crear Cuenta
+                        </button>
+
+                        <p class="text-center text-sm text-slate-600 pt-4">
+                            ¿Ya tienes una cuenta? 
+                            <a href="#" id="show-login" class="font-bold text-blue-600 hover:text-indigo-600 transition-colors">
+                                Inicia sesión
+                            </a>
+                        </p>
+                    </form>
+                </div>
+            </div>
+
+            <div class="hidden lg:flex lg:w-1/2 relative bg-slate-900 overflow-hidden">
+                <div class="absolute inset-0 bg-gradient-to-bl from-emerald-900/40 to-slate-900/60 z-10"></div>
+                <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=2069&auto=format&fit=crop" 
+                    class="absolute inset-0 w-full h-full object-cover opacity-90 animate-pulse-slow" 
+                    alt="Oficina Moderna Vidrio">
+                <div class="relative z-20 flex flex-col justify-center items-center h-full text-white px-12 text-center">
+                    <h2 class="text-4xl font-bold mb-6">Únete al Equipo</h2>
+                    <p class="text-lg text-emerald-100 font-light max-w-md leading-relaxed">
+                        Empieza a gestionar obras, herramientas y personal de manera eficiente.
+                    </p>
+                </div>
             </div>
         </div>
+
+        <div id="forgot-password-view" class="min-h-screen bg-white flex hidden">
+            <div class="hidden lg:flex lg:w-1/2 relative bg-slate-900 overflow-hidden">
+                <div class="absolute inset-0 bg-gradient-to-tr from-indigo-900/50 to-slate-900/60 z-10"></div>
+                <img src="https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2070&auto=format&fit=crop" 
+                    class="absolute inset-0 w-full h-full object-cover opacity-90 animate-pulse-slow" 
+                    alt="Seguridad Digital">
+                <div class="relative z-20 flex flex-col justify-center items-center h-full text-white px-12 text-center">
+                    <div class="w-20 h-20 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-md mb-6 border border-white/20">
+                        <i class="fa-solid fa-shield-halved text-4xl"></i>
+                    </div>
+                    <h2 class="text-4xl font-bold mb-4">Recuperación de Cuenta</h2>
+                    <p class="text-lg text-indigo-100 font-light max-w-md">
+                        No te preocupes, te ayudaremos a restablecer tu acceso de forma segura.
+                    </p>
+                </div>
+            </div>
+
+            <div class="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white">
+                <div class="w-full max-w-md space-y-8 animate-fade-in-up">
+                    
+                    <div class="text-center lg:hidden mb-8">
+                        <h2 class="text-2xl font-black text-blue-600">Vidrios Exito</h2>
+                    </div>
+
+                    <div class="text-center">
+                        <h2 class="text-3xl font-bold text-slate-800 tracking-tight">¿Olvidaste tu contraseña?</h2>
+                        <p class="mt-2 text-sm text-slate-500">
+                            Ingresa tu correo electrónico y te enviaremos un enlace para restablecerla.
+                        </p>
+                    </div>
+
+                    <form id="forgot-password-form" class="mt-8 space-y-6">
+                        <div>
+                            <label for="reset-email" class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Correo Registrado</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                    <i class="fa-solid fa-envelope"></i>
+                                </div>
+                                <input id="reset-email" name="email" type="email" autocomplete="email" required
+                                    class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-slate-700 font-medium placeholder-slate-400"
+                                    placeholder="ejemplo@correo.com">
+                            </div>
+                        </div>
+
+                        <div id="reset-feedback" class="hidden text-sm text-center font-medium p-3 rounded-lg"></div>
+
+                        <button type="submit"
+                            class="w-full flex justify-center py-4 px-4 border border-transparent rounded-xl shadow-lg shadow-indigo-200 text-sm font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transform hover:-translate-y-0.5 transition-all duration-200">
+                            Enviar Enlace de Recuperación
+                        </button>
+
+                        <div class="flex items-center justify-center pt-4">
+                            <button type="button" id="back-to-login" class="text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center gap-2 transition-colors">
+                                <i class="fa-solid fa-arrow-left"></i> Volver al Login
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <div id="app-container" class="hidden">
@@ -2342,6 +2522,29 @@
                     </button>
                 </div>
 
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 flex flex-col md:flex-row gap-4">
+                    <div class="relative flex-grow">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        </div>
+                        <input type="text" id="cot-search-input" 
+                            class="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
+                            placeholder="Buscar por cliente, proyecto o fecha...">
+                    </div>
+
+                    <div class="w-full md:w-64">
+                        <select id="cot-filter-status" 
+                                class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white cursor-pointer">
+                            <option value="all">Todos los Estados</option>
+                            <option value="Borrador">📝 Borrador</option>
+                            <option value="Enviada">🚀 Enviada</option>
+                            <option value="Aprobada">✅ Aprobada</option>
+                            <option value="Rechazada">❌ Rechazada</option>
+                            <option value="Facturada">💰 Facturada</option>
+                        </select>
+                    </div>
+                </div>
+
                 <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                     <div class="overflow-x-auto">
                         <table class="w-full">
@@ -2349,12 +2552,15 @@
                                 <tr>
                                     <th class="px-6 py-4 text-left text-sm font-semibold text-slate-600">Cliente</th>
                                     <th class="px-6 py-4 text-left text-sm font-semibold text-slate-600">Proyecto</th>
+                                    <th class="px-6 py-4 text-center text-sm font-semibold text-slate-600">Versión</th> 
+                                    <th class="px-6 py-4 text-center text-sm font-semibold text-slate-600">Estado</th>
                                     <th class="px-6 py-4 text-left text-sm font-semibold text-slate-600">Fecha</th>
                                     <th class="px-6 py-4 text-left text-sm font-semibold text-slate-600">Total</th>
                                     <th class="px-6 py-4 text-right text-sm font-semibold text-slate-600">Acciones</th>
                                 </tr>
                             </thead>
-                            <tbody id="lista-cotizaciones-body" class="divide-y divide-slate-100"></tbody>
+                            <tbody id="lista-cotizaciones-body" class="divide-y divide-slate-100">
+                                </tbody>
                         </table>
                     </div>
                 </div>
@@ -2397,6 +2603,17 @@
                                 <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Fecha</label>
                                 <input type="date" id="cot-fecha" required class="w-full border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                             </div>
+                        </div>
+
+                        <div class="flex flex-col">
+                            <label class="text-xs font-bold text-slate-500 uppercase mb-1">Estado</label>
+                            <select id="cot-estado" class="border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                                <option value="Borrador">📝 Borrador</option>
+                                <option value="Enviada">🚀 Enviada</option>
+                                <option value="Aprobada">✅ Aprobada</option>
+                                <option value="Rechazada">❌ Rechazada</option>
+                                <option value="Facturada">💰 Facturada</option>
+                            </select>
                         </div>
 
                         <div class="overflow-x-auto border border-slate-200 rounded-xl">
@@ -2492,11 +2709,18 @@
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                
                                 <h4 class="text-xs font-bold text-slate-500 uppercase mb-3">Modelo de Cobro</h4>
-                                <select id="config-modo" class="w-full border-slate-300 rounded-lg text-sm p-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                                <select id="config-modo" class="w-full border-slate-300 rounded-lg text-sm p-2.5 outline-none focus:ring-2 focus:ring-blue-500 mb-4">
                                     <option value="AIU">AIU (Construcción - IVA s/Utilidad)</option>
                                     <option value="IVA_GLOBAL">IVA Global (Ventas - 19% Pleno)</option>
                                     <option value="MIXTO">Mixto (Suministro + IVA / Inst + AIU)</option>
+                                </select>
+                                
+                                <h4 class="text-xs font-bold text-slate-500 uppercase mb-3">Numeración de Ítems</h4>
+                                <select id="config-numeracion" class="w-full border-slate-300 rounded-lg text-sm p-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="auto">Automática (1, 2, 3...)</option>
+                                    <option value="manual">Manual / Libre (Escribir ID)</option>
                                 </select>
                                 
                                 <div id="config-aiu-inputs" class="mt-4 grid grid-cols-3 gap-2">

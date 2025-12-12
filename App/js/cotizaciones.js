@@ -3,8 +3,8 @@ import {
     addDoc, serverTimestamp, updateDoc, deleteDoc,
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
-import { 
-    getStorage, ref, uploadBytes, getDownloadURL 
+import {
+    getStorage, ref, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 
 // --- Variables Globales ---
@@ -13,14 +13,25 @@ let unsubscribeCotizaciones = null;
 let _currencyFormatter;
 let cotizacionEditandoId = null;
 let empresaInfo = null; // <--- NUEVA VARIABLE PARA DATOS DE EMPRESA
+let allQuotesCache = []; // <--- NUEVA VARIABLE PARA FILTRADO LOCAL
 
 // Configuración por defecto
 let currentConfig = {
     modo: 'MIXTO',
+    numeracion: 'auto', // <--- NUEVO CAMPO
     columnas: ['item', 'ubicacion', 'descripcion', 'ancho', 'alto', 'm2', 'cantidad', 'valor_unitario', 'total_global'],
     aiu: { admin: 10, imprev: 5, util: 5 },
     split: { sum: 85, inst: 15 },
     terminos: { pago: '50% Anticipo', validez: '15 Días', entrega: 'A convenir', notas: '' }
+};
+
+// Mapa de colores y estilos para los estados
+const ESTADOS_CONFIG = {
+    'Borrador':  { class: 'bg-gray-100 text-gray-600 border-gray-200', icon: '<i class="fa-solid fa-pen-ruler"></i>' },
+    'Enviada':   { class: 'bg-blue-50 text-blue-600 border-blue-200', icon: '<i class="fa-solid fa-paper-plane"></i>' },
+    'Aprobada':  { class: 'bg-emerald-50 text-emerald-600 border-emerald-200', icon: '<i class="fa-solid fa-check"></i>' },
+    'Rechazada': { class: 'bg-red-50 text-red-600 border-red-200', icon: '<i class="fa-solid fa-xmark"></i>' },
+    'Facturada': { class: 'bg-purple-50 text-purple-600 border-purple-200', icon: '<i class="fa-solid fa-file-invoice-dollar"></i>' }
 };
 
 // =============================================================================
@@ -29,7 +40,7 @@ let currentConfig = {
 export function initCotizaciones(db, storage, showView, currentUser) {
     console.log("--> [Cotizaciones] Inicializando vFinal PDF...");
     _db = db;
-    _storage = storage; // <--- Guárdalo
+    _storage = storage;
     _showView = showView;
     _currentUser = currentUser;
 
@@ -37,7 +48,7 @@ export function initCotizaciones(db, storage, showView, currentUser) {
         style: 'currency',
         currency: 'COP',
         minimumFractionDigits: 0,
-        maximumFractionDigits: 0 // <--- AGREGA ESTO para forzar 0 decimales
+        maximumFractionDigits: 0 
     });
 
     document.addEventListener('click', (e) => {
@@ -76,7 +87,21 @@ export function initCotizaciones(db, storage, showView, currentUser) {
         }
     });
 
-    cargarDatosEmpresa(); // <--- AGREGAR ESTA LÍNEA AQUÍ
+    const searchInput = document.getElementById('cot-search-input');
+    const statusFilter = document.getElementById('cot-filter-status');
+
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            renderizarTablaCotizaciones(); // Filtra al escribir
+        });
+    }
+    if (statusFilter) {
+        statusFilter.addEventListener('change', () => {
+            renderizarTablaCotizaciones(); // Filtra al cambiar estado
+        });
+    }
+
+    //cargarDatosEmpresa(); // <--- AGREGAR ESTA LÍNEA AQUÍ
 
     // Delegación Inputs
     const container = document.getElementById('cotizacion-detalle-view');
@@ -98,7 +123,7 @@ export function initCotizaciones(db, storage, showView, currentUser) {
     if (form) form.onsubmit = guardarCotizacion;
 
     // --- LÓGICA BOTÓN ATRÁS DEL NAVEGADOR ---
-    window.addEventListener('popstate', function(event) {
+    window.addEventListener('popstate', function (event) {
         // Identifica tus vistas (Ajusta los IDs si son diferentes)
         const viewEditor = document.getElementById('nueva-cotizacion-view'); // El formulario
         const viewLista = document.getElementById('cotizaciones-view');      // La tabla de lista
@@ -109,7 +134,7 @@ export function initCotizaciones(db, storage, showView, currentUser) {
             viewEditor.classList.add('hidden');
             // Mostrar lista
             viewLista.classList.remove('hidden');
-            
+
             // Opcional: Si tienes una función para limpiar el form, llámala aquí
             // limpiarFormulario();
         }
@@ -117,7 +142,7 @@ export function initCotizaciones(db, storage, showView, currentUser) {
 
     // AGREGA ESTE LISTENER PARA EL INPUT DE ARCHIVOS (Lo crearemos más adelante)
     document.addEventListener('change', (e) => {
-        if(e.target && e.target.id === 'input-adjuntos-cot') {
+        if (e.target && e.target.id === 'input-adjuntos-cot') {
             manejarSeleccionArchivos(e.target.files);
         }
     });
@@ -173,20 +198,20 @@ function recalcularTodo() {
 
 function calcularFila(tr, inputChanged = null, skipTotals = false) {
     const getVal = (n) => parseFloat(tr.querySelector(`[name="${n}"]`)?.value) || 0;
-    
-    const setVal = (n, v) => { 
-        const el = tr.querySelector(`[name="${n}"]`); 
-        if(el) {
+
+    const setVal = (n, v) => {
+        const el = tr.querySelector(`[name="${n}"]`);
+        if (el) {
             // Redondeo para evitar decimales en los inputs visuales
             const valorSeguro = isNaN(v) ? 0 : Math.round(v);
-            el.value = valorSeguro; 
+            el.value = valorSeguro;
         }
     };
 
     // Factores de Impuestos
     const { modo, aiu } = currentConfig;
-    const factorIVA = 1.19; 
-    const factorAIU = 1 + (aiu.admin/100) + (aiu.imprev/100) + (aiu.util/100) + ((aiu.util/100)*0.19);
+    const factorIVA = 1.19;
+    const factorAIU = 1 + (aiu.admin / 100) + (aiu.imprev / 100) + (aiu.util / 100) + ((aiu.util / 100) * 0.19);
 
     // --- 1. Lógica de Desglose (Solo aplica en Modo Mixto) ---
     // Si cambio el Unitario Global, reparto y quito impuestos para llenar Suministro/Instalación
@@ -194,21 +219,21 @@ function calcularFila(tr, inputChanged = null, skipTotals = false) {
         if (inputChanged && inputChanged.name === 'valor_unitario') {
             const vUnitarioBruto = getVal('valor_unitario');
             const split = currentConfig.split || { sum: 85, inst: 15 };
-            
+
             const brutoSum = vUnitarioBruto * (split.sum / 100);
             const brutoInst = vUnitarioBruto * (split.inst / 100);
-            
+
             // Convertir a Base
             const baseSum = brutoSum / factorIVA;
             let baseInst = (modo === 'MIXTO' || modo === 'AIU') ? (brutoInst / factorAIU) : (brutoInst / factorIVA);
 
-            setVal('val_suministro', baseSum); 
+            setVal('val_suministro', baseSum);
             setVal('val_instalacion', baseInst);
         }
         else if (inputChanged && (inputChanged.name === 'val_suministro' || inputChanged.name === 'val_instalacion')) {
             const baseSum = getVal('val_suministro');
             const baseInst = getVal('val_instalacion');
-            
+
             // Convertir a Bruto para sumar al unitario global
             const brutoSum = baseSum * factorIVA;
             let brutoInst = (modo === 'MIXTO' || modo === 'AIU') ? (baseInst * factorAIU) : (baseInst * factorIVA);
@@ -221,13 +246,13 @@ function calcularFila(tr, inputChanged = null, skipTotals = false) {
     const ancho = getVal('ancho');
     const alto = getVal('alto');
     const cant = getVal('cantidad') || 1;
-    
+
     let m2Unit = 0;
     if (ancho > 0 && alto > 0) m2Unit = ancho * alto;
-    
-    if(tr.querySelector('[name="m2"]')) tr.querySelector('[name="m2"]').value = m2Unit.toFixed(2);
-    if(tr.querySelector('[name="total_m2"]')) tr.querySelector('[name="total_m2"]').value = (m2Unit * cant).toFixed(2);
-    
+
+    if (tr.querySelector('[name="m2"]')) tr.querySelector('[name="m2"]').value = m2Unit.toFixed(2);
+    if (tr.querySelector('[name="total_m2"]')) tr.querySelector('[name="total_m2"]').value = (m2Unit * cant).toFixed(2);
+
     const factor = (m2Unit > 0) ? (m2Unit * cant) : cant;
 
     // Variables para guardar las BASES (Valores sin impuestos)
@@ -238,22 +263,22 @@ function calcularFila(tr, inputChanged = null, skipTotals = false) {
         // En mixto, los inputs SUM/INST ya son BASES (limpios)
         totalBaseSumFila = getVal('val_suministro') * factor;
         totalBaseInstFila = getVal('val_instalacion') * factor;
-    } 
+    }
     else if (modo === 'AIU') {
         // En AIU, el input 'valor_unitario' es BRUTO (con impuestos)
         const unitarioBruto = getVal('valor_unitario');
         const totalBruto = unitarioBruto * factor;
-        
+
         // Descontamos factor AIU para obtener la Base
-        totalBaseInstFila = totalBruto / factorAIU; 
+        totalBaseInstFila = totalBruto / factorAIU;
         totalBaseSumFila = 0;
     }
-    else { 
+    else {
         // IVA GLOBAL (Modo Simple por defecto)
         // El input 'valor_unitario' es BRUTO (con IVA)
-        const unitarioBruto = getVal('valor_unitario'); 
+        const unitarioBruto = getVal('valor_unitario');
         const totalBruto = unitarioBruto * factor;
-        
+
         // Descontamos 1.19 para obtener la Base
         totalBaseSumFila = totalBruto / factorIVA;
         totalBaseInstFila = 0;
@@ -265,12 +290,12 @@ function calcularFila(tr, inputChanged = null, skipTotals = false) {
         // Validación de seguridad para no mostrar NaN
         const safeBaseSum = isNaN(totalBaseSumFila) ? 0 : totalBaseSumFila;
         const safeBaseInst = isNaN(totalBaseInstFila) ? 0 : totalBaseInstFila;
-        
+
         // CAMBIO CLAVE: Mostramos la suma de las BASES (Sin impuestos)
         const totalBaseVisual = safeBaseSum + safeBaseInst;
-        
+
         disp.textContent = _currencyFormatter.format(totalBaseVisual);
-        
+
         // Guardamos en dataset para que el Total General sume bases primero
         disp.dataset.baseSum = safeBaseSum;
         disp.dataset.baseInst = safeBaseInst;
@@ -485,7 +510,7 @@ async function generarPDF(datosExternos = null) {
         headers.push('TOTAL');
     }
 
-    // 2. Filas (LÓGICA CORREGIDA PARA SIMPLE Y MIXTO)
+// 2. Filas (LÓGICA CORREGIDA: UNIFICACIÓN DE ÍTEM)
     const itemsSource = datosExternos ? datosExternos.items : document.querySelectorAll('#items-container tr');
     const listaItems = datosExternos ? itemsSource : Array.from(itemsSource);
     
@@ -508,8 +533,15 @@ async function generarPDF(datosExternos = null) {
 
         if (!getVal('descripcion')) return;
 
-        // Datos Texto
-        if (configCols.includes('item')) row.push(idx + 1);
+        // --- CORRECCIÓN AQUÍ: Bloque unificado para el ITEM ---
+        if (configCols.includes('item')) {
+            // Leemos el valor del input 'item_id'
+            const idManual = getVal('item_id');
+            // Si tiene valor (texto o número) lo usamos. Si está vacío, usamos el contador automático.
+            row.push(idManual || (idx + 1));
+        }
+        // -----------------------------------------------------
+
         if (configCols.includes('ubicacion')) row.push(getVal('ubicacion'));
         if (configCols.includes('descripcion')) row.push(getVal('descripcion'));
         if (configCols.includes('ancho')) row.push(getVal('ancho'));
@@ -547,25 +579,21 @@ async function generarPDF(datosExternos = null) {
             row.push(_currencyFormatter.format(totalFilaInst));
 
         } else {
-            // --- MODO SIMPLE (CORREGIDO: Descontamos Impuestos) ---
-            const valUnitInput = getNum('valor_unitario'); // Este input tiene impuestos incluidos
+            // --- MODO SIMPLE ---
+            const valUnitInput = getNum('valor_unitario'); 
             
-            // 1. Calcular el Total Bruto de la fila (con impuestos)
             const totalFilaGross = (valUnitInput * multiplicadorItem) * cantidad;
             
-            // 2. Quitar impuestos para obtener el Total BASE (Sin IVA/AIU)
             let totalFilaBase = 0;
             
             if (configUsada.modo === 'AIU') {
                 totalFilaBase = totalFilaGross / factorAIU;
-                accumBaseInst += totalFilaBase; // Todo a instalación
+                accumBaseInst += totalFilaBase; 
             } else {
-                // IVA Global (Por defecto)
                 totalFilaBase = totalFilaGross / factorIVA;
-                accumBaseSum += totalFilaBase; // Todo a suministro/subtotal
+                accumBaseSum += totalFilaBase; 
             }
 
-            // 3. Calcular Unitario BASE (para mostrar en la columna V. Unit)
             const unitBase = totalFilaBase / cantDivisor;
 
             if (configCols.includes('valor_unitario')) {
@@ -617,43 +645,43 @@ async function generarPDF(datosExternos = null) {
         },
         columnStyles: colStyles,
         margin: { left: T_MARGIN_LEFT, right: T_MARGIN_RIGHT, bottom: 35 },
-        tableWidth: TABLE_WIDTH 
+        tableWidth: TABLE_WIDTH
     });
 
     let finalY = doc.lastAutoTable.finalY;
 
     // --- D. CUADRO DE TOTALES ---
-    
+
     // Ahora accumBaseSum es realmente la BASE (Sin IVA), por lo que podemos calcular los impuestos
     // de nuevo sin duplicarlos.
     const bd = {
         totalBaseSum: accumBaseSum,
-        directo: accumBaseInst, 
+        directo: accumBaseInst,
         ivaSum: 0, vAdmin: 0, vImpr: 0, vUtil: 0, vIvaInst: 0, subtotal: 0, iva: 0
     };
-    
+
     const aiu = configUsada.aiu;
     let totalFinalCalc = 0;
 
     if (configUsada.modo === 'MIXTO') {
         bd.ivaSum = bd.totalBaseSum * 0.19;
-        
-        bd.vAdmin = bd.directo * (aiu.admin/100);
-        bd.vImpr = bd.directo * (aiu.imprev/100);
-        bd.vUtil = bd.directo * (aiu.util/100);
-        bd.vIvaInst = bd.vUtil * 0.19; 
-        
+
+        bd.vAdmin = bd.directo * (aiu.admin / 100);
+        bd.vImpr = bd.directo * (aiu.imprev / 100);
+        bd.vUtil = bd.directo * (aiu.util / 100);
+        bd.vIvaInst = bd.vUtil * 0.19;
+
         const totalSum = bd.totalBaseSum + bd.ivaSum;
         const totalInst = bd.directo + bd.vAdmin + bd.vImpr + bd.vUtil + bd.vIvaInst;
         totalFinalCalc = totalSum + totalInst;
-    } 
+    }
     else if (configUsada.modo === 'AIU') {
-        bd.vAdmin = bd.directo * (aiu.admin/100);
-        bd.vImpr = bd.directo * (aiu.imprev/100);
-        bd.vUtil = bd.directo * (aiu.util/100);
+        bd.vAdmin = bd.directo * (aiu.admin / 100);
+        bd.vImpr = bd.directo * (aiu.imprev / 100);
+        bd.vUtil = bd.directo * (aiu.util / 100);
         bd.vIvaUtil = bd.vUtil * 0.19;
         totalFinalCalc = bd.directo + bd.vAdmin + bd.vImpr + bd.vUtil + bd.vIvaUtil;
-    } 
+    }
     else { // IVA GLOBAL
         // Modo simple: accumBaseSum es el subtotal limpio
         bd.subtotal = accumBaseSum;
@@ -672,11 +700,11 @@ async function generarPDF(datosExternos = null) {
     if (configUsada.modo === 'MIXTO') {
         totalsTableWidth = wVrSum + wTotSum + wVrInst + wTotInst;
         totalsColumnStyles = {
-            0: { cellWidth: wVrSum, halign: 'center' }, 1: { cellWidth: wTotSum, halign: 'center' }, 
-            2: { cellWidth: wVrInst, halign: 'center' }, 3: { cellWidth: wTotInst, halign: 'center' } 
+            0: { cellWidth: wVrSum, halign: 'center' }, 1: { cellWidth: wTotSum, halign: 'center' },
+            2: { cellWidth: wVrInst, halign: 'center' }, 3: { cellWidth: wTotInst, halign: 'center' }
         };
     } else {
-        totalsTableWidth = wSimpleLabel + wSimpleVal; 
+        totalsTableWidth = wSimpleLabel + wSimpleVal;
         totalsColumnStyles = {
             0: { cellWidth: wSimpleLabel, halign: 'center', fontStyle: 'bold' },
             1: { cellWidth: wSimpleVal, halign: 'center' }
@@ -692,23 +720,23 @@ async function generarPDF(datosExternos = null) {
         totalsHead = null;
         totalsBody = [
             [
-                { content: 'SUB TOTAL', styles: { fontStyle: 'bold' } }, 
+                { content: 'SUB TOTAL', styles: { fontStyle: 'bold' } },
                 { content: _currencyFormatter.format(bd.totalBaseSum) },
-                { content: 'SUB TOTAL', styles: { fontStyle: 'bold' } }, 
+                { content: 'SUB TOTAL', styles: { fontStyle: 'bold' } },
                 { content: _currencyFormatter.format(bd.directo) }
             ],
             [
-                { content: '', styles: { lineWidth: { top: 0.1, bottom: 0, left: 0.1, right: 0.1 } } }, 
+                { content: '', styles: { lineWidth: { top: 0.1, bottom: 0, left: 0.1, right: 0.1 } } },
                 { content: '', styles: { lineWidth: { top: 0.1, bottom: 0, left: 0.1, right: 0.1 } } },
                 { content: `ADMIN. ${aiu.admin}%`, styles: { fontStyle: 'bold' } }, { content: _currencyFormatter.format(bd.vAdmin) }
             ],
             [
-                { content: '', styles: { lineWidth: { top: 0, bottom: 0, left: 0.1, right: 0.1 } } }, 
+                { content: '', styles: { lineWidth: { top: 0, bottom: 0, left: 0.1, right: 0.1 } } },
                 { content: '', styles: { lineWidth: { top: 0, bottom: 0, left: 0.1, right: 0.1 } } },
                 { content: `IMPREV. ${aiu.imprev}%`, styles: { fontStyle: 'bold' } }, { content: _currencyFormatter.format(bd.vImpr) }
             ],
             [
-                { content: '', styles: { lineWidth: { top: 0, bottom: 0, left: 0.1, right: 0.1 } } }, 
+                { content: '', styles: { lineWidth: { top: 0, bottom: 0, left: 0.1, right: 0.1 } } },
                 { content: '', styles: { lineWidth: { top: 0, bottom: 0, left: 0.1, right: 0.1 } } },
                 { content: `UTILIDAD ${aiu.util}%`, styles: { fontStyle: 'bold' } }, { content: _currencyFormatter.format(bd.vUtil) }
             ],
@@ -723,29 +751,29 @@ async function generarPDF(datosExternos = null) {
                 { content: _currencyFormatter.format(totalInstalacion), styles: { fontStyle: 'bold', fillColor: [230, 230, 230] } }
             ],
             [
-                { 
-                    content: 'VALOR TOTAL DE LA PROPUESTA', colSpan: 3, 
-                    styles: { fontStyle: 'bold', halign: 'center', fontSize: 9, fillColor: [0, 176, 240], textColor: 0 } 
+                {
+                    content: 'VALOR TOTAL DE LA PROPUESTA', colSpan: 3,
+                    styles: { fontStyle: 'bold', halign: 'center', fontSize: 9, fillColor: [0, 176, 240], textColor: 0 }
                 },
-                { 
-                    content: _currencyFormatter.format(totalFinalCalc), 
-                    styles: { halign: 'center', fontStyle: 'bold', fontSize: 9, fillColor: [0, 176, 240], textColor: 0 } 
+                {
+                    content: _currencyFormatter.format(totalFinalCalc),
+                    styles: { halign: 'center', fontStyle: 'bold', fontSize: 9, fillColor: [0, 176, 240], textColor: 0 }
                 }
             ]
         ];
     } else {
         if (configUsada.modo === 'AIU') {
-             totalsBody.push(["SUB TOTAL:", _currencyFormatter.format(bd.directo)]);
-             totalsBody.push([`ADMINISTRACIÓN ${aiu.admin}%:`, _currencyFormatter.format(bd.vAdmin)]);
-             totalsBody.push([`IMPREVISTOS ${aiu.imprev}%:`, _currencyFormatter.format(bd.vImpr)]);
-             totalsBody.push([`UTILIDAD ${aiu.util}%:`, _currencyFormatter.format(bd.vUtil)]);
-             totalsBody.push(["IVA (Sobre Utilidad):", _currencyFormatter.format(bd.vIvaUtil)]);
+            totalsBody.push(["SUB TOTAL:", _currencyFormatter.format(bd.directo)]);
+            totalsBody.push([`ADMINISTRACIÓN ${aiu.admin}%:`, _currencyFormatter.format(bd.vAdmin)]);
+            totalsBody.push([`IMPREVISTOS ${aiu.imprev}%:`, _currencyFormatter.format(bd.vImpr)]);
+            totalsBody.push([`UTILIDAD ${aiu.util}%:`, _currencyFormatter.format(bd.vUtil)]);
+            totalsBody.push(["IVA (Sobre Utilidad):", _currencyFormatter.format(bd.vIvaUtil)]);
         } else {
-             totalsBody.push(["SUB TOTAL:", _currencyFormatter.format(bd.subtotal)]);
-             totalsBody.push(["IVA (19%):", _currencyFormatter.format(bd.iva)]);
+            totalsBody.push(["SUB TOTAL:", _currencyFormatter.format(bd.subtotal)]);
+            totalsBody.push(["IVA (19%):", _currencyFormatter.format(bd.iva)]);
         }
         totalsBody.push([
-            { content: "VALOR TOTAL:", styles: { fillColor: [0, 176, 240], textColor: 0, fontStyle: 'bold', halign: 'center' } }, 
+            { content: "VALOR TOTAL:", styles: { fillColor: [0, 176, 240], textColor: 0, fontStyle: 'bold', halign: 'center' } },
             { content: _currencyFormatter.format(totalFinalCalc), styles: { fillColor: [0, 176, 240], textColor: 0, fontStyle: 'bold', halign: 'center' } }
         ]);
     }
@@ -763,13 +791,13 @@ async function generarPDF(datosExternos = null) {
         body: totalsBody,
         theme: 'grid',
         styles: {
-            font: 'times', fontSize: 7, cellPadding: 1.5, 
+            font: 'times', fontSize: 7, cellPadding: 1.5,
             lineColor: [0, 0, 0], lineWidth: 0.1, textColor: 0, valign: 'middle'
         },
         columnStyles: totalsColumnStyles,
         margin: { left: totalsMarginLeft },
         tableWidth: totalsTableWidth,
-        showHead: totalsHead ? 'everyPage' : 'never' 
+        showHead: totalsHead ? 'everyPage' : 'never'
     });
 
     finalY = doc.lastAutoTable.finalY + 10;
@@ -779,7 +807,7 @@ async function generarPDF(datosExternos = null) {
 
     doc.setFontSize(11);
     doc.setFont("times", "normal");
-    
+
     const terminosObj = datosExternos ? datosExternos.terminos : {
         pago: document.getElementById('term-pago')?.value,
         validez: document.getElementById('term-validez')?.value,
@@ -804,14 +832,14 @@ async function generarPDF(datosExternos = null) {
 
     doc.text("Atentamente,", MARGIN_LEFT, finalY);
     const firmaY = finalY + 5;
-    
+
     if (empresaInfo.firmaGerenteURL) {
         try {
             const firmaImg = await getBase64ImageFromURL(empresaInfo.firmaGerenteURL);
-            if(firmaImg) doc.addImage(firmaImg, 'PNG', MARGIN_LEFT, firmaY, 40, 20);
-        } catch(e) {}
+            if (firmaImg) doc.addImage(firmaImg, 'PNG', MARGIN_LEFT, firmaY, 40, 20);
+        } catch (e) { }
     }
-    
+
     const textFirmaY = firmaY + 25;
     doc.setFont("times", "bold");
     doc.text(empresaInfo.gerente || "Gerente General", MARGIN_LEFT, textFirmaY);
@@ -827,16 +855,16 @@ async function generarPDF(datosExternos = null) {
         doc.setFontSize(9); doc.setFont("times", "bold"); doc.setTextColor(0, 0, 0);
 
         const l1 = "VENTANERIA FACHADAS-DIVISIONES DE OFICINA –DIVISIONES DE BAÑO, VIDRIO TEMPLADO";
-        doc.text(l1, PAGE_WIDTH/2, footerY, { align: 'center' });
-        
+        doc.text(l1, PAGE_WIDTH / 2, footerY, { align: 'center' });
+
         const l2 = "PELICULA DE SEGURIDAD- VENTANAS ACUSTICAS-VIDRIOS ACUSTICOS.";
-        doc.text(l2, PAGE_WIDTH/2, footerY + 4, { align: 'center' });
-        
-        doc.setFontSize(10); 
+        doc.text(l2, PAGE_WIDTH / 2, footerY + 4, { align: 'center' });
+
+        doc.setFontSize(10);
         doc.setFont("times", "normal");
         const l3 = `${empresaInfo.direccion || ''} | ${empresaInfo.email || ''} | ${empresaInfo.telefono || ''}`;
-        doc.text(l3, PAGE_WIDTH/2, footerY + 8, { align: 'center' });
-        
+        doc.text(l3, PAGE_WIDTH / 2, footerY + 8, { align: 'center' });
+
         const telefono = empresaInfo.telefono || '';
         doc.text(telefono, PAGE_WIDTH / 2, footerY + 12, { align: 'center' });
     }
@@ -849,7 +877,17 @@ async function generarPDF(datosExternos = null) {
 // =============================================================================
 
 export function loadCotizacionesView() {
-    _showView('cotizaciones');
+    // --- CORRECCIÓN: Validación de seguridad ---
+    // Si _showView no está definido, usamos la global window.showView
+    const showFunction = _showView || window.showView;
+
+    if (typeof showFunction === 'function') {
+        showFunction('cotizaciones');
+    } else {
+        console.error("Error crítico: La función de navegación (showView) no está disponible.");
+        return; 
+    }
+    // ------------------------------------------
 
     const listView = document.getElementById('cotizaciones-view');
     const detailView = document.getElementById('cotizacion-detalle-view');
@@ -872,6 +910,8 @@ function abrirModalConfiguracion(esEdicion = false) {
 
     if (esEdicion || cotizacionEditandoId) {
         document.getElementById('config-modo').value = currentConfig.modo;
+
+        document.getElementById('config-numeracion').value = currentConfig.numeracion || 'auto';
 
         document.getElementById('conf-admin').value = currentConfig.aiu.admin;
         document.getElementById('conf-imprev').value = currentConfig.aiu.imprev;
@@ -923,6 +963,7 @@ function cerrarModalConfiguracion() {
 function aplicarConfiguracionEIniciar() {
     const columnas = Array.from(document.querySelectorAll('.col-check:checked')).map(c => c.value);
     const modo = document.getElementById('config-modo').value;
+    const numeracion = document.getElementById('config-numeracion').value; // <--- NUEVO
     const aiu = {
         admin: parseFloat(document.getElementById('conf-admin').value) || 0,
         imprev: parseFloat(document.getElementById('conf-imprev').value) || 0,
@@ -939,7 +980,7 @@ function aplicarConfiguracionEIniciar() {
         notas: document.getElementById('term-notas')?.value || ''
     };
 
-    currentConfig = { columnas, modo, aiu, split, terminos };
+    currentConfig = { columnas, modo, numeracion, aiu, split, terminos };
     cerrarModalConfiguracion();
 
     if (document.getElementById('term-pago')) document.getElementById('term-pago').value = terminos.pago;
@@ -963,6 +1004,54 @@ async function abrirFormularioDetalle(id = null, esNueva = false) {
     detailView.style.display = 'block';
     detailView.classList.remove('hidden');
 
+    // =========================================================================
+    // 1. PRIMERO: INYECTAR LA UI DE ARCHIVOS (Para que el contenedor exista)
+    // =========================================================================
+    const containerTerminos = document.getElementById('term-notas').closest('.grid') || document.getElementById('form-cotizacion');
+    let areaArchivos = document.getElementById('area-archivos-container');
+
+    // Si no existe, lo creamos ahora mismo
+    if (!areaArchivos && containerTerminos) {
+        areaArchivos = document.createElement('div');
+        areaArchivos.id = 'area-archivos-container';
+        // Ajustamos clases para que se vea bien
+        areaArchivos.className = "mt-6 border-t border-slate-200 pt-6 col-span-1 md:col-span-3";
+        areaArchivos.innerHTML = `
+            <h3 class="text-lg font-bold text-slate-700 mb-3 flex items-center">
+                <i class="fa-solid fa-folder-open mr-2 text-indigo-500"></i> Documentos y Planos
+            </h3>
+            
+            <div class="mb-4 bg-blue-50 p-4 rounded-lg border border-blue-100">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <label class="inline-block cursor-pointer bg-white hover:bg-indigo-50 text-indigo-600 font-bold px-4 py-2 rounded-lg border border-indigo-200 shadow-sm transition-all transform hover:-translate-y-0.5">
+                            <i class="fa-solid fa-cloud-arrow-up mr-2"></i> Adjuntar Archivos
+                            <input type="file" id="input-adjuntos-cot" multiple class="hidden">
+                        </label>
+                        <p class="text-[10px] text-slate-400 mt-2 ml-1">Soporta: PDF, Imágenes, CAD (Max 10MB)</p>
+                    </div>
+                    <div class="text-right hidden sm:block">
+                        <i class="fa-regular fa-file-pdf text-3xl text-slate-300 mr-2"></i>
+                        <i class="fa-regular fa-image text-3xl text-slate-300"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div id="seccion-archivos-adjuntos" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                </div>
+        `;
+        // Insertar después del contenedor de términos (o al final del form)
+        containerTerminos.parentNode.appendChild(areaArchivos);
+    }
+
+    // Reiniciar variables globales de archivos
+    archivosParaSubir = [];
+    archivosExistentes = [];
+    renderizarSeccionArchivos(); // Limpiar visualmente al abrir
+
+    // =========================================================================
+    // 2. LUEGO: CARGAR DATOS (Si es edición)
+    // =========================================================================
     const form = document.getElementById('form-cotizacion');
     const tbody = document.getElementById('items-container');
 
@@ -971,7 +1060,16 @@ async function abrirFormularioDetalle(id = null, esNueva = false) {
         tbody.innerHTML = '';
         cotizacionEditandoId = null;
         document.getElementById('titulo-pagina-cot').textContent = "Nueva Cotización";
-        document.getElementById('cot-fecha').valueAsDate = new Date();
+        document.getElementById('estado-cotizacion-badge').textContent = "Borrador";
+        document.getElementById('estado-cotizacion-badge').className = "bg-gray-100 text-gray-600 py-1 px-3 rounded-full text-xs font-bold uppercase";
+
+        // RESETEAR ESTADO A BORRADOR
+        const estadoSelect = document.getElementById('cot-estado');
+        if(estadoSelect) estadoSelect.value = 'Borrador';
+
+        // Fechas y Config por defecto
+        const hoy = new Date().toISOString().split('T')[0];
+        document.getElementById('cot-fecha').value = hoy;
 
         document.getElementById('term-pago').value = currentConfig.terminos.pago;
         document.getElementById('term-validez').value = currentConfig.terminos.validez;
@@ -985,80 +1083,58 @@ async function abrirFormularioDetalle(id = null, esNueva = false) {
         cotizacionEditandoId = id;
         document.getElementById('titulo-pagina-cot').textContent = "Editar Cotización";
 
+        // Loader visual simple mientras carga
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-gray-400"><i class="fa-solid fa-circle-notch fa-spin text-2xl"></i><br>Cargando datos...</td></tr>';
+
         try {
             const docSnap = await getDoc(doc(_db, "cotizaciones", id));
             if (docSnap.exists()) {
                 const data = docSnap.data();
+
+                // CARGAR ESTADO GUARDADO
+                const estadoSelect = document.getElementById('cot-estado');
+                if(estadoSelect) estadoSelect.value = data.estado || 'Borrador';
+
+                // Badge de versión
+                const version = data.version || 1;
+                document.getElementById('estado-cotizacion-badge').textContent = `Versión ${version}`;
+                document.getElementById('estado-cotizacion-badge').className = "bg-blue-100 text-blue-700 py-1 px-3 rounded-full text-xs font-bold uppercase border border-blue-200";
+
                 if (data.config) currentConfig = data.config;
 
-                document.getElementById('cot-cliente').value = data.cliente;
-                document.getElementById('cot-proyecto').value = data.proyecto;
-                document.getElementById('cot-fecha').value = data.fecha;
+                document.getElementById('cot-cliente').value = data.cliente || '';
+                document.getElementById('cot-proyecto').value = data.proyecto || '';
+                document.getElementById('cot-fecha').value = data.fecha || '';
 
                 if (data.terminos) {
-                    document.getElementById('term-pago').value = data.terminos.pago;
-                    document.getElementById('term-validez').value = data.terminos.validez;
-                    document.getElementById('term-entrega').value = data.terminos.entrega;
+                    document.getElementById('term-pago').value = data.terminos.pago || '';
+                    document.getElementById('term-validez').value = data.terminos.validez || '';
+                    document.getElementById('term-entrega').value = data.terminos.entrega || '';
                     document.getElementById('term-notas').value = data.terminos.notas || '';
                 }
 
                 reconstruirTabla();
                 tbody.innerHTML = '';
-                if (data.items) {
+                if (data.items && data.items.length > 0) {
                     data.items.forEach(item => agregarFilaItem(item));
+                } else {
+                    agregarFilaItem();
                 }
                 recalcularTodo();
+
+                // --- CARGAR ARCHIVOS GUARDADOS ---
+                // Ahora esto funcionará porque el HTML ya fue inyectado arriba
                 archivosExistentes = data.archivos || [];
                 renderizarSeccionArchivos();
             }
         } catch (e) {
             console.error(e);
+            tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-red-500">Error cargando cotización.</td></tr>`;
         }
     }
 
     document.getElementById('label-modo-cobro').textContent = `MODO: ${currentConfig.modo}`;
-    setTimeout(inyectarBotonHistorial, 100); // Pequeño delay para asegurar que el DOM esté listo
-
-    // --- GESTIÓN DE ARCHIVOS: INYECTAR UI Y CARGAR DATOS ---
-    
-    // 1. Inyectar HTML si no existe
-    const containerTerminos = document.getElementById('term-notas').closest('.grid') || document.getElementById('form-cotizacion');
-    let areaArchivos = document.getElementById('area-archivos-container');
-    
-    if (!areaArchivos && containerTerminos) {
-        areaArchivos = document.createElement('div');
-        areaArchivos.id = 'area-archivos-container';
-        areaArchivos.className = "mt-6 border-t pt-4 col-span-1 md:col-span-3"; // Ajusta col-span según tu grid
-        areaArchivos.innerHTML = `
-            <h3 class="text-lg font-bold text-slate-700 mb-3"><i class="fa-solid fa-folder-open mr-2"></i>Documentos y Planos</h3>
-            
-            <div class="mb-4">
-                <label class="inline-block cursor-pointer bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-4 py-2 rounded border border-indigo-200 transition">
-                    <i class="fa-solid fa-paperclip mr-2"></i> Adjuntar Archivos
-                    <input type="file" id="input-adjuntos-cot" multiple class="hidden">
-                </label>
-                <span class="text-xs text-slate-400 ml-2">PDF, Imágenes, CAD (Max 10MB)</span>
-            </div>
-
-            <div id="seccion-archivos-adjuntos" class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                </div>
-        `;
-        // Insertar después de las notas o al final del formulario
-        containerTerminos.parentNode.appendChild(areaArchivos); 
-    }
-
-    // 2. Resetear estados
-    archivosParaSubir = [];
-    archivosExistentes = [];
-
-    // 3. Cargar archivos si es edición
-    if (id && cotizacionEditandoId) {
-        // Nota: Asegúrate de que 'data' (del getDoc anterior) esté disponible aquí 
-        // O vuelve a leerlo de la variable global si la tienes, o usa el snapshot.
-        // Asumiremos que puedes acceder a la data cargada arriba en la función:
-        
-        // Si no tienes acceso a 'data' aquí, muévelo dentro del bloque `if (docSnap.exists())` de arriba
-    }
+    setTimeout(inyectarBotonHistorial, 100);
     setTimeout(inyectarControlesExcel, 100);
 }
 
@@ -1104,7 +1180,18 @@ function agregarFilaItem(data = {}) {
 
     currentConfig.columnas.forEach(col => {
         if (col === 'item') {
-            html += `<td class="p-2"><span class="text-xs font-bold text-slate-400 block text-center">${tbody.children.length + 1}</span></td>`;
+            // --- INICIO CAMBIO: Lógica Automática vs Manual ---
+            const indiceAuto = tbody.children.length + 1;
+            if (currentConfig.numeracion === 'manual') {
+                // Si es manual, mostramos un input pequeño
+                // Si ya viene data.item_id lo usamos, si no, sugerimos el índice
+                const valorId = data.item_id || indiceAuto;
+                html += `<td class="p-2"><input type="text" name="item_id" class="w-12 p-1 border rounded text-xs text-center font-bold text-slate-700 bg-yellow-50 focus:bg-white" value="${valorId}"></td>`;
+            } else {
+                // Si es automático, mostramos el número y un input oculto para guardarlo siempre
+                html += `<td class="p-2"><span class="text-xs font-bold text-slate-400 block text-center">${indiceAuto}</span><input type="hidden" name="item_id" value="${indiceAuto}"></td>`;
+            }
+            // --- FIN CAMBIO ---
         }
         else if (col === 'ubicacion') {
             // --- CAMBIO 1: Ubicación pequeña (w-20) y centrada ---
@@ -1159,7 +1246,7 @@ function agregarFilaItem(data = {}) {
 // --- CRUD PRINCIPAL (FUSIONADO: ARCHIVOS + VERSIONAMIENTO) ---
 async function guardarCotizacion(e) {
     e.preventDefault();
-    
+
     // 1. Feedback visual (Bloquear botón)
     const btn = e.target.querySelector('button[type="submit"]');
     const originalContent = btn.innerHTML;
@@ -1174,7 +1261,7 @@ async function guardarCotizacion(e) {
             // Recoger todos los inputs y textareas de la fila
             tr.querySelectorAll('input, textarea').forEach(i => item[i.name] = i.value);
             // Solo agregar si tiene descripción
-            if(item.descripcion) items.push(item);
+            if (item.descripcion) items.push(item);
         });
 
         if (!items.length) throw new Error("La cotización está vacía. Agrega al menos un ítem.");
@@ -1198,7 +1285,7 @@ async function guardarCotizacion(e) {
         // Subir archivos nuevos a Storage (usando el ID del documento)
         // Nota: subirArchivosPendientes devuelve array vacío si no hay nada nuevo
         const nuevosArchivos = await subirArchivosPendientes(idDocumento);
-        
+
         // Combinar archivos viejos (que ya estaban en BD) con los nuevos subidos
         // 'archivosExistentes' es la variable global que llenamos al abrir el formulario
         const listaCompletaArchivos = [...archivosExistentes, ...nuevosArchivos];
@@ -1208,6 +1295,7 @@ async function guardarCotizacion(e) {
             cliente: document.getElementById('cot-cliente').value,
             proyecto: document.getElementById('cot-proyecto').value,
             fecha: document.getElementById('cot-fecha').value,
+            estado: document.getElementById('cot-estado').value, // <--- Guardamos el estado
             config: currentConfig,
             items: items,
             terminos: {
@@ -1224,12 +1312,12 @@ async function guardarCotizacion(e) {
         // 6. Guardado con Lógica de Versionamiento
         if (cotizacionEditandoId) {
             // --- MODO EDICIÓN: VERSIONAR ANTES DE GUARDAR ---
-            
+
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 const currentData = docSnap.data();
                 const currentVersion = currentData.version || 1; // Si no tiene versión, es la 1
-                
+
                 // A) Guardar copia en subcolección 'historial'
                 const historyRef = collection(_db, "cotizaciones", cotizacionEditandoId, "historial");
                 await addDoc(historyRef, {
@@ -1240,10 +1328,10 @@ async function guardarCotizacion(e) {
 
                 // B) Incrementar versión en los datos nuevos
                 data.version = currentVersion + 1;
-                
+
                 // C) Actualizar documento principal
                 await updateDoc(docRef, data);
-                
+
                 alert(`Cotización actualizada correctamente a la Versión ${data.version}`);
             }
         } else {
@@ -1251,7 +1339,7 @@ async function guardarCotizacion(e) {
             data.version = 1;
             data.createdAt = serverTimestamp();
             data.createdBy = _currentUser ? _currentUser.uid : 'anon';
-            
+
             // Usamos setDoc porque generamos el ID manualmente arriba (para los archivos)
             // Importamos setDoc dinámicamente por si no estaba en los imports iniciales
             const { setDoc } = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js");
@@ -1275,67 +1363,154 @@ async function cargarListaFirebase() {
     const tbody = document.getElementById('lista-cotizaciones-body');
     if(!tbody) return;
     
+    // Feedback de carga
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8"><i class="fa-solid fa-spinner fa-spin text-blue-500 text-2xl"></i><p class="text-gray-400 mt-2">Cargando cotizaciones...</p></td></tr>';
+
     if(unsubscribeCotizaciones) unsubscribeCotizaciones();
     
     const q = query(collection(_db, "cotizaciones"), orderBy("createdAt", "desc"));
+    
     unsubscribeCotizaciones = onSnapshot(q, (snap) => {
-        tbody.innerHTML = '';
+        allQuotesCache = []; // Limpiamos caché
+        
         snap.forEach(docSnap => {
-            const d = docSnap.data();
-            const tr = document.createElement('tr');
-            tr.className = "hover:bg-slate-50 border-b border-slate-100";
-            
-            // --- CAMBIO AQUÍ: Agregamos el botón de PDF (btn-pdf) ---
-            tr.innerHTML = `
-                <td class="px-6 py-4 font-bold">${d.cliente || 'Sin Cliente'}</td>
-                <td class="px-6 py-4 text-sm">${d.proyecto || 'Sin Proyecto'}</td>
-                <td class="px-6 py-4 text-sm">${d.fecha}</td>
-                <td class="px-6 py-4 font-bold">${_currencyFormatter.format(d.totalFinal)}</td>
-                <td class="px-6 py-4 text-right flex justify-end gap-2">
-                    
-                    <button class="btn-pdf text-emerald-600 hover:bg-emerald-50 p-2 rounded" title="Descargar PDF">
-                        <i class="fa-solid fa-file-pdf"></i>
-                    </button>
-                    
-                    <button class="btn-clone text-indigo-600 hover:bg-indigo-50 p-2 rounded" title="Clonar Cotización">
-                        <i class="fa-solid fa-copy"></i>
-                    </button>
-
-                    <button class="btn-edit text-blue-600 hover:bg-blue-50 p-2 rounded" title="Editar">
-                        <i class="fa-solid fa-pen"></i>
-                    </button>
-                    
-                    <button class="btn-del text-red-600 hover:bg-red-50 p-2 rounded" title="Eliminar">
-                        <i class="fa-solid fa-trash"></i>
-                    </button>
-                </td>
-            `;
-            
-            // Listeners
-            const btnPdf = tr.querySelector('.btn-pdf');
-            const btnClone = tr.querySelector('.btn-clone'); // <--- Capturamos botón
-            const editBtn = tr.querySelector('.btn-edit');
-            const delBtn = tr.querySelector('.btn-del');
-            
-            // Lógica PDF (Ya la tienes)
-            if(btnPdf) btnPdf.onclick = async () => { /* ... tu código pdf ... */ };
-
-            // --- LÓGICA CLONAR ---
-            if(btnClone) btnClone.onclick = async () => {
-                if(confirm(`¿Deseas crear una COPIA de la cotización para "${d.proyecto}"?`)) {
-                    await clonarCotizacion(d);
-                }
-            };
-
-            if(editBtn) editBtn.onclick = () => abrirFormularioDetalle(docSnap.id);
-            if(delBtn) delBtn.onclick = async () => { 
-                if(confirm('¿Borrar?')) await deleteDoc(docSnap.ref); 
-            };
-            
-            tbody.appendChild(tr);
+            // Guardamos los datos + la referencia (necesaria para editar) en el array
+            allQuotesCache.push({ 
+                id: docSnap.id, 
+                ref: docSnap.ref,
+                ...docSnap.data() 
+            });
         });
+
+        // Una vez cargados, llamamos a la función que PINTA y FILTRA
+        renderizarTablaCotizaciones(); 
     });
 }
+
+function renderizarTablaCotizaciones() {
+    const tbody = document.getElementById('lista-cotizaciones-body');
+    // Obtenemos valores de los filtros
+    const searchVal = document.getElementById('cot-search-input')?.value.toLowerCase().trim() || '';
+    const statusVal = document.getElementById('cot-filter-status')?.value || 'all';
+
+    tbody.innerHTML = '';
+
+    // A. FILTRADO EN MEMORIA
+    const filtered = allQuotesCache.filter(item => {
+        const textMatch = 
+            (item.cliente || '').toLowerCase().includes(searchVal) || 
+            (item.proyecto || '').toLowerCase().includes(searchVal) ||
+            (item.fecha || '').toLowerCase().includes(searchVal);
+        
+        const statusMatch = statusVal === 'all' || (item.estado || 'Borrador') === statusVal;
+
+        return textMatch && statusMatch;
+    });
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-400">No se encontraron cotizaciones.</td></tr>';
+        return;
+    }
+
+    // B. GENERACIÓN DE FILAS
+    filtered.forEach(d => {
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-slate-50 border-b border-slate-100 transition-colors";
+        
+        // --- Badge de Versión ---
+        const versionBadge = d.version 
+            ? `<span class="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded border border-indigo-100">v${d.version}</span>` 
+            : `<span class="bg-gray-50 text-gray-500 text-[10px] font-bold px-2 py-0.5 rounded border border-gray-200">v1</span>`;
+
+        // --- Estado Interactivo (SELECT) ---
+        const estadoKey = d.estado || 'Borrador'; 
+        const estConfig = ESTADOS_CONFIG[estadoKey] || ESTADOS_CONFIG['Borrador'];
+        
+        // Generamos opciones
+        const optionsHtml = Object.keys(ESTADOS_CONFIG).map(state => 
+            `<option value="${state}" ${state === estadoKey ? 'selected' : ''}>${state}</option>`
+        ).join('');
+
+        const statusSelectHtml = `
+            <select class="status-change-select text-xs font-bold uppercase py-1 px-2 rounded-lg border outline-none cursor-pointer transition-colors ${estConfig.class}" 
+                    title="Cambiar estado">
+                ${optionsHtml}
+            </select>
+        `;
+
+        tr.innerHTML = `
+            <td class="px-6 py-4 font-bold text-slate-700">${d.cliente || 'Sin Cliente'}</td>
+            <td class="px-6 py-4 text-sm text-slate-600">${d.proyecto || 'Sin Proyecto'}</td>
+            <td class="px-6 py-4 text-center">${versionBadge}</td>
+            
+            <td class="px-6 py-4 text-center">
+                ${statusSelectHtml}
+            </td>
+
+            <td class="px-6 py-4 text-sm text-slate-500">${d.fecha}</td>
+            <td class="px-6 py-4 font-bold text-emerald-600">${_currencyFormatter.format(d.totalFinal)}</td>
+            
+            <td class="px-6 py-4 text-right flex justify-end gap-2">
+                <button class="btn-launch text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 p-2 rounded shadow-sm transition-all transform hover:scale-105" title="Iniciar Proyecto">
+                    <i class="fa-solid fa-rocket"></i>
+                </button>
+                <button class="btn-pdf text-emerald-600 hover:bg-emerald-50 p-2 rounded transition-colors" title="Descargar PDF">
+                    <i class="fa-solid fa-file-pdf"></i>
+                </button>
+                <button class="btn-clone text-indigo-600 hover:bg-indigo-50 p-2 rounded transition-colors" title="Clonar">
+                    <i class="fa-solid fa-copy"></i>
+                </button>
+                <button class="btn-edit text-blue-600 hover:bg-blue-50 p-2 rounded transition-colors" title="Editar">
+                    <i class="fa-solid fa-pen"></i>
+                </button>
+                <button class="btn-del text-red-600 hover:bg-red-50 p-2 rounded transition-colors" title="Eliminar">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </td>
+        `;
+        
+        // --- C. ASIGNACIÓN DE EVENTOS ---
+        
+        // 1. Cambio de Estado
+        const selectEl = tr.querySelector('.status-change-select');
+        selectEl.addEventListener('change', async (e) => {
+            e.stopPropagation();
+            const newState = e.target.value;
+            // Actualización visual inmediata
+            const newConfig = ESTADOS_CONFIG[newState] || ESTADOS_CONFIG['Borrador'];
+            e.target.className = `status-change-select text-xs font-bold uppercase py-1 px-2 rounded-lg border outline-none cursor-pointer transition-colors ${newConfig.class}`;
+            
+            // Actualización en BD (usamos d.ref que guardamos en caché)
+            try { 
+                await updateDoc(d.ref, { estado: newState }); 
+                // Actualizamos también la caché local para que si filtra, mantenga el nuevo estado
+                d.estado = newState; 
+            } catch (error) { 
+                console.error(error); 
+                alert("Error actualizando estado."); 
+            }
+        });
+
+        // 2. Botones
+        tr.querySelector('.btn-launch').onclick = (e) => { e.stopPropagation(); if (window.openMainModal) window.openMainModal('init-project-from-quote', d); };
+        
+        const btnPdf = tr.querySelector('.btn-pdf');
+        btnPdf.onclick = async (e) => { 
+            e.stopPropagation(); 
+            const originalHtml = btnPdf.innerHTML;
+            btnPdf.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            btnPdf.disabled = true;
+            try { await generarPDF(d); } catch (err) { alert(err.message); } finally { btnPdf.innerHTML = originalHtml; btnPdf.disabled = false; }
+        };
+
+        tr.querySelector('.btn-clone').onclick = async (e) => { e.stopPropagation(); if(confirm(`¿Clonar "${d.proyecto}"?`)) await clonarCotizacion(d); };
+        tr.querySelector('.btn-edit').onclick = () => abrirFormularioDetalle(d.id);
+        tr.querySelector('.btn-del').onclick = async (e) => { e.stopPropagation(); if(confirm('¿Borrar permanentemente?')) await deleteDoc(d.ref); };
+        
+        tbody.appendChild(tr);
+    });
+}
+
 
 // --- FUNCIÓN NUEVA: REFRESCA LA TABLA AL CAMBIAR CONFIGURACIÓN ---
 function refrescarTablaItems() {
@@ -1354,7 +1529,10 @@ function refrescarTablaItems() {
             return el ? el.value : '';
         };
 
+        
+
         savedData.push({
+            item_id: getStr('item_id'), // <--- NUEVO: Guardar el ID actual
             // Textos
             ubicacion: getStr('ubicacion'),
             descripcion: getStr('descripcion'),
@@ -1408,11 +1586,12 @@ function refrescarTablaItems() {
     const split = currentConfig.split || { sum: 85, inst: 15 };
 
     savedData.forEach(data => {
-        agregarFilaItem(); // Crea la fila vacía con la NUEVA estructura
+        agregarFilaItem(data); // Pasamos 'data' a agregarFilaItem
         const newRow = tbody.lastElementChild;
 
         // Restaurar Textos y Dimensiones
         const setVal = (n, v) => { const el = newRow.querySelector(`[name="${n}"]`); if (el) el.value = v; };
+        setVal('item_id', data.item_id); // <--- NUEVO: Restaurar el ID
         setVal('ubicacion', data.ubicacion);
         setVal('descripcion', data.descripcion);
         setVal('ancho', data.ancho);
@@ -1468,9 +1647,9 @@ function refrescarTablaItems() {
 
 // Función para inyectar el botón en la cabecera (se llama desde abrirFormularioDetalle)
 function inyectarBotonHistorial() {
-    const headerActions = document.querySelector('#cotizacion-detalle-view .flex.justify-between div'); 
+    const headerActions = document.querySelector('#cotizacion-detalle-view .flex.justify-between div');
     // Buscamos el contenedor de botones de la cabecera (donde está volver/exportar)
-    
+
     if (headerActions && !document.getElementById('btn-ver-historial')) {
         const btnHist = document.createElement('button');
         btnHist.id = 'btn-ver-historial';
@@ -1478,7 +1657,7 @@ function inyectarBotonHistorial() {
         btnHist.className = 'bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow ml-2 transition';
         btnHist.innerHTML = '<i class="fa-solid fa-clock-rotate-left mr-2"></i> Historial';
         btnHist.onclick = mostrarModalHistorial;
-        
+
         // Lo insertamos antes del botón de exportar o al final
         headerActions.appendChild(btnHist);
     }
@@ -1504,7 +1683,7 @@ async function mostrarModalHistorial() {
             </div>
         </div>
     </div>`;
-    
+
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 
     try {
@@ -1512,7 +1691,7 @@ async function mostrarModalHistorial() {
         const historyRef = collection(_db, "cotizaciones", cotizacionEditandoId, "historial");
         const q = query(historyRef, orderBy("archivedAt", "desc"));
         const snapshot = await getDocs(q);
-        
+
         const container = document.getElementById('lista-historial');
         container.innerHTML = '';
 
@@ -1525,10 +1704,10 @@ async function mostrarModalHistorial() {
             const d = docSnap.data(); // Estos son los datos históricos (snapshot de ese momento)
             const fecha = d.archivedAt ? new Date(d.archivedAt.seconds * 1000).toLocaleString() : 'Fecha desc.';
             const total = d.totalFinal ? _currencyFormatter.format(d.totalFinal) : '$0';
-            
+
             const item = document.createElement('div');
             item.className = 'p-3 border rounded hover:bg-slate-50 transition'; // Quitamos cursor pointer global
-            
+
             // --- DISEÑO: Dos botones (PDF y Restaurar) ---
             item.innerHTML = `
                 <div class="flex justify-between items-start">
@@ -1550,12 +1729,12 @@ async function mostrarModalHistorial() {
                     </div>
                 </div>
             `;
-            
+
             // --- LÓGICA DEL BOTÓN PDF ---
             const btnPdf = item.querySelector('.btn-pdf-historial');
             btnPdf.onclick = async (e) => {
                 e.stopPropagation();
-                
+
                 // Feedback de carga
                 const htmlOriginal = btnPdf.innerHTML;
                 btnPdf.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
@@ -1563,7 +1742,7 @@ async function mostrarModalHistorial() {
 
                 try {
                     // LLAMAMOS A NUESTRA FUNCIÓN HÍBRIDA PASÁNDOLE LOS DATOS VIEJOS
-                    await generarPDF(d); 
+                    await generarPDF(d);
                 } catch (err) {
                     console.error(err);
                     alert("Error generando el PDF histórico.");
@@ -1577,12 +1756,12 @@ async function mostrarModalHistorial() {
             const btnRestaurar = item.querySelector('.btn-restaurar-historial');
             btnRestaurar.onclick = (e) => {
                 e.stopPropagation();
-                if(confirm(`¿Seguro que deseas restaurar la ${d.versionLabel}?\n(Se cargará en el editor y si guardas, crearás una nueva versión superior)`)) {
+                if (confirm(`¿Seguro que deseas restaurar la ${d.versionLabel}?\n(Se cargará en el editor y si guardas, crearás una nueva versión superior)`)) {
                     cargarDatosEnEditor(d);
                     document.getElementById(modalId).remove();
                 }
             };
-            
+
             container.appendChild(item);
         });
 
@@ -1595,32 +1774,32 @@ async function mostrarModalHistorial() {
 // Función auxiliar para restaurar datos en el formulario
 function cargarDatosEnEditor(data) {
     // 1. Restaurar Config
-    if(data.config) currentConfig = data.config;
-    
+    if (data.config) currentConfig = data.config;
+
     // 2. Restaurar Campos Texto
     document.getElementById('cot-cliente').value = data.cliente || '';
     document.getElementById('cot-proyecto').value = data.proyecto || '';
-    
-    if(data.terminos) {
-        if(document.getElementById('term-pago')) document.getElementById('term-pago').value = data.terminos.pago;
-        if(document.getElementById('term-validez')) document.getElementById('term-validez').value = data.terminos.validez;
-        if(document.getElementById('term-entrega')) document.getElementById('term-entrega').value = data.terminos.entrega;
-        if(document.getElementById('term-notas')) document.getElementById('term-notas').value = data.terminos.notas || '';
+
+    if (data.terminos) {
+        if (document.getElementById('term-pago')) document.getElementById('term-pago').value = data.terminos.pago;
+        if (document.getElementById('term-validez')) document.getElementById('term-validez').value = data.terminos.validez;
+        if (document.getElementById('term-entrega')) document.getElementById('term-entrega').value = data.terminos.entrega;
+        if (document.getElementById('term-notas')) document.getElementById('term-notas').value = data.terminos.notas || '';
     }
 
     // 3. Reconstruir Tabla
     reconstruirTabla();
     const tbody = document.getElementById('items-container');
     tbody.innerHTML = '';
-    
-    if(data.items && data.items.length > 0) {
+
+    if (data.items && data.items.length > 0) {
         data.items.forEach(item => agregarFilaItem(item));
     } else {
         agregarFilaItem();
     }
-    
+
     recalcularTodo();
-    
+
     // Feedback visual
     const titulo = document.getElementById('titulo-pagina-cot');
     titulo.innerHTML = `Editar Cotización <span class="text-sm bg-yellow-100 text-yellow-800 px-2 py-1 rounded ml-2">Restaurado: ${data.versionLabel}</span>`;
@@ -1635,10 +1814,10 @@ let archivosExistentes = []; // URLs de archivos ya guardados
 
 function renderizarSeccionArchivos() {
     const contenedor = document.getElementById('seccion-archivos-adjuntos');
-    if(!contenedor) return;
+    if (!contenedor) return;
 
     contenedor.innerHTML = '';
-    
+
     // Lista de archivos existentes (Guardados en BD)
     archivosExistentes.forEach((doc, idx) => {
         const item = document.createElement('div');
@@ -1665,7 +1844,7 @@ function renderizarSeccionArchivos() {
             <div class="flex items-center overflow-hidden">
                 <i class="fa-solid fa-upload text-yellow-600 mr-2"></i>
                 <span class="text-slate-700 truncate mr-2">${file.name}</span>
-                <span class="text-xs text-slate-400">(${(file.size/1024/1024).toFixed(2)} MB)</span>
+                <span class="text-xs text-slate-400">(${(file.size / 1024 / 1024).toFixed(2)} MB)</span>
             </div>
             <button type="button" class="text-red-400 hover:text-red-600" onclick="removerArchivoCola(${idx})">
                 <i class="fa-solid fa-times"></i>
@@ -1681,12 +1860,12 @@ function manejarSeleccionArchivos(fileList) {
     }
     renderizarSeccionArchivos();
     // Limpiar input para permitir seleccionar el mismo archivo si se borró
-    document.getElementById('input-adjuntos-cot').value = ''; 
+    document.getElementById('input-adjuntos-cot').value = '';
 }
 
 // Funciones globales (window) para que el onclick del HTML las encuentre
 window.eliminarArchivoExistente = (idx) => {
-    if(confirm("¿Quitar este archivo de la cotización? (No se borrará del historial)")) {
+    if (confirm("¿Quitar este archivo de la cotización? (No se borrará del historial)")) {
         archivosExistentes.splice(idx, 1);
         renderizarSeccionArchivos();
     }
@@ -1699,18 +1878,18 @@ window.removerArchivoCola = (idx) => {
 
 async function subirArchivosPendientes(cotizacionId) {
     if (archivosParaSubir.length === 0) return [];
-    
+
     const nuevosAdjuntos = [];
-    
+
     for (const file of archivosParaSubir) {
         // Crear referencia: cotizaciones/ID/timestamp_nombre
         const path = `cotizaciones/${cotizacionId}/${Date.now()}_${file.name}`;
         const storageRef = ref(_storage, path);
-        
+
         try {
             const snapshot = await uploadBytes(storageRef, file);
             const url = await getDownloadURL(snapshot.ref);
-            
+
             nuevosAdjuntos.push({
                 nombre: file.name,
                 url: url,
@@ -1723,7 +1902,7 @@ async function subirArchivosPendientes(cotizacionId) {
             alert(`Error al subir ${file.name}`);
         }
     }
-    
+
     archivosParaSubir = []; // Limpiar cola tras subida exitosa
     return nuevosAdjuntos;
 }
@@ -1751,14 +1930,14 @@ const MAPA_COLUMNAS_EXCEL = {
 function inyectarControlesExcel() {
     const btnAgregar = document.getElementById('btn-agregar-item-cot');
     if (!btnAgregar) return;
-    
+
     const parent = btnAgregar.parentNode;
     if (document.getElementById('btn-excel-container')) return;
 
     const container = document.createElement('div');
     container.id = 'btn-excel-container';
     container.className = "inline-flex gap-2 ml-2";
-    
+
     container.innerHTML = `
         <input type="file" id="input-importar-excel" accept=".xlsx, .xls" class="hidden">
         
@@ -1794,8 +1973,6 @@ window.exportarExcelConFormulas = () => {
     if (!window.XLSX) return alert("Error: Librería XLSX no cargada.");
 
     // 1. Configurar Columnas Activas
-    // Filtramos las que no queremos editar directamente si son calculadas puras en web, 
-    // pero en excel las incluiremos para ponerles fórmulas.
     const cols = currentConfig.columnas; 
     
     // Mapeamos índice -> Clave para saber dónde poner qué
@@ -1804,44 +1981,58 @@ window.exportarExcelConFormulas = () => {
     
     cols.forEach((key, idx) => {
         headers.push(MAPA_COLUMNAS_EXCEL[key] || key.toUpperCase());
-        mapColIndex[key] = idx; // Guardamos que 'ancho' es la columna 3 (D), etc.
+        mapColIndex[key] = idx; 
     });
 
     // 2. Preparar Datos (Rows)
     const rows = document.querySelectorAll('#items-container tr');
-    const dataRows = []; // Array de Arrays (o celdas con metadata)
+    const dataRows = []; 
 
     // Agregamos encabezado primero
     dataRows.push(headers);
 
     // Iteramos filas del HTML
     rows.forEach((tr, rIdx) => {
-        const rowNum = rIdx + 2; // En Excel fila 1 es header, así que datos empiezan en 2
+        const rowNum = rIdx + 2; // En Excel fila 1 es header, datos empiezan en 2
         const rowData = [];
         
-        // Helper para leer valor numérico del input
+        // Helper para leer valores
         const getNum = (n) => {
             const val = parseFloat(tr.querySelector(`[name="${n}"]`)?.value);
             return isNaN(val) ? 0 : val;
         };
         const getStr = (n) => tr.querySelector(`[name="${n}"]`)?.value || '';
 
-        // Construir celdas
-        cols.forEach((colKey, cIdx) => {
+        // --- BUCLE DE COLUMNAS (AQUÍ SE DEFINE colKey) ---
+        cols.forEach((colKey, cIdx) => { 
             const colLetter = indexToLetter(cIdx);
             let cell = { v: '', t: 's' }; // Por defecto string vacío
 
             // --- LÓGICA DE CELDAS ---
             
-            // 1. Texto Simple
+            // 1. Texto Simple (Item, Ubicación, Descripción)
             if (['item', 'ubicacion', 'descripcion'].includes(colKey)) {
-                if (colKey === 'item') cell = { v: rIdx + 1, t: 'n' };
-                else cell = { v: getStr(colKey), t: 's' };
+                if (colKey === 'item') {
+                     // --- CORRECCIÓN APLICADA AQUÍ ---
+                     // Leemos el input item_id (sea hidden o text)
+                     const valId = getStr('item_id');
+                     // Intentamos parsear a número si es posible
+                     const numId = parseFloat(valId);
+                     
+                     // Si es número válido usamos numId (t:'n'), si no el texto (t:'s')
+                     // Si está vacío, fallback al índice (rIdx + 1)
+                     const valorFinal = (isNaN(numId) ? valId : numId) || (rIdx + 1);
+                     const tipoFinal = (isNaN(numId) && valId) ? 's' : 'n';
+
+                     cell = { v: valorFinal, t: tipoFinal };
+                }
+                else {
+                     cell = { v: getStr(colKey), t: 's' };
+                }
             }
             
             // 2. Inputs Numéricos (Datos)
             else if (['ancho', 'alto', 'cantidad', 'suministro', 'instalacion', 'valor_unitario'].includes(colKey)) {
-                // Mapeo de nombres internos
                 let inputName = colKey;
                 if(colKey === 'suministro') inputName = 'val_suministro';
                 if(colKey === 'instalacion') inputName = 'val_instalacion';
@@ -1849,9 +2040,8 @@ window.exportarExcelConFormulas = () => {
                 cell = { v: getNum(inputName), t: 'n' };
             }
 
-            // 3. FÓRMULAS (La Magia)
+            // 3. FÓRMULAS (Cálculos automáticos en Excel)
             else if (colKey === 'm2') {
-                // Fórmula: Ancho * Alto
                 if (mapColIndex.ancho !== undefined && mapColIndex.alto !== undefined) {
                     const lAncho = indexToLetter(mapColIndex.ancho);
                     const lAlto = indexToLetter(mapColIndex.alto);
@@ -1861,7 +2051,6 @@ window.exportarExcelConFormulas = () => {
                 }
             }
             else if (colKey === 'total_m2') {
-                // Fórmula: M2 * Cantidad
                 if (mapColIndex.m2 !== undefined && mapColIndex.cantidad !== undefined) {
                     const lM2 = indexToLetter(mapColIndex.m2);
                     const lCant = indexToLetter(mapColIndex.cantidad);
@@ -1871,38 +2060,25 @@ window.exportarExcelConFormulas = () => {
                 }
             }
             else if (colKey === 'total_global') {
-                // Fórmula compleja dependiendo del modo
-                // Factor = Si(TotalM2 > 0, TotalM2, Cantidad)
-                // Total = (Sum + Inst) * Factor
-                
                 const lCant = mapColIndex.cantidad !== undefined ? indexToLetter(mapColIndex.cantidad) : null;
                 const lTotM2 = mapColIndex.total_m2 !== undefined ? indexToLetter(mapColIndex.total_m2) : null;
                 
-                // Determinamos la celda "Factor" (Cantidad o Metros)
+                // Factor multiplicador (Cantidad o Metros)
                 let formulaFactor = lCant ? `${lCant}${rowNum}` : '1';
                 if (lTotM2) {
-                    // Si hay columna Total M2, la usamos prioritariamente si es > 0
                     formulaFactor = `IF(${lTotM2}${rowNum}>0, ${lTotM2}${rowNum}, ${formulaFactor})`;
                 }
 
-                // Determinamos Precio Unitario Sumado
+                // Precio Unitario (depende del modo)
                 let formulaPrecio = '0';
                 
                 if (mapColIndex.valor_unitario !== undefined) {
-                    // Modo Simple
                     const lUnit = indexToLetter(mapColIndex.valor_unitario);
                     formulaPrecio = `${lUnit}${rowNum}`;
                 } 
                 else if (mapColIndex.suministro !== undefined && mapColIndex.instalacion !== undefined) {
-                    // Modo Mixto (Sumamos las bases y aplicamos impuestos aproximados en la fórmula??)
-                    // OJO: Tu excel exporta BASES. El total debe reflejar bases o total con impuestos?
-                    // Usualmente en Excel de trabajo quieres ver el total neto.
-                    // Vamos a sumar Suministro + Instalacion y multiplicar por factor.
                     const lSum = indexToLetter(mapColIndex.suministro);
                     const lInst = indexToLetter(mapColIndex.instalacion);
-                    
-                    // Nota: Aquí sumamos bases. Si quieres que el Excel calcule IVA, necesitarías más columnas auxiliares.
-                    // Por ahora: (BaseSum + BaseInst) * Factor
                     formulaPrecio = `(${lSum}${rowNum}+${lInst}${rowNum})`;
                 }
 
@@ -1910,21 +2086,18 @@ window.exportarExcelConFormulas = () => {
             }
 
             rowData.push(cell);
-        });
+        }); // <--- FIN DEL BUCLE cols.forEach (Aquí moría colKey)
         
         dataRows.push(rowData);
     });
 
     // 3. Crear Libro
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(dataRows); // Convierte nuestro array avanzado a hoja
+    const ws = XLSX.utils.aoa_to_sheet(dataRows);
 
-    // Ajustar anchos de columna visualmente
     ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length + 5, 12) }));
-
     XLSX.utils.book_append_sheet(wb, ws, "Cotización");
     
-    // Nombre de archivo con cliente si existe
     const cliente = document.getElementById('cot-cliente')?.value || 'Export';
     XLSX.writeFile(wb, `Cotizacion_${cliente}.xlsx`);
 };
@@ -1942,7 +2115,7 @@ function actualizarFilaExistente(tr, data) {
 
     // Actualizamos campos de texto
     setInput('ubicacion', v('ubicacion'));
-    
+
     // Descripción (manteniendo el auto-resize)
     const txtDesc = tr.querySelector('[name="descripcion"]');
     if (txtDesc) {
@@ -2023,23 +2196,29 @@ async function procesarArchivoExcel(e) {
                     if(itemData.suministro !== undefined) itemData.val_suministro = itemData.suministro;
                     if(itemData.instalacion !== undefined) itemData.val_instalacion = itemData.instalacion;
 
+                    // --- CORRECCIÓN CLAVE PARA IDS MANUALES ---
+                    // Si el Excel trae una columna ITEM (ej: "A-01"), la asignamos a item_id
+                    // para que agregarFilaItem la respete en modo manual.
+                    if (itemData.item !== undefined) {
+                        itemData.item_id = itemData.item;
+                    }
+
                     // --- LÓGICA DE ACTUALIZACIÓN ---
-                    // El Excel tiene una columna 'item' (ej: 1, 2, 3).
-                    // Restamos 1 para obtener el índice del array (0, 1, 2).
+                    // Intentamos usar 'item' como índice numérico para actualizar.
+                    // Si es texto (ej: "A-1"), parseInt dará NaN y creará uno nuevo (correcto para importar).
                     const indiceFila = (parseInt(itemData.item) || 0) - 1;
 
                     if (indiceFila >= 0 && indiceFila < filasExistentes.length) {
-                        // CASO A: La fila existe -> ACTUALIZAR
+                        // CASO A: La fila existe por índice numérico -> ACTUALIZAR
                         const trExistente = filasExistentes[indiceFila];
                         
-                        // Añadimos un efecto visual para saber que se actualizó
                         trExistente.classList.add('bg-green-50');
                         setTimeout(() => trExistente.classList.remove('bg-green-50'), 2000);
                         
                         actualizarFilaExistente(trExistente, itemData);
                         actualizados++;
                     } else {
-                        // CASO B: La fila no existe (ítem nuevo o mayor) -> CREAR
+                        // CASO B: Es nuevo o ID texto -> CREAR
                         agregarFilaItem(itemData);
                         creados++;
                     }
@@ -2069,44 +2248,45 @@ async function clonarCotizacion(dataOriginal) {
     const nuevaData = JSON.parse(JSON.stringify(dataOriginal));
 
     // 2. Limpieza y Ajustes para la nueva copia
-    
+
     // a) Fecha: Ponemos la de hoy
     const hoy = new Date().toISOString().split('T')[0];
     nuevaData.fecha = hoy;
-    
+
     // b) Proyecto: Le agregamos "(Copia)" para diferenciarla visualmente
     nuevaData.proyecto = `${nuevaData.proyecto} (Copia)`;
-    
+
     // c) Versionamiento: Reiniciamos a Versión 1
     nuevaData.version = 1;
-    
+
     // d) Metadatos del sistema
     nuevaData.createdAt = serverTimestamp();
     nuevaData.updatedAt = serverTimestamp();
     nuevaData.createdBy = _currentUser ? _currentUser.uid : 'anon';
-    
+
     // e) Archivos: ¿Qué hacemos con los archivos adjuntos?
     // Opción A (Segura): No copiarlos, porque los archivos pertenecen a la cotización vieja.
     // Opción B (Riesgosa): Copiar el array. PERO si borras la copia y el sistema borra el archivo de Storage, dañas la original.
     // -> Usaremos Opción A: Empezar sin archivos adjuntos para evitar conflictos.
-    nuevaData.archivos = []; 
+    nuevaData.archivos = [];
 
     // f) Eliminar ID si viniera en la data (Firestore pondrá uno nuevo)
-    delete nuevaData.id; 
+    delete nuevaData.id;
 
     try {
         // 3. Guardar en Firestore
         // Importante: No copiamos la subcolección 'historial', así que nace sin historial previo.
         const docRef = await addDoc(collection(_db, "cotizaciones"), nuevaData);
-        
+
         // 4. Feedback y Acción
         // Opción: Abrir la nueva cotización inmediatamente para editarla
-        if(confirm("✅ Cotización clonada con éxito.\n¿Deseas abrir la copia para editarla ahora?")) {
+        if (confirm("✅ Cotización clonada con éxito.\n¿Deseas abrir la copia para editarla ahora?")) {
             abrirFormularioDetalle(docRef.id);
         }
-        
+
     } catch (error) {
         console.error("Error al clonar:", error);
         alert("Hubo un error al intentar clonar la cotización.");
     }
 }
+

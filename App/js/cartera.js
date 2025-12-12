@@ -19,7 +19,7 @@ export function initCartera(db, showView) {
 
 // Carga la Vista Principal (DISEÑO UNIFICADO)
 export function loadCarteraView() {
-    _showView('cartera-view');
+    _showView('cartera');
 
     const container = document.getElementById('cartera-content');
     if (!container) return;
