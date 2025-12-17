@@ -87,58 +87,252 @@ export function loadCarteraView() {
 }
 
 
-// --- SUB-VISTAS (Placeholders iniciales) ---
-
-function renderResumenTab(container) {
-    // Simulación de datos para diseño
-    const totalCobrar = 150000000;
-    const totalPagar = 45000000;
-    const balance = totalCobrar - totalPagar;
-
+// ----------------------------------------------------------
+// FASE 1: RESUMEN GENERAL (DASHBOARD CON GRÁFICOS) - CORREGIDO
+// ----------------------------------------------------------
+async function renderResumenTab(container) {
+    // 1. Mostrar estructura con estado de carga
     container.innerHTML = `
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer hover:border-green-300 transition-all" onclick="window.switchCarteraTab('cobrar')">
-                <div class="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center text-2xl text-green-600">
-                    <i class="fa-solid fa-arrow-trend-up"></i>
-                </div>
-                <div>
-                    <p class="text-sm text-gray-500 font-medium">Por Cobrar (Clientes)</p>
-                    <h3 class="text-2xl font-bold text-gray-800">${_currencyFormatter.format(totalCobrar)}</h3>
-                </div>
+        <div class="animate-pulse space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-gray-200 h-32 rounded-xl"></div>
+                <div class="bg-gray-200 h-32 rounded-xl"></div>
+                <div class="bg-gray-200 h-32 rounded-xl"></div>
             </div>
-
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer hover:border-red-300 transition-all" onclick="window.switchCarteraTab('pagar')">
-                <div class="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center text-2xl text-red-600">
-                    <i class="fa-solid fa-arrow-trend-down"></i>
-                </div>
-                <div>
-                    <p class="text-sm text-gray-500 font-medium">Por Pagar (Proveedores)</p>
-                    <h3 class="text-2xl font-bold text-gray-800">${_currencyFormatter.format(totalPagar)}</h3>
-                </div>
-            </div>
-
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
-                <div class="w-14 h-14 rounded-full bg-indigo-50 flex items-center justify-center text-2xl text-indigo-600">
-                    <i class="fa-solid fa-scale-balanced"></i>
-                </div>
-                <div>
-                    <p class="text-sm text-gray-500 font-medium">Balance Proyectado</p>
-                    <h3 class="text-2xl font-bold text-indigo-600">${_currencyFormatter.format(balance)}</h3>
-                </div>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div class="bg-white p-6 rounded-xl shadow border border-gray-100 h-64 flex items-center justify-center">
-                <p class="text-gray-400">Gráfico de Flujo de Caja (Próximamente)</p>
-            </div>
-             <div class="bg-white p-6 rounded-xl shadow border border-gray-100 h-64 flex items-center justify-center">
-                <p class="text-gray-400">Vencimientos de Facturas (Próximamente)</p>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-gray-200 h-64 rounded-xl"></div>
+                <div class="bg-gray-200 h-64 rounded-xl"></div>
             </div>
         </div>
     `;
-}
 
+    const parseMoney = (val) => {
+        if (typeof val === 'number') return val;
+        if (!val) return 0;
+        const clean = String(val).replace(/[^0-9.-]+/g, "");
+        return parseFloat(clean) || 0;
+    };
+
+    try {
+        // 2. Consultas en Paralelo
+        const [projectsSnap, cortesSnap, paymentsSnap, poSnap] = await Promise.all([
+            getDocs(query(collection(_db, "projects"))),
+            getDocs(query(collectionGroup(_db, 'cortes'), where('status', '==', 'aprobado'))),
+            getDocs(query(collectionGroup(_db, 'payments'))),
+            getDocs(query(collection(_db, "purchaseOrders"))) 
+        ]);
+
+        // --- A. CALCULAR CUENTAS POR COBRAR (CLIENTES) ---
+        const sumPagosPorProyecto = {};
+        paymentsSnap.forEach(doc => {
+            const data = doc.data();
+            const pid = doc.ref.parent.parent.id;
+            if (!data.type || data.type === 'abono_anticipo' || data.type === 'abono_cartera') {
+                 const monto = parseMoney(data.amount || 0);
+                 if (!sumPagosPorProyecto[pid]) sumPagosPorProyecto[pid] = 0;
+                 sumPagosPorProyecto[pid] += monto;
+            }
+        });
+
+        const sumCortesNetosPorProyecto = {};
+        cortesSnap.forEach(doc => {
+            const data = doc.data();
+            const pid = doc.ref.parent.parent.id;
+            const bruto = parseMoney(data.totalValue || 0);
+            const amortizacion = parseMoney(data.amortizacion || 0);
+            let descuentos = 0;
+            if (data.otrosDescuentos && Array.isArray(data.otrosDescuentos)) {
+                data.otrosDescuentos.forEach(d => descuentos += parseMoney(d.value));
+            }
+            const valorNetoDeuda = bruto - amortizacion - descuentos;
+            if (!sumCortesNetosPorProyecto[pid]) sumCortesNetosPorProyecto[pid] = 0;
+            sumCortesNetosPorProyecto[pid] += valorNetoDeuda;
+        });
+
+        let totalCobrar = 0;
+        const pendingList = []; // Lista para vencimientos
+
+        projectsSnap.forEach(doc => {
+            const p = doc.data();
+            const pid = doc.id;
+            const anticipoPactado = parseMoney(p.advance || p.anticipo || 0);
+            const deudaCortes = sumCortesNetosPorProyecto[pid] || 0;
+            const totalExigible = anticipoPactado + deudaCortes;
+            const totalPagado = sumPagosPorProyecto[pid] || 0;
+            const deudaProyecto = totalExigible - totalPagado;
+
+            if (deudaProyecto > 1000) {
+                totalCobrar += deudaProyecto;
+                pendingList.push({
+                    type: 'cobrar',
+                    title: p.name || 'Proyecto Sin Nombre',
+                    entity: p.clientName || 'Cliente General',
+                    amount: deudaProyecto,
+                    date: p.createdAt ? p.createdAt.toDate() : new Date() 
+                });
+            }
+        });
+
+        // --- B. CALCULAR CUENTAS POR PAGAR (PROVEEDORES) ---
+        let totalPagar = 0;
+        
+        poSnap.forEach(doc => {
+            const po = doc.data();
+            const totalOrden = parseMoney(po.totalCost || 0);
+            const pagadoOrden = parseMoney(po.paidAmount || 0);
+            const deudaOrden = totalOrden - pagadoOrden;
+            const isValid = !['rechazada', 'cancelada', 'anulada'].includes(po.status);
+            
+            if (deudaOrden > 100 && isValid) {
+                totalPagar += deudaOrden;
+                 pendingList.push({
+                    type: 'pagar',
+                    title: `Orden #${po.poNumber || 'N/A'}`,
+                    entity: po.provider || po.supplierName || 'Proveedor',
+                    amount: deudaOrden,
+                    date: po.createdAt ? po.createdAt.toDate() : new Date()
+                });
+            }
+        });
+
+        // --- C. PREPARAR DATOS PARA VISTAS ---
+        const balance = totalCobrar - totalPagar;
+
+        // 1. Datos para el Gráfico
+        const maxVal = Math.max(totalCobrar, totalPagar, 1);
+        const heightCobrar = Math.round((totalCobrar / maxVal) * 100);
+        const heightPagar = Math.round((totalPagar / maxVal) * 100);
+
+        // 2. Datos para la Lista
+        pendingList.sort((a, b) => a.date - b.date);
+        const topPending = pendingList.slice(0, 5); 
+
+        // 3. Calcular TAB DESTINO (Corrección del error)
+        // Determinamos aquí a qué pestaña debe ir el botón, en lugar de hacerlo en el HTML
+        const targetTab = (topPending.length > 0 && topPending[0].type === 'cobrar') ? 'cobrar' : 'pagar';
+
+        // 4. Renderizar HTML Final
+        container.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer hover:border-green-300 transition-all group" onclick="window.switchCarteraTab('cobrar')">
+                    <div class="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center text-2xl text-green-600 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-arrow-trend-up"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-500 font-medium">Por Cobrar (Clientes)</p>
+                        <h3 class="text-2xl font-bold text-gray-800">${_currencyFormatter.format(totalCobrar)}</h3>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer hover:border-red-300 transition-all group" onclick="window.switchCarteraTab('pagar')">
+                    <div class="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center text-2xl text-red-600 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-arrow-trend-down"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-500 font-medium">Por Pagar (Proveedores)</p>
+                        <h3 class="text-2xl font-bold text-gray-800">${_currencyFormatter.format(totalPagar)}</h3>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
+                    <div class="w-14 h-14 rounded-full bg-indigo-50 flex items-center justify-center text-2xl text-indigo-600">
+                        <i class="fa-solid fa-scale-balanced"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-500 font-medium">Balance Proyectado</p>
+                        <h3 class="text-2xl font-bold ${balance >= 0 ? 'text-indigo-600' : 'text-red-500'}">
+                            ${_currencyFormatter.format(balance)}
+                        </h3>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                <div class="bg-white p-6 rounded-xl shadow border border-gray-100 min-h-[300px] flex flex-col">
+                    <h4 class="font-bold text-gray-700 mb-6 flex items-center gap-2">
+                        <i class="fa-solid fa-chart-simple text-indigo-500"></i> Flujo de Caja Actual
+                    </h4>
+                    
+                    <div class="flex-grow flex items-end justify-center gap-12 px-8 pb-4 border-b border-gray-100">
+                        <div class="flex flex-col items-center gap-2 group w-24">
+                            <span class="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity mb-1 transform translate-y-2 group-hover:translate-y-0 duration-300">
+                                ${_currencyFormatter.format(totalCobrar)}
+                            </span>
+                            <div class="w-full bg-green-100 rounded-t-lg relative overflow-hidden group-hover:bg-green-200 transition-colors" style="height: 200px">
+                                <div class="absolute bottom-0 w-full bg-green-500 rounded-t-lg transition-all duration-1000 ease-out hover:bg-green-600" style="height: ${heightCobrar}%"></div>
+                            </div>
+                            <span class="text-sm font-bold text-gray-500">Entradas</span>
+                        </div>
+
+                        <div class="flex flex-col items-center gap-2 group w-24">
+                            <span class="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity mb-1 transform translate-y-2 group-hover:translate-y-0 duration-300">
+                                ${_currencyFormatter.format(totalPagar)}
+                            </span>
+                            <div class="w-full bg-red-100 rounded-t-lg relative overflow-hidden group-hover:bg-red-200 transition-colors" style="height: 200px">
+                                <div class="absolute bottom-0 w-full bg-red-500 rounded-t-lg transition-all duration-1000 ease-out hover:bg-red-600" style="height: ${heightPagar}%"></div>
+                            </div>
+                            <span class="text-sm font-bold text-gray-500">Salidas</span>
+                        </div>
+                    </div>
+                    <p class="text-xs text-center text-gray-400 mt-4">Comparativa visual de cuentas pendientes</p>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow border border-gray-100 min-h-[300px] flex flex-col">
+                    <h4 class="font-bold text-gray-700 mb-4 flex items-center gap-2">
+                        <i class="fa-regular fa-clock text-orange-500"></i> Pendientes Más Antiguos
+                    </h4>
+                    
+                    <div class="flex-grow overflow-y-auto custom-scrollbar pr-2">
+                        ${topPending.length === 0 ? `
+                            <div class="h-full flex flex-col items-center justify-center text-gray-400">
+                                <i class="fa-solid fa-check-double text-4xl mb-2 text-green-100"></i>
+                                <p class="text-sm">Todo está al día</p>
+                            </div>
+                        ` : `
+                            <div class="space-y-3">
+                                ${topPending.map(item => `
+                                    <div class="flex items-center justify-between p-3 rounded-lg border border-gray-50 hover:border-gray-200 hover:bg-gray-50 transition-all cursor-pointer group"
+                                         onclick="window.switchCarteraTab('${item.type}')">
+                                        <div class="flex items-center gap-3 min-w-0">
+                                            <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${item.type === 'cobrar' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}">
+                                                <i class="fa-solid ${item.type === 'cobrar' ? 'fa-hand-holding-dollar' : 'fa-file-invoice'}"></i>
+                                            </div>
+                                            <div class="min-w-0">
+                                                <p class="text-sm font-bold text-gray-800 truncate">${item.title}</p>
+                                                <p class="text-xs text-gray-500 truncate">${item.entity}</p>
+                                            </div>
+                                        </div>
+                                        <div class="text-right flex-shrink-0">
+                                            <p class="text-sm font-bold ${item.type === 'cobrar' ? 'text-green-600' : 'text-red-600'}">
+                                                ${_currencyFormatter.format(item.amount)}
+                                            </p>
+                                            <p class="text-[10px] text-gray-400 flex items-center justify-end gap-1">
+                                                <i class="fa-regular fa-calendar"></i> ${item.date.toLocaleDateString('es-CO')}
+                                            </p>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `}
+                    </div>
+                    <button onclick="window.switchCarteraTab('${targetTab}')" class="mt-4 w-full py-2 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors">
+                        Ver Gestión Completa
+                    </button>
+                </div>
+            </div>
+        `;
+
+    } catch (error) {
+        console.error("Error cargando resumen de cartera:", error);
+        container.innerHTML = `
+            <div class="p-6 bg-red-50 border border-red-200 rounded-xl text-center text-red-600">
+                <p class="font-bold">Error al cargar el resumen financiero</p>
+                <p class="text-sm">${error.message}</p>
+            </div>
+        `;
+    }
+}
 
 // ----------------------------------------------------------
 // FASE 3: CUENTAS POR PAGAR (PROVEEDORES)
@@ -462,7 +656,7 @@ function openRegisterExpenseModal(supplierId, supplierName, currentDebt) {
 }
 
 // ----------------------------------------------------------
-// FASE 2: CUENTAS POR COBRAR (SINCRONIZACIÓN REAL)
+// FASE 2: CUENTAS POR COBRAR (SINCRONIZACIÓN REAL CORREGIDA)
 // ----------------------------------------------------------
 async function renderCuentasPorCobrarTab(container) {
     // 1. Estructura HTML
@@ -501,17 +695,15 @@ async function renderCuentasPorCobrarTab(container) {
     const countBadge = document.getElementById('project-count-badge');
     const searchInput = document.getElementById('cartera-search');
 
-    // --- HELPER VITAL: Limpia "$ 1.000.000" a 1000000 ---
     const parseMoney = (val) => {
         if (typeof val === 'number') return val;
         if (!val) return 0;
-        // Elimina todo lo que no sea número, punto o guion
         const clean = String(val).replace(/[^0-9.-]+/g, "");
         return parseFloat(clean) || 0;
     };
 
     try {
-        // A. Traer TODOS los Proyectos (Sin filtrar por activos para asegurar que vemos todo)
+        // A. Traer TODOS los Proyectos
         const projectsQuery = query(collection(_db, "projects"), orderBy("createdAt", "desc"));
         const projectsSnap = await getDocs(projectsQuery);
 
@@ -519,91 +711,126 @@ async function renderCuentasPorCobrarTab(container) {
         const cortesQuery = query(collectionGroup(_db, 'cortes'), where('status', '==', 'aprobado'));
         const cortesSnap = await getDocs(cortesQuery);
 
-        // Mapa para sumar cortes: { projectId: 1500000 }
-        const sumCortesPorProyecto = {};
+        // C. Traer TODOS los Pagos (Global - Optimización para evitar N lecturas)
+        // Nota: Si son muchos pagos, esto podría ser pesado. Lo ideal sería índices compuestos.
+        // Por ahora, para garantizar precisión, traemos todo 'payment' group.
+        const paymentsQuery = query(collectionGroup(_db, 'payments'));
+        const paymentsSnap = await getDocs(paymentsQuery);
+
+        // Mapa para sumar cortes NETOS (Valor Bruto - Amortización - Descuentos)
+        const sumCortesNetosPorProyecto = {};
+        
         cortesSnap.forEach(doc => {
+            const data = doc.data();
             // El padre.parent.id es el ID del proyecto
             const pid = doc.ref.parent.parent.id;
-            const valor = parseMoney(doc.data().totalValue || doc.data().valor || 0);
+            
+            const bruto = parseMoney(data.totalValue || 0);
+            const amortizacion = parseMoney(data.amortizacion || 0);
+            
+            // Sumar otros descuentos si existen
+            let descuentos = 0;
+            if (data.otrosDescuentos && Array.isArray(data.otrosDescuentos)) {
+                data.otrosDescuentos.forEach(d => descuentos += parseMoney(d.value));
+            }
 
-            if (!sumCortesPorProyecto[pid]) sumCortesPorProyecto[pid] = 0;
-            sumCortesPorProyecto[pid] += valor;
+            // CORRECCIÓN: Lo que se debe de este corte es el Bruto MENOS lo que se mató con anticipo MENOS descuentos
+            const valorGeneradorDeuda = bruto - amortizacion - descuentos;
+
+            if (!sumCortesNetosPorProyecto[pid]) sumCortesNetosPorProyecto[pid] = 0;
+            sumCortesNetosPorProyecto[pid] += valorGeneradorDeuda;
+        });
+
+        // Mapa para sumar Pagos Reales
+        const sumPagosPorProyecto = {};
+        paymentsSnap.forEach(doc => {
+            const data = doc.data();
+            // El payment suele estar en projects/{pid}/payments/{payId} -> ref.parent.parent.id
+            const pid = doc.ref.parent.parent.id;
+            // Solo sumamos ingresos reales (abonos, anticipos pagados)
+            // Filtramos si hay pagos anulados si tuvieras ese estado
+            const monto = parseMoney(data.amount || 0);
+            
+            if (!sumPagosPorProyecto[pid]) sumPagosPorProyecto[pid] = 0;
+            sumPagosPorProyecto[pid] += monto;
         });
 
         let totalGlobalDebt = 0;
         const dataList = [];
 
-        // C. Cruzar la información
+        // D. Cruzar la información
         projectsSnap.forEach(doc => {
             const p = doc.data();
+            const pid = doc.id;
 
-            // 1. Calcular lo que nos DEBEN pagar (Exigible)
-            // Exigible = Anticipo + Suma de Cortes Aprobados
-            const anticipo = parseMoney(p.downPayment || p.anticipo || p.advance || 0);
-            const cortes = sumCortesPorProyecto[doc.id] || 0;
-            const totalExigible = anticipo + cortes;
+            // 1. Anticipo Pactado (Deuda Inicial)
+            // Se asume que el anticipo se convierte en deuda exigible apenas se crea el proyecto (o cuando se pacta)
+            // Si el anticipo no se ha pagado, es deuda. Si se pagó, entra en 'sumPagosPorProyecto'.
+            const anticipoPactado = parseMoney(p.advance || p.anticipo || p.downPayment || 0);
 
-            // 2. Calcular lo que YA pagaron
-            // Asumimos que tienes un campo acumulado. Si no, esto será 0 y la deuda será total.
-            const pagado = parseMoney(p.paidAmount || p.totalPaid || p.abonos || 0);
+            // 2. Suma de Cortes (Ya descontando amortizaciones para no duplicar deuda)
+            const deudaPorCortes = sumCortesNetosPorProyecto[pid] || 0;
 
-            // 3. Deuda Real
-            const deuda = totalExigible - pagado;
+            // 3. Total Exigible (Lo que debieron habernos pagado en total hasta hoy)
+            const totalExigible = anticipoPactado + deudaPorCortes;
 
-            // Solo mostramos si hay deuda real (mayor a 100 pesos) O si hay movimiento de dinero
-            if (deuda > 100 || totalExigible > 0) {
-                // Porcentaje cobrado sobre lo ejecutado
-                const progress = totalExigible > 0 ? (pagado / totalExigible) * 100 : 0;
+            // 4. Total Recaudado Real (Lo que realmente entró al banco/caja)
+            const totalPagado = sumPagosPorProyecto[pid] || 0;
 
-                // Valor total del contrato (Informativo)
-                const valorContrato = parseMoney(p.budget || p.totalValue || p.costo || 0);
+            // 5. Deuda Real
+            const deuda = totalExigible - totalPagado;
+
+            // Filtro visual: Mostrar si hay deuda > 1000 pesos o si es un proyecto activo con movimientos
+            if (deuda > 1000 || (totalExigible > 0 && deuda !== 0)) {
+                
+                // Porcentaje de recaudo
+                const progress = totalExigible > 0 ? (totalPagado / totalExigible) * 100 : 0;
 
                 dataList.push({
-                    id: doc.id,
+                    id: pid,
                     name: p.name || "Sin Nombre",
-                    client: p.clientName || p.client || "Cliente General",
-                    exigible: totalExigible,
-                    pagado: pagado,
+                    client: p.clientName || "Cliente General",
                     deuda: deuda,
                     progress: progress,
-                    cortes: cortes,
-                    anticipo: anticipo,
-                    contrato: valorContrato
+                    cortesNetos: deudaPorCortes,
+                    anticipo: anticipoPactado,
+                    pagado: totalPagado
                 });
 
                 if (deuda > 0) totalGlobalDebt += deuda;
             }
         });
 
-        // Ordenar: Los que más deben primero
+        // Ordenar por deuda descendente
         dataList.sort((a, b) => b.deuda - a.deuda);
 
         totalDisplay.textContent = _currencyFormatter.format(totalGlobalDebt);
         countBadge.textContent = `${dataList.length} Proyectos`;
 
-        // D. Renderizar
+        // E. Renderizar
         const renderRows = (items) => {
             listContainer.innerHTML = '';
             if (items.length === 0) {
-                listContainer.innerHTML = `<div class="p-8 text-center text-gray-400">No hay deudas pendientes por cobrar.</div>`;
+                listContainer.innerHTML = `<div class="p-8 text-center text-gray-400">No hay cartera pendiente.</div>`;
                 return;
             }
 
             items.forEach(item => {
                 const row = document.createElement('div');
-                row.className = "p-4 hover:bg-gray-50 transition-colors group flex flex-col md:flex-row justify-between items-center gap-4";
+                row.className = "p-4 hover:bg-gray-50 transition-colors group flex flex-col md:flex-row justify-between items-center gap-4 border-b border-gray-100 last:border-0";
 
-                // Barra de estado
                 const barColor = item.progress >= 100 ? 'bg-green-500' : (item.progress > 50 ? 'bg-yellow-400' : 'bg-red-500');
+                const debtColor = item.deuda > 100 ? 'text-red-600' : 'text-green-600';
+                
+                // Manejo de saldos a favor (negativos)
+                let debtText = _currencyFormatter.format(item.deuda);
+                if (item.deuda <= 0 && item.deuda > -1000) debtText = "Paz y Salvo";
+                if (item.deuda <= -1000) debtText = `Favor Cliente: ${_currencyFormatter.format(Math.abs(item.deuda))}`;
 
-                // Si la deuda es 0 o negativa (saldo a favor), mostrar en verde
-                const debtColor = item.deuda > 0 ? 'text-red-600' : 'text-green-600';
-                const debtText = item.deuda <= 0 ? 'Paz y Salvo' : _currencyFormatter.format(item.deuda);
-
-row.innerHTML = `
+                row.innerHTML = `
                     <div class="flex-1 w-full min-w-0 cursor-pointer select-none" 
                          onclick="window.openClientPaymentsModal('${item.id}', '${item.name}')"
-                         title="Clic para ver historial detallado">
+                         title="Clic para ver historial de pagos">
                         
                         <div class="flex justify-between mb-1">
                             <div class="min-w-0 pr-2">
@@ -621,15 +848,15 @@ row.innerHTML = `
                         
                         <div class="flex items-center gap-2 mt-1">
                             <div class="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
-                                <div class="${barColor} h-full rounded-full" style="width: ${Math.min(item.progress, 100)}%"></div>
+                                <div class="${barColor} h-full rounded-full" style="width: ${Math.min(Math.max(item.progress, 0), 100)}%"></div>
                             </div>
                             <span class="text-xs font-bold text-gray-500">${item.progress.toFixed(0)}%</span>
                         </div>
 
-                        <div class="flex flex-wrap gap-3 mt-2 text-[10px] text-gray-400 bg-gray-50 p-1.5 rounded border border-gray-100 group-hover:border-indigo-100 group-hover:bg-indigo-50/30 transition-colors">
-                            <span title="Suma de Cortes Aprobados">🏗️ Cortes: <strong>${_currencyFormatter.format(item.cortes)}</strong></span>
-                            <span title="Anticipo Inicial">💰 Anticipo: <strong>${_currencyFormatter.format(item.anticipo)}</strong></span>
-                            <span class="ml-auto text-gray-600">Total Recaudado: <strong>${_currencyFormatter.format(item.pagado)}</strong></span>
+                        <div class="flex flex-wrap gap-3 mt-2 text-[10px] text-gray-500 bg-gray-50 p-2 rounded border border-gray-100">
+                            <span title="Valor pactado de anticipo">🔹 Anticipo: ${_currencyFormatter.format(item.anticipo)}</span>
+                            <span title="Valor Neto generado por cortes (Bruto - Amortizaciones)">🏗️ Cortes (Neto): ${_currencyFormatter.format(item.cortesNetos)}</span>
+                            <span class="ml-auto text-green-700 font-bold bg-green-50 px-2 rounded">Pagado: ${_currencyFormatter.format(item.pagado)}</span>
                         </div>
                     </div>
 
@@ -639,8 +866,8 @@ row.innerHTML = `
                     </button>
                 `;
 
+                // Re-bind del evento click
                 row.querySelector('.btn-abonar').addEventListener('click', (e) => {
-                    // Llamamos a la función de modal de pago (asegúrate que openRegisterPaymentModal esté definida abajo)
                     openRegisterPaymentModal(e.currentTarget.dataset.id, e.currentTarget.dataset.name, parseFloat(e.currentTarget.dataset.debt));
                 });
 
@@ -650,7 +877,6 @@ row.innerHTML = `
 
         renderRows(dataList);
 
-        // Buscador
         searchInput.addEventListener('input', (e) => {
             const term = e.target.value.toLowerCase();
             const filtered = dataList.filter(i => i.name.toLowerCase().includes(term) || i.client.toLowerCase().includes(term));

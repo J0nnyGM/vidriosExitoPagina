@@ -1138,7 +1138,7 @@ async function renderBodegaDashboard(container) {
                                 <i class="fa-solid fa-clipboard-list"></i>
                             </div>
                         </div>
-                        
+
                         <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-catalog">
                             <div>
                                 <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-amber-600 transition-colors">Stock Crítico</p>
@@ -1213,7 +1213,7 @@ async function renderBodegaDashboard(container) {
                                 <div><p class="font-bold text-sm">Llamado Urgente</p><p class="text-[10px] opacity-75">Alerta</p></div>
                             </button>
 
-                            <button data-action="go-to-proyectos" class="w-full flex items-center gap-3 p-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 hover:shadow-md transition-all text-left group border border-blue-100">
+                            <button data-action="go-to-solicitudes" class="w-full flex items-center gap-3 p-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 hover:shadow-md transition-all text-left group border border-blue-100">
                                 <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-blue-500"><i class="fa-solid fa-dolly"></i></div>
                                 <div><p class="font-bold text-sm">Despachar Material</p><p class="text-[10px] opacity-75">Solicitudes</p></div>
                             </button>

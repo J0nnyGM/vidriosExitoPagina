@@ -3339,7 +3339,7 @@ function loadCortes(project) {
                 <div class="flex flex-col sm:flex-row justify-between">
                     <div>
                         <p class="font-bold text-lg text-gray-800">Corte #${corte.corteNumber || 'N/A'} ${corte.isFinal ? '<span class="text-xs text-red-600 font-semibold">(FINAL)</span>' : ''}</p>
-                        <p class="text-sm text-gray-600">Creado el: ${corte.createdAt.toDate().toLocaleDateString('es-CO')}</p>
+                        <p class="text-sm text-gray-600">Creado el: ${corte.createdAt && corte.createdAt.toDate ? corte.createdAt.toDate().toLocaleDateString('es-CO') : 'Fecha desconocida'}</p>
                         <span class="mt-2 inline-block text-sm font-semibold px-3 py-1 rounded-full ${statusColor}">${statusText}</span>
                     </div>
                     <div class="bg-gray-50 p-3 rounded-lg flex justify-between items-center mt-3 sm:mt-0 sm:flex-col sm:items-end sm:justify-center">
@@ -3405,21 +3405,21 @@ async function setupCorteSelection(type) {
     const description = document.getElementById('corte-selection-description');
     const accordionContainer = document.getElementById('corte-items-accordion');
 
-    selectionView.classList.remove('hidden');
-    accordionContainer.innerHTML = '<div class="text-center py-10"><div class="loader mx-auto"></div><p class="text-gray-500 mt-2">Analizando ítems...</p></div>';
+    if (selectionView) selectionView.classList.remove('hidden');
+    if (accordionContainer) accordionContainer.innerHTML = '<div class="text-center py-10"><div class="loader mx-auto"></div><p class="text-gray-500 mt-2">Analizando ítems...</p></div>';
 
-    // Validación de estados (Asegúrate que tus ítems tengan EXACTAMENTE estos estados en la BD)
+    // Validación de estados
     const validStates = type === 'nosotros'
         ? ['Instalado', 'Suministrado']
         : ['Instalado'];
 
-    description.textContent = type === 'nosotros'
-        ? "Selecciona los sub-ítems suministrados o instalados para incluir en el corte."
-        : "Selecciona los sub-ítems que la obra va a pagar en este corte.";
+    if (description) {
+        description.textContent = type === 'nosotros'
+            ? "Selecciona los sub-ítems suministrados o instalados para incluir en el corte."
+            : "Selecciona los sub-ítems que la obra va a pagar en este corte.";
+    }
 
     try {
-        // --- CORRECCIÓN CLAVE AQUÍ ---
-        // Usamos collectionGroup para buscar en las subcolecciones anidadas
         const subItemsQuery = query(
             collectionGroup(db, "subItems"),
             where("projectId", "==", currentProject.id),
@@ -3429,19 +3429,20 @@ async function setupCorteSelection(type) {
         const subItemsSnapshot = await getDocs(subItemsQuery);
         const allValidSubItems = subItemsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
-        // Debug: Verificación en consola
         console.log(`Encontrados ${allValidSubItems.length} sub-ítems con estado ${validStates.join(' o ')}`);
 
-        // 2. Obtener sub-ítems que ya están en cortes aprobados (o preliminares, para no duplicar)
-        // Sugerencia: Filtra también los 'preliminar' para que no los agregues a dos cortes al tiempo
+        // 2. Obtener sub-ítems que ya están en cortes aprobados (o preliminares)
         const cortesQuery = query(collection(db, "projects", currentProject.id, "cortes"), where("status", "in", ["aprobado", "preliminar"]));
         const cortesSnapshot = await getDocs(cortesQuery);
         const subItemsInCortes = new Set();
         cortesSnapshot.forEach(corteDoc => {
-            corteDoc.data().subItemIds?.forEach(id => subItemsInCortes.add(id));
+            const data = corteDoc.data();
+            if (data.subItemIds) {
+                data.subItemIds.forEach(id => subItemsInCortes.add(id));
+            }
         });
 
-        // 3. Filtrar: (Todos los válidos) - (Los que ya tienen corte)
+        // 3. Filtrar
         const availableSubItems = allValidSubItems.filter(subItem => !subItemsInCortes.has(subItem.id));
 
         if (availableSubItems.length === 0) {
@@ -3454,7 +3455,7 @@ async function setupCorteSelection(type) {
             return;
         }
 
-        // 4. Agrupar sub-ítems por su ítem padre
+        // 4. Agrupar por ítem padre
         const groupedByItem = new Map();
         availableSubItems.forEach(si => {
             if (!groupedByItem.has(si.itemId)) {
@@ -3463,22 +3464,26 @@ async function setupCorteSelection(type) {
             groupedByItem.get(si.itemId).push(si);
         });
 
-        // 5. Obtener datos de los ítems padres (Optimizado con 'documentId')
+        // 5. Obtener datos de los ítems padres
         const itemIds = Array.from(groupedByItem.keys());
-        if (itemIds.length === 0) return; // Seguridad
+        if (itemIds.length === 0) return;
 
-        // Firestore 'in' soporta máximo 10, si tienes más, debes hacer lotes o traer todo el proyecto
-        // Como es un proyecto específico, es mejor traer todos los ítems del proyecto una sola vez si son muchos
-        // O usar el método de batches. Aquí uso la consulta directa asumiendo <10 grupos por corte usualmente.
-        const itemsSnapshot = await getDocs(query(collection(db, "projects", currentProject.id, "items"), where(documentId(), "in", itemIds.slice(0, 10))));
-
-        const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, d.data()]));
+        // Nota: Si son muchos ítems (>10), lo ideal es cargar todos los ítems del proyecto
+        // o usar batches. Aquí, por simplicidad y asumiendo un contexto de proyecto,
+        // cargamos todos los items del proyecto para asegurar que tenemos los padres.
+        // Si la lista es muy grande, habría que optimizar esto.
+        const allItemsSnap = await getDocs(collection(db, "projects", currentProject.id, "items"));
+        const itemsMap = new Map(allItemsSnap.docs.map(d => [d.id, d.data()]));
 
         // 6. Construir el acordeón
         accordionContainer.innerHTML = '';
-        itemsMap.forEach((item, itemId) => {
-            const subItems = groupedByItem.get(itemId);
-            // Ordenar numéricamente (1, 2, 10 en lugar de 1, 10, 2)
+
+        // Iterar sobre los grupos que tenemos
+        groupedByItem.forEach((subItems, itemId) => {
+            const item = itemsMap.get(itemId);
+            if (!item) return; // Si no encontramos el padre, saltamos (data inconsistente)
+
+            // Ordenar numéricamente
             subItems.sort((a, b) => (parseInt(a.number) || 0) - (parseInt(b.number) || 0));
 
             const accordionItem = document.createElement('div');
@@ -3487,7 +3492,7 @@ async function setupCorteSelection(type) {
                 <div class="accordion-header flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors">
                     <label class="flex items-center space-x-3 font-semibold text-gray-700 cursor-pointer select-none">
                         <input type="checkbox" class="corte-item-select-all w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500">
-                        <span>${item.name} <span class="text-xs font-normal text-gray-500 ml-1">(${subItems.length} unds)</span></span>
+                        <span>${item.name} <span class="text-xs font-normal text-gray-500 ml-1">(${subItems.length} unds disponibles)</span></span>
                     </label>
                     <svg class="h-5 w-5 text-gray-400 transition-transform transform" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
                 </div>
@@ -3498,17 +3503,51 @@ async function setupCorteSelection(type) {
                                 <input type="checkbox" class="corte-subitem-checkbox w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" data-subitem-id="${si.id}" data-item-id="${si.itemId}">
                                 <span class="text-sm text-gray-700">Unidad <strong>#${si.number}</strong></span>
                             </div>
-                            <span class="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">${si.location || 'Sin ubicación'}</span>
+                            <div class="text-right">
+                                <span class="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded block mb-1">${si.location || 'Sin ubicación'}</span>
+                                ${si.realWidth && si.realHeight ?
+                    `<span class="text-[10px] text-purple-600 bg-purple-50 px-1 rounded border border-purple-100">
+                                        Real: ${si.realWidth}x${si.realHeight}
+                                    </span>` : ''
+                }
+                            </div>
                         </label>
                     `).join('')}
                 </div>
             `;
             accordionContainer.appendChild(accordionItem);
+
+            // Lógica para abrir/cerrar acordeón
+            const header = accordionItem.querySelector('.accordion-header');
+            const content = accordionItem.querySelector('.accordion-content');
+            const icon = accordionItem.querySelector('svg');
+
+            header.addEventListener('click', (e) => {
+                if (e.target.type !== 'checkbox') {
+                    content.classList.toggle('hidden');
+                    icon.classList.toggle('rotate-180');
+                }
+            });
+
+            // Lógica "Seleccionar Todo"
+            const selectAll = accordionItem.querySelector('.corte-item-select-all');
+            const checkboxes = accordionItem.querySelectorAll('.corte-subitem-checkbox');
+
+            selectAll.addEventListener('change', () => {
+                checkboxes.forEach(cb => cb.checked = selectAll.checked);
+            });
+
+            checkboxes.forEach(cb => {
+                cb.addEventListener('change', () => {
+                    const allChecked = Array.from(checkboxes).every(c => c.checked);
+                    selectAll.checked = allChecked;
+                });
+            });
         });
 
     } catch (error) {
         console.error("Error al preparar la selección de corte:", error);
-        accordionContainer.innerHTML = `<p class="text-red-500 text-center py-4">Error de consulta: Revisa la consola (posible falta de índice).</p>`;
+        accordionContainer.innerHTML = `<p class="text-red-500 text-center py-4">Error cargando sub-ítems. Intenta recargar.</p>`;
     }
 }
 
@@ -3527,17 +3566,19 @@ async function generateCorte() {
     openConfirmModal(
         `Se creará un nuevo corte preliminar con ${selectedSubItemsCheckboxes.length} sub-ítems. ¿Deseas continuar?`,
         async () => {
-            loadingOverlay.classList.remove('hidden');
+            const loadingOverlay = document.getElementById('loading-overlay');
+            if (loadingOverlay) loadingOverlay.classList.remove('hidden');
+
             try {
                 // --- 1. Obtener datos necesarios ---
                 const subItemIds = Array.from(selectedSubItemsCheckboxes).map(cb => cb.dataset.subitemId);
-                
+
                 // Traemos todos los ítems y subítems para cálculos precisos
                 const allItemsQuery = query(collection(db, "projects", currentProject.id, "items"));
                 const allSubItemsQuery = query(collectionGroup(db, "subItems"), where("projectId", "==", currentProject.id));
                 const [itemsSnapshot, subItemsSnapshot] = await Promise.all([getDocs(allItemsQuery), getDocs(allSubItemsQuery)]);
-                
-                const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, {id: d.id, ...d.data()}]));
+
+                const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
                 const subItemsMap = new Map(subItemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
 
                 // --- 2. Calcular Valor Bruto del Corte (Incluyendo Impuestos proporcionalmente) ---
@@ -3545,22 +3586,28 @@ async function generateCorte() {
 
                 for (const subItemId of subItemIds) {
                     const subItem = subItemsMap.get(subItemId);
+                    if (!subItem) continue;
+
                     const parentItem = itemsMap.get(subItem.itemId);
 
                     if (parentItem) {
                         // A. Calculamos el valor TOTAL UNITARIO del ítem padre (Con impuestos)
-                        const totalItemValue = calculateItemTotal(parentItem); // Usamos la función auxiliar
-                        const valorUnitarioFull = totalItemValue / parentItem.quantity;
+                        // Es importante que este valor incluya todo para prorratear bien
+                        const totalItemValue = calculateItemTotal(parentItem);
+                        const valorUnitarioFull = totalItemValue / (parentItem.quantity || 1); // Evitar división por 0
 
                         let valorSubItemParaCorte = valorUnitarioFull;
 
                         // B. Ajuste por Medida Real si aplica
                         if (usarMedidaReal && subItem.realWidth > 0 && subItem.realHeight > 0) {
-                            const areaContratada = parentItem.width * parentItem.height;
-                            const areaReal = subItem.realWidth * subItem.realHeight;
+                            const areaContratada = (parentItem.width || 0) * (parentItem.height || 0);
+                            const areaReal = (subItem.realWidth || 0) * (subItem.realHeight || 0);
+
+                            // Solo aplicamos la regla de tres si hay un área contratada válida
                             if (areaContratada > 0) {
-                                // Regla de tres: (Valor / AreaContratada) * AreaReal
+                                // Regla de tres: (ValorUnitario / AreaContratada) = Precio por m2 * AreaReal
                                 valorSubItemParaCorte = (valorUnitarioFull / areaContratada) * areaReal;
+                                console.log(`Item: ${parentItem.name} #${subItem.number} - Ajuste Real: ${areaReal.toFixed(2)}m2 / ${areaContratada.toFixed(2)}m2. Base: ${valorUnitarioFull} -> Nuevo: ${valorSubItemParaCorte}`);
                             }
                         }
                         valorBrutoCorte += valorSubItemParaCorte;
@@ -3570,15 +3617,12 @@ async function generateCorte() {
                 // --- 3. Lógica de Amortización CORREGIDA ---
                 let valorAmortizacion = 0;
                 const anticipoTotal = parseFloat(currentProject.advance) || 0;
-                
+
                 if (amortizarAnticipo && anticipoTotal > 0) {
                     const contractedValue = await calculateProjectContractedValue(currentProject.id);
-                    
-                    // CORRECCIÓN: Factor de amortización fijo
-                    // Si el contrato vale 100 y dieron 30 de anticipo, el factor es 0.3
-                    // De cada peso que cobro, 0.3 se van a pagar el anticipo.
+
                     let factorAmortizacion = 0;
-                    if(contractedValue > 0) {
+                    if (contractedValue > 0) {
                         factorAmortizacion = anticipoTotal / contractedValue;
                     }
 
@@ -3586,16 +3630,19 @@ async function generateCorte() {
                     valorAmortizacion = valorBrutoCorte * factorAmortizacion;
 
                     // Validación: No amortizar más de lo que falta por pagar del anticipo
+                    // Buscamos cortes anteriores aprobados para ver cuánto ya se pagó
                     const cortesQuery = query(collection(db, "projects", currentProject.id, "cortes"), where("status", "==", "aprobado"));
                     const cortesSnapshot = await getDocs(cortesQuery);
                     let totalAmortizadoPrevio = 0;
                     cortesSnapshot.forEach(doc => { totalAmortizadoPrevio += doc.data().amortizacion || 0; });
-                    
+
                     const saldoAnticipoPendiente = anticipoTotal - totalAmortizadoPrevio;
 
-                    // Si es corte final, amortizamos todo lo que falte sí o sí
+                    // Si es corte final, amortizamos todo lo que falte sí o sí (si alcanza el valor del corte)
                     if (esCorteFinal) {
-                        valorAmortizacion = saldoAnticipoPendiente; 
+                        // Ojo: No podemos descontar más de lo que vale el corte, aunque quede saldo de anticipo.
+                        // Usualmente el corte final cubre el saldo.
+                        valorAmortizacion = Math.min(saldoAnticipoPendiente, valorBrutoCorte);
                     } else {
                         // Si el cálculo da más de lo que debo, ajusto al saldo
                         if (valorAmortizacion > saldoAnticipoPendiente) {
@@ -3651,7 +3698,7 @@ async function generateCorte() {
                 console.error("Error al generar el corte:", error);
                 alert("Ocurrió un error al generar el corte.");
             } finally {
-                loadingOverlay.classList.add('hidden');
+                if (loadingOverlay) loadingOverlay.classList.add('hidden');
             }
         }
     );
@@ -3661,7 +3708,8 @@ async function generateCorte() {
  * Aprueba un corte, cambiando su estado a 'aprobado'.
  */
 async function approveCorte(projectId, corteId) {
-    loadingOverlay.classList.remove('hidden');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (loadingOverlay) loadingOverlay.classList.remove('hidden');
     try {
         const corteRef = doc(db, "projects", projectId, "cortes", corteId);
         const corteSnap = await getDoc(corteRef);
@@ -3695,7 +3743,7 @@ async function approveCorte(projectId, corteId) {
         console.error("Error al aprobar el corte:", error);
         alert("Ocurrió un error al aprobar el corte: " + error.message);
     } finally {
-        loadingOverlay.classList.add('hidden');
+        if (loadingOverlay) loadingOverlay.classList.add('hidden');
     }
 }
 
@@ -3703,9 +3751,11 @@ async function approveCorte(projectId, corteId) {
  * Deniega un corte, eliminándolo de la base de datos.
  */
 async function denyCorte(projectId, corteId) {
-    const corteRef = doc(db, "projects", projectId, "cortes", corteId);
-    await deleteDoc(corteRef);
-    alert("El corte ha sido denegado y eliminado.");
+    if (confirm("¿Estás seguro de denegar y eliminar este corte? Esta acción no se puede deshacer.")) {
+        const corteRef = doc(db, "projects", projectId, "cortes", corteId);
+        await deleteDoc(corteRef);
+        alert("El corte ha sido denegado y eliminado.");
+    }
 }
 
 
@@ -3747,7 +3797,7 @@ async function showCorteDetails(corteData) {
         ? '<span class="px-2.5 py-1 text-xs font-bold uppercase rounded-md bg-purple-100 text-purple-700 border border-purple-200 shadow-sm"><i class="fa-solid fa-ruler-combined mr-1"></i> Medidas Reales</span>'
         : '<span class="px-2.5 py-1 text-xs font-bold uppercase rounded-md bg-gray-100 text-gray-600 border border-gray-200 shadow-sm"><i class="fa-solid fa-file-contract mr-1"></i> Medidas Contrato</span>';
 
-    // Badge de Origen (Quién lo hizo) - Opcional si tienes la propiedad 'type'
+    // Badge de Origen
     const originBadge = corteData.type === 'obra'
         ? '<span class="px-2.5 py-1 text-xs font-bold uppercase rounded-md bg-orange-100 text-orange-700 border border-orange-200 shadow-sm"><i class="fa-solid fa-hard-hat mr-1"></i> Reporte de Obra</span>'
         : '<span class="px-2.5 py-1 text-xs font-bold uppercase rounded-md bg-indigo-50 text-indigo-600 border border-indigo-100 shadow-sm"><i class="fa-solid fa-building-user mr-1"></i> Reporte Interno</span>';
@@ -3844,19 +3894,24 @@ async function showCorteDetails(corteData) {
             const parentItem = itemsMap.get(subItem.itemId);
             if (!parentItem) continue;
 
-            const valorUnitarioContratado = calculateItemTotal(parentItem) / parentItem.quantity;
+            const valorUnitarioContratado = calculateItemTotal(parentItem) / (parentItem.quantity || 1);
             let valorSubItemEnCorte = valorUnitarioContratado;
 
             if (corteData.usadoMedidaReal && subItem.realWidth > 0 && subItem.realHeight > 0) {
-                const areaContratada = parentItem.width * parentItem.height;
-                const areaReal = subItem.realWidth * subItem.realHeight;
+                const areaContratada = (parentItem.width || 0) * (parentItem.height || 0);
+                const areaReal = (subItem.realWidth || 0) * (subItem.realHeight || 0);
                 if (areaContratada > 0) {
                     valorSubItemEnCorte = (valorUnitarioContratado / areaContratada) * areaReal;
                 }
             }
 
-            const installerData = usersMap.get(subItem.installer);
-            const installerName = installerData ? `${installerData.firstName} ${installerData.lastName}` : 'N/A';
+            // Datos de instalador (asumiendo que tienes usersMap cargado globalmente o lo cargas aquí)
+            // Si usersMap no está disponible, deberías cargarlo o manejar el fallo
+            let installerName = 'N/A';
+            if (typeof usersMap !== 'undefined' && usersMap.has(subItem.installer)) {
+                const installerData = usersMap.get(subItem.installer);
+                installerName = `${installerData.firstName} ${installerData.lastName}`;
+            }
 
             let statusText = subItem.status || 'Pendiente';
             let statusBadgeClass = 'bg-gray-100 text-gray-600 border-gray-200';
@@ -3886,7 +3941,7 @@ async function showCorteDetails(corteData) {
                         <div class="flex justify-between items-center">
                             <span class="text-gray-500 text-xs"><i class="fa-solid fa-ruler-combined w-4 text-center mr-1"></i> Medidas:</span>
                             <span class="font-medium text-gray-800 text-right font-mono bg-gray-50 px-1.5 rounded border border-gray-100 text-xs">
-                                ${(subItem.realWidth * 100).toFixed(0)} x ${(subItem.realHeight * 100).toFixed(0)} cm
+                                ${(subItem.realWidth ? (subItem.realWidth * 100).toFixed(0) : '0')} x ${(subItem.realHeight ? (subItem.realHeight * 100).toFixed(0) : '0')} cm
                             </span>
                         </div>
 
@@ -3905,13 +3960,13 @@ async function showCorteDetails(corteData) {
                         <div class="w-full h-full bg-gray-100 rounded-lg border border-gray-200 overflow-hidden relative group cursor-pointer shadow-inner">
                             ${subItem.photoURL ?
                     `<img src="${subItem.photoURL}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" data-action="view-image">
-                                 <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center pointer-events-none">
-                                    <i class="fa-solid fa-magnifying-glass-plus text-white opacity-0 group-hover:opacity-100 drop-shadow-md"></i>
-                                 </div>`
+                                     <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center pointer-events-none">
+                                        <i class="fa-solid fa-magnifying-glass-plus text-white opacity-0 group-hover:opacity-100 drop-shadow-md"></i>
+                                     </div>`
                     : `<div class="w-full h-full flex flex-col items-center justify-center text-gray-300">
-                                     <i class="fa-regular fa-image text-xl"></i>
-                                     <span class="text-[9px] mt-1">Sin Foto</span>
-                                   </div>`
+                                             <i class="fa-regular fa-image text-xl"></i>
+                                             <span class="text-[9px] mt-1">Sin Foto</span>
+                                      </div>`
                 }
                         </div>
                     </div>
@@ -3939,13 +3994,14 @@ function closeCorteSelectionView() {
 }
 
 /**
- * Genera una memoria de corte con alineación perfecta:
- * 1. Totales de la tabla principal alineados por columna.
- * 2. Tabla de Resumen Financiero alineada a la derecha.
+ * Genera una memoria de corte fusionando la tabla de ítems con los totales financieros.
+ * - Corrección: Anticipo toma el valor de 'proyecto.advance'.
+ * - Corrección: Neto Acumulado calcula el valor total consignado hasta la fecha.
+ * - Estética: Columnas vacías limpias (sin bordes), valores con bordes.
  */
 async function exportCorteToPDF(proyecto, corte, exportType) {
     // 1. Mostrar Loading
-    const loadingOverlay = document.getElementById('loading-overlay'); 
+    const loadingOverlay = document.getElementById('loading-overlay');
     if (loadingOverlay) loadingOverlay.classList.remove('hidden');
 
     try {
@@ -3957,11 +4013,22 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
         });
 
         // --------------------------------------------------------------------------------
-        // 1. FUNCIONES INTERNAS Y CARGA DE DATOS
+        // 1. FUNCIONES INTERNAS
         // --------------------------------------------------------------------------------
-        const calculateRowTax = (details, baseValue) => {
-            const res = { admin: 0, imprev: 0, util: 0, ivaUtil: 0, iva: 0, totalTax: 0 };
+        const addTaxToTotal = (target, source) => {
+            target.base += source.base;
+            target.admin += source.admin;
+            target.imprev += source.imprev;
+            target.util += source.util;
+            target.ivaUtil += source.ivaUtil;
+            target.iva += source.iva;
+            target.totalBruto += source.totalTax + source.base;
+        };
+
+        const calculateRowValues = (details, baseValue) => {
+            const res = { base: baseValue, admin: 0, imprev: 0, util: 0, ivaUtil: 0, iva: 0, totalTax: 0 };
             if (!details || baseValue <= 0) return res;
+
             if (details.taxType === 'aiu') {
                 res.admin = baseValue * ((details.aiuA || 0) / 100);
                 res.imprev = baseValue * ((details.aiuI || 0) / 100);
@@ -3975,8 +4042,11 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
             return res;
         };
 
+        // --------------------------------------------------------------------------------
+        // 2. CARGA DE DATOS
+        // --------------------------------------------------------------------------------
         const [configSnap, itemsSnap, subItemsSnap, prevCortesSnap] = await Promise.all([
-            getDoc(doc(db, "system", "generalConfig")), 
+            getDoc(doc(db, "system", "generalConfig")),
             getDocs(query(collection(db, "projects", proyecto.id, "items"))),
             getDocs(query(collectionGroup(db, "subItems"), where("projectId", "==", proyecto.id))),
             getDocs(query(collection(db, "projects", proyecto.id, "cortes"), where("status", "==", "aprobado"), where("corteNumber", "<", corte.corteNumber)))
@@ -3993,19 +4063,39 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
 
         const allItems = new Map(itemsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
         const allSubItems = subItemsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // --- LÓGICA DE HISTÓRICOS (Cortes Anteriores) ---
         const subItemsPagadosAntesIds = new Set();
+        let acumuladoAmortizacionAnterior = 0;
+        let acumuladoDescuentosAnterior = 0;
+
         prevCortesSnap.forEach(c => {
             const d = c.data();
             if (d.subItemIds) d.subItemIds.forEach(id => subItemsPagadosAntesIds.add(id));
+
+            // Sumar valores financieros históricos para obtener el Neto Real Pagado
+            acumuladoAmortizacionAnterior += (d.amortizacion || 0);
+            if (d.otrosDescuentos && Array.isArray(d.otrosDescuentos)) {
+                d.otrosDescuentos.forEach(desc => acumuladoDescuentosAnterior += (desc.value || 0));
+            }
         });
+
         const subItemsEsteCorteIds = new Set(corte.subItemIds || []);
-
         const body = [];
-        let sumTotalContratadoBase = 0; let sumTotalEjecutadoAntesBase = 0;
-        let sumTotalEjecutadoCorteBase = 0; let sumTotalSaldoBase = 0;
-        let financialBase = 0; let financialIva = 0;
-        let financialAiu = { admin: 0, imprev: 0, util: 0, ivaUtil: 0 };
 
+        // Inicializadores de totales
+        const initTotalObj = () => ({ base: 0, admin: 0, imprev: 0, util: 0, ivaUtil: 0, iva: 0, totalBruto: 0 });
+        const totals = {
+            contrato: initTotalObj(),
+            corte: initTotalObj(),
+            acumulado: initTotalObj(),
+            saldo: initTotalObj()
+        };
+        const totalsAntes = initTotalObj();
+
+        // --------------------------------------------------------------------------------
+        // 3. CÁLCULOS POR ÍTEM
+        // --------------------------------------------------------------------------------
         allItems.forEach(item => {
             const misSubItems = allSubItems.filter(si => si.itemId === item.id);
             const cantEnEsteCorte = misSubItems.filter(si => subItemsEsteCorteIds.has(si.id));
@@ -4019,18 +4109,24 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
             let details = null;
             if (exportType === 'suministro') details = item.supplyDetails;
             else if (exportType === 'instalacion') details = item.installationDetails;
-            else details = item.includedDetails || item.includedDetails; 
+            else details = item.includedDetails || item.includedDetails;
 
             if (!details && proyecto.pricingModel === 'separado' && exportType === 'completo') {
                 details = { unitPrice: (item.supplyDetails?.unitPrice || 0) + (item.installationDetails?.unitPrice || 0), taxType: 'mix' };
             }
 
             const baseUnitario = details ? details.unitPrice : 0;
-            const valContratadoBase = baseUnitario * item.quantity;
-            const valAntesBase = baseUnitario * cantAntes;
-            const valSaldoBase = baseUnitario * saldoCant;
-            let valBaseCorteItem = 0;
 
+            // 1. Contrato
+            const valContratadoBase = baseUnitario * item.quantity;
+            addTaxToTotal(totals.contrato, calculateRowValues(details, valContratadoBase));
+
+            // 2. Anterior (Para calcular el acumulado correctamente)
+            const valAntesBase = baseUnitario * cantAntes;
+            addTaxToTotal(totalsAntes, calculateRowValues(details, valAntesBase));
+
+            // 3. Este Corte
+            let valBaseCorteItem = 0;
             cantEnEsteCorte.forEach(subItem => {
                 let baseRealSubItem = baseUnitario;
                 if (corte.usadoMedidaReal && subItem.realWidth > 0 && subItem.realHeight > 0) {
@@ -4041,23 +4137,17 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
                     }
                 }
                 valBaseCorteItem += baseRealSubItem;
-                const t = calculateRowTax(details, baseRealSubItem);
-                financialBase += baseRealSubItem;
-                if (details?.taxType === 'iva') financialIva += t.iva;
-                if (details?.taxType === 'aiu') {
-                    financialAiu.admin += t.admin; financialAiu.imprev += t.imprev; financialAiu.util += t.util; financialAiu.ivaUtil += t.ivaUtil;
-                }
             });
+            addTaxToTotal(totals.corte, calculateRowValues(details, valBaseCorteItem));
 
-            sumTotalContratadoBase += valContratadoBase;
-            sumTotalEjecutadoAntesBase += valAntesBase;
-            sumTotalEjecutadoCorteBase += valBaseCorteItem; 
-            sumTotalSaldoBase += valSaldoBase;
+            // 4. Saldo
+            const valSaldoBase = baseUnitario * saldoCant;
+            addTaxToTotal(totals.saldo, calculateRowValues(details, valSaldoBase));
 
             const descriptionText = (item.description || item.name).substring(0, 200);
-            
+
             body.push([
-                item.name, descriptionText, 
+                item.name, descriptionText,
                 item.quantity, currencyFormatter.format(baseUnitario), currencyFormatter.format(valContratadoBase),
                 cantAhora, currencyFormatter.format(valBaseCorteItem),
                 cantAcumulada, currencyFormatter.format(valAntesBase + valBaseCorteItem),
@@ -4065,12 +4155,45 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
             ]);
         });
 
+        // Sumarizar totales acumulados (Anterior + Corte Actual)
+        addTaxToTotal(totals.acumulado, totalsAntes);
+        addTaxToTotal(totals.acumulado, totals.corte);
+
         // --------------------------------------------------------------------------------
-        // 4. DISEÑO PDF
+        // 4. CÁLCULO FINAL DE AMORTIZACIÓN Y NETOS
         // --------------------------------------------------------------------------------
-        
-        const pageWidth = pdfDoc.internal.pageSize.getWidth(); 
-        const pageMargin = 14; 
+
+        // 1. Valores del corte actual
+        const amortizacionActual = corte.amortizacion || 0;
+        let descuentosActuales = 0;
+        if (corte.otrosDescuentos) corte.otrosDescuentos.forEach(d => descuentosActuales += (d.value || 0));
+
+        // 2. Valores Totales (Acumulados Históricos + Actual)
+        const totalAmortizacionAcumulada = acumuladoAmortizacionAnterior + amortizacionActual;
+        const totalDescuentosAcumulados = acumuladoDescuentosAnterior + descuentosActuales;
+
+        // 3. Calcular Anticipo Total (CORRECCIÓN AQUÍ)
+        // Se toma directamente de 'proyecto.advance', si no existe, 0.
+        const anticipoTotal = parseFloat(proyecto.advance) || 0;
+
+        // 4. Saldo por amortizar
+        const saldoPorAmortizar = anticipoTotal - totalAmortizacionAcumulada;
+
+        // 5. Calcular Netos a Pagar
+        const netoCorte = totals.corte.totalBruto - amortizacionActual - descuentosActuales;
+
+        // Neto Acumulado = Total Ejecutado Bruto - Total Amortizado - Total Descontado
+        // Esto equivale exactamente a "lo que me han consignado en total".
+        const netoAcumulado = totals.acumulado.totalBruto - totalAmortizacionAcumulada - totalDescuentosAcumulados;
+
+        // Neto Saldo = Bruto Saldo - Lo que falta por amortizar
+        const netoSaldo = totals.saldo.totalBruto - saldoPorAmortizar;
+
+        // --------------------------------------------------------------------------------
+        // 5. DISEÑO PDF
+        // --------------------------------------------------------------------------------
+        const pageWidth = pdfDoc.internal.pageSize.getWidth();
+        const pageMargin = 14;
 
         let reportTitle = `ACTA DE CORTE DE OBRA`;
         if (exportType === 'suministro') reportTitle = `ACTA DE CORTE DE SUMINISTRO`;
@@ -4078,12 +4201,11 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
 
         pdfDoc.setFontSize(14); pdfDoc.setFont("helvetica", "bold");
         pdfDoc.text(`${reportTitle} NO. ${corte.corteNumber}`, pageWidth / 2, 15, { align: 'center' });
-        
-        pdfDoc.setFontSize(10); 
-        
+
+        pdfDoc.setFontSize(10);
         pdfDoc.setFont("helvetica", "bold"); pdfDoc.text(`CONTRATISTA:`, pageMargin, 25);
         pdfDoc.setFont("helvetica", "normal"); pdfDoc.text(empresaInfo.nombre, pageMargin + 30, 25);
-        
+
         pdfDoc.setFont("helvetica", "bold"); pdfDoc.text(`CONTRATANTE:`, pageMargin, 30);
         const contratante = proyecto.clientName || proyecto.builderName || 'General';
         pdfDoc.setFont("helvetica", "normal"); pdfDoc.text(contratante, pageMargin + 30, 30);
@@ -4097,10 +4219,9 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
 
         const mainHeadStyles = { fontStyle: 'bold', halign: 'center', valign: 'middle', textColor: 255, lineWidth: 0.1, lineColor: [200, 200, 200] };
         const subHeadStyles = { fontStyle: 'bold', halign: 'center', valign: 'middle', fillColor: [255, 255, 255], textColor: 0, lineWidth: 0.1, lineColor: [200, 200, 200] };
-        
-        // Estilo para los valores del pie de página (Negra, Negrita, Fondo Gris)
         const footStyles = { halign: 'center', fontStyle: 'bold', fillColor: [240, 240, 240], textColor: 0, lineWidth: 0.1, lineColor: [200, 200, 200] };
 
+        // --- TABLA PRINCIPAL ---
         pdfDoc.autoTable({
             startY: 45,
             head: [
@@ -4114,104 +4235,150 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
                 ['Ítem', 'Detalle', 'Cant', 'Unitario', 'Total', 'Cant', 'Valor Total', 'Cant', 'Valor Total', 'Cant', 'Valor Total']
             ],
             body: body,
-            // ALINEACIÓN EXACTA DE TOTALES POR COLUMNA
             foot: [[
-                // Col 0-3: Texto "TOTALES (BASE):"
-                { content: 'TOTALES (BASE):', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', textColor: 0, fillColor: [240, 240, 240] } }, 
-                
-                // Col 4: Total Contrato
-                { content: currencyFormatter.format(sumTotalContratadoBase), styles: footStyles }, 
-                
-                // Col 5: Vacío
-                { content: '', styles: { fillColor: [240, 240, 240] } }, 
-                
-                // Col 6: Total Este Corte
-                { content: currencyFormatter.format(sumTotalEjecutadoCorteBase), styles: footStyles }, 
-                
-                // Col 7: Vacío
-                { content: '', styles: { fillColor: [240, 240, 240] } }, 
-                
-                // Col 8: Total Acumulado
-                { content: currencyFormatter.format(sumTotalEjecutadoAntesBase + sumTotalEjecutadoCorteBase), styles: footStyles }, 
-                
-                // Col 9: Vacío
-                { content: '', styles: { fillColor: [240, 240, 240] } }, 
-                
-                // Col 10: Total Saldo
-                { content: currencyFormatter.format(sumTotalSaldoBase), styles: footStyles }
+                { content: 'SUBTOTAL (BASE):', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', textColor: 0, fillColor: [240, 240, 240] } },
+                { content: currencyFormatter.format(totals.contrato.base), styles: footStyles },
+                { content: '', styles: { fillColor: [240, 240, 240] } },
+                { content: currencyFormatter.format(totals.corte.base), styles: footStyles },
+                { content: '', styles: { fillColor: [240, 240, 240] } },
+                { content: currencyFormatter.format(totals.acumulado.base), styles: footStyles },
+                { content: '', styles: { fillColor: [240, 240, 240] } },
+                { content: currencyFormatter.format(totals.saldo.base), styles: footStyles }
             ]],
-            theme: 'grid', 
+            theme: 'grid',
             styles: { fontSize: 8, cellPadding: 1.5, halign: 'center', valign: 'middle', lineWidth: 0.1, lineColor: [200, 200, 200], overflow: 'linebreak' },
-            headStyles: subHeadStyles, 
+            headStyles: subHeadStyles,
             columnStyles: { 1: { cellWidth: 50, halign: 'left' } },
             margin: { left: pageMargin, right: pageMargin }
         });
 
-        // --------------------------------------------------------------------------------
-        // 5. TABLA RESUMEN DE IMPUESTOS (Alineada a la derecha)
-        // --------------------------------------------------------------------------------
-        
-        let finalY = pdfDoc.lastAutoTable.finalY + 2; 
-        if (finalY > 160) { pdfDoc.addPage(); finalY = 20; }
+        // --- TABLA RESUMEN FINANCIERO INTEGRADA ---
 
-        const summaryData = [];
-        summaryData.push(['SUBTOTAL (Base sin impuestos)', currencyFormatter.format(financialBase)]);
-
-        if (financialAiu.admin > 0) summaryData.push(['Administración', currencyFormatter.format(financialAiu.admin)]);
-        if (financialAiu.imprev > 0) summaryData.push(['Imprevistos', currencyFormatter.format(financialAiu.imprev)]);
-        if (financialAiu.util > 0) summaryData.push(['Utilidad', currencyFormatter.format(financialAiu.util)]);
-        if (financialAiu.ivaUtil > 0) summaryData.push(['IVA sobre Utilidad', currencyFormatter.format(financialAiu.ivaUtil)]);
-        if (financialIva > 0) summaryData.push(['IVA (19%)', currencyFormatter.format(financialIva)]);
-
-        const totalBrutoCalculado = financialBase + financialIva + financialAiu.admin + financialAiu.imprev + financialAiu.util + financialAiu.ivaUtil;
-        summaryData.push([{ content: "TOTAL BRUTO ACTA", styles: { fontStyle: 'bold', fillColor: [250, 250, 250] } }, { content: currencyFormatter.format(totalBrutoCalculado), styles: { fontStyle: 'bold', fillColor: [250, 250, 250] } }]);
-
-        let totalAPagar = totalBrutoCalculado;
-        if (corte.amortizacion > 0) {
-            summaryData.push(["Amortización Anticipo", `(${currencyFormatter.format(corte.amortizacion)})`]);
-            totalAPagar -= corte.amortizacion;
-        }
-        if (corte.otrosDescuentos) {
-            corte.otrosDescuentos.forEach(d => {
-                summaryData.push([`Desc. ${d.concept}`, `(${currencyFormatter.format(d.value)})`]);
-                totalAPagar -= d.value;
+        // 1. CAPTURAR ANCHOS DE LA TABLA 1 (Para que las columnas calcen perfecto)
+        const distinctColumnStyles = {};
+        if (pdfDoc.lastAutoTable && pdfDoc.lastAutoTable.columns) {
+            pdfDoc.lastAutoTable.columns.forEach((col, index) => {
+                distinctColumnStyles[index] = { cellWidth: col.width };
             });
         }
 
-        summaryData.push([{ content: "NETO A PAGAR", styles: { fontStyle: 'bold', fillColor: [46, 204, 113], textColor: 255 } }, { content: currencyFormatter.format(totalAPagar), styles: { fontStyle: 'bold', fillColor: [46, 204, 113], textColor: 255 } }]);
+        let finalY = pdfDoc.lastAutoTable.finalY;
+        const summaryBody = [];
 
-        // CÁLCULO PARA ALINEAR A LA DERECHA
-        // Ancho de página - Margen Derecho - Ancho Tabla Resumen
-        const summaryWidth = 90; 
-        const summaryX = pageWidth - pageMargin - summaryWidth;
+        // ESTILOS:
+        const noBorder = { lineWidth: 0 }; // Sin bordes (limpio)
+        const valStyle = { halign: 'center', fontStyle: 'normal', lineWidth: 0.1, lineColor: [200, 200, 200] }; // Caja gris suave
 
+        const addSummaryRow = (label, valContrato, valCorte, valAcum, valSaldo, isBold = false, isTotal = false) => {
+            const labelStyle = { halign: 'right', fontStyle: isBold ? 'bold' : 'normal' };
+            const currentValStyle = { ...valStyle, fontStyle: isBold ? 'bold' : 'normal' };
+
+            if (isTotal) {
+                labelStyle.fillColor = [240, 240, 240];
+                currentValStyle.fillColor = [240, 240, 240];
+            }
+
+            summaryBody.push([
+                { content: '', styles: noBorder }, // Col 0 Vacía sin borde
+                { content: '', styles: noBorder }, // Col 1 Vacía sin borde
+                { content: label, colSpan: 2, styles: labelStyle }, // Col 2-3 Label
+                { content: currencyFormatter.format(valContrato), styles: currentValStyle }, // Col 4 (Valor)
+                { content: '', styles: noBorder }, // Col 5 Vacía
+                { content: currencyFormatter.format(valCorte), styles: currentValStyle }, // Col 6 (Valor)
+                { content: '', styles: noBorder }, // Col 7 Vacía
+                { content: currencyFormatter.format(valAcum), styles: currentValStyle }, // Col 8 (Valor)
+                { content: '', styles: noBorder }, // Col 9 Vacía
+                { content: currencyFormatter.format(valSaldo), styles: currentValStyle }  // Col 10 (Valor)
+            ]);
+        };
+
+        if (totals.contrato.admin > 0 || totals.corte.admin > 0) addSummaryRow('Administración', totals.contrato.admin, totals.corte.admin, totals.acumulado.admin, totals.saldo.admin);
+        if (totals.contrato.imprev > 0 || totals.corte.imprev > 0) addSummaryRow('Imprevistos', totals.contrato.imprev, totals.corte.imprev, totals.acumulado.imprev, totals.saldo.imprev);
+        if (totals.contrato.util > 0 || totals.corte.util > 0) addSummaryRow('Utilidad', totals.contrato.util, totals.corte.util, totals.acumulado.util, totals.saldo.util);
+        if (totals.contrato.ivaUtil > 0 || totals.corte.ivaUtil > 0) addSummaryRow('IVA sobre Utilidad', totals.contrato.ivaUtil, totals.corte.ivaUtil, totals.acumulado.ivaUtil, totals.saldo.ivaUtil);
+        if (totals.contrato.iva > 0 || totals.corte.iva > 0) addSummaryRow('IVA (19%)', totals.contrato.iva, totals.corte.iva, totals.acumulado.iva, totals.saldo.iva);
+
+        // Fila Total Bruto
+        addSummaryRow('TOTAL BRUTO ACTA', totals.contrato.totalBruto, totals.corte.totalBruto, totals.acumulado.totalBruto, totals.saldo.totalBruto, true, true);
+
+        // Fila Amortización (Lógica completa: Anticipo Total -> Descuento Hoy -> Total Amortizado -> Saldo por Amortizar)
+        if (anticipoTotal > 0 || amortizacionActual > 0 || totalAmortizacionAcumulada > 0) {
+            summaryBody.push([
+                { content: '', styles: noBorder }, { content: '', styles: noBorder },
+                { content: 'Amortización Anticipo', colSpan: 2, styles: { halign: 'center' } }, // Centrado
+                { content: `(${currencyFormatter.format(anticipoTotal)})`, styles: valStyle }, // Contrato: Anticipo Total
+                { content: '', styles: noBorder },
+                { content: `(${currencyFormatter.format(amortizacionActual)})`, styles: valStyle }, // Corte: Descuento Actual
+                { content: '', styles: noBorder },
+                { content: `(${currencyFormatter.format(totalAmortizacionAcumulada)})`, styles: valStyle }, // Acumulado: Total Amortizado
+                { content: '', styles: noBorder },
+                { content: `(${currencyFormatter.format(saldoPorAmortizar)})`, styles: valStyle } // Saldo: Pendiente
+            ]);
+        }
+
+        // Fila Otros Descuentos
+        if (totalDescuentosAcumulados > 0 || descuentosActuales > 0) {
+            summaryBody.push([
+                { content: '', styles: noBorder }, { content: '', styles: noBorder },
+                { content: 'Otros Descuentos', colSpan: 2, styles: { halign: 'right' } },
+                { content: '-', styles: valStyle },
+                { content: '', styles: noBorder },
+                { content: `(${currencyFormatter.format(descuentosActuales)})`, styles: valStyle },
+                { content: '', styles: noBorder },
+                { content: `(${currencyFormatter.format(totalDescuentosAcumulados)})`, styles: valStyle },
+                { content: '', styles: noBorder },
+                { content: '-', styles: valStyle }
+            ]);
+        }
+
+        // Fila NETO A PAGAR
+        const netoStyle = { fontStyle: 'bold', fillColor: [46, 204, 113], textColor: 255, halign: 'center', lineWidth: 0.1, lineColor: [200, 200, 200] };
+
+        summaryBody.push([
+            { content: '', styles: noBorder }, { content: '', styles: noBorder },
+            { content: 'NETO A PAGAR', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold', fillColor: [46, 204, 113], textColor: 255 } },
+            { content: '-', styles: { ...netoStyle, fillColor: null, textColor: 0 } },
+            { content: '', styles: noBorder },
+            { content: currencyFormatter.format(netoCorte), styles: netoStyle }, // Neto Corte
+            { content: '', styles: noBorder },
+            { content: currencyFormatter.format(netoAcumulado), styles: netoStyle }, // Neto Acumulado (Suma de pagos)
+            { content: '', styles: noBorder },
+            { content: currencyFormatter.format(netoSaldo), styles: netoStyle } // Neto Saldo
+        ]);
+
+        // Generar Tabla Resumen
         pdfDoc.autoTable({
             startY: finalY,
-            body: summaryData,
+            head: [],
+            body: summaryBody,
             theme: 'grid',
-            tableWidth: summaryWidth,
-            margin: { left: summaryX }, // Alineación derecha forzada
-            styles: { fontSize: 9, cellPadding: 2, lineWidth: 0.1, lineColor: [200, 200, 200] },
-            columnStyles: { 0: { halign: 'right', fontStyle: 'bold', cellWidth: 50 }, 1: { halign: 'right', cellWidth: 40 } }
+            columnStyles: distinctColumnStyles, // Mantener ancho de tabla 1
+            styles: { fontSize: 8, cellPadding: 1.5, lineWidth: 0.1, lineColor: [200, 200, 200], overflow: 'linebreak' },
+            margin: { left: pageMargin, right: pageMargin },
+            pageBreak: 'avoid'
         });
 
         // --------------------------------------------------------------------------------
         // 6. FIRMAS
         // --------------------------------------------------------------------------------
-        const yFirma = finalY + 60;
+        const yFirma = pdfDoc.lastAutoTable.finalY + 40;
         const colWidth = (pageWidth - (pageMargin * 2)) / 3;
         const x1 = pageMargin + (colWidth / 2);
         const x2 = pageMargin + colWidth + (colWidth / 2);
         const x3 = pageMargin + (colWidth * 2) + (colWidth / 2);
         const lineWidth = 60;
 
-        pdfDoc.line(x1 - (lineWidth/2), yFirma, x1 + (lineWidth/2), yFirma);
+        if (yFirma > 190) {
+            pdfDoc.addPage();
+        }
+
+        pdfDoc.line(x1 - (lineWidth / 2), yFirma, x1 + (lineWidth / 2), yFirma);
         pdfDoc.text(empresaInfo.nombre, x1, yFirma + 5, { align: "center", maxWidth: 60 });
-        
-        pdfDoc.line(x2 - (lineWidth/2), yFirma, x2 + (lineWidth/2), yFirma);
+
+        pdfDoc.line(x2 - (lineWidth / 2), yFirma, x2 + (lineWidth / 2), yFirma);
         pdfDoc.text("Interventoría", x2, yFirma + 5, { align: "center" });
-        
-        pdfDoc.line(x3 - (lineWidth/2), yFirma, x3 + (lineWidth/2), yFirma);
+
+        pdfDoc.line(x3 - (lineWidth / 2), yFirma, x3 + (lineWidth / 2), yFirma);
         pdfDoc.text("Director Obra", x3, yFirma + 5, { align: "center" });
 
         pdfDoc.save(`Corte_${corte.corteNumber}_${proyecto.name}_${exportType}.pdf`);
@@ -4223,6 +4390,8 @@ async function exportCorteToPDF(proyecto, corte, exportType) {
         if (loadingOverlay) loadingOverlay.classList.add('hidden');
     }
 }
+
+
 
 // ====================================================================
 //      INICIO: FUNCIÓN PARA CALCULAR EL VALOR TOTAL DE ÍTEMS
@@ -4276,15 +4445,15 @@ function calculateItemUnitPrice(item) {
 function calculateItemTotal(item) {
     // Definir detalles de precio según el modelo
     let details = item.includedDetails; // Por defecto modelo 'incluido'
-    
+
     // Si el proyecto es separado, sumamos suministro + instalación
     if (item.itemType === 'suministro_instalacion') {
         const supplyPrice = item.supplyDetails?.unitPrice || 0;
         const installPrice = item.installationDetails?.unitPrice || 0;
-        
+
         // Calcular impuestos de suministro (Generalmente IVA 19%)
         const supplyTax = item.supplyDetails?.taxType === 'iva' ? (supplyPrice * 0.19) : 0;
-        
+
         // Calcular impuestos de instalación (AIU o IVA)
         let installTax = 0;
         if (item.installationDetails?.taxType === 'aiu') {
@@ -4299,8 +4468,8 @@ function calculateItemTotal(item) {
 
         const unitTotal = supplyPrice + supplyTax + installPrice + installTax;
         return unitTotal * (item.quantity || 1);
-    } 
-    
+    }
+
     // Modelo 'incluido' (AIU o IVA sobre el total)
     else if (details) {
         const basePrice = details.unitPrice || 0;
@@ -4315,7 +4484,7 @@ function calculateItemTotal(item) {
         } else {
             tax = basePrice * 0.19;
         }
-        
+
         const unitTotal = basePrice + tax;
         return unitTotal * (item.quantity || 1);
     }
@@ -10761,28 +10930,33 @@ async function openMainModal(type, data = {}) {
             break;
         case 'new-supplier':
         case 'edit-supplier': {
-            // 1. Ocultar título por defecto para usar el diseño personalizado
+            // 1. Ocultar título por defecto
             if (document.getElementById('modal-title')) {
                 document.getElementById('modal-title').parentElement.style.display = 'none';
             }
 
             const isEditing = type === 'edit-supplier';
 
-            // Configuración visual (Tema Púrpura/Índigo)
+            // --- CORRECCIÓN AQUÍ: Extraemos el ID de 'data' de forma segura ---
+            const supplierId = data ? data.id : '';
+
+            // Configuración visual
             const headerTitle = isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor';
             const headerIcon = isEditing ? 'fa-pen-to-square' : 'fa-handshake';
             const headerGradient = isEditing ? 'from-purple-600 to-indigo-600' : 'from-indigo-500 to-purple-600';
             const subTitle = isEditing ? 'Modificar datos del aliado' : 'Registrar nuevo aliado estratégico';
 
-            title = headerTitle; // Fallback
+            title = headerTitle;
             btnText = isEditing ? 'Guardar Cambios' : 'Crear Proveedor';
             btnClass = 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-md transform hover:-translate-y-0.5 transition-all';
 
-            modalContentDiv.classList.add('max-w-4xl'); // Ancho optimizado
+            modalContentDiv.classList.add('max-w-4xl');
 
             bodyHtml = `
                 <div class="flex flex-col h-full max-h-[85vh]">
                     
+                    <input type="hidden" id="hidden-supplier-id" value="${supplierId}">
+
                     <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-r ${headerGradient} px-8 py-5 rounded-t-lg text-white shadow-md flex justify-between items-center relative overflow-hidden">
                         <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none transform scale-150 translate-x-4 -translate-y-2">
                             <i class="fa-solid ${headerIcon} text-6xl"></i>
@@ -10803,9 +10977,8 @@ async function openMainModal(type, data = {}) {
                     </div>
 
                     <div class="flex-grow overflow-y-auto custom-scrollbar p-1 pr-2 pb-4 space-y-6">
-                        
                         <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4 flex items-center">
+                             <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4 flex items-center">
                                 <i class="fa-solid fa-id-card mr-2 text-purple-500"></i> Información Fiscal
                             </h4>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -10828,7 +11001,7 @@ async function openMainModal(type, data = {}) {
                         </div>
 
                         <div class="bg-slate-50 p-5 rounded-xl border border-slate-200">
-                            <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-4 flex items-center">
+                             <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-4 flex items-center">
                                 <i class="fa-solid fa-address-book mr-2"></i> Datos de Contacto
                             </h4>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -10903,7 +11076,7 @@ async function openMainModal(type, data = {}) {
                 </div>
             `;
 
-            // Lógica JS para la previsualización interactiva
+            // ... (Lógica JS del timeout se mantiene igual)
             setTimeout(() => {
                 const qrContainer = document.getElementById('qr-preview-container');
                 const fileInput = document.getElementById('supplier-qr-input');
@@ -10946,6 +11119,7 @@ async function openMainModal(type, data = {}) {
                     }
                 }
             }, 150);
+
             break;
         }
         case 'request-material': {
@@ -11456,16 +11630,16 @@ async function openMainModal(type, data = {}) {
                         </div>
                     </div>
 
-                    <div class="md:col-span-3 border-t pt-4">
-                        <button type="button" data-action="view-profile-history" data-userid="${currentUser.uid}" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg transition-colors">
-                            <i class="fa-solid fa-clock-rotate-left mr-2"></i> Ver Mi Historial de Cambios
-                        </button>
-                    </div>
+
                 </div>
             `;
 
-
-
+            //Boton de ver historial de cambios
+            /*<div class="md:col-span-3 border-t pt-4">
+                <button type="button" data-action="view-profile-history" data-userid="${currentUser.uid}" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg transition-colors">
+                    <i class="fa-solid fa-clock-rotate-left mr-2"></i> Ver Mi Historial de Cambios
+                </button>
+            </div>*/
 
             // Corregido (envuelto en un setTimeout):
             setTimeout(() => {
@@ -11808,7 +11982,7 @@ modalForm.addEventListener('submit', async (e) => {
                 // =========================================================
                 try {
                     modalConfirmBtn.textContent = "Generando PDF de respaldo...";
-                    
+
                     // Preparamos los datos para el generador
                     const quoteDataForPDF = {
                         items: items,
@@ -12826,7 +13000,16 @@ modalForm.addEventListener('submit', async (e) => {
             modalConfirmBtn.textContent = 'Guardando...';
 
             try {
-                const supplierRef = doc(db, "suppliers", id);
+                // CORRECCIÓN: Obtenemos el ID del input oculto que agregaremos en el paso 2
+                // Si la variable 'id' viene undefined, intentamos leerla del DOM
+                const storedId = document.getElementById('hidden-supplier-id')?.value;
+                const finalId = id || storedId; // Usa la variable id si existe, si no, usa la del input oculto
+
+                if (!finalId) throw new Error("No se encontró el ID del proveedor");
+
+                const supplierRef = doc(db, "suppliers", finalId);
+
+                // El resto de tu lógica sigue igual...
                 const qrFile = document.getElementById('supplier-qr-input').files[0];
 
                 const updateData = {
@@ -12841,7 +13024,6 @@ modalForm.addEventListener('submit', async (e) => {
                     accountNumber: data.accountNumber || ''
                 };
 
-                // Solo subimos y actualizamos si el usuario seleccionó un archivo nuevo
                 if (qrFile) {
                     const storagePath = `suppliers/qr/${Date.now()}_${qrFile.name}`;
                     const storageRef = ref(storage, storagePath);
@@ -12852,11 +13034,18 @@ modalForm.addEventListener('submit', async (e) => {
 
                 await updateDoc(supplierRef, updateData);
 
+                // Opcional: Cerrar modal o refrescar
+                closeMainModal();
+                alert("Proveedor actualizado correctamente.");
+
             } catch (error) {
                 console.error(error);
-                alert("Error al actualizar proveedor.");
+                alert("Error al actualizar proveedor: " + error.message);
             } finally {
-                modalConfirmBtn.disabled = false;
+                if (modalConfirmBtn) {
+                    modalConfirmBtn.disabled = false;
+                    modalConfirmBtn.textContent = 'Guardar Cambios'; // Restaurar texto
+                }
             }
             break;
         }
@@ -14256,7 +14445,7 @@ async function exportProjectToPDF() {
             docPDF.setFontSize(12);
             docPDF.setTextColor(100);
             docPDF.text(companyNit, 14, 28);
-            docPDF.text(`Fecha: ${new Date().toLocaleDateString('es-CO')}`, 14, 34);
+            docPDF.text(`Fecha:  ${new Date().toLocaleDateString('es-CO')}`, 14, 34);
             yPosition = 42;
         }
 
@@ -20426,12 +20615,14 @@ async function openSafetyCheckInModal(taskId, callbackOnSuccess) {
 
 /**
  * Abre el modal de autenticación facial para la edición del perfil.
- * Reutiliza el modal de check-in pero oculta la parte de EPP.
+ * Resetea completamente el estado para permitir múltiples intentos consecutivos.
  */
 async function openProfileAuthModal() {
+    // 1. Asignar el callback de éxito (Guardar perfil)
     onSafetyCheckInSuccess = savePendingProfileUpdate;
     verifiedCanvas = null;
 
+    // 2. Obtener referencias del DOM
     const modal = document.getElementById('safety-checkin-modal');
     const title = document.getElementById('safety-checkin-title');
     const step1 = document.getElementById('checkin-step-1-face');
@@ -20439,31 +20630,54 @@ async function openProfileAuthModal() {
     const takePhotoButton = document.getElementById('checkin-take-photo-btn');
     const faceStatus = document.getElementById('checkin-face-status');
     const confirmBtn = document.getElementById('checkin-confirm-btn');
+    const scannerLine = document.getElementById('scanner-line');
 
     modal.style.zIndex = "60";
 
-    // 1. Resetear el modal
+    // 3. RESETEO COMPLETO DEL ESTADO VISUAL
+    // Esto es crucial: Aseguramos que el usuario vea el estado inicial (Cámara) y no el final (Confirmar)
+
+    // Título
+    title.textContent = 'Verificar Identidad para Guardar Cambios';
+
+    // Mostrar paso 1 (Video)
     step1.classList.remove('hidden');
-    title.textContent = 'Verificar Identidad';
+
+    // Ocultar botón de confirmar (por si quedó visible del intento anterior)
+    confirmBtn.classList.add('hidden');
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Confirmar Identidad';
-    takePhotoButton.disabled = false;
-    takePhotoButton.textContent = 'Tomar Foto y Verificar Rostro';
-    faceStatus.textContent = '';
-    confirmBtn.dataset.taskId = '';
+    confirmBtn.dataset.taskId = ''; // Limpiar ID
 
+    // Mostrar y habilitar botón de tomar foto
+    takePhotoButton.classList.remove('hidden');
+    takePhotoButton.disabled = false;
+    takePhotoButton.innerHTML = '<i class="fa-solid fa-camera"></i> <span>Tomar Foto y Verificar</span>';
+
+    // Resetear textos de estado
+    faceStatus.textContent = 'Posiciona tu rostro frente a la cámara';
+    faceStatus.className = 'text-sm text-gray-500';
+
+    // Ocultar línea de escaneo si existe
+    if (scannerLine) scannerLine.classList.add('hidden');
+
+    // 4. Mostrar el modal
     modal.style.display = 'flex';
 
-    // 2. Iniciar cámara
+    // 5. Iniciar cámara (Deteniendo stream anterior si existe para evitar conflictos)
     try {
         if (videoStream) {
             videoStream.getTracks().forEach(track => track.stop());
         }
         videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
         videoEl.srcObject = videoStream;
+        // Reproducir video para asegurar que no se quede congelado
+        await videoEl.play();
     } catch (err) {
         console.error("Error al acceder a la cámara:", err);
-        faceStatus.textContent = "Error al acceder a la cámara. Revisa los permisos.";
+        faceStatus.textContent = "Error: No se detecta la cámara. Revisa los permisos.";
+        faceStatus.className = "text-sm font-bold text-red-500";
+        takePhotoButton.disabled = true;
     }
 }
 
@@ -21022,7 +21236,7 @@ async function generateAndUploadQuotePDF(quoteData, projectId, projectRefId) {
     // Puedes personalizar esto con tu logo y colores
     const currencyFmt = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
     const dateStr = new Date().toLocaleDateString('es-CO');
-    
+
     // Calcular totales visuales
     let subtotal = 0;
     const itemsHtml = (quoteData.items || []).map(item => {
@@ -21043,12 +21257,12 @@ async function generateAndUploadQuotePDF(quoteData, projectId, projectRefId) {
 
     // Lógica visual de impuestos (Simplificada para el PDF)
     if (quoteData.mode === 'AIU' && quoteData.aiu) {
-        const admin = subtotal * (parseFloat(quoteData.aiu.admin)/100);
-        const imprev = subtotal * (parseFloat(quoteData.aiu.imprev)/100);
-        const util = subtotal * (parseFloat(quoteData.aiu.util)/100);
+        const admin = subtotal * (parseFloat(quoteData.aiu.admin) / 100);
+        const imprev = subtotal * (parseFloat(quoteData.aiu.imprev) / 100);
+        const util = subtotal * (parseFloat(quoteData.aiu.util) / 100);
         const ivaUtil = util * 0.19;
         totalGeneral = subtotal + admin + imprev + util + ivaUtil;
-        
+
         taxesHtml = `
             <tr><td colspan="3" style="text-align: right; font-size: 10px; font-weight: bold;">Subtotal Costos:</td><td style="text-align: right; font-size: 10px;">${currencyFmt.format(subtotal)}</td></tr>
             <tr><td colspan="3" style="text-align: right; font-size: 10px;">Admin (${quoteData.aiu.admin}%):</td><td style="text-align: right; font-size: 10px;">${currencyFmt.format(admin)}</td></tr>
@@ -21071,7 +21285,7 @@ async function generateAndUploadQuotePDF(quoteData, projectId, projectRefId) {
         <div style="padding: 20px; font-family: Arial, sans-serif; color: #333;">
             <div style="text-align: center; margin-bottom: 20px;">
                 <h2 style="margin: 0; color: #1e3a8a;">COTIZACIÓN APROBADA</h2>
-                <p style="font-size: 12px; color: #666;">Ref: ${projectRefId} | Fecha: ${dateStr}</p>
+                <p style="font-size: 12px; color: #666;">Ref: ${projectRefId} | Fecha :  ${dateStr}</p>
             </div>
             <div style="margin-bottom: 20px; font-size: 12px;">
                 <strong>Cliente:</strong> ${quoteData.clientName || 'General'}<br>
@@ -21104,10 +21318,10 @@ async function generateAndUploadQuotePDF(quoteData, projectId, projectRefId) {
         margin: 10,
         filename: `Cotizacion_${projectRefId}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { 
+        html2canvas: {
             scale: 2,
             // 🔥 AGREGAR ESTA LÍNEA PARA CORREGIR LA ADVERTENCIA
-            willReadFrequently: true 
+            willReadFrequently: true
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
@@ -21117,16 +21331,16 @@ async function generateAndUploadQuotePDF(quoteData, projectId, projectRefId) {
     // 3. Subir a Firebase Storage
     // Usamos las funciones importadas globalmente en tu proyecto
     const { ref, uploadBytes, getDownloadURL } = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js");
-    
+
     const storagePath = `project_documents/${projectId}/Cotizacion_Inicial_${Date.now()}.pdf`;
     const storageRef = ref(storage, storagePath); // 'storage' debe ser tu variable global
-    
+
     const snapshot = await uploadBytes(storageRef, pdfBlob);
     const downloadURL = await getDownloadURL(snapshot.ref);
 
     // 4. Guardar Referencia en Firestore (Colección 'documents' del proyecto)
     const { addDoc, collection } = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js");
-    
+
     await addDoc(collection(db, "projects", projectId, "documents"), {
         name: "Cotización Aprobada (Inicial)",
         type: "cotizacion",     // <--- CORRECCIÓN: Ahora coincide con el ID de la tarjeta
