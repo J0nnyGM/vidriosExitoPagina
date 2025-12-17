@@ -77,6 +77,7 @@ export function initEmpleados(
     _getPayrollConfig = getPayrollConfig;
     _getCurrentUserId = getCurrentUserId;
     _setupCurrencyInput = setupCurrencyInput;
+    _storage = getStorage(); // (o tu lógica de try/catch actual)
 
     // 2. Inicializar Storage de forma segura (Ahora que la App existe)
     try {
@@ -86,6 +87,7 @@ export function initEmpleados(
     }
 
     // 3. Guardar referencia a función externa
+    window.openPaymentVoucherModal = openPaymentVoucherModal;
     window.loadDotacionAsignaciones = loadDotacionFunc;
 
     window.showEmpleadoDetails = showEmpleadoDetails;
@@ -2997,9 +2999,30 @@ async function openPaymentVoucherModal(payment, user) {
         icon = 'fa-door-open';
     }
 
-    const dateStr = payment.createdAt 
-        ? payment.createdAt.toDate().toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' }) 
-        : payment.paymentDate;
+    // ============================================================
+    // CORRECCIÓN DE FECHA: Soporte para Timestamp, JSON o String
+    // ============================================================
+    let dateObj = new Date();
+
+    if (payment.createdAt) {
+        // Caso A: Es un Timestamp de Firestore real (tiene la función)
+        if (typeof payment.createdAt.toDate === 'function') {
+            dateObj = payment.createdAt.toDate();
+        } 
+        // Caso B: Es un objeto plano recuperado de JSON (tiene seconds)
+        else if (payment.createdAt.seconds) {
+            dateObj = new Date(payment.createdAt.seconds * 1000);
+        } 
+        // Caso C: Es un string ISO o un objeto Date
+        else {
+            dateObj = new Date(payment.createdAt);
+        }
+    } else if (payment.paymentDate) {
+        // Caso D: Fecha manual tipo "2023-12-31"
+        dateObj = new Date(payment.paymentDate + 'T00:00:00');
+    }
+
+    const dateStr = dateObj.toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' });
 
     // ============================================================
     // 3. OBTENER DATOS EMPRESA

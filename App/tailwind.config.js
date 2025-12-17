@@ -12,7 +12,9 @@ module.exports = {
     "./js/solicitudes.js",
     "./js/ingresopersonal.js",
     "./js/herramientas.js",
-    "./js/cotizaciones.js"
+    "./js/cotizaciones.js",
+    "./js/informes.js"
+
   ],
 
 

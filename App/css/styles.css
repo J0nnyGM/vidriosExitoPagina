@@ -805,3 +805,112 @@ dl dd span.block:last-child {
     scrollbar-width: thin;
     scrollbar-color: #cbd5e1 transparent;
 }
+
+/* ==========================================================================
+   ESTILOS DE IMPRESIÓN (SOLUCIÓN DEFINITIVA)
+   ========================================================================== */
+@media print {
+    /* 1. REGLA MAESTRA: Ocultar TODO por defecto usando visibility 
+       (Esto mantiene el flujo del DOM pero lo hace invisible) */
+    body * {
+        visibility: hidden;
+    }
+
+    /* 2. RESETEAR EL BODY Y HTML 
+       Esto es vital para que la impresora sepa que la pagina es larga */
+    html, body, #app-container, #main-content {
+        height: auto !important;
+        min-height: auto !important;
+        overflow: visible !important;
+        position: static !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: white !important;
+    }
+
+    /* 3. HACER VISIBLE SOLO EL REPORTE Y SUS HIJOS */
+    #reports-view, 
+    #reports-view * {
+        visibility: visible;
+    }
+
+    /* 4. POSICIONAR EL REPORTE EN LA HOJA */
+    #reports-view {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 20px !important;
+        
+        /* IMPORTANTE: Romper el scroll interno de Tailwind */
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        display: block !important;
+    }
+
+    /* 5. OCULTAR ELEMENTOS INTERNOS QUE NO QUEREMOS (Filtros y botones) */
+    /* Usamos display: none aquí para que no ocupen espacio físico */
+    #reports-view button, 
+    #reports-view select,
+    #report-filters-container,
+    .lg\:col-span-1 { /* La columna izquierda del grid */
+        display: none !important;
+    }
+
+    /* 6. EXPANDIR EL CONTENIDO AL 100% DEL ANCHO */
+    #reports-view .grid {
+        display: block !important;
+    }
+    
+    #reports-view .lg\:col-span-3 {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    /* 7. AJUSTES PARA EL GRÁFICO (CANVAS) */
+    #report-chart-canvas {
+        max-height: 350px !important; /* Limitar altura para que quepa la tabla abajo */
+        width: 100% !important;
+    }
+
+    /* 8. FORZAR COLORES DE FONDO (Para las barras y badges) */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+    }
+
+    /* 9. ENCABEZADO DE EMPRESA */
+    #report-company-header {
+        display: flex !important;
+        visibility: visible !important;
+        margin-bottom: 20px !important;
+        border-bottom: 2px solid #333 !important;
+        padding-bottom: 10px !important;
+    }
+    #report-company-header * {
+        visibility: visible !important;
+    }
+
+    /* 10. TABLAS BONITAS */
+    table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+        page-break-inside: auto;
+    }
+    tr {
+        page-break-inside: avoid;
+        page-break-after: auto;
+    }
+    th, td {
+        border: 1px solid #ddd !important;
+        padding: 8px !important;
+        font-size: 10pt !important;
+        color: #000 !important; /* Texto negro forzado */
+    }
+}

@@ -215,13 +215,54 @@ function closeAndCleanup(closeModalFunc) {
     closeModalFunc();
 }
 
+/**
+ * Obtiene la ubicación actual con estrategia de respaldo.
+ * Intenta primero GPS preciso; si falla o tarda, usa redes (Wi-Fi/Celdas).
+ */
 function getCurrentLocation() {
     return new Promise((resolve, reject) => {
-        if (!navigator.geolocation) return reject(new Error("Navegador sin GPS."));
-        navigator.geolocation.getCurrentPosition(resolve, (err) => reject(new Error("Error GPS: " + err.message)), { enableHighAccuracy: true, timeout: 10000 });
+        if (!navigator.geolocation) return reject(new Error("Tu navegador no soporta geolocalización."));
+
+        // Opciones A: Alta Precisión (GPS) - Tiempo límite 7s
+        const highAccuracyOptions = {
+            enableHighAccuracy: true,
+            timeout: 7000, 
+            maximumAge: 0
+        };
+
+        // Opciones B: Baja Precisión (Redes) - Tiempo límite 10s
+        const lowAccuracyOptions = {
+            enableHighAccuracy: false,
+            timeout: 10000,
+            maximumAge: 30000 // Acepta caché de hasta 30 seg
+        };
+
+        // 1. Primer Intento: GPS Preciso
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                console.log("Ubicación obtenida por GPS.");
+                resolve(position);
+            },
+            (errorHigh) => {
+                console.warn("Fallo GPS preciso (" + errorHigh.message + "). Intentando modo red...");
+
+                // 2. Segundo Intento: Redes (Fallback)
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        console.log("Ubicación obtenida por Red.");
+                        resolve(position);
+                    },
+                    (errorLow) => {
+                        // Si ambos fallan, rechazamos
+                        reject(new Error("No se pudo obtener ubicación. Enciende el GPS o dales permisos al navegador."));
+                    },
+                    lowAccuracyOptions
+                );
+            },
+            highAccuracyOptions
+        );
     });
 }
-
 function updateStatus(element, color, text) {
     const colorClasses = {
         'blue': 'text-blue-700 bg-blue-100 border-blue-200',

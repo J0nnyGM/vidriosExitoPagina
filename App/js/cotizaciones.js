@@ -18,7 +18,8 @@ let allQuotesCache = []; // <--- NUEVA VARIABLE PARA FILTRADO LOCAL
 // Configuración por defecto
 let currentConfig = {
     modo: 'MIXTO',
-    numeracion: 'auto', // <--- NUEVO CAMPO
+    numeracion: 'auto',
+    // ASEGÚRATE QUE 'descripcion' ESTÉ EN ESTA LISTA:
     columnas: ['item', 'ubicacion', 'descripcion', 'ancho', 'alto', 'm2', 'cantidad', 'valor_unitario', 'total_global'],
     aiu: { admin: 10, imprev: 5, util: 5 },
     split: { sum: 85, inst: 15 },
@@ -1150,16 +1151,17 @@ function reconstruirTabla() {
     let html = '<tr>';
 
     const map = {
-        item: '<th class="px-2 py-3 w-10">#</th>',
-        ubicacion: '<th class="px-2 py-3 text-left">Ubicación</th>',
-        descripcion: '<th class="px-2 py-3 text-left">Descripción</th>',
-        ancho: '<th class="px-2 py-3 text-right w-20">Ancho</th>',
-        alto: '<th class="px-2 py-3 text-right w-20">Alto</th>',
-        m2: '<th class="px-2 py-3 text-right w-20 text-slate-500">M²</th>',
+        item: '<th class="px-2 py-3 w-10 text-center">#</th>',
+        ubicacion: '<th class="px-2 py-3 text-left w-32">Ubicación</th>',
+        // CORRECCIÓN: Agregar encabezado de Descripción
+        descripcion: '<th class="px-2 py-3 text-left min-w-[200px]">Descripción</th>', 
+        ancho: '<th class="px-2 py-3 text-center w-16">Ancho</th>',
+        alto: '<th class="px-2 py-3 text-center w-16">Alto</th>',
+        m2: '<th class="px-2 py-3 text-center w-16 text-slate-500">M²</th>',
         cantidad: '<th class="px-2 py-3 text-center w-16">Cant</th>',
         total_m2: '<th class="px-2 py-3 text-right w-20 text-slate-500">Total M²</th>',
-        suministro: '<th class="px-2 py-3 text-right w-28 bg-blue-50 text-blue-800">Suministro</th>',
-        instalacion: '<th class="px-2 py-3 text-right w-28 bg-emerald-50 text-emerald-800">Instalación</th>',
+        suministro: '<th class="px-2 py-3 text-right w-24 bg-blue-50 text-blue-800">Suministro</th>',
+        instalacion: '<th class="px-2 py-3 text-right w-24 bg-emerald-50 text-emerald-800">Instalación</th>',
         valor_unitario: '<th class="px-2 py-3 text-right w-28 font-bold">V. Unitario</th>',
         total_global: '<th class="px-2 py-3 text-right w-28 font-bold">Total</th>'
     };
@@ -1203,14 +1205,14 @@ function agregarFilaItem(data = {}) {
                      </td>`;
         }
         else if (col === 'descripcion') {
-            // --- CAMBIO 2: Descripción ancha (min-w-[300px]) para absorber el espacio ---
-            html += `<td class="p-2">
-                        <textarea name="descripcion" rows="1" spellcheck="true" lang="es" 
-                        class="w-full min-w-[300px] p-1 border rounded text-xs resize-none overflow-hidden" 
-                        style="min-height: 28px;"
-                        placeholder="Descripción...">${v('descripcion')}</textarea>
-                     </td>`;
-        }
+                // CORRECCIÓN: Celda de descripción
+                html += `<td class="p-2">
+                    <textarea name="descripcion" rows="1" 
+                        class="w-full min-w-[200px] p-1.5 border border-slate-200 rounded text-xs text-gray-700 resize-none overflow-hidden focus:ring-1 focus:ring-blue-500 outline-none" 
+                        style="min-height: 34px;"
+                        placeholder="Descripción técnica del ítem...">${v('descripcion')}</textarea>
+                </td>`;
+            }
         else if (col === 'ancho') html += `<td class="p-2"><input type="number" step="0.01" name="ancho" class="inputs-calc w-full p-1 border rounded text-right text-xs" placeholder="0.00" value="${v('ancho')}"></td>`;
         else if (col === 'alto') html += `<td class="p-2"><input type="number" step="0.01" name="alto" class="inputs-calc w-full p-1 border rounded text-right text-xs" placeholder="0.00" value="${v('alto')}"></td>`;
         else if (col === 'm2') html += `<td class="p-2"><input type="text" name="m2" readonly class="w-full p-1 bg-slate-100 text-slate-500 rounded text-right text-xs" value="0.00"></td>`;

@@ -498,7 +498,7 @@ export async function loadDotacionAsignaciones(userId, containerId) {
     const container = document.getElementById(containerId);
     if (!container) return;
 
-    // --- CASO 1: VISTA RESUMEN (TODOS) ---
+    // --- CASO 1: VISTA RESUMEN (TODOS) --- (ESTA PARTE SE MANTIENE IGUAL QUE ANTES)
     if (userId === 'all') {
         container.innerHTML = `
             <div class="flex flex-col items-center justify-center py-12">
@@ -507,144 +507,67 @@ export async function loadDotacionAsignaciones(userId, containerId) {
             </div>
         `;
 
-        try {
-            // 1. Consultar TODAS las asignaciones activas
-            const q = query(
-                collection(db, "dotacionHistory"),
-                where("action", "==", "asignada"),
-                where("status", "==", "activo")
-            );
+try {
+            const q = query(collection(db, "dotacionHistory"), where("action", "==", "asignada"), where("status", "==", "activo"));
             const snapshot = await getDocs(q);
-
-            if (snapshot.empty) {
-                container.innerHTML = `
-                    <div class="text-center py-12 bg-white rounded-xl shadow-sm border border-gray-200">
-                        <div class="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3 text-gray-300">
-                            <i class="fa-solid fa-users-slash text-2xl"></i>
-                        </div>
-                        <p class="text-gray-500 font-medium">No hay dotación activa asignada a nadie.</p>
-                    </div>`;
-                return;
-            }
-
-            // 2. Agrupar por Usuario
-            const usersSummary = new Map(); // userId -> { count, lastDate }
+            if (snapshot.empty) { container.innerHTML = `<div class="text-center py-12"><p class="text-gray-500">No hay dotación activa.</p></div>`; return; }
+            const usersSummary = new Map();
             const usersMap = getUsersMap();
-
             snapshot.forEach(doc => {
                 const data = doc.data();
                 const uid = data.userId;
-                
-                if (!usersSummary.has(uid)) {
-                    usersSummary.set(uid, { count: 0, lastDate: null });
-                }
-                
+                if (!usersSummary.has(uid)) usersSummary.set(uid, { count: 0, lastDate: null });
                 const entry = usersSummary.get(uid);
                 entry.count += (data.quantity || 0);
-                
-                // Rastrear fecha más reciente
                 if (data.fechaEntrega) {
-                    if (!entry.lastDate || data.fechaEntrega > entry.lastDate) {
-                        entry.lastDate = data.fechaEntrega;
-                    }
+                    if (!entry.lastDate || data.fechaEntrega > entry.lastDate) entry.lastDate = data.fechaEntrega;
                 }
             });
-
-            // 3. Construir Tabla
             let rowsHtml = '';
             const sortedUsers = Array.from(usersSummary.entries()).sort((a, b) => {
                 const nameA = usersMap.get(a[0])?.firstName || 'ZZZ';
                 const nameB = usersMap.get(b[0])?.firstName || 'ZZZ';
                 return nameA.localeCompare(nameB);
             });
-
             sortedUsers.forEach(([uid, stats]) => {
                 const user = usersMap.get(uid);
-                if (!user) return; // Saltar si el usuario fue borrado
-                
+                if (!user) return;
                 const initials = `${user.firstName[0]}${user.lastName[0]}`;
                 const lastDateStr = stats.lastDate ? new Date(stats.lastDate + 'T00:00:00').toLocaleDateString('es-CO') : '---';
-
                 rowsHtml += `
                     <tr class="hover:bg-cyan-50/50 transition-colors border-b border-gray-100 last:border-0 group">
                         <td class="px-6 py-4">
                             <div class="flex items-center gap-4">
-                                <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold border-2 border-white shadow-sm group-hover:scale-110 transition-transform">
-                                    ${initials}
-                                </div>
-                                <div>
-                                    <p class="font-bold text-gray-800 text-sm leading-tight">${user.firstName} ${user.lastName}</p>
-                                    <p class="text-xs text-gray-400 mt-0.5 font-mono">CC: ${user.idNumber || '---'}</p>
-                                </div>
+                                <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold border-2 border-white shadow-sm">${initials}</div>
+                                <div><p class="font-bold text-gray-800 text-sm">${user.firstName} ${user.lastName}</p></div>
                             </div>
                         </td>
-                        <td class="px-6 py-4 text-center">
-                            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-cyan-50 text-cyan-700 border border-cyan-100">
-                                ${stats.count} <span class="text-[10px] font-normal ml-1 text-cyan-500 uppercase">Ítems</span>
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 text-center text-xs text-gray-500">
-                            ${lastDateStr}
-                        </td>
-                        <td class="px-6 py-4 text-right">
-                            <button data-action="view-user-history" 
-                                    data-userid="${uid}" 
-                                    data-username="${user.firstName} ${user.lastName}"
-                                    class="text-cyan-600 hover:bg-cyan-50 hover:text-cyan-800 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 ml-auto shadow-sm border border-transparent hover:border-cyan-200">
-                                <i class="fa-solid fa-eye"></i> Ver Detalle
-                            </button>
-                        </td>
-                    </tr>
-                `;
+                        <td class="px-6 py-4 text-center"><span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-cyan-50 text-cyan-700 border border-cyan-100">${stats.count} ítems</span></td>
+                        <td class="px-6 py-4 text-center text-xs text-gray-500">${lastDateStr}</td>
+                        <td class="px-6 py-4 text-right"><button data-action="view-user-history" data-userid="${uid}" class="text-cyan-600 hover:bg-cyan-50 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ml-auto"><i class="fa-solid fa-eye"></i> Ver Detalle</button></td>
+                    </tr>`;
             });
-
-            container.innerHTML = `
-                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in">
-                    <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                        <h4 class="font-bold text-gray-700 text-sm uppercase tracking-wide">Resumen por Colaborador</h4>
-                        <span class="text-xs font-bold bg-white px-2 py-1 rounded border border-gray-200 text-gray-500">${sortedUsers.length} Empleados</span>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm text-left">
-                            <thead class="text-xs text-gray-400 uppercase bg-white border-b border-gray-100">
-                                <tr>
-                                    <th class="px-6 py-3 font-semibold">Colaborador</th>
-                                    <th class="px-6 py-3 text-center font-semibold">Total Asignado</th>
-                                    <th class="px-6 py-3 text-center font-semibold">Última Entrega</th>
-                                    <th class="px-6 py-3 text-right font-semibold">Acción</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-50">
-                                ${rowsHtml}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            `;
-
-        } catch (error) {
-            console.error("Error resumen dotación:", error);
-            container.innerHTML = `<div class="p-6 text-center text-red-500 border-2 border-red-100 border-dashed rounded-xl bg-red-50">Error al cargar resumen.</div>`;
-        }
+            container.innerHTML = `<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"><div class="px-6 py-4 border-b bg-gray-50"><h4 class="font-bold text-gray-700 text-sm uppercase">Resumen por Colaborador</h4></div><div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead class="text-xs text-gray-400 uppercase bg-white border-b"><tr><th class="px-6 py-3">Colaborador</th><th class="px-6 py-3 text-center">Total Asignado</th><th class="px-6 py-3 text-center">Última Entrega</th><th class="px-6 py-3 text-right">Acción</th></tr></thead><tbody class="divide-y divide-gray-50">${rowsHtml}</tbody></table></div></div>`;
+        } catch (error) { container.innerHTML = `<div class="p-6 text-red-500">Error al cargar resumen.</div>`; }
         return;
     }
 
-    // --- CASO 2: VISTA DETALLE (INDIVIDUAL) ---
+    // --- CASO 2: VISTA DETALLE (INDIVIDUAL - AQUÍ ESTÁ EL CAMBIO) ---
     
     // 1. Estado de Carga
     container.innerHTML = `
         <div class="flex flex-col items-center justify-center py-12">
             <div class="loader mx-auto mb-4"></div>
-            <p class="text-gray-500 text-sm animate-pulse">Cargando inventario asignado...</p>
+            <p class="text-gray-500 text-sm animate-pulse">Cargando historial completo...</p>
         </div>
     `;
 
     try {
-        // 2. Consultar Historial
+        // 2. Consultar Historial (QUITAMOS el filtro status=='activo' para traer todo)
         const qHistory = query(
             collection(db, "dotacionHistory"),
             where("userId", "==", userId),
-            where("action", "==", "asignada"),
+            where("action", "==", "asignada"), // Traemos todo lo que alguna vez se asignó
             orderBy("fechaEntrega", "desc")
         );
 
@@ -656,21 +579,23 @@ export async function loadDotacionAsignaciones(userId, containerId) {
                     <div class="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
                         <i class="fa-solid fa-shirt text-gray-300 text-3xl"></i>
                     </div>
-                    <h4 class="text-gray-700 font-bold text-lg">Carpeta Vacía</h4>
-                    <p class="text-gray-400 text-sm mt-1">Este colaborador no tiene dotación activa registrada.</p>
+                    <h4 class="text-gray-700 font-bold text-lg">Historial Vacío</h4>
+                    <p class="text-gray-400 text-sm mt-1">Este colaborador nunca ha recibido dotación.</p>
                     <button class="mt-4 text-cyan-600 font-bold text-sm hover:underline" data-action="dotacion-back-to-summary">Volver al resumen</button>
                 </div>`;
             return;
         }
 
         // 3. Procesar Datos
-        let totalItemsDelivered = 0;
-        let activeItemsCount = 0;
+        let totalItemsHistory = 0; // Total histórico entregado
+        let activeItemsCount = 0;  // Lo que tiene actualmente
         let lastDeliveryDate = null;
-        const activeItems = [];
+        const allItems = []; // Array para TODA la tabla
 
         const uniqueItemIds = new Set();
         snapshot.docs.forEach(doc => uniqueItemIds.add(doc.data().itemId));
+        
+        // Cargar catálogo para nombres y fotos
         const catalogMap = new Map();
         for (const itemId of uniqueItemIds) {
             try {
@@ -685,14 +610,27 @@ export async function loadDotacionAsignaciones(userId, containerId) {
         snapshot.forEach(doc => {
             const data = { id: doc.id, ...doc.data() };
             const catalogItem = catalogMap.get(data.itemId) || {};
-            totalItemsDelivered += (data.quantity || 0);
+            
+            // KPI: Total histórico
+            totalItemsHistory += (data.quantity || 0);
+            
+            // KPI: Última fecha
             if (!lastDeliveryDate) lastDeliveryDate = data.fechaEntrega;
 
+            // KPI: Conteo Activo
             if (data.status === 'activo') {
                 activeItemsCount += (data.quantity || 0);
-                let statusHtml = '<span class="bg-gray-100 text-gray-600 text-[10px] px-2 py-0.5 rounded border border-gray-200 font-bold">Indefinido</span>';
-                let expirationText = '---';
+            }
 
+            // --- LÓGICA DE ESTADO VISUAL (ACTIVO vs DEVUELTO) ---
+            let statusHtml = '';
+            let rowClass = 'hover:bg-cyan-50/30'; // Clase por defecto
+            let expirationText = '---';
+
+            if (data.status === 'activo') {
+                // LÓGICA DE VENCIMIENTO (Solo para activos)
+                rowClass = 'bg-white hover:bg-cyan-50/30'; // Fondo blanco limpio
+                
                 if (catalogItem.vidaUtilDias && data.fechaEntrega) {
                     const deliveryDate = new Date(data.fechaEntrega + 'T00:00:00');
                     const expDate = new Date(deliveryDate);
@@ -704,47 +642,63 @@ export async function loadDotacionAsignaciones(userId, containerId) {
                     if (diffDays < 0) statusHtml = `<span class="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded border border-red-200">Vencido (${Math.abs(diffDays)}d)</span>`;
                     else if (diffDays <= 30) statusHtml = `<span class="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded border border-amber-200">Vence: ${diffDays}d</span>`;
                     else statusHtml = `<span class="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded border border-green-200">Vigente</span>`;
+                } else {
+                    statusHtml = '<span class="bg-blue-50 text-blue-600 text-[10px] px-2 py-0.5 rounded border border-blue-200 font-bold">En Uso</span>';
                 }
-
-                activeItems.push({
-                    historyId: data.id,
-                    itemId: data.itemId,
-                    name: data.itemName || catalogItem.itemName || 'Ítem',
-                    category: catalogItem.category || 'General',
-                    talla: data.talla || catalogItem.talla || 'N/A',
-                    quantity: data.quantity,
-                    deliveryDate: data.fechaEntrega,
-                    expirationText: expirationText,
-                    statusHtml: statusHtml,
-                    photoURL: data.deliveryPhotoURL
-                });
+            } else {
+                // LÓGICA PARA DEVUELTOS
+                rowClass = 'bg-gray-50/80 text-gray-500'; // Fondo grisáceo para diferenciar
+                const returnedDate = data.returnedAt ? data.returnedAt.toDate().toLocaleDateString('es-CO') : '---';
+                
+                if (data.status === 'devuelto_stock') {
+                    statusHtml = `<div class="flex flex-col items-center"><span class="bg-slate-200 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded border border-slate-300">Stock</span><span class="text-[9px] mt-0.5">Dev: ${returnedDate}</span></div>`;
+                } else {
+                    statusHtml = `<div class="flex flex-col items-center"><span class="bg-red-50 text-red-400 text-[10px] font-bold px-2 py-0.5 rounded border border-red-100 line-through">Baja</span><span class="text-[9px] mt-0.5">Dev: ${returnedDate}</span></div>`;
+                }
+                expirationText = 'Entregado'; // Ya no aplica vencimiento
             }
+
+            // Agregamos TODO a la lista, no solo los activos
+            allItems.push({
+                historyId: data.id,
+                itemId: data.itemId,
+                name: data.itemName || catalogItem.itemName || 'Ítem',
+                category: catalogItem.category || 'General',
+                talla: data.talla || catalogItem.talla || 'N/A',
+                quantity: data.quantity,
+                deliveryDate: data.fechaEntrega,
+                expirationText: expirationText,
+                statusHtml: statusHtml,
+                photoURL: data.deliveryPhotoURL,
+                status: data.status, // Para control de botones
+                rowClass: rowClass
+            });
         });
 
         const lastDateStr = lastDeliveryDate ? new Date(lastDeliveryDate + 'T00:00:00').toLocaleDateString('es-CO') : 'N/A';
         const userName = getUsersMap().get(userId)?.firstName || 'Colaborador';
 
         // 4. Renderizar HTML Detallado
-        const itemsRows = activeItems.map(item => `
-            <tr class="hover:bg-cyan-50/30 transition-colors border-b border-gray-100 last:border-0 group/row">
+        const itemsRows = allItems.map(item => `
+            <tr class="${item.rowClass} transition-colors border-b border-gray-100 last:border-0 group/row">
                 <td class="px-4 py-3">
                     <div class="flex items-center gap-3">
-                        <div class="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-400 text-sm shadow-sm">
+                        <div class="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-400 text-sm shadow-sm shrink-0">
                             <i class="fa-solid ${item.category === 'EPP' ? 'fa-helmet-safety' : 'fa-shirt'}"></i>
                         </div>
                         <div>
-                            <p class="font-bold text-gray-800 text-sm">${item.name}</p>
+                            <p class="font-bold text-sm ${item.status === 'activo' ? 'text-gray-800' : 'text-gray-500'}">${item.name}</p>
                             <p class="text-[10px] text-gray-400 uppercase tracking-wide">${item.category}</p>
                         </div>
                     </div>
                 </td>
                 <td class="px-4 py-3 text-center">
-                    <span class="bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded border border-gray-200">${item.talla}</span>
+                    <span class="bg-white text-gray-600 text-xs font-bold px-2 py-1 rounded border border-gray-200">${item.talla}</span>
                 </td>
-                <td class="px-4 py-3 text-center font-black text-gray-700 text-sm">${item.quantity}</td>
+                <td class="px-4 py-3 text-center font-black text-sm ${item.status === 'activo' ? 'text-gray-700' : 'text-gray-400'}">${item.quantity}</td>
                 <td class="px-4 py-3 text-center text-xs text-gray-500">
                     <div class="font-medium">${item.deliveryDate}</div>
-                    <div class="text-[10px] opacity-75">Exp: ${item.expirationText}</div>
+                    <div class="text-[10px] opacity-75">${item.expirationText}</div>
                 </td>
                 <td class="px-4 py-3 text-center">${item.statusHtml}</td>
                 <td class="px-4 py-3 text-right">
@@ -753,17 +707,17 @@ export async function loadDotacionAsignaciones(userId, containerId) {
                         ${item.photoURL ? 
                         `<button data-action="view-dotacion-delivery-image" data-photourl="${item.photoURL}" 
                             class="w-7 h-7 rounded flex items-center justify-center bg-white border border-gray-200 text-blue-500 hover:bg-blue-50 hover:border-blue-300 transition-all shadow-sm" 
-                            title="Ver Evidencia">
+                            title="Ver Evidencia Entrega">
                             <i class="fa-regular fa-image"></i>
                         </button>` : ''}
 
-                        ${canReturn ? 
+                        ${canReturn && item.status === 'activo' ? 
                         `<button data-action="return-dotacion-item" 
                             data-lasthistoryid="${item.historyId}" 
                             data-itemname="${item.name}" 
                             data-itemid="${item.itemId}"
                             class="w-7 h-7 rounded flex items-center justify-center bg-white border border-gray-200 text-red-500 hover:bg-red-50 hover:border-red-200 transition-all shadow-sm" 
-                            title="Devolver">
+                            title="Registrar Devolución">
                             <i class="fa-solid fa-arrow-rotate-left"></i>
                         </button>` : ''}
 
@@ -784,7 +738,7 @@ export async function loadDotacionAsignaciones(userId, containerId) {
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center gap-4">
                         <div class="w-10 h-10 rounded-full bg-white text-blue-600 flex items-center justify-center shadow-sm"><i class="fa-solid fa-boxes-packing"></i></div>
-                        <div><p class="text-[10px] font-bold text-blue-400 uppercase">Total Histórico</p><p class="text-xl font-black text-blue-900">${totalItemsDelivered}</p></div>
+                        <div><p class="text-[10px] font-bold text-blue-400 uppercase">Total Histórico</p><p class="text-xl font-black text-blue-900">${totalItemsHistory}</p></div>
                     </div>
                     <div class="bg-green-50 p-4 rounded-xl border border-green-100 flex items-center gap-4">
                         <div class="w-10 h-10 rounded-full bg-white text-green-600 flex items-center justify-center shadow-sm"><i class="fa-solid fa-user-shield"></i></div>
@@ -798,7 +752,7 @@ export async function loadDotacionAsignaciones(userId, containerId) {
 
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     <div class="px-6 py-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                        <h4 class="font-bold text-gray-700 text-xs uppercase tracking-wide">Inventario Activo</h4>
+                        <h4 class="font-bold text-gray-700 text-xs uppercase tracking-wide">Historial de Dotación</h4>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm text-left">
@@ -813,7 +767,7 @@ export async function loadDotacionAsignaciones(userId, containerId) {
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-50">
-                                ${itemsRows || '<tr><td colspan="6" class="text-center py-8 text-gray-400 italic">No hay ítems activos.</td></tr>'}
+                                ${itemsRows || '<tr><td colspan="6" class="text-center py-8 text-gray-400 italic">No hay historial disponible.</td></tr>'}
                             </tbody>
                         </table>
                     </div>
@@ -1438,31 +1392,42 @@ async function handleSaveDotacion(form) {
 
             sendNotificationCallback(assigneeId, 'Dotación', `Recibiste: ${quantity}x ${data.itemName}`, 'dotacion');
 
-        // === CASO 5: DEVOLUCIÓN ===
+// === CASO 5: DEVOLUCIÓN (Blindado) ===
         } else if (type === 'return-dotacion-options') {
             const historyId = form.dataset.id;
             const returnPhotoFile = data.returnPhoto;
+            
+            const targetItemId = data.itemId || data.itemid;
 
-            if (!data.returnType) showError("Selecciona qué hacer con el ítem (Stock o Descarte).");
-            if (!returnPhotoFile || returnPhotoFile.size === 0) showError("La foto de devolución es obligatoria.");
+            if (!targetItemId) showError("Error interno: ID del ítem no encontrado.");
+            if (!data.returnType) showError("Selecciona qué hacer con el ítem.");
+            if (!returnPhotoFile || returnPhotoFile.size === 0) showError("La foto es obligatoria.");
 
             const historyRef = doc(db, "dotacionHistory", historyId);
             const historyDoc = await getDoc(historyRef);
-            if (!historyDoc.exists()) showError("Registro de historial no encontrado.");
+            if (!historyDoc.exists()) showError("Registro no encontrado.");
             
             const historyData = historyDoc.data();
             userIdToRefresh = historyData.userId;
 
+            // --- CORRECCIÓN DE SEGURIDAD PARA itemName ---
+            // Intentamos leer del form, si falla, leemos de la BD, si falla, ponemos texto genérico.
+            const finalItemName = data.itemName || historyData.itemName || 'Ítem de Dotación';
+            // ----------------------------------------------
+
             if(confirmBtn) confirmBtn.textContent = 'Subiendo foto...';
             const resizedBlob = await resizeImage(returnPhotoFile, 800);
-            const photoPath = `dotacion_returns/${data.itemid}/${Date.now()}_${returnPhotoFile.name}`;
+            
+            const photoPath = `dotacion_returns/${targetItemId}/${Date.now()}_${returnPhotoFile.name}`;
             const snap = await uploadBytes(ref(storage, photoPath), resizedBlob);
             const downloadURL = await getDownloadURL(snap.ref);
 
             if (data.returnType === 'descarte') {
-                await logDotacionDescarte(batch, historyRef, data.itemid, data.itemName, currentUser.uid, userIdToRefresh, downloadURL, data.observaciones);
+                // Usamos finalItemName
+                await logDotacionDescarte(batch, historyRef, targetItemId, finalItemName, currentUser.uid, userIdToRefresh, downloadURL, data.observaciones);
             } else if (data.returnType === 'stock') {
-                await logDotacionReturnToStock(batch, historyRef, data.itemid, data.itemName, currentUser.uid, userIdToRefresh, downloadURL, data.observaciones, historyData.talla);
+                // Usamos finalItemName
+                await logDotacionReturnToStock(batch, historyRef, targetItemId, finalItemName, currentUser.uid, userIdToRefresh, downloadURL, data.observaciones, historyData.talla);
             }
         }
 

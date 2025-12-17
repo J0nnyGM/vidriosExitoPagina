@@ -569,9 +569,14 @@ async function loadOperarioDashboard(container, userId) {
                             <i class="fa-solid fa-chevron-right text-xs opacity-50"></i>
                         </button>
 
-                        <button data-action="view-my-loans" class="w-full text-left p-3 bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 font-bold rounded-xl transition-all flex items-center justify-between">
-                            <span class="text-xs">Historial Préstamos</span>
-                            <i class="fa-solid fa-clock-rotate-left text-gray-400"></i>
+                        <button data-action="view-my-payment-history" class="w-full flex items-center gap-3 p-3 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 hover:shadow-md transition-all text-left group">
+                            <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-receipt"></i>
+                            </div>
+                            <div>
+                                <p class="font-bold text-sm text-gray-700 group-hover:text-emerald-700">Mis Pagos</p>
+                                <p class="text-[10px] text-gray-400">Nómina y Préstamos</p>
+                            </div>
                         </button>
                     </div>
                 </div>
@@ -1120,8 +1125,8 @@ async function renderBodegaDashboard(container) {
                     
                     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-6">
                         
-                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between relative overflow-hidden group hover:shadow-md transition-all cursor-pointer" data-action="go-to-proyectos">
-                            <div class="absolute right-0 top-0 p-4 opacity-5 transform group-hover:scale-110 transition-transform"><i class="fa-solid fa-dolly text-8xl text-blue-600"></i></div>
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between relative overflow-hidden group hover:shadow-md transition-all cursor-pointer" 
+                             data-action="go-to-solicitudes"> <div class="absolute right-0 top-0 p-4 opacity-5 transform group-hover:scale-110 transition-transform"><i class="fa-solid fa-dolly text-8xl text-blue-600"></i></div>
                             <div>
                                 <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-blue-600 transition-colors">Por Despachar</p>
                                 <h3 class="text-4xl font-black text-slate-800">${pendingRequests}</h3>
@@ -1133,7 +1138,7 @@ async function renderBodegaDashboard(container) {
                                 <i class="fa-solid fa-clipboard-list"></i>
                             </div>
                         </div>
-
+                        
                         <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-catalog">
                             <div>
                                 <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-amber-600 transition-colors">Stock Crítico</p>
@@ -1231,6 +1236,16 @@ async function renderBodegaDashboard(container) {
                             <button data-action="request-loan" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
                                 <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-gray-500"><i class="fa-solid fa-hand-holding-dollar"></i></div>
                                 <div><p class="font-bold text-sm">Préstamo</p><p class="text-[10px] opacity-75">Personal</p></div>
+                            </button>
+
+                            <button data-action="view-my-payment-history" class="w-full flex items-center gap-3 p-3 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 hover:shadow-md transition-all text-left group">
+                                <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm group-hover:scale-110 transition-transform">
+                                    <i class="fa-solid fa-receipt"></i>
+                                </div>
+                                <div>
+                                    <p class="font-bold text-sm text-gray-700 group-hover:text-emerald-700">Mis Pagos</p>
+                                    <p class="text-[10px] text-gray-400">Nómina y Préstamos</p>
+                                </div>
                             </button>
                         </div>
                     </div>
@@ -1377,7 +1392,7 @@ async function renderSSTDashboard(container) {
 
                     <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-8 items-center">
                         <div class="flex-1 w-full">
-                            <h4 class="text-lg font-bold text-slate-700 mb-2">Estado del Parque de Herramientas</h4>
+                            <h4 class="text-lg font-bold text-slate-700 mb-2">Estado de Herramientas</h4>
                             <p class="text-sm text-slate-500 mb-6">Distribución actual de equipos y maquinaria.</p>
                             
                             <ul class="space-y-3 text-sm">
@@ -1436,6 +1451,17 @@ async function renderSSTDashboard(container) {
                                 <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-gray-500 shadow-sm"><i class="fa-solid fa-hand-holding-dollar"></i></div>
                                 <div><p class="font-bold text-sm">Préstamo</p><p class="text-[10px] opacity-75">Personal</p></div>
                             </button>
+
+                            <button data-action="view-my-payment-history" class="w-full flex items-center gap-3 p-3 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 hover:shadow-md transition-all text-left group">
+                                <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm group-hover:scale-110 transition-transform">
+                                    <i class="fa-solid fa-receipt"></i>
+                                </div>
+                                <div>
+                                    <p class="font-bold text-sm text-gray-700 group-hover:text-emerald-700">Mis Pagos</p>
+                                    <p class="text-[10px] text-gray-400">Nómina y Préstamos</p>
+                                </div>
+                            </button>
+
                         </div>
                     </div>
                 </div>

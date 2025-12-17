@@ -17,6 +17,7 @@ import { initCartera, loadCarteraView } from "./cartera.js";
 import { initSolicitudes, loadSolicitudesView } from './solicitudes.js';
 import { handleReportEntry } from './ingresopersonal.js';
 import { initCotizaciones, loadCotizacionesView } from './cotizaciones.js'; // <--- AÑADIR ESTO
+import { initInformes, loadInformesView } from './informes.js';
 
 // --- CONFIGURACIÓN Y ESTADO ---
 
@@ -72,6 +73,7 @@ let unsubscribePayments = null;
 let activeListeners = [];
 let currentUser = null;
 let currentUserRole = null;
+let isRegistering = false; // <--- AÑADE ESTA VARIABLE NUEVA
 
 let processedPhotoFile = null; // Almacenará el archivo convertido (HEIC) o capturado (Cámara)
 
@@ -471,7 +473,8 @@ function getRoleDefaultPermissions(role) {
         herramienta: isAdmin || isBodega || isSST || isOperario,
         dotacion: isAdmin || isBodega || isSST || isOperario,
         cartera: isAdmin,
-        solicitud: true,
+        cotizaciones: isAdmin,
+        solicitud: isAdmin || isBodega || isSST,
         empleados: isAdmin || isSST || isNomina, // <--- CLAVE: Acceso total a gestión de personal
         proveedores: isAdmin || isBodega || isNomina, // Puede necesitar ver proveedores para pagos
         catalog: isAdmin || isBodega,
@@ -735,6 +738,11 @@ async function checkAllPermissionsOnLogin() {
 // --- AUTENTICACIÓN ---
 
 onAuthStateChanged(auth, async (user) => {
+    if (isRegistering) {
+        console.log("Registro en proceso, onAuthStateChanged en pausa...");
+        return;
+    }
+
     if (user) {
         const userDoc = await getDoc(doc(db, "users", user.uid));
 
@@ -930,12 +938,10 @@ async function handleLogin(e) {
 async function handleRegister(e) {
     e.preventDefault();
 
-    // Referencias
     const errorDiv = document.getElementById('register-error');
     const submitBtn = e.target.querySelector('button[type="submit"]');
     const originalBtnText = submitBtn.innerHTML;
 
-    // Validación Términos
     if (!document.getElementById('accept-terms').checked) {
         errorDiv.textContent = 'Debes aceptar los términos y condiciones.';
         errorDiv.classList.remove('hidden');
@@ -943,7 +949,9 @@ async function handleRegister(e) {
         return;
     }
 
-    // Resetear estado visual
+    // 1. ACTIVAR BANDERA DE REGISTRO
+    isRegistering = true;
+
     errorDiv.classList.add('hidden');
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Creando cuenta...';
@@ -955,7 +963,7 @@ async function handleRegister(e) {
         // Crear usuario en Auth
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
 
-        // Guardar datos en Firestore (TU LÓGICA)
+        // Guardar en Firestore
         await setDoc(doc(db, "users", userCredential.user.uid), {
             firstName: document.getElementById('register-firstName').value,
             lastName: document.getElementById('register-lastName').value,
@@ -963,31 +971,46 @@ async function handleRegister(e) {
             phone: document.getElementById('register-phone').value,
             address: document.getElementById('register-address').value,
             email: email,
-            role: 'operario',    // Por defecto operario
-            status: 'pending',   // Por defecto pendiente
+            role: 'operario',
+            status: 'pending',
             createdAt: new Date()
         });
 
-        // Éxito: Mostrar modal y limpiar
-        openRegisterSuccessModal();
+        // 2. ÉXITO: ABRIR MODAL
+        // Verificamos que la función y el modal existan
+        const successModal = document.getElementById('register-success-modal');
+        if (successModal) {
+            successModal.style.display = 'flex';
+        } else {
+            alert("Cuenta creada exitosamente. Esperando activación.");
+            window.location.reload();
+        }
+
         e.target.reset();
 
     } catch (error) {
-        console.error("Error de registro:", error.code);
+        console.error("Error de registro:", error);
+        // Si falla, apagamos la bandera para permitir el manejo de errores normal
+        isRegistering = false;
 
         errorDiv.classList.remove('hidden');
         errorDiv.className = "text-red-600 text-sm font-medium bg-red-50 p-3 rounded-lg text-center animate-shake";
 
         if (error.code === 'auth/email-already-in-use') {
-            errorDiv.textContent = "Este correo electrónico ya está registrado.";
+            errorDiv.textContent = "Este correo ya está registrado.";
         } else if (error.code === 'auth/weak-password') {
-            errorDiv.textContent = "La contraseña es muy débil (mínimo 6 caracteres).";
+            errorDiv.textContent = "Contraseña muy débil.";
+        } else if (error.code === 'permission-denied') {
+            errorDiv.textContent = "Error de permisos al guardar datos.";
         } else {
-            errorDiv.textContent = "Ocurrió un error al crear la cuenta.";
+            errorDiv.textContent = "Error al crear la cuenta: " + error.message;
         }
     } finally {
         submitBtn.disabled = false;
         submitBtn.innerHTML = originalBtnText;
+        // NOTA: No desactivamos isRegistering aquí en caso de éxito, 
+        // porque queremos que el usuario vea el modal y luego haga clic en "Aceptar" 
+        // que es el que cierra la sesión.
     }
 }
 
@@ -1092,7 +1115,7 @@ function capturePhoto() {
     // Ajustamos el canvas al tamaño del video
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+    canvas.getContext('2d', { willReadFrequently: true }).drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
 
     // Convertimos el canvas a un Blob (archivo)
     canvas.toBlob(async (blob) => {
@@ -1739,6 +1762,7 @@ function validatePoDateRange() {
 /**
  * Abre el detalle de la Orden de Compra con diseño tipo "Invoice/Factura".
  * Incluye sección destacada para facilitar el pago con QR.
+ * CORREGIDO: Ahora busca los nombres de los ítems si no están guardados.
  */
 async function openPurchaseOrderModal(poId) {
     const modal = document.getElementById('po-details-modal');
@@ -1748,7 +1772,6 @@ async function openPurchaseOrderModal(poId) {
     const actionsContainer = document.getElementById('po-details-actions');
     const modalContainer = modal.querySelector('.w-11\\/12');
 
-    // Hacer el modal más ancho para el nuevo diseño
     if (modalContainer) {
         modalContainer.className = "w-11/12 md:max-w-5xl bg-white rounded-xl shadow-2xl transform transition-all relative flex flex-col max-h-[95vh]";
     }
@@ -1773,26 +1796,60 @@ async function openPurchaseOrderModal(poId) {
         const statusColors = {
             recibida: "bg-emerald-100 text-emerald-800 border-emerald-200",
             pendiente: "bg-amber-100 text-amber-800 border-amber-200",
-            rechazada: "bg-rose-100 text-rose-800 border-rose-200"
+            rechazada: "bg-rose-100 text-rose-800 border-rose-200",
+            anulada: "bg-red-100 text-red-800 border-red-200"
         };
         const statusClass = statusColors[po.status] || "bg-gray-100 text-gray-800";
         const creationDate = po.createdAt ? po.createdAt.toDate().toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' }) : '---';
 
-        // Renderizar ítems
-        let itemsHtml = '';
+        // =================================================================
+        // 🔥 CORRECCIÓN: RECUPERAR NOMBRES DE ÍTEMS SI FALTAN
+        // =================================================================
+        let itemsWithNames = [];
         if (po.items && po.items.length > 0) {
-            itemsHtml = po.items.map((item, idx) => `
-                <tr class="border-b border-gray-50 last:border-0">
+            // Usamos Promise.all para cargar nombres en paralelo si es necesario
+            itemsWithNames = await Promise.all(po.items.map(async (item) => {
+                // Si ya tiene nombre, lo usamos
+                if (item.itemName) return item;
+
+                // Si no tiene nombre, lo buscamos en la colección correspondiente
+                let collectionName = 'materialCatalog'; // Por defecto
+                if (item.itemType === 'dotacion') collectionName = 'dotacionCatalog';
+                if (item.itemType === 'herramienta') collectionName = 'tools';
+
+                try {
+                    const itemDoc = await getDoc(doc(db, collectionName, item.materialId));
+                    if (itemDoc.exists()) {
+                        const data = itemDoc.data();
+                        // El campo de nombre varía según la colección
+                        const resolvedName = data.name || data.itemName || 'Sin nombre';
+                        return { ...item, itemName: resolvedName };
+                    }
+                } catch (e) {
+                    console.warn("Error recuperando nombre de ítem:", e);
+                }
+                return { ...item, itemName: 'Ítem desconocido (Eliminado)' };
+            }));
+        }
+        // =================================================================
+
+        // Renderizar ítems con los datos completos
+        let itemsHtml = '';
+        if (itemsWithNames.length > 0) {
+            itemsHtml = itemsWithNames.map((item, idx) => `
+                <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
                     <td class="py-3 pl-4 text-sm text-gray-500 font-mono">${idx + 1}</td>
                     <td class="py-3 text-sm font-medium text-gray-800">
-                        ${item.itemName || 'Ítem'} 
-                        ${item.itemType ? `<span class="text-[10px] text-gray-400 uppercase ml-1 px-1 bg-gray-100 rounded border"> ${item.itemType} </span>` : ''}
+                        ${item.itemName} 
+                        ${item.itemType ? `<span class="text-[9px] text-gray-400 uppercase ml-2 px-1.5 py-0.5 bg-gray-100 rounded border border-gray-200 tracking-wider"> ${item.itemType} </span>` : ''}
                     </td>
                     <td class="py-3 text-center text-sm text-gray-600 font-bold">${item.quantity}</td>
                     <td class="py-3 text-right text-sm text-gray-600 font-mono">${currencyFormatter.format(item.unitCost)}</td>
                     <td class="py-3 pr-4 text-right text-sm font-bold text-gray-900 font-mono">${currencyFormatter.format(item.quantity * item.unitCost)}</td>
                 </tr>
             `).join('');
+        } else {
+            itemsHtml = '<tr><td colspan="5" class="text-center py-4 text-gray-400">Sin ítems registrados.</td></tr>';
         }
 
         // --- HTML NUEVO DISEÑO ---
@@ -3248,10 +3305,6 @@ let unsubscribeCortes = null;
 let currentCorteType = 'nosotros'; // 'nosotros' o 'obra'
 
 /**
- * Carga y muestra la lista de cortes de obra para un proyecto.
- */
-
-/**
  * Carga y muestra la lista de cortes de obra para un proyecto con un diseño responsive mejorado.
  */
 function loadCortes(project) {
@@ -3341,8 +3394,6 @@ async function getCompanyData() {
         logoURL: null
     };
 }
-
-
 
 /**
  * Prepara la vista de selección de ítems para un nuevo corte.
@@ -3461,9 +3512,6 @@ async function setupCorteSelection(type) {
     }
 }
 
-/**
- * Genera el corte preliminar a partir de la selección del usuario.
- */
 async function generateCorte() {
     const selectedSubItemsCheckboxes = document.querySelectorAll('.corte-subitem-checkbox:checked');
     if (selectedSubItemsCheckboxes.length === 0) {
@@ -3481,57 +3529,82 @@ async function generateCorte() {
         async () => {
             loadingOverlay.classList.remove('hidden');
             try {
-                // --- 1. Calcular valor bruto del corte (con lógica de medida real) ---
-                let valorBrutoCorte = 0;
+                // --- 1. Obtener datos necesarios ---
                 const subItemIds = Array.from(selectedSubItemsCheckboxes).map(cb => cb.dataset.subitemId);
-
+                
+                // Traemos todos los ítems y subítems para cálculos precisos
                 const allItemsQuery = query(collection(db, "projects", currentProject.id, "items"));
                 const allSubItemsQuery = query(collectionGroup(db, "subItems"), where("projectId", "==", currentProject.id));
                 const [itemsSnapshot, subItemsSnapshot] = await Promise.all([getDocs(allItemsQuery), getDocs(allSubItemsQuery)]);
-                const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, d.data()]));
+                
+                const itemsMap = new Map(itemsSnapshot.docs.map(d => [d.id, {id: d.id, ...d.data()}]));
                 const subItemsMap = new Map(subItemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+
+                // --- 2. Calcular Valor Bruto del Corte (Incluyendo Impuestos proporcionalmente) ---
+                let valorBrutoCorte = 0;
 
                 for (const subItemId of subItemIds) {
                     const subItem = subItemsMap.get(subItemId);
                     const parentItem = itemsMap.get(subItem.itemId);
 
                     if (parentItem) {
-                        const valorUnitarioContratado = calculateItemTotal(parentItem) / parentItem.quantity;
-                        let valorSubItemParaCorte = valorUnitarioContratado;
+                        // A. Calculamos el valor TOTAL UNITARIO del ítem padre (Con impuestos)
+                        const totalItemValue = calculateItemTotal(parentItem); // Usamos la función auxiliar
+                        const valorUnitarioFull = totalItemValue / parentItem.quantity;
 
+                        let valorSubItemParaCorte = valorUnitarioFull;
+
+                        // B. Ajuste por Medida Real si aplica
                         if (usarMedidaReal && subItem.realWidth > 0 && subItem.realHeight > 0) {
                             const areaContratada = parentItem.width * parentItem.height;
                             const areaReal = subItem.realWidth * subItem.realHeight;
                             if (areaContratada > 0) {
-                                valorSubItemParaCorte = (valorUnitarioContratado / areaContratada) * areaReal;
+                                // Regla de tres: (Valor / AreaContratada) * AreaReal
+                                valorSubItemParaCorte = (valorUnitarioFull / areaContratada) * areaReal;
                             }
                         }
                         valorBrutoCorte += valorSubItemParaCorte;
                     }
                 }
 
-                // --- 2. Calcular amortización y descuentos ---
+                // --- 3. Lógica de Amortización CORREGIDA ---
                 let valorAmortizacion = 0;
-                const anticipoTotal = currentProject.advance || 0;
+                const anticipoTotal = parseFloat(currentProject.advance) || 0;
+                
                 if (amortizarAnticipo && anticipoTotal > 0) {
+                    const contractedValue = await calculateProjectContractedValue(currentProject.id);
+                    
+                    // CORRECCIÓN: Factor de amortización fijo
+                    // Si el contrato vale 100 y dieron 30 de anticipo, el factor es 0.3
+                    // De cada peso que cobro, 0.3 se van a pagar el anticipo.
+                    let factorAmortizacion = 0;
+                    if(contractedValue > 0) {
+                        factorAmortizacion = anticipoTotal / contractedValue;
+                    }
+
+                    // Calculamos cuánto descontar en ESTE corte
+                    valorAmortizacion = valorBrutoCorte * factorAmortizacion;
+
+                    // Validación: No amortizar más de lo que falta por pagar del anticipo
                     const cortesQuery = query(collection(db, "projects", currentProject.id, "cortes"), where("status", "==", "aprobado"));
                     const cortesSnapshot = await getDocs(cortesQuery);
                     let totalAmortizadoPrevio = 0;
                     cortesSnapshot.forEach(doc => { totalAmortizadoPrevio += doc.data().amortizacion || 0; });
-                    const anticipoRestante = anticipoTotal - totalAmortizadoPrevio;
+                    
+                    const saldoAnticipoPendiente = anticipoTotal - totalAmortizadoPrevio;
 
+                    // Si es corte final, amortizamos todo lo que falte sí o sí
                     if (esCorteFinal) {
-                        valorAmortizacion = anticipoRestante;
+                        valorAmortizacion = saldoAnticipoPendiente; 
                     } else {
-                        const contractedValue = await calculateProjectContractedValue(currentProject.id);
-                        if (contractedValue > 0) {
-                            const porcentajeCorte = (valorBrutoCorte / contractedValue) * 100;
-                            valorAmortizacion = (anticipoTotal * porcentajeCorte) / 100;
+                        // Si el cálculo da más de lo que debo, ajusto al saldo
+                        if (valorAmortizacion > saldoAnticipoPendiente) {
+                            valorAmortizacion = saldoAnticipoPendiente;
                         }
                     }
-                    valorAmortizacion = Math.min(valorAmortizacion, anticipoRestante);
                 }
 
+                // --- 4. Otros Descuentos ---
                 let totalOtrosDescuentos = 0;
                 const otrosDescuentos = [];
                 if (agregarOtrosDescuentos) {
@@ -3546,9 +3619,10 @@ async function generateCorte() {
                     });
                 }
 
+                // --- 5. Neto a Pagar ---
                 const valorNeto = valorBrutoCorte - valorAmortizacion - totalOtrosDescuentos;
 
-                // --- 3. Guardar el nuevo corte preliminar ---
+                // --- 6. Guardar ---
                 const cortesQueryTotal = query(collection(db, "projects", currentProject.id, "cortes"));
                 const cortesSnapshotTotal = await getDocs(cortesQueryTotal);
                 const newCorteNumber = cortesSnapshotTotal.size + 1;
@@ -3557,12 +3631,12 @@ async function generateCorte() {
                     corteNumber: newCorteNumber,
                     createdAt: new Date(),
                     subItemIds: subItemIds,
-                    totalValue: valorBrutoCorte,
-                    amortizacion: valorAmortizacion,
+                    totalValue: Math.round(valorBrutoCorte), // Valor Ejecutado Bruto
+                    amortizacion: Math.round(valorAmortizacion),
                     otrosDescuentos: otrosDescuentos,
-                    netoAPagar: valorNeto,
+                    netoAPagar: Math.round(valorNeto),
                     isFinal: esCorteFinal,
-                    usadoMedidaReal: usarMedidaReal, // <-- AÑADE ESTA LÍNEA
+                    usadoMedidaReal: usarMedidaReal,
                     projectId: currentProject.id,
                     status: 'preliminar',
                     type: currentCorteType
@@ -3573,7 +3647,6 @@ async function generateCorte() {
                 alert(`¡Corte preliminar #${newCorteNumber} creado con éxito!`);
                 closeCorteSelectionView();
 
-
             } catch (error) {
                 console.error("Error al generar el corte:", error);
                 alert("Ocurrió un error al generar el corte.");
@@ -3583,8 +3656,6 @@ async function generateCorte() {
         }
     );
 }
-
-
 
 /**
  * Aprueba un corte, cambiando su estado a 'aprobado'.
@@ -3867,262 +3938,291 @@ function closeCorteSelectionView() {
     });
 }
 
-// ====================================================================
-//      FIN: LÓGICA REPLANTEADA
-// ====================================================================
-
-// =================== INICIA CÓDIGO AÑADIDO ===================
-
 /**
- * Genera una memoria de corte detallada con formato profesional, cabeceras y totales de columna.
- * @param {object} proyecto - El objeto con los datos del proyecto actual.
- * @param {object} corte - El objeto con los datos del corte a exportar.
- * @param {string} exportType - El tipo de memoria: 'completo', 'suministro', o 'instalacion'.
- */
-/**
- * Genera una memoria de corte detallada (PDF) corrigiendo la ruta de los datos.
+ * Genera una memoria de corte con alineación perfecta:
+ * 1. Totales de la tabla principal alineados por columna.
+ * 2. Tabla de Resumen Financiero alineada a la derecha.
  */
 async function exportCorteToPDF(proyecto, corte, exportType) {
-    loadingOverlay.classList.remove('hidden');
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'landscape' });
-
-    // Formateador para enteros (sin decimales)
-    const currencyFormatter = new Intl.NumberFormat('es-CO', {
-        style: 'currency',
-        currency: 'COP',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-    });
-
-    const calculateTaxDetails = (details, baseValue) => {
-        const result = { admin: 0, imprev: 0, utilidad: 0, ivaSobreUtilidad: 0, iva: 0, aiuTotal: 0 };
-        if (!details || !details.unitPrice || baseValue <= 0) return result;
-        if (details.taxType === 'aiu') {
-            result.admin = baseValue * (details.aiuA / 100 || 0);
-            result.imprev = baseValue * (details.aiuI / 100 || 0);
-            result.utilidad = baseValue * (details.aiuU / 100 || 0);
-            result.ivaSobreUtilidad = result.utilidad * 0.19;
-            result.aiuTotal = result.admin + result.imprev + result.utilidad + result.ivaSobreUtilidad;
-        } else if (details.taxType === 'iva') {
-            result.iva = baseValue * 0.19;
-        }
-        return result;
-    };
+    // 1. Mostrar Loading
+    const loadingOverlay = document.getElementById('loading-overlay'); 
+    if (loadingOverlay) loadingOverlay.classList.remove('hidden');
 
     try {
-        // --- CORRECCIÓN PRINCIPAL AQUÍ ---
-        // 1. Consultamos la subcolección 'items' DENTRO del proyecto
-        // 2. Usamos 'collectionGroup' para traer todos los 'subItems' de este proyecto
-        const [itemsSnapshot, subItemsSnapshot, cortesAnterioresSnapshot] = await Promise.all([
-            getDocs(query(collection(db, "projects", proyecto.id, "items"))), // <-- Ruta corregida
-            getDocs(query(collectionGroup(db, "subItems"), where("projectId", "==", proyecto.id))), // <-- Ruta corregida
+        const { jsPDF } = window.jspdf;
+        const pdfDoc = new jsPDF({ orientation: 'landscape', format: 'letter' });
+
+        const currencyFormatter = new Intl.NumberFormat('es-CO', {
+            style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0
+        });
+
+        // --------------------------------------------------------------------------------
+        // 1. FUNCIONES INTERNAS Y CARGA DE DATOS
+        // --------------------------------------------------------------------------------
+        const calculateRowTax = (details, baseValue) => {
+            const res = { admin: 0, imprev: 0, util: 0, ivaUtil: 0, iva: 0, totalTax: 0 };
+            if (!details || baseValue <= 0) return res;
+            if (details.taxType === 'aiu') {
+                res.admin = baseValue * ((details.aiuA || 0) / 100);
+                res.imprev = baseValue * ((details.aiuI || 0) / 100);
+                res.util = baseValue * ((details.aiuU || 0) / 100);
+                res.ivaUtil = res.util * 0.19;
+                res.totalTax = res.admin + res.imprev + res.util + res.ivaUtil;
+            } else if (details.taxType === 'iva') {
+                res.iva = baseValue * 0.19;
+                res.totalTax = res.iva;
+            }
+            return res;
+        };
+
+        const [configSnap, itemsSnap, subItemsSnap, prevCortesSnap] = await Promise.all([
+            getDoc(doc(db, "system", "generalConfig")), 
+            getDocs(query(collection(db, "projects", proyecto.id, "items"))),
+            getDocs(query(collectionGroup(db, "subItems"), where("projectId", "==", proyecto.id))),
             getDocs(query(collection(db, "projects", proyecto.id, "cortes"), where("status", "==", "aprobado"), where("corteNumber", "<", corte.corteNumber)))
         ]);
 
-        const allItems = new Map(itemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
-        const allSubItems = new Map(subItemsSnapshot.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+        let empresaInfo = { nombre: "VIDRIOS Y ALUMINIOS EXITO", nit: "" };
+        if (configSnap.exists()) {
+            const data = configSnap.data();
+            if (data.empresa) {
+                empresaInfo.nombre = data.empresa.nombre || empresaInfo.nombre;
+                empresaInfo.nit = data.empresa.nit || "";
+            }
+        }
 
-        const subItemsEjecutadosAntes = new Set();
-        cortesAnterioresSnapshot.forEach(doc => {
-            const d = doc.data();
-            if (d.subItemIds) d.subItemIds.forEach(id => subItemsEjecutadosAntes.add(id));
+        const allItems = new Map(itemsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+        const allSubItems = subItemsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const subItemsPagadosAntesIds = new Set();
+        prevCortesSnap.forEach(c => {
+            const d = c.data();
+            if (d.subItemIds) d.subItemIds.forEach(id => subItemsPagadosAntesIds.add(id));
+        });
+        const subItemsEsteCorteIds = new Set(corte.subItemIds || []);
+
+        const body = [];
+        let sumTotalContratadoBase = 0; let sumTotalEjecutadoAntesBase = 0;
+        let sumTotalEjecutadoCorteBase = 0; let sumTotalSaldoBase = 0;
+        let financialBase = 0; let financialIva = 0;
+        let financialAiu = { admin: 0, imprev: 0, util: 0, ivaUtil: 0 };
+
+        allItems.forEach(item => {
+            const misSubItems = allSubItems.filter(si => si.itemId === item.id);
+            const cantEnEsteCorte = misSubItems.filter(si => subItemsEsteCorteIds.has(si.id));
+            const cantAntes = misSubItems.filter(si => subItemsPagadosAntesIds.has(si.id)).length;
+            const cantAhora = cantEnEsteCorte.length;
+            const cantAcumulada = cantAntes + cantAhora;
+            const saldoCant = item.quantity - cantAcumulada;
+
+            if (cantAcumulada === 0 && saldoCant === 0) return;
+
+            let details = null;
+            if (exportType === 'suministro') details = item.supplyDetails;
+            else if (exportType === 'instalacion') details = item.installationDetails;
+            else details = item.includedDetails || item.includedDetails; 
+
+            if (!details && proyecto.pricingModel === 'separado' && exportType === 'completo') {
+                details = { unitPrice: (item.supplyDetails?.unitPrice || 0) + (item.installationDetails?.unitPrice || 0), taxType: 'mix' };
+            }
+
+            const baseUnitario = details ? details.unitPrice : 0;
+            const valContratadoBase = baseUnitario * item.quantity;
+            const valAntesBase = baseUnitario * cantAntes;
+            const valSaldoBase = baseUnitario * saldoCant;
+            let valBaseCorteItem = 0;
+
+            cantEnEsteCorte.forEach(subItem => {
+                let baseRealSubItem = baseUnitario;
+                if (corte.usadoMedidaReal && subItem.realWidth > 0 && subItem.realHeight > 0) {
+                    const areaContrato = item.width * item.height;
+                    const areaReal = subItem.realWidth * subItem.realHeight;
+                    if (areaContrato > 0) {
+                        baseRealSubItem = (baseUnitario / areaContrato) * areaReal;
+                    }
+                }
+                valBaseCorteItem += baseRealSubItem;
+                const t = calculateRowTax(details, baseRealSubItem);
+                financialBase += baseRealSubItem;
+                if (details?.taxType === 'iva') financialIva += t.iva;
+                if (details?.taxType === 'aiu') {
+                    financialAiu.admin += t.admin; financialAiu.imprev += t.imprev; financialAiu.util += t.util; financialAiu.ivaUtil += t.ivaUtil;
+                }
+            });
+
+            sumTotalContratadoBase += valContratadoBase;
+            sumTotalEjecutadoAntesBase += valAntesBase;
+            sumTotalEjecutadoCorteBase += valBaseCorteItem; 
+            sumTotalSaldoBase += valSaldoBase;
+
+            const descriptionText = (item.description || item.name).substring(0, 200);
+            
+            body.push([
+                item.name, descriptionText, 
+                item.quantity, currencyFormatter.format(baseUnitario), currencyFormatter.format(valContratadoBase),
+                cantAhora, currencyFormatter.format(valBaseCorteItem),
+                cantAcumulada, currencyFormatter.format(valAntesBase + valBaseCorteItem),
+                saldoCant, currencyFormatter.format(valSaldoBase)
+            ]);
         });
 
-        // --- Cabecera del PDF ---
-        // Intentamos cargar datos de la empresa si existen
-        let empresaInfo = { nombre: "VIDRIOS Y ALUMINIOS EXITO", nit: "" };
-        try {
-            // Si tienes la función getCompanyData disponible, úsala aquí
-            // const data = await getCompanyData(); empresaInfo = data;
-        } catch (e) { }
+        // --------------------------------------------------------------------------------
+        // 4. DISEÑO PDF
+        // --------------------------------------------------------------------------------
+        
+        const pageWidth = pdfDoc.internal.pageSize.getWidth(); 
+        const pageMargin = 14; 
 
         let reportTitle = `ACTA DE CORTE DE OBRA`;
         if (exportType === 'suministro') reportTitle = `ACTA DE CORTE DE SUMINISTRO`;
         if (exportType === 'instalacion') reportTitle = `ACTA DE CORTE DE INSTALACIÓN`;
 
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "bold");
-        doc.text(`CONTRATISTA:`, 14, 15); doc.text(`CONTRATANTE:`, 14, 20); doc.text(`PROYECTO:`, 14, 25);
-        doc.setFont("helvetica", "normal");
-        doc.text(empresaInfo.nombre, 50, 15);
-        doc.text(proyecto.builderName || 'No especificado', 50, 20);
-        doc.text(proyecto.name, 50, 25);
+        pdfDoc.setFontSize(14); pdfDoc.setFont("helvetica", "bold");
+        pdfDoc.text(`${reportTitle} NO. ${corte.corteNumber}`, pageWidth / 2, 15, { align: 'center' });
+        
+        pdfDoc.setFontSize(10); 
+        
+        pdfDoc.setFont("helvetica", "bold"); pdfDoc.text(`CONTRATISTA:`, pageMargin, 25);
+        pdfDoc.setFont("helvetica", "normal"); pdfDoc.text(empresaInfo.nombre, pageMargin + 30, 25);
+        
+        pdfDoc.setFont("helvetica", "bold"); pdfDoc.text(`CONTRATANTE:`, pageMargin, 30);
+        const contratante = proyecto.clientName || proyecto.builderName || 'General';
+        pdfDoc.setFont("helvetica", "normal"); pdfDoc.text(contratante, pageMargin + 30, 30);
 
-        doc.setFont("helvetica", "bold");
-        doc.text(`No Acta:`, 230, 15); doc.text(`FECHA:`, 230, 20);
-        doc.setFont("helvetica", "normal");
-        doc.text(`${corte.corteNumber}`, 250, 15);
-        doc.text(new Date(corte.createdAt.seconds * 1000).toLocaleDateString('es-CO'), 250, 20);
+        pdfDoc.setFont("helvetica", "bold"); pdfDoc.text(`PROYECTO:`, pageMargin, 35);
+        pdfDoc.setFont("helvetica", "normal"); pdfDoc.text(proyecto.name, pageMargin + 30, 35);
 
-        doc.setFontSize(14);
-        doc.setFont("helvetica", "bold");
-        doc.text(`${reportTitle} - ${proyecto.name}`, doc.internal.pageSize.getWidth() / 2, 35, { align: 'center' });
+        const dateText = new Date().toLocaleDateString('es-CO');
+        pdfDoc.setFont("helvetica", "bold"); pdfDoc.text(`FECHA:`, pageWidth - pageMargin - 30, 25);
+        pdfDoc.setFont("helvetica", "normal"); pdfDoc.text(dateText, pageWidth - pageMargin, 25, { align: 'right' });
 
-        const body = [];
-        const subItemsEnCorteSet = new Set(corte.subItemIds || []);
-        let totalValorContratado = 0, totalValorEjecutadoAcumulado = 0, totalValorEjecutadoCorte = 0, totalValorSaldo = 0;
+        const mainHeadStyles = { fontStyle: 'bold', halign: 'center', valign: 'middle', textColor: 255, lineWidth: 0.1, lineColor: [200, 200, 200] };
+        const subHeadStyles = { fontStyle: 'bold', halign: 'center', valign: 'middle', fillColor: [255, 255, 255], textColor: 0, lineWidth: 0.1, lineColor: [200, 200, 200] };
+        
+        // Estilo para los valores del pie de página (Negra, Negrita, Fondo Gris)
+        const footStyles = { halign: 'center', fontStyle: 'bold', fillColor: [240, 240, 240], textColor: 0, lineWidth: 0.1, lineColor: [200, 200, 200] };
 
-        // Variables para resumen financiero
-        let subTotalCorteSinImpuestos = 0;
-        let aiuDetailsCorte = { admin: 0, imprev: 0, utilidad: 0, ivaSobreUtilidad: 0, aiuA: 0, aiuI: 0, aiuU: 0 };
-        let totalIvaCorte = 0;
-
-        // Procesamiento de datos
-        allItems.forEach(item => {
-            // Filtramos subItems que pertenecen a este item (usando el mapa global que cargamos correctamente arriba)
-            const subItemsDeEsteItem = Array.from(allSubItems.values()).filter(si => si.itemId === item.id);
-            const subItemsEnEsteCorte = subItemsDeEsteItem.filter(si => subItemsEnCorteSet.has(si.id));
-            const ejecutadosEnEsteCorte = subItemsEnEsteCorte.length;
-
-            // Solo mostramos ítems que tengan movimiento o saldo, o sean parte del contrato
-            if (ejecutadosEnEsteCorte === 0 && subItemsDeEsteItem.length === 0 && item.quantity === 0) return;
-
-            const ejecutadosAntes = subItemsDeEsteItem.filter(si => subItemsEjecutadosAntes.has(si.id)).length;
-            const ejecutadoAcumulado = ejecutadosAntes + ejecutadosEnEsteCorte;
-            const saldo = item.quantity - ejecutadoAcumulado;
-
-            let valorUnitarioSinImpuestos = 0, valorUnitarioTotalConImpuestos = 0, detallesDePrecio = null;
-
-            if (exportType === 'completo') { detallesDePrecio = item.includedDetails; }
-            else if (exportType === 'suministro') { detallesDePrecio = item.supplyDetails; }
-            else if (exportType === 'instalacion') { detallesDePrecio = item.installationDetails; }
-
-            // Fallback si no hay detalles específicos pero es modelo incluido
-            if (!detallesDePrecio && proyecto.pricingModel === 'incluido') {
-                detallesDePrecio = item.includedDetails;
-            }
-
-            if (detallesDePrecio) {
-                valorUnitarioSinImpuestos = detallesDePrecio.unitPrice || 0;
-                const tax = calculateTaxDetails(detallesDePrecio, valorUnitarioSinImpuestos);
-                valorUnitarioTotalConImpuestos = valorUnitarioSinImpuestos + tax.iva + tax.aiuTotal;
-            }
-
-            let valorTotalEjecutadoCorteItem = 0;
-
-            if (ejecutadosEnEsteCorte > 0) {
-                subItemsEnEsteCorte.forEach(subItem => {
-                    let valorSubItemSinImpuestos = valorUnitarioSinImpuestos;
-
-                    if (corte.usadoMedidaReal && subItem.realWidth > 0 && subItem.realHeight > 0) {
-                        const areaContratada = item.width * item.height;
-                        const areaReal = subItem.realWidth * subItem.realHeight;
-                        if (areaContratada > 0) {
-                            valorSubItemSinImpuestos = (valorUnitarioSinImpuestos / areaContratada) * areaReal;
-                        }
-                    }
-
-                    subTotalCorteSinImpuestos += valorSubItemSinImpuestos;
-                    const taxSubItem = calculateTaxDetails(detallesDePrecio, valorSubItemSinImpuestos);
-                    totalIvaCorte += taxSubItem.iva;
-                    aiuDetailsCorte.admin += taxSubItem.admin;
-                    aiuDetailsCorte.imprev += taxSubItem.imprev;
-                    aiuDetailsCorte.utilidad += taxSubItem.utilidad;
-                    aiuDetailsCorte.ivaSobreUtilidad += taxSubItem.ivaSobreUtilidad;
-
-                    valorTotalEjecutadoCorteItem += valorSubItemSinImpuestos + taxSubItem.iva + taxSubItem.aiuTotal;
-                });
-
-                // Guardar porcentajes para el resumen final (tomamos del último ítem procesado)
-                if (detallesDePrecio?.taxType === 'aiu') {
-                    aiuDetailsCorte.aiuA = detallesDePrecio.aiuA || 0;
-                    aiuDetailsCorte.aiuI = detallesDePrecio.aiuI || 0;
-                    aiuDetailsCorte.aiuU = detallesDePrecio.aiuU || 0;
-                }
-            }
-
-            const valorTotalContratadoItem = valorUnitarioTotalConImpuestos * item.quantity;
-            const valorTotalEjecutadoAcumuladoItem = valorUnitarioTotalConImpuestos * ejecutadoAcumulado;
-            const valorTotalSaldoItem = valorUnitarioTotalConImpuestos * saldo;
-
-            totalValorContratado += valorTotalContratadoItem;
-            totalValorEjecutadoAcumulado += valorTotalEjecutadoAcumuladoItem;
-            totalValorEjecutadoCorte += valorTotalEjecutadoCorteItem;
-            totalValorSaldo += valorTotalSaldoItem;
-
-            const descriptionText = (item.description || item.name).substring(0, 80);
-
-            body.push([
-                item.name, descriptionText, item.width, item.height,
-                item.quantity, currencyFormatter.format(valorUnitarioTotalConImpuestos), currencyFormatter.format(valorTotalContratadoItem),
-                ejecutadosEnEsteCorte, currencyFormatter.format(valorTotalEjecutadoCorteItem),
-                ejecutadoAcumulado, currencyFormatter.format(valorTotalEjecutadoAcumuladoItem),
-                saldo, currencyFormatter.format(valorTotalSaldoItem)
-            ]);
-        });
-
-        const headStyles = { fontStyle: 'bold', halign: 'center', valign: 'middle', fillColor: [52, 73, 94], textColor: 255 };
-        const subheadStyles = { fontStyle: 'bold', halign: 'center', valign: 'middle', fillColor: [236, 240, 241], textColor: 0 };
-
-        doc.autoTable({
+        pdfDoc.autoTable({
             startY: 45,
             head: [
-                [{ content: 'CONTRATADO', colSpan: 7, styles: headStyles }, { content: 'EJECUTADO CORTE ACTUAL', colSpan: 2, styles: { ...headStyles, fillColor: [22, 160, 133] } }, { content: 'EJECUTADO ACUMULADO', colSpan: 2, styles: { ...headStyles, fillColor: [41, 128, 185] } }, { content: 'SALDO', colSpan: 2, styles: { ...headStyles, fillColor: [192, 57, 43] } }],
-                [{ content: 'Item', styles: subheadStyles }, { content: 'Descripción', styles: subheadStyles }, { content: 'Ancho', styles: subheadStyles }, { content: 'Alto', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'V. Unit', styles: subheadStyles }, { content: 'V. Total', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles }, { content: 'Cant.', styles: subheadStyles }, { content: 'Valor', styles: subheadStyles }]
+                [
+                    { content: 'DESCRIPCIÓN', colSpan: 2, styles: { ...mainHeadStyles, fillColor: [41, 128, 185] } },
+                    { content: 'CONTRATO (BASE)', colSpan: 3, styles: { ...mainHeadStyles, fillColor: [52, 73, 94] } },
+                    { content: 'ESTE CORTE (BASE)', colSpan: 2, styles: { ...mainHeadStyles, fillColor: [39, 174, 96] } },
+                    { content: 'ACUMULADO (BASE)', colSpan: 2, styles: { ...mainHeadStyles, fillColor: [211, 84, 0] } },
+                    { content: 'SALDO (BASE)', colSpan: 2, styles: { ...mainHeadStyles, fillColor: [192, 57, 43] } }
+                ],
+                ['Ítem', 'Detalle', 'Cant', 'Unitario', 'Total', 'Cant', 'Valor Total', 'Cant', 'Valor Total', 'Cant', 'Valor Total']
             ],
             body: body,
-            foot: [
-                [{ content: 'TOTALES', colSpan: 6, styles: { halign: 'right', fontStyle: 'bold' } }, { content: currencyFormatter.format(totalValorContratado), styles: { fontStyle: 'bold', halign: 'center' } }, '', { content: currencyFormatter.format(totalValorEjecutadoCorte), styles: { fontStyle: 'bold', halign: 'center' } }, '', { content: currencyFormatter.format(totalValorEjecutadoAcumulado), styles: { fontStyle: 'bold', halign: 'center' } }, '', { content: currencyFormatter.format(totalValorSaldo), styles: { fontStyle: 'bold', halign: 'center' } }]
-            ],
-            theme: 'grid',
-            styles: { fontSize: 7, cellPadding: 1, halign: 'center', valign: 'middle' },
-            columnStyles: { 1: { cellWidth: 40, halign: 'left' } }, // Descripción más ancha
-            footStyles: { fillColor: [236, 240, 241], textColor: 0 }
+            // ALINEACIÓN EXACTA DE TOTALES POR COLUMNA
+            foot: [[
+                // Col 0-3: Texto "TOTALES (BASE):"
+                { content: 'TOTALES (BASE):', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', textColor: 0, fillColor: [240, 240, 240] } }, 
+                
+                // Col 4: Total Contrato
+                { content: currencyFormatter.format(sumTotalContratadoBase), styles: footStyles }, 
+                
+                // Col 5: Vacío
+                { content: '', styles: { fillColor: [240, 240, 240] } }, 
+                
+                // Col 6: Total Este Corte
+                { content: currencyFormatter.format(sumTotalEjecutadoCorteBase), styles: footStyles }, 
+                
+                // Col 7: Vacío
+                { content: '', styles: { fillColor: [240, 240, 240] } }, 
+                
+                // Col 8: Total Acumulado
+                { content: currencyFormatter.format(sumTotalEjecutadoAntesBase + sumTotalEjecutadoCorteBase), styles: footStyles }, 
+                
+                // Col 9: Vacío
+                { content: '', styles: { fillColor: [240, 240, 240] } }, 
+                
+                // Col 10: Total Saldo
+                { content: currencyFormatter.format(sumTotalSaldoBase), styles: footStyles }
+            ]],
+            theme: 'grid', 
+            styles: { fontSize: 8, cellPadding: 1.5, halign: 'center', valign: 'middle', lineWidth: 0.1, lineColor: [200, 200, 200], overflow: 'linebreak' },
+            headStyles: subHeadStyles, 
+            columnStyles: { 1: { cellWidth: 50, halign: 'left' } },
+            margin: { left: pageMargin, right: pageMargin }
         });
 
-        // --- Tabla de Resumen Financiero ---
-        let finalY = doc.autoTable.previous.finalY;
-        if (finalY > 160) { doc.addPage(); finalY = 20; } else { finalY += 10; }
+        // --------------------------------------------------------------------------------
+        // 5. TABLA RESUMEN DE IMPUESTOS (Alineada a la derecha)
+        // --------------------------------------------------------------------------------
+        
+        let finalY = pdfDoc.lastAutoTable.finalY + 2; 
+        if (finalY > 160) { pdfDoc.addPage(); finalY = 20; }
 
-        const summaryBody = [];
-        summaryBody.push(['SUB TOTAL (Valor Ejecutado en Corte)', currencyFormatter.format(subTotalCorteSinImpuestos)]);
-        if (totalIvaCorte > 0) summaryBody.push(['IVA (19%)', currencyFormatter.format(totalIvaCorte)]);
+        const summaryData = [];
+        summaryData.push(['SUBTOTAL (Base sin impuestos)', currencyFormatter.format(financialBase)]);
 
-        if (aiuDetailsCorte.admin > 0 || aiuDetailsCorte.imprev > 0) {
-            summaryBody.push([`Administración (${aiuDetailsCorte.aiuA}%)`, currencyFormatter.format(aiuDetailsCorte.admin)]);
-            summaryBody.push([`Imprevistos (${aiuDetailsCorte.aiuI}%)`, currencyFormatter.format(aiuDetailsCorte.imprev)]);
-            summaryBody.push([`Utilidad (${aiuDetailsCorte.aiuU}%)`, currencyFormatter.format(aiuDetailsCorte.utilidad)]);
-            if (aiuDetailsCorte.ivaSobreUtilidad > 0) {
-                summaryBody.push(["IVA (19%) s/Utilidad", currencyFormatter.format(aiuDetailsCorte.ivaSobreUtilidad)]);
-            }
-        }
-        summaryBody.push([{ content: "TOTAL BRUTO CORTE", styles: { fontStyle: 'bold' } }, { content: currencyFormatter.format(totalValorEjecutadoCorte), styles: { fontStyle: 'bold' } }]);
+        if (financialAiu.admin > 0) summaryData.push(['Administración', currencyFormatter.format(financialAiu.admin)]);
+        if (financialAiu.imprev > 0) summaryData.push(['Imprevistos', currencyFormatter.format(financialAiu.imprev)]);
+        if (financialAiu.util > 0) summaryData.push(['Utilidad', currencyFormatter.format(financialAiu.util)]);
+        if (financialAiu.ivaUtil > 0) summaryData.push(['IVA sobre Utilidad', currencyFormatter.format(financialAiu.ivaUtil)]);
+        if (financialIva > 0) summaryData.push(['IVA (19%)', currencyFormatter.format(financialIva)]);
 
-        let totalAPagar = totalValorEjecutadoCorte;
+        const totalBrutoCalculado = financialBase + financialIva + financialAiu.admin + financialAiu.imprev + financialAiu.util + financialAiu.ivaUtil;
+        summaryData.push([{ content: "TOTAL BRUTO ACTA", styles: { fontStyle: 'bold', fillColor: [250, 250, 250] } }, { content: currencyFormatter.format(totalBrutoCalculado), styles: { fontStyle: 'bold', fillColor: [250, 250, 250] } }]);
+
+        let totalAPagar = totalBrutoCalculado;
         if (corte.amortizacion > 0) {
-            summaryBody.push(["Amortización Anticipo", `(${currencyFormatter.format(corte.amortizacion)})`]);
+            summaryData.push(["Amortización Anticipo", `(${currencyFormatter.format(corte.amortizacion)})`]);
             totalAPagar -= corte.amortizacion;
         }
-        if (corte.otrosDescuentos && corte.otrosDescuentos.length > 0) {
+        if (corte.otrosDescuentos) {
             corte.otrosDescuentos.forEach(d => {
-                summaryBody.push([`Descuento (${d.concept})`, `(${currencyFormatter.format(d.value)})`]);
+                summaryData.push([`Desc. ${d.concept}`, `(${currencyFormatter.format(d.value)})`]);
                 totalAPagar -= d.value;
             });
         }
-        summaryBody.push([{ content: "NETO A PAGAR", styles: { fontStyle: 'bold', fillColor: [46, 204, 113] } }, { content: currencyFormatter.format(totalAPagar), styles: { fontStyle: 'bold', fillColor: [46, 204, 113] } }]);
 
-        doc.autoTable({
+        summaryData.push([{ content: "NETO A PAGAR", styles: { fontStyle: 'bold', fillColor: [46, 204, 113], textColor: 255 } }, { content: currencyFormatter.format(totalAPagar), styles: { fontStyle: 'bold', fillColor: [46, 204, 113], textColor: 255 } }]);
+
+        // CÁLCULO PARA ALINEAR A LA DERECHA
+        // Ancho de página - Margen Derecho - Ancho Tabla Resumen
+        const summaryWidth = 90; 
+        const summaryX = pageWidth - pageMargin - summaryWidth;
+
+        pdfDoc.autoTable({
             startY: finalY,
-            body: summaryBody,
+            body: summaryData,
             theme: 'grid',
-            tableWidth: 120,
-            margin: { left: 160 }, // Alineado a la derecha
-            styles: { fontSize: 9, cellPadding: 2 },
-            columnStyles: { 0: { halign: 'right', fontStyle: 'bold' }, 1: { halign: 'right' } }
+            tableWidth: summaryWidth,
+            margin: { left: summaryX }, // Alineación derecha forzada
+            styles: { fontSize: 9, cellPadding: 2, lineWidth: 0.1, lineColor: [200, 200, 200] },
+            columnStyles: { 0: { halign: 'right', fontStyle: 'bold', cellWidth: 50 }, 1: { halign: 'right', cellWidth: 40 } }
         });
 
-        doc.save(`Acta_Corte_${corte.corteNumber}_${proyecto.name}_${exportType}.pdf`);
+        // --------------------------------------------------------------------------------
+        // 6. FIRMAS
+        // --------------------------------------------------------------------------------
+        const yFirma = finalY + 60;
+        const colWidth = (pageWidth - (pageMargin * 2)) / 3;
+        const x1 = pageMargin + (colWidth / 2);
+        const x2 = pageMargin + colWidth + (colWidth / 2);
+        const x3 = pageMargin + (colWidth * 2) + (colWidth / 2);
+        const lineWidth = 60;
 
-    } catch (error) {
-        console.error("Error al exportar acta de corte:", error);
-        alert("Ocurrió un error al generar el PDF del acta. Revisa la consola.");
+        pdfDoc.line(x1 - (lineWidth/2), yFirma, x1 + (lineWidth/2), yFirma);
+        pdfDoc.text(empresaInfo.nombre, x1, yFirma + 5, { align: "center", maxWidth: 60 });
+        
+        pdfDoc.line(x2 - (lineWidth/2), yFirma, x2 + (lineWidth/2), yFirma);
+        pdfDoc.text("Interventoría", x2, yFirma + 5, { align: "center" });
+        
+        pdfDoc.line(x3 - (lineWidth/2), yFirma, x3 + (lineWidth/2), yFirma);
+        pdfDoc.text("Director Obra", x3, yFirma + 5, { align: "center" });
+
+        pdfDoc.save(`Corte_${corte.corteNumber}_${proyecto.name}_${exportType}.pdf`);
+
+    } catch (e) {
+        console.error("Error PDF:", e);
+        alert("Error generando PDF: " + e.message);
     } finally {
-        loadingOverlay.classList.add('hidden');
+        if (loadingOverlay) loadingOverlay.classList.add('hidden');
     }
 }
-// =================== FINALIZA CÓDIGO AÑADIDO ===================
-
 
 // ====================================================================
 //      INICIO: FUNCIÓN PARA CALCULAR EL VALOR TOTAL DE ÍTEMS
@@ -4169,37 +4269,58 @@ function calculateItemUnitPrice(item) {
     return Math.round(unitPrice); // <-- CAMBIO: Redondea el resultado final
 }
 
-// REEMPLAZA tu función calculateItemTotal con esta:
+/**
+ * Calcula el valor TOTAL de un ítem incluyendo todos los impuestos (IVA o AIU).
+ * Esta función es la "verdad absoluta" del precio.
+ */
 function calculateItemTotal(item) {
-    let total = 0;
-
-    const calculatePartTotal = (details, quantity) => {
-        if (!details || !details.unitPrice) {
-            return 0;
+    // Definir detalles de precio según el modelo
+    let details = item.includedDetails; // Por defecto modelo 'incluido'
+    
+    // Si el proyecto es separado, sumamos suministro + instalación
+    if (item.itemType === 'suministro_instalacion') {
+        const supplyPrice = item.supplyDetails?.unitPrice || 0;
+        const installPrice = item.installationDetails?.unitPrice || 0;
+        
+        // Calcular impuestos de suministro (Generalmente IVA 19%)
+        const supplyTax = item.supplyDetails?.taxType === 'iva' ? (supplyPrice * 0.19) : 0;
+        
+        // Calcular impuestos de instalación (AIU o IVA)
+        let installTax = 0;
+        if (item.installationDetails?.taxType === 'aiu') {
+            const admin = installPrice * ((item.installationDetails.aiuA || 0) / 100);
+            const imprev = installPrice * ((item.installationDetails.aiuI || 0) / 100);
+            const util = installPrice * ((item.installationDetails.aiuU || 0) / 100);
+            const ivaUtil = util * 0.19;
+            installTax = admin + imprev + util + ivaUtil;
+        } else {
+            installTax = installPrice * 0.19;
         }
-        const subtotal = details.unitPrice * quantity;
+
+        const unitTotal = supplyPrice + supplyTax + installPrice + installTax;
+        return unitTotal * (item.quantity || 1);
+    } 
+    
+    // Modelo 'incluido' (AIU o IVA sobre el total)
+    else if (details) {
+        const basePrice = details.unitPrice || 0;
+        let tax = 0;
+
         if (details.taxType === 'aiu') {
-            const admin = subtotal * (details.aiuA / 100 || 0);
-            const imprev = subtotal * (details.aiuI / 100 || 0);
-            const utilidad = subtotal * (details.aiuU / 100 || 0);
-            const ivaSobreUtilidad = utilidad * 0.19;
-            return subtotal + admin + imprev + utilidad + ivaSobreUtilidad;
-        } else if (details.taxType === 'iva') {
-            return subtotal * 1.19;
+            const admin = basePrice * ((details.aiuA || 0) / 100);
+            const imprev = basePrice * ((details.aiuI || 0) / 100);
+            const util = basePrice * ((details.aiuU || 0) / 100);
+            const ivaUtil = util * 0.19;
+            tax = admin + imprev + util + ivaUtil;
+        } else {
+            tax = basePrice * 0.19;
         }
-        return subtotal;
-    };
-
-    // Lógica nueva: revisa primero si es de tipo "incluido"
-    if (item.itemType === 'suministro_instalacion_incluido') {
-        total = calculatePartTotal(item.includedDetails, item.quantity);
-    } else {
-        // Lógica anterior para precios separados
-        total += calculatePartTotal(item.supplyDetails, item.quantity);
-        total += calculatePartTotal(item.installationDetails, item.quantity);
+        
+        const unitTotal = basePrice + tax;
+        return unitTotal * (item.quantity || 1);
     }
 
-    return Math.round(total); // <-- CAMBIO: Redondea el resultado final
+    return 0;
 }
 // ====================================================================
 //      FIN: FUNCIONES CORREGIDAS
@@ -4312,45 +4433,63 @@ function createItemRow(item, executedCount) {
     row.className = 'bg-white border-b hover:bg-gray-50';
     row.dataset.id = item.id;
 
-    // Usamos las nuevas funciones para obtener los valores correctos
+    // Usamos las funciones de cálculo
     const unitPrice = calculateItemUnitPrice(item);
     const totalValue = calculateItemTotal(item);
     const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
     let statusColor;
     if (item.status === 'Pendiente') { statusColor = 'bg-red-100 text-red-800'; }
     else if (item.status === 'En Proceso') { statusColor = 'bg-yellow-100 text-yellow-800'; }
     else { statusColor = 'bg-green-100 text-green-800'; }
 
-    // Botón de Plano (Si existe)
-    const blueprintBtn = item.blueprintURL
-        ? `<button onclick="viewDocument('${item.blueprintURL}', '${item.name}'); event.stopPropagation();" 
-             class="text-indigo-600 hover:text-indigo-800 font-semibold text-xs border border-indigo-200 bg-indigo-50 px-2 py-1 rounded flex items-center gap-1" title="Ver Plano">
-             <i class="fa-solid fa-file-contract"></i> Plano
+    // Preparamos el botón de acción para el plano
+    const actionBlueprintBtn = item.blueprintURL
+        ? `<button onclick="viewDocument('${item.blueprintURL}', '${item.name}')" 
+             class="text-indigo-600 hover:bg-indigo-50 p-2 rounded-lg transition-colors border border-transparent hover:border-indigo-100" 
+             title="Ver Plano">
+             <i class="fa-solid fa-file-contract"></i>
            </button>`
         : '';
 
-
+    // Actualizamos la fila HTML
     row.innerHTML = `
         <td class="px-6 py-4" data-label="Objeto">
-            <div class="font-medium text-gray-900">${item.name}</div>
-            ${blueprintBtn ? `<div class="mt-1">${blueprintBtn}</div>` : ''}
+            <div class="font-bold text-gray-900">${item.name}</div>
+            </td>
+        
+        <td class="px-6 py-4 text-sm text-gray-600 align-top" data-label="Descripción">
+            <div class="whitespace-normal break-words leading-snug">
+                ${item.description || '<span class="text-gray-300 italic">---</span>'}
+            </div>
         </td>
-        <td class="px-6 py-4 font-medium text-gray-900" data-label="Objeto">${item.name}</td>
-        <td class="px-6 py-4 text-center" data-label="Cant.">${item.quantity}</td>
+
+        <td class="px-6 py-4 text-center font-bold text-gray-800" data-label="Cant.">${item.quantity}</td>
         <td class="px-6 py-4 text-center" data-label="Ancho (m)">${item.width}</td>
         <td class="px-6 py-4 text-center" data-label="Alto (m)">${item.height}</td>
-        <td class="px-6 py-4 text-center" data-label="Vlr. Unitario">${currencyFormatter.format(unitPrice)}</td>
-        <td class="px-6 py-4 text-center font-semibold" data-label="Vlr. Total">${currencyFormatter.format(totalValue)}</td>
-                <td class="px-6 py-4 text-center" data-label="Estado"><span class="text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full ${statusColor}">${item.status}</span></td>
-                <td class="px-6 py-4 text-center" data-label="Acciones">
-                    <div class="flex justify-center items-center gap-4">
-                        <button data-action="view-item-details" class="text-blue-600 hover:underline font-semibold">Ver</button>
-                        ${currentUserRole === 'admin' ? `
-                        <button data-action="edit-item" class="text-yellow-600 hover:underline font-semibold">Editar</button>
-                        <button data-action="delete-item" class="text-red-600 hover:underline font-semibold">Eliminar</button>
-                        ` : ''}
-                    </div>
-                </td>`;
+        <td class="px-6 py-4 text-center text-xs" data-label="Vlr. Unitario">${currencyFormatter.format(unitPrice)}</td>
+        <td class="px-6 py-4 text-center font-bold text-gray-900" data-label="Vlr. Total">${currencyFormatter.format(totalValue)}</td>
+        <td class="px-6 py-4 text-center" data-label="Estado">
+            <span class="text-xs font-medium px-2.5 py-0.5 rounded-full ${statusColor}">${item.status}</span>
+        </td>
+        
+        <td class="px-6 py-4 text-center" data-label="Acciones">
+            <div class="flex justify-center items-center gap-2">
+                
+                ${actionBlueprintBtn} <button data-action="view-item-details" class="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors" title="Ver Sub-ítems">
+                    <i class="fa-solid fa-eye"></i>
+                </button>
+                
+                ${currentUserRole === 'admin' ? `
+                <button data-action="edit-item" class="text-amber-500 hover:bg-amber-50 p-2 rounded-lg transition-colors" title="Editar">
+                    <i class="fa-solid fa-pen"></i>
+                </button>
+                <button data-action="delete-item" class="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors" title="Eliminar">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+                ` : ''}
+            </div>
+        </td>`;
 
     return row;
 }
@@ -4415,16 +4554,20 @@ async function createItem(data) {
 
 async function updateItem(itemId, data) {
     const projectPricingModel = currentProject.pricingModel || 'separado';
+
+    // Preparar el objeto updatedData
     const updatedData = {
         name: data.name,
         description: data.description,
         ...(data.blueprintURL ? { blueprintURL: data.blueprintURL } : {}),
         width: parseFloat(data.width) || 0,
         height: parseFloat(data.height) || 0,
+        quantity: parseInt(data.quantity) || 1, // Aseguramos cantidad
         itemType: projectPricingModel === 'incluido' ? 'suministro_instalacion_incluido' : 'suministro_instalacion',
-        projectId: currentProject.id, // <-- AÑADIDO: Importante para la función de backend
+        projectId: currentProject.id,
     };
 
+    // Mapeo de precios (Igual que en createItem)
     if (projectPricingModel === 'incluido') {
         updatedData.includedDetails = {
             unitPrice: parseFloat(data.included_unitPrice?.replace(/[$. ]/g, '')) || 0,
@@ -4455,10 +4598,17 @@ async function updateItem(itemId, data) {
 
     try {
         const updateProjectItemFunction = httpsCallable(functions, 'updateProjectItem');
-        await updateProjectItemFunction({ itemId: itemId, updatedData: updatedData });
+
+        // AQUÍ OCURRÍA EL ERROR 400: Enviamos itemId y updatedData correctamente empaquetados
+        await updateProjectItemFunction({
+            itemId: itemId,
+            updatedData: updatedData
+        });
+
     } catch (error) {
         console.error("Error al llamar a la función updateProjectItem:", error);
         alert(`Error al actualizar el ítem: ${error.message}`);
+        throw error; // Lanzamos error para que el submit handler lo atrape
     }
 }
 
@@ -5520,6 +5670,13 @@ async function openMainModal(type, data = {}) {
                 modalBody.style.padding = '0';
             }
 
+            // =========================================================
+            //  🔥 CORRECCIÓN: AGREGAR ESTA LÍNEA AQUÍ
+            //  Esto guarda el ID del proyecto en el formulario para que el botón Guardar lo encuentre
+            // =========================================================
+            modalForm.dataset.id = data.id;
+            // =========================================================
+
             title = 'Editar Proyecto';
 
             bodyHtml = `
@@ -5802,10 +5959,12 @@ async function openMainModal(type, data = {}) {
                                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-4">Valores Financieros</h4>
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                                     <div>
-                                        <label class="block text-xs font-bold text-gray-700 mb-1">Valor Contrato (Desde Cotización)</label>
-                                        <div class="relative">
-                                            <span class="absolute left-3 top-2.5 text-gray-400 font-bold">$</span>
-                                            <input type="text" name="value" required class="currency-input w-full pl-7 border-gray-300 rounded-lg p-2.5 text-lg font-bold text-emerald-600 font-mono" value="${quoteData.totalFinal || 0}">
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 mb-1">Valor Contrato (Desde Cotización)</label>
+                                            <div class="relative">
+                                                <span class="absolute left-3 top-2.5 text-gray-400 font-bold">$</span>
+                                                <input type="text" name="value" required class="currency-input w-full pl-7 border-gray-300 rounded-lg p-2.5 text-lg font-bold text-emerald-600 font-mono" value="${Math.round(quoteData.totalFinal || 0)}">
+                                            </div>
                                         </div>
                                     </div>
                                     <div>
@@ -6114,6 +6273,246 @@ async function openMainModal(type, data = {}) {
             break;
         }
 
+        case 'view-my-payment-history':
+            title = 'Mi Historial Financiero';
+            btnText = 'Cerrar';
+            btnClass = 'bg-gray-500 hover:bg-gray-600';
+
+            if (document.getElementById('modal-confirm-btn')) {
+                document.getElementById('modal-confirm-btn').style.display = 'none';
+            }
+
+            bodyHtml = `
+                <div class="flex flex-col h-[70vh]">
+                    <div class="flex border-b border-gray-200 mb-4">
+                        <button type="button" id="tab-my-payments" class="flex-1 py-3 text-sm font-bold text-blue-600 border-b-2 border-blue-600 focus:outline-none transition-colors">
+                            <i class="fa-solid fa-file-invoice-dollar mr-2"></i> Nómina
+                        </button>
+                        <button type="button" id="tab-my-loans" class="flex-1 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 focus:outline-none transition-colors">
+                            <i class="fa-solid fa-hand-holding-dollar mr-2"></i> Préstamos
+                        </button>
+                    </div>
+
+                    <div id="my-financial-content" class="flex-grow overflow-y-auto custom-scrollbar p-1">
+                        <div class="text-center py-10"><div class="loader mx-auto"></div></div>
+                    </div>
+                </div>
+            `;
+
+            setTimeout(() => {
+                const container = document.getElementById('my-financial-content');
+                const tabPayments = document.getElementById('tab-my-payments');
+                const tabLoans = document.getElementById('tab-my-loans');
+                const userId = data.userId;
+
+                // Función: Cargar Nómina
+                const loadPayments = async () => {
+                    tabPayments.className = "flex-1 py-3 text-sm font-bold text-blue-600 border-b-2 border-blue-600 transition-colors";
+                    tabLoans.className = "flex-1 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent transition-colors";
+
+                    container.innerHTML = '<div class="text-center py-10"><div class="loader mx-auto"></div></div>';
+
+                    try {
+                        const q = query(collection(db, "users", userId, "paymentHistory"), orderBy("createdAt", "desc"));
+                        const snapshot = await getDocs(q);
+
+                        if (snapshot.empty) {
+                            container.innerHTML = `<div class="text-center py-10 text-gray-400"><i class="fa-solid fa-folder-open text-4xl mb-2 opacity-30"></i><p>No hay pagos registrados.</p></div>`;
+                            return;
+                        }
+
+                        let html = `<div class="space-y-3">`;
+                        snapshot.forEach(doc => {
+                            const p = doc.data();
+                            const date = p.paymentDate || (p.createdAt ? p.createdAt.toDate().toISOString().split('T')[0] : 'N/A');
+
+                            html += `
+                                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center hover:shadow-md transition-all">
+                                    <div>
+                                        <p class="text-xs text-gray-400 font-bold uppercase">${date}</p>
+                                        <h4 class="text-sm font-bold text-gray-800">${p.concepto}</h4>
+                                        <p class="text-xs text-emerald-600 font-bold mt-1">${new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP' }).format(p.monto)}</p>
+                                    </div>
+                                    <button class="btn-view-voucher text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors" data-payment='${JSON.stringify(p)}'>
+                                        <i class="fa-solid fa-eye text-lg"></i>
+                                    </button>
+                                </div>`;
+                        });
+                        html += `</div>`;
+                        container.innerHTML = html;
+
+                        // Listener para ver comprobante
+                        container.querySelectorAll('.btn-view-voucher').forEach(btn => {
+                            btn.addEventListener('click', async () => {
+                                const paymentData = JSON.parse(btn.dataset.payment);
+                                // Necesitamos los datos del usuario para el comprobante
+                                const userDoc = await getDoc(doc(db, "users", userId));
+                                if (userDoc.exists()) {
+                                    // Reutilizamos tu función existente
+                                    // (Asegúrate de que openPaymentVoucherModal esté accesible globalmente o impórtala)
+                                    if (window.openPaymentVoucherModal) {
+                                        window.openPaymentVoucherModal(paymentData, { id: userDoc.id, ...userDoc.data() });
+                                    } else {
+                                        console.error("Error: La función de comprobantes no se ha cargado desde empleados.js");
+                                    }
+                                }
+                            });
+                        });
+
+                    } catch (e) {
+                        console.error(e);
+                        container.innerHTML = `<p class="text-red-500 text-center">Error al cargar pagos.</p>`;
+                    }
+                };
+
+                // Función: Cargar Préstamos
+                const loadLoans = async () => {
+                    // 1. Gestión de Pestañas Visual
+                    tabLoans.className = "flex-1 py-3 text-sm font-bold text-indigo-600 border-b-2 border-indigo-600 transition-colors bg-indigo-50/50";
+                    tabPayments.className = "flex-1 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent transition-colors hover:bg-gray-50";
+
+                    container.innerHTML = '<div class="text-center py-10"><div class="loader mx-auto"></div><p class="text-xs text-gray-400 mt-2">Calculando saldos...</p></div>';
+
+                    // Formateador local para evitar errores de scope
+                    const fmt = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+
+                    try {
+                        // 2. Consulta: Todos los préstamos ordenados por fecha
+                        const q = query(collection(db, "users", userId, "loans"), orderBy("createdAt", "desc"));
+                        const snapshot = await getDocs(q);
+
+                        if (snapshot.empty) {
+                            container.innerHTML = `
+                                <div class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl m-4">
+                                    <div class="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-3">
+                                        <i class="fa-solid fa-piggy-bank text-3xl text-gray-300"></i>
+                                    </div>
+                                    <p class="font-medium text-gray-600">No tienes historial de préstamos.</p>
+                                    <p class="text-xs">¡Excelente salud financiera!</p>
+                                </div>`;
+                            return;
+                        }
+
+                        // 3. Cálculos de Totales
+                        let totalDebt = 0;       // Lo que debe hoy
+                        let totalBorrowed = 0;   // Lo que pidió prestado en total (histórico)
+                        let totalPaid = 0;       // Lo que ya pagó (histórico)
+                        let cardsHtml = '';
+
+                        snapshot.forEach(doc => {
+                            const l = doc.data();
+
+                            // Solo sumamos a la deuda actual si está ACTIVO
+                            if (l.status === 'active') {
+                                totalDebt += (l.balance || 0);
+                            }
+
+                            // Sumamos históricos (excluyendo rechazados)
+                            if (l.status !== 'rejected') {
+                                totalBorrowed += (l.amount || 0);
+                                totalPaid += ((l.amount || 0) - (l.balance || 0));
+                            }
+
+                            // Cálculos Individuales
+                            const originalAmount = l.amount || 0;
+                            const currentBalance = l.balance || 0;
+                            const paidAmount = originalAmount - currentBalance;
+
+                            // Porcentaje de progreso (Evitar división por 0)
+                            let progress = 0;
+                            if (originalAmount > 0) {
+                                progress = (paidAmount / originalAmount) * 100;
+                            }
+
+                            // Configuración Visual según Estado
+                            let statusConfig = { label: 'Desconocido', color: 'gray', bg: 'bg-gray-100', icon: 'fa-question' };
+
+                            if (l.status === 'active') {
+                                statusConfig = { label: 'Activo (Debiendo)', color: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-200', icon: 'fa-circle-play', barColor: 'bg-indigo-500' };
+                            } else if (l.status === 'paid') {
+                                statusConfig = { label: 'Pagado Totalmente', color: 'text-green-700', bg: 'bg-green-50 border-green-200', icon: 'fa-circle-check', barColor: 'bg-green-500' };
+                                progress = 100; // Forzar visualmente
+                            } else if (l.status === 'pending') {
+                                statusConfig = { label: 'En Revisión', color: 'text-yellow-700', bg: 'bg-yellow-50 border-yellow-200', icon: 'fa-clock', barColor: 'bg-yellow-400' };
+                            } else if (l.status === 'rejected') {
+                                statusConfig = { label: 'Rechazado', color: 'text-red-700', bg: 'bg-red-50 border-red-200', icon: 'fa-ban', barColor: 'bg-red-400' };
+                            }
+
+                            // Fecha
+                            const dateStr = l.date ? new Date(l.date).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Fecha N/A';
+
+                            // Render Tarjeta
+                            cardsHtml += `
+                                <div class="bg-white p-4 rounded-xl border ${statusConfig.bg.includes('border') ? '' : 'border-gray-200'} ${statusConfig.bg} shadow-sm mb-3 relative overflow-hidden group">
+                                    
+                                    <div class="flex justify-between items-start mb-3 relative z-10">
+                                        <div>
+                                            <div class="flex items-center gap-2 mb-1">
+                                                <span class="text-[10px] font-bold uppercase tracking-wider ${statusConfig.color} bg-white/60 px-2 py-0.5 rounded backdrop-blur-sm border border-black/5">
+                                                    <i class="fa-solid ${statusConfig.icon} mr-1"></i> ${statusConfig.label}
+                                                </span>
+                                                <span class="text-[10px] text-gray-500 font-medium">${dateStr}</span>
+                                            </div>
+                                            <p class="text-sm font-bold text-gray-800 leading-tight">${l.description || 'Sin concepto'}</p>
+                                            <p class="text-[10px] text-gray-500 mt-0.5">Pactado a ${l.installments || 1} cuotas</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="text-xs text-gray-400 uppercase font-bold">Monto Original</p>
+                                            <p class="text-lg font-black text-gray-800">${fmt.format(originalAmount)}</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="relative z-10">
+                                        <div class="flex justify-between text-xs mb-1 font-medium">
+                                            <span class="${statusConfig.color}">${Math.round(progress)}% Pagado</span>
+                                            <span class="text-gray-600">Saldo: <span class="font-bold ${l.balance > 0 ? 'text-red-600' : 'text-green-600'}">${fmt.format(currentBalance)}</span></span>
+                                        </div>
+                                        <div class="w-full bg-white/50 rounded-full h-2 border border-black/5">
+                                            <div class="${statusConfig.barColor || 'bg-gray-400'} h-2 rounded-full transition-all duration-1000" style="width: ${progress}%"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="absolute -right-4 -bottom-4 text-9xl opacity-5 pointer-events-none text-black">
+                                        <i class="fa-solid fa-hand-holding-dollar"></i>
+                                    </div>
+                                </div>`;
+                        });
+
+                        // 4. Renderizar Contenedor Completo
+                        container.innerHTML = `
+                            <div class="px-2 pb-2">
+                                <div class="grid grid-cols-2 gap-3 mb-4">
+                                    <div class="bg-red-50 border border-red-100 p-3 rounded-xl flex flex-col justify-center text-center shadow-sm">
+                                        <p class="text-[10px] font-bold text-red-400 uppercase tracking-wide">Deuda Actual</p>
+                                        <p class="text-xl font-black text-red-600 tracking-tight">${fmt.format(totalDebt)}</p>
+                                    </div>
+                                    <div class="bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex flex-col justify-center text-center shadow-sm">
+                                        <p class="text-[10px] font-bold text-emerald-500 uppercase tracking-wide">Total Pagado</p>
+                                        <p class="text-xl font-black text-emerald-700 tracking-tight">${fmt.format(totalPaid)}</p>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-1">
+                                    ${cardsHtml}
+                                </div>
+                            </div>
+                        `;
+
+                    } catch (e) {
+                        console.error(e);
+                        container.innerHTML = `<div class="p-6 text-center"><p class="text-red-500 text-sm font-bold">Error al cargar préstamos.</p><p class="text-xs text-gray-400">${e.message}</p></div>`;
+                    }
+                };
+
+                // Event Listeners
+                tabPayments.onclick = loadPayments;
+                tabLoans.onclick = loadLoans;
+
+                // Carga inicial
+                loadPayments();
+
+            }, 100);
+            break;
 
         case 'camera_entry': // <--- ESTE ES EL CASO QUE FALTA
             title = '📸 Validación de Ingreso';
@@ -7063,6 +7462,8 @@ async function openMainModal(type, data = {}) {
                 document.getElementById('modal-title').parentElement.style.display = 'none';
             }
 
+            modalForm.dataset.id = data.id;
+
             const isEditing = type === 'edit-catalog-item';
 
             // Configuración visual según la acción (Crear = Azul, Editar = Amarillo)
@@ -7877,7 +8278,7 @@ async function openMainModal(type, data = {}) {
                                 <input type="date" name="date" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-gray-600" value="${new Date().toISOString().split('T')[0]}">
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1.5">Cuotas (Meses)</label>
+                                <label class="block text-xs font-bold text-gray-600 mb-1.5">Cuotas</label>
                                 <div class="relative">
                                     <input type="number" id="loan-request-installments" name="installments" value="1" min="1" max="24" 
                                         class="w-full border border-gray-300 rounded-lg p-2.5 text-sm font-bold text-center focus:ring-2 focus:ring-emerald-500 outline-none">
@@ -8971,6 +9372,7 @@ async function openMainModal(type, data = {}) {
 
                     <div class="p-6 bg-gray-50 flex-grow overflow-y-auto custom-scrollbar">
                         
+                        <input type="hidden" name="itemId" value="${data.itemId}">
                         <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6 flex items-center gap-4">
                             <div class="w-12 h-12 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center text-2xl">
                                 <i class="fa-solid fa-shirt"></i>
@@ -9050,7 +9452,7 @@ async function openMainModal(type, data = {}) {
                 </div>
             `;
 
-            // IDs ocultos
+            // IDs ocultos en el dataset (Respaldo)
             modalForm.dataset.id = data.historyId;
             modalForm.dataset.itemid = data.itemId;
 
@@ -9384,6 +9786,7 @@ async function openMainModal(type, data = {}) {
 
         case 'assign-tool': {
             // 1. Ocultar defaults
+
             if (document.getElementById('modal-title')) document.getElementById('modal-title').parentElement.style.display = 'none';
             const defaultFooter = document.getElementById('modal-confirm-btn')?.parentElement;
             if (defaultFooter) defaultFooter.style.display = 'none';
@@ -9395,6 +9798,8 @@ async function openMainModal(type, data = {}) {
                 modalBody.classList.remove('p-0', 'overflow-hidden');
                 modalBody.style.padding = '0';
             }
+
+            modalForm.dataset.id = data.id;
 
             title = 'Asignar Herramienta';
 
@@ -9523,6 +9928,9 @@ async function openMainModal(type, data = {}) {
         }
 
         case 'return-tool': {
+
+            modalForm.dataset.id = data.id;
+
             title = 'Recibir Herramienta (Devolución)';
             btnText = 'Confirmar Devolución';
             btnClass = 'bg-blue-500 hover:bg-blue-600';
@@ -9614,6 +10022,9 @@ async function openMainModal(type, data = {}) {
 
         // --- INICIO DE CÓDIGO AÑADIDO ---
         case 'register-maintenance': {
+
+            modalForm.dataset.id = data.id;
+
             title = 'Registrar Mantenimiento';
             btnText = 'Finalizar Mantenimiento';
             btnClass = 'bg-green-500 hover:bg-green-600';
@@ -9670,6 +10081,8 @@ async function openMainModal(type, data = {}) {
 
         case 'addItem':
         case 'editItem': {
+            modalForm.dataset.id = data.id;
+
             const isEditing = type === 'editItem';
             title = isEditing ? 'Editar Ítem' : 'Añadir Nuevo Ítem';
             btnText = isEditing ? 'Guardar Cambios' : 'Añadir Ítem';
@@ -10919,12 +11332,21 @@ async function openMainModal(type, data = {}) {
                                         </button>` : '';
 
                                     itemsListDiv.innerHTML += `
-                                        <div class="task-item-row flex items-center justify-between py-1 hover:bg-gray-100 px-1 rounded transition-colors">
-                                            <label class="inline-flex items-center flex-grow mr-2 cursor-pointer"> 
-                                                <input type="checkbox" name="selectedItemIds" value="${item.id}" data-item-quantity="${item.quantity}" class="item-checkbox rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                                                <span class="ml-2 truncate" title="${item.name}">${item.name}</span>
+                                        <div class="task-item-row flex items-start justify-between py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50 px-2 rounded transition-colors">
+                                            
+                                            <label class="inline-flex items-start flex-grow mr-2 cursor-pointer"> 
+                                                <input type="checkbox" name="selectedItemIds" value="${item.id}" data-item-quantity="${item.quantity}" class="item-checkbox mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0">
+                                                
+                                                <div class="ml-2 flex flex-col">
+                                                    <span class="text-sm font-bold text-gray-800 leading-tight">${item.name}</span>
+                                                    
+                                                    <span class="text-xs text-gray-500 whitespace-normal break-words leading-snug mt-0.5">
+                                                        ${item.description || '<span class="italic opacity-50">Sin descripción</span>'}
+                                                    </span>
+                                                </div>
                                             </label>
-                                            <div class="flex items-center">
+
+                                            <div class="flex items-center shrink-0 mt-0.5">
                                                 ${planoBtn}
                                                 <input type="number" name="itemQuantity_${item.id}" min="1" max="${item.quantity}" placeholder="Cant." class="item-quantity-input w-20 border rounded-md p-1 text-sm bg-gray-100 focus:bg-white focus:ring-1 focus:ring-blue-300 ml-2" disabled>
                                             </div>
@@ -10974,10 +11396,11 @@ async function openMainModal(type, data = {}) {
         }
 
         case 'editProfile':
-            title = 'Mi Perfil'; btnText = 'Guardar Cambios'; btnClass = 'bg-blue-500 hover:bg-blue-600';
-            modalContentDiv.classList.add('max-w-2xl'); // Aseguramos el tamaño
+            title = 'Mi Perfil';
+            btnText = 'Guardar Cambios';
+            btnClass = 'bg-blue-500 hover:bg-blue-600';
+            modalContentDiv.classList.add('max-w-2xl');
 
-            // --- INICIO DE MODIFICACIÓN (HTML Solo Vista) ---
             bodyHtml = `
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     
@@ -10998,17 +11421,20 @@ async function openMainModal(type, data = {}) {
                             <label class="block text-sm font-medium text-gray-500">Cédula</label>
                             <p class="mt-1 p-2 bg-gray-100 rounded-md border">${data.idNumber}</p>
                         </div>
+                        
                         <div>
                             <label for="profile-email" class="block text-sm font-medium text-gray-700">Correo</label>
-                            <input type="email" id="profile-email" name="email" value="${data.email}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                            <input type="email" id="profile-email" name="email" value="${data.email}" 
+                                required readonly 
+                                class="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed">
                         </div>
                         <div>
                             <label for="profile-phone" class="block text-sm font-medium text-gray-700">Celular</label>
-                            <input type="tel" id="profile-phone" name="phone" value="${data.phone}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                            <input type="tel" id="profile-phone" name="phone" value="${data.phone}" required class="mt-1 block w-full px-3 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500">
                         </div>
                         <div>
                             <label for="profile-address" class="block text-sm font-medium text-gray-700">Dirección</label>
-                            <input type="text" id="profile-address" name="address" value="${data.address}" required class="mt-1 block w-full px-3 py-2 border rounded-md">
+                            <input type="text" id="profile-address" name="address" value="${data.address}" required class="mt-1 block w-full px-3 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500">
                         </div>
                     </div>
 
@@ -11031,12 +11457,11 @@ async function openMainModal(type, data = {}) {
                     </div>
 
                     <div class="md:col-span-3 border-t pt-4">
-                        
-                        <button type="button" data-action="view-profile-history" data-userid="${currentUser.uid}" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg">
-                            Ver Mi Historial de Cambios
+                        <button type="button" data-action="view-profile-history" data-userid="${currentUser.uid}" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg transition-colors">
+                            <i class="fa-solid fa-clock-rotate-left mr-2"></i> Ver Mi Historial de Cambios
                         </button>
                     </div>
-                    </div>
+                </div>
             `;
 
 
@@ -11185,6 +11610,7 @@ modalForm.addEventListener('submit', async (e) => {
     // 1. ¡LO MÁS IMPORTANTE! Evitar recarga de página
     e.preventDefault();
 
+
     const formData = new FormData(modalForm);
     const data = Object.fromEntries(new FormData(modalForm).entries());
     const type = modalForm.dataset.type;
@@ -11233,10 +11659,10 @@ modalForm.addEventListener('submit', async (e) => {
                 builderName: data.builderName,
                 location: data.location || '',
                 address: data.address || '',
-                value: parseFloat(data.value.replace(/[$. ]/g, '')) || 0,
+                // Valor Entero (Sin decimales)
+                value: Math.round(parseFloat(data.value.replace(/[$. ]/g, '')) || 0),
                 advance: parseFloat(data.advance.replace(/[$. ]/g, '')) || 0,
                 startDate: data.startDate,
-                // Leemos el modelo directamente del select (que ya calculamos en el modal)
                 pricingModel: document.querySelector('select[name="pricingModel"]').value,
                 status: 'active',
                 ownerId: currentUser.uid,
@@ -11246,70 +11672,164 @@ modalForm.addEventListener('submit', async (e) => {
             const projectRef = await addDoc(collection(db, "projects"), projectData);
             console.log("Proyecto creado con ID:", projectRef.id);
 
-            // 3. Importar Ítems
+            // 3. Importar Ítems y Crear Sub-ítems
             const itemsJson = document.getElementById('hidden-quote-items').value;
             const items = JSON.parse(itemsJson);
 
             if (items && items.length > 0) {
                 modalConfirmBtn.textContent = `Importando ${items.length} ítems...`;
 
+                const parseImportMoney = (val) => {
+                    if (!val) return 0;
+                    return parseFloat(String(val).replace(/[^0-9,-]/g, '').replace(',', '.')) || 0;
+                };
+
                 for (const item of items) {
-                    // Datos base del ítem
+                    const itemName = item.item_id || item.id || item.referencia || 'Ítem sin nombre';
+                    const itemQty = parseInt(item.cantidad) || 1;
+                    const itemDescription = item.descripcion || (item.ubicacion ? `Ubicación: ${item.ubicacion}` : '');
+
+                    // 1. DIMENSIONES
+                    const widthM = parseFloat(String(item.ancho).replace(',', '.')) || 0;
+                    const heightM = parseFloat(String(item.alto).replace(',', '.')) || 0;
+
+                    // =========================================================
+                    // 🔥 CÁLCULO DE LIMPIEZA DE IMPUESTOS (AIU + IVA/UTILIDAD)
+                    // =========================================================
+
+                    // A. Precio Bruto (Con todos los impuestos sumados)
+                    let rowTotalBruto = parseImportMoney(item.valor_total || item.total || item.precio_total);
+
+                    if (rowTotalBruto <= 0) {
+                        const unitM2Bruto = parseImportMoney(item.valor_unitario || item.val_suministro);
+                        const area = (widthM * heightM) || 1;
+                        rowTotalBruto = unitM2Bruto * area * itemQty;
+                    }
+
+                    const precioUnitarioBruto = rowTotalBruto / itemQty;
+
+                    // B. Calcular el Divisor Exacto
+                    let taxDivisor = 1;
+
+                    if (quoteMode === 'AIU' && quoteAiu) {
+                        const adm = parseFloat(quoteAiu.admin) || 0;
+                        const imp = parseFloat(quoteAiu.imprev) || 0;
+                        const uti = parseFloat(quoteAiu.util) || 0;
+
+                        // 1. Sumamos el AIU base (Ej: 0.20)
+                        const factorAIU = (adm + imp + uti) / 100;
+
+                        // 2. Sumamos el IVA del 19% SOBRE LA UTILIDAD (Ej: 0.05 * 0.19 = 0.0095)
+                        const factorIvaSobreUtilidad = (uti / 100) * 0.19;
+
+                        // Divisor Final (Ej: 1 + 0.20 + 0.0095 = 1.2095)
+                        taxDivisor = 1 + factorAIU + factorIvaSobreUtilidad;
+
+                    } else if (quoteMode === 'STD' || quoteMode === 'IVA') {
+                        // Si es Estándar, asumimos IVA 19% sobre todo el valor
+                        taxDivisor = 1.19;
+                    }
+
+                    // C. Limpieza Final -> Costo Directo
+                    const finalUnitPriceBase = Math.round(precioUnitarioBruto / taxDivisor);
+
+                    // =========================================================
+
                     const itemData = {
-                        name: item.descripcion || 'Ítem sin nombre',
-                        description: item.ubicacion ? `Ubicación: ${item.ubicacion}` : '',
-                        width: parseFloat(item.ancho) || 0,
-                        height: parseFloat(item.alto) || 0,
-                        quantity: parseInt(item.cantidad) || 1,
-                        projectId: projectRef.id
+                        name: itemName,
+                        description: itemDescription,
+                        width: widthM, height: heightM,
+                        quantity: itemQty,
+                        projectId: projectRef.id,
+                        createdAt: new Date()
                     };
 
-                    // LÓGICA DE MAPEO SEGÚN MODELO
                     if (projectData.pricingModel === 'incluido') {
-                        // --- CASO: TODO INCLUIDO (AIU o IVA GLOBAL) ---
                         itemData.itemType = 'suministro_instalacion_incluido';
                         itemData.supplyDetails = {};
                         itemData.installationDetails = {};
 
                         itemData.includedDetails = {
-                            // Usamos valor_unitario porque en estos modos es el valor principal
-                            unitPrice: parseFloat(item.valor_unitario) || 0,
-                            // Determinamos el tipo de impuesto según el modo original
+                            unitPrice: finalUnitPriceBase, // Valor LIMPIO
                             taxType: quoteMode === 'AIU' ? 'aiu' : 'iva',
-                            // Copiamos la configuración de AIU por si acaso
-                            aiuA: quoteAiu.admin,
-                            aiuI: quoteAiu.imprev,
-                            aiuU: quoteAiu.util
+                            aiuA: quoteMode === 'AIU' ? (quoteAiu?.admin || 0) : 0,
+                            aiuI: quoteMode === 'AIU' ? (quoteAiu?.imprev || 0) : 0,
+                            aiuU: quoteMode === 'AIU' ? (quoteAiu?.util || 0) : 0
                         };
-
                     } else {
-                        // --- CASO: SEPARADO (MIXTO) ---
+                        // Lógica Desglosada
                         itemData.itemType = 'suministro_instalacion';
                         itemData.includedDetails = {};
 
-                        // Mapeo Suministro
-                        itemData.supplyDetails = {
-                            unitPrice: parseFloat(item.val_suministro) || 0,
-                            taxType: 'iva', // En mixto, suministro suele llevar IVA
-                            aiuA: 0, aiuI: 0, aiuU: 0
-                        };
+                        const rawSum = parseImportMoney(item.val_suministro);
+                        const rawInst = parseImportMoney(item.val_instalacion);
+                        let supplyPortion = finalUnitPriceBase;
+                        let installPortion = 0;
 
-                        // Mapeo Instalación
+                        if ((rawSum + rawInst) > 0) {
+                            const ratio = rawSum / (rawSum + rawInst);
+                            supplyPortion = Math.round(finalUnitPriceBase * ratio);
+                            installPortion = finalUnitPriceBase - supplyPortion;
+                        }
+
+                        itemData.supplyDetails = {
+                            unitPrice: supplyPortion,
+                            taxType: 'iva', aiuA: 0, aiuI: 0, aiuU: 0
+                        };
                         itemData.installationDetails = {
-                            unitPrice: parseFloat(item.val_instalacion) || 0,
-                            taxType: 'aiu', // En mixto, instalación suele llevar AIU
-                            aiuA: quoteAiu.admin,
-                            aiuI: quoteAiu.imprev,
-                            aiuU: quoteAiu.util
+                            unitPrice: installPortion,
+                            taxType: quoteMode === 'AIU' ? 'aiu' : 'iva',
+                            aiuA: quoteMode === 'AIU' ? (quoteAiu?.admin || 0) : 0,
+                            aiuI: quoteMode === 'AIU' ? (quoteAiu?.imprev || 0) : 0,
+                            aiuU: quoteMode === 'AIU' ? (quoteAiu?.util || 0) : 0
                         };
                     }
 
-                    // Guardar ítem
-                    await addDoc(collection(db, "projects", projectRef.id, "items"), itemData);
+                    // Guardar y crear sub-items...
+                    const itemRef = await addDoc(collection(db, "projects", projectRef.id, "items"), itemData);
+                    const batch = writeBatch(db);
+                    for (let i = 1; i <= itemQty; i++) {
+                        const subItemRef = doc(collection(itemRef, "subItems"));
+                        batch.set(subItemRef, {
+                            number: i,
+                            location: itemData.description,
+                            width: widthM, height: heightM,
+                            realWidth: 0, realHeight: 0,
+                            status: 'Pendiente de Fabricación',
+                            projectId: projectRef.id, itemId: itemRef.id,
+                            createdAt: new Date()
+                        });
+                    }
+                    await batch.commit();
+                }
+
+                // =========================================================
+                // 🔥 NUEVO: GENERAR Y GUARDAR PDF AUTOMÁTICO
+                // =========================================================
+                try {
+                    modalConfirmBtn.textContent = "Generando PDF de respaldo...";
+                    
+                    // Preparamos los datos para el generador
+                    const quoteDataForPDF = {
+                        items: items,
+                        mode: quoteMode,
+                        aiu: quoteAiu,
+                        clientName: projectData.clientName,
+                        projectName: projectData.name
+                    };
+
+                    // Llamamos a la función (asegúrate de pasar 'projectRef.id' y el 'customId' si tienes uno visible)
+                    // projectRef.id es el ID de documento de Firestore (ej: 'xYz123...')
+                    // projectData.id es el ID visible (ej: 'PRJ-001') si lo generaste antes
+                    await generateAndUploadQuotePDF(quoteDataForPDF, projectRef.id, projectData.id || projectRef.id);
+
+                } catch (pdfError) {
+                    console.error("Error generando PDF automático:", pdfError);
+                    // No detenemos el flujo principal, solo avisamos en consola
                 }
             }
 
-            alert("¡Proyecto creado e ítems importados exitosamente!");
+            alert("¡Proyecto formalizado correctamente! Items importados.");
             closeMainModal();
             showDashboard();
 
@@ -11504,7 +12024,7 @@ modalForm.addEventListener('submit', async (e) => {
             };
             await createProject(projectData);
             break;
-        case 'editProjectInfo': // Asegúrate de que este bloque esté aquí
+        case 'editProjectInfo':
             const updatedData = {
                 name: data.name,
                 builderName: data.builderName,
@@ -11514,10 +12034,24 @@ modalForm.addEventListener('submit', async (e) => {
                 startDate: data.startDate,
                 kickoffDate: data.kickoffDate,
                 endDate: data.endDate,
+                // Asegúrate de incluir el pricingModel si es editable
+                pricingModel: data.pricingModel || (currentProject ? currentProject.pricingModel : 'separado')
             };
+
+            // 1. Actualizar en Firebase
             await updateDoc(doc(db, "projects", id), updatedData);
-            currentProject = { ...currentProject, ...updatedData };
-            showProjectDetails(currentProject);
+
+            // 2. CORRECCIÓN AQUÍ: Reconstruir el objeto proyecto CON EL ID EXPLÍCITO
+            // Usamos la variable 'id' que obtuvimos al principio del submit
+            const projectComplete = {
+                id: id,
+                ...currentProject, // Mantenemos datos viejos (como items, progressSummary)
+                ...updatedData     // Sobrescribimos con lo nuevo editado
+            };
+
+            // 3. Actualizar global y recargar vista
+            currentProject = projectComplete;
+            showProjectDetails(projectComplete); // Le pasamos el objeto que SÍ tiene ID
             break;
         case 'addInterestPerson':
             const personData = {
@@ -11540,6 +12074,7 @@ modalForm.addEventListener('submit', async (e) => {
                 showCorteDetails({ id: corteSnap.id, ...corteSnap.data() });
             }
             break;
+
         case 'add-catalog-item': {
             const measurementType = data.measurementType;
             const isDivisible = measurementType === 'linear' || measurementType === 'area';
@@ -11549,15 +12084,18 @@ modalForm.addEventListener('submit', async (e) => {
                 reference: data.reference,
                 unit: data.unit,
                 minStockThreshold: parseInt(data.minStockThreshold) || 0,
-                isDivisible: isDivisible, // Guardamos si es divisible
-                measurementType: measurementType, // Guardamos el tipo de medida
-                defaultSize: isDivisible ? { // Guardamos las dimensiones
-                    length: (parseFloat(data.defaultLength) / 100) || 0, // <-- CAMBIO
-                    width: (parseFloat(data.defaultWidth) / 100) || 0 // <-- CAMBIO
+                isDivisible: isDivisible,
+                measurementType: measurementType,
+                defaultSize: isDivisible ? {
+                    length: (parseFloat(data.defaultLength) / 100) || 0,
+                    width: (parseFloat(data.defaultWidth) / 100) || 0
                 } : null,
                 quantityInStock: 0
             };
             await addDoc(collection(db, "materialCatalog"), catalogData);
+
+            // 🔥 AGREGAR ESTA LÍNEA PARA ACTUALIZAR LA LISTA
+            loadCatalogView();
             break;
         }
 
@@ -11768,14 +12306,19 @@ modalForm.addEventListener('submit', async (e) => {
                 reference: data.reference,
                 unit: data.unit,
                 minStockThreshold: parseInt(data.minStockThreshold) || 0,
-                isDivisible: isDivisible, // Guardamos si es divisible
-                measurementType: measurementType, // Guardamos el tipo de medida
-                defaultSize: isDivisible ? { // Guardamos las dimensiones
-                    length: (parseFloat(data.defaultLength) / 100) || 0, // <-- CAMBIO
-                    width: (parseFloat(data.defaultWidth) / 100) || 0 // <-- CAMBIO
+                isDivisible: isDivisible,
+                measurementType: measurementType,
+                defaultSize: isDivisible ? {
+                    length: (parseFloat(data.defaultLength) / 100) || 0,
+                    width: (parseFloat(data.defaultWidth) / 100) || 0
                 } : null,
             };
+
+            // Aquí usamos el ID que guardamos en el Paso 1
             await updateDoc(doc(db, "materialCatalog", id), updatedData);
+
+            // 🔥 AGREGAR ESTA LÍNEA PARA ACTUALIZAR LA LISTA
+            loadCatalogView();
             break;
         }
 
@@ -12378,42 +12921,26 @@ modalForm.addEventListener('submit', async (e) => {
 
         case 'editItem': {
             const newItemName = data.name.trim();
+
+            // 1. Validaciones básicas
             if (!newItemName) {
                 alert("El nombre del objeto no puede estar vacío.");
                 return;
             }
 
-            // --- 1. SUBIDA DE PLANO (NUEVO) ---
-            const fileInput = modalForm.querySelector('input[name="blueprintFile"]');
-            const file = fileInput ? fileInput.files[0] : null;
-
-            if (file) {
-                modalConfirmBtn.disabled = true;
-                modalConfirmBtn.textContent = 'Subiendo plano...';
-                try {
-                    const storageRef = ref(storage, `blueprints/${currentProject.id}/${Date.now()}_${file.name}`);
-                    const snapshot = await uploadBytes(storageRef, file);
-                    const url = await getDownloadURL(snapshot.ref);
-                    data.blueprintURL = url; // Añadimos la URL al objeto de datos
-                } catch (err) {
-                    console.error("Error subiendo plano:", err);
-                    alert("Error al subir el plano.");
-                    modalConfirmBtn.disabled = false;
-                    modalConfirmBtn.textContent = 'Guardar Cambios';
-                    return;
-                }
+            if (!id) {
+                console.error("Error crítico: No se encontró el ID del ítem a editar.");
+                alert("Error interno: Falta el ID del ítem.");
+                return;
             }
-            // ----------------------------------
 
-            // Verificar duplicados (excluyendo el ítem actual)
+            // 2. Verificar duplicados (EXCLUYENDO el ítem actual)
             const q = query(collection(db, "projects", currentProject.id, "items"), where("name", "==", newItemName));
             const querySnapshot = await getDocs(q);
 
             let isDuplicate = false;
             querySnapshot.forEach(doc => {
-                if (doc.id !== id) {
-                    isDuplicate = true;
-                }
+                if (doc.id !== id) isDuplicate = true;
             });
 
             if (isDuplicate) {
@@ -12423,16 +12950,45 @@ modalForm.addEventListener('submit', async (e) => {
                 return;
             }
 
-            // Convertimos cm a m
+            // =========================================================
+            // 🔥 CORRECCIÓN: LÓGICA DE SUBIDA DE ARCHIVO (PLANO)
+            // =========================================================
+            const fileInput = modalForm.querySelector('input[name="blueprintFile"]');
+            const file = fileInput ? fileInput.files[0] : null;
+
+            if (file) {
+                modalConfirmBtn.disabled = true;
+                modalConfirmBtn.textContent = 'Subiendo plano...';
+                try {
+                    // Usamos la misma ruta que en addItem
+                    const storageRef = ref(storage, `blueprints/${currentProject.id}/${Date.now()}_${file.name}`);
+                    const snapshot = await uploadBytes(storageRef, file);
+                    const url = await getDownloadURL(snapshot.ref);
+
+                    // IMPORTANTE: Agregamos la URL al objeto de datos que se enviará a updateItem
+                    data.blueprintURL = url;
+
+                } catch (err) {
+                    console.error("Error subiendo plano:", err);
+                    alert("Error al subir el plano. Intenta de nuevo.");
+                    modalConfirmBtn.disabled = false;
+                    modalConfirmBtn.textContent = 'Guardar Cambios';
+                    return; // Detenemos si falla la subida
+                }
+            }
+            // =========================================================
+
+            // 3. Preparar datos numéricos
             data.width = parseFloat(data.width) / 100;
             data.height = parseFloat(data.height) / 100;
 
             modalConfirmBtn.textContent = 'Guardando...';
             modalConfirmBtn.disabled = true;
 
+            // 4. Actualizar
             await updateItem(id, data);
 
-            // Actualizar la vista
+            // 5. Refrescar vista
             const projectDoc = await getDoc(doc(db, "projects", currentProject.id));
             if (projectDoc.exists()) {
                 currentProject = { id: projectDoc.id, ...projectDoc.data() };
@@ -12440,6 +12996,8 @@ modalForm.addEventListener('submit', async (e) => {
             }
             break;
         }
+
+
         case 'editUser':
 
             try {
@@ -12537,6 +13095,7 @@ modalForm.addEventListener('submit', async (e) => {
                     }
                 }
 
+                // 1. Datos básicos que TODOS pueden editar
                 const dataToUpdate = {
                     firstName: data.firstName,
                     lastName: data.lastName,
@@ -12549,26 +13108,30 @@ modalForm.addEventListener('submit', async (e) => {
                     accountType: data.accountType || 'Ahorros',
                     accountNumber: data.accountNumber || '',
 
-                    // Dotación
+                    // Dotación (Tallas)
                     tallaCamiseta: data.tallaCamiseta || '',
                     tallaPantalón: data.tallaPantalón || '',
-                    tallaBotas: data.tallaBotas || '',
-
-                    // Nómina
-                    commissionLevel: data.commissionLevel || '',
-                    salarioBasico: parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0,
-                    deduccionSobreMinimo: !!data.deduccionSobreMinimo,
-
-                    // Permisos
-                    customPermissions: customPermissions,
-
-                    // Fechas de Contrato
-                    contractStartDate: data.contractStartDate || null,
-                    contractEndDate: data.contractEndDate || null,
-
-                    // ESTADO ACTUALIZADO
-                    status: currentStatus
+                    tallaBotas: data.tallaBotas || ''
                 };
+
+                // 2. CAMPOS SENSIBLES (Solo si es Admin o Nómina)
+                // Usamos la variable global currentUserRole
+                if (currentUserRole === 'admin' || currentUserRole === 'nomina') {
+
+                    // Solo el admin puede cambiar roles y salarios
+                    dataToUpdate.role = data.role;
+                    dataToUpdate.commissionLevel = data.commissionLevel || '';
+                    dataToUpdate.salarioBasico = parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0;
+                    dataToUpdate.deduccionSobreMinimo = !!data.deduccionSobreMinimo;
+
+                    // Permisos personalizados
+                    dataToUpdate.customPermissions = customPermissions;
+
+                    // Fechas y Estado (Lógica de contrato)
+                    dataToUpdate.contractStartDate = data.contractStartDate || null;
+                    dataToUpdate.contractEndDate = data.contractEndDate || null;
+                    dataToUpdate.status = currentStatus; // Estado calculado arriba
+                }
 
                 if (downloadURL) {
                     dataToUpdate.profilePhotoURL = downloadURL;
@@ -12961,6 +13524,7 @@ async function openMultipleProgressModal(originatingTaskId) {
         });
 
         tableBody.innerHTML = ''; // Limpiamos el "Cargando..."
+
         groupedSubItems.forEach((subItemsArray, itemId) => {
             const itemName = itemsMap.get(itemId);
 
@@ -12977,16 +13541,70 @@ async function openMultipleProgressModal(originatingTaskId) {
 
             subItemsArray.forEach(subItem => {
                 const row = document.createElement('tr');
-                row.className = `subitem-row ${`group-${itemId}`} border-b`;
+                row.className = `subitem-row ${`group-${itemId}`} border-b hover:bg-white transition-colors group/row`;
                 row.dataset.id = subItem.id;
                 row.dataset.itemId = subItem.itemId;
+
+                // --- AJUSTE DE ANCHOS EQUITATIVOS ---
                 row.innerHTML = `
-                    <td class="px-4 py-2 font-bold">${subItem.number}</td>
-                    <td class="px-4 py-2"><input type="text" class="location-input mt-1 block w-full px-2 py-1 border rounded-md text-sm" value="${subItem.location || ''}"></td>
-                    <td class="px-4 py-2"><input type="number" class="real-width-input mt-1 block w-full px-2 py-1 border rounded-md text-sm" value="${(subItem.realWidth * 100) || ''}"></td>
-                    <td class="px-4 py-2"><input type="number" class="real-height-input mt-1 block w-full px-2 py-1 border rounded-md text-sm" value="${(subItem.realHeight * 100) || ''}"></td>
-                    <td class="px-4 py-2"><input type="file" class="photo-input" accept="image/*" capture="environment" style="display: block; width: 100%;"></td>
+                    <td class="w-12 bg-slate-50 border-r border-slate-200 text-center">
+                        <span class="text-lg font-black text-slate-700">#${subItem.number}</span>
+                    </td>
+                    
+                    <td class="w-[28%] px-2 py-3">
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                <i class="fa-solid fa-location-dot text-xs"></i>
+                            </div>
+                            <input type="text" 
+                                class="location-input block w-full pl-8 pr-2 py-2 border border-gray-200 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all bg-white shadow-sm" 
+                                value="" 
+                                placeholder="Ubicación...">
+                        </div>
+                    </td>
+                    
+                    <td class="w-[28%] px-2 py-3">
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-300">
+                                <i class="fa-solid fa-arrows-left-right text-[10px]"></i>
+                            </div>
+                            <input type="number" 
+                                class="real-width-input block w-full pl-8 pr-2 py-2 border border-gray-200 rounded-lg text-sm text-center font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all shadow-sm" 
+                                value="${(subItem.realWidth * 100) || ''}" 
+                                placeholder="Ancho">
+                        </div>
+                    </td>
+                    
+                    <td class="w-[28%] px-2 py-3">
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-300">
+                                <i class="fa-solid fa-arrows-up-down text-[10px]"></i>
+                            </div>
+                            <input type="number" 
+                                class="real-height-input block w-full pl-8 pr-2 py-2 border border-gray-200 rounded-lg text-sm text-center font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all shadow-sm" 
+                                value="${(subItem.realHeight * 100) || ''}" 
+                                placeholder="Alto">
+                        </div>
+                    </td>
+                    
+                    <td class="w-16 px-2 py-3 text-center">
+                        <label class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-white text-indigo-500 border-2 border-indigo-100 hover:border-indigo-500 hover:text-indigo-600 hover:shadow-md cursor-pointer transition-all duration-200 group/icon" title="Tomar foto o subir archivo">
+                            
+                            <i class="fa-solid fa-camera text-lg group-hover/icon:scale-110 transition-transform"></i>
+                            
+                            <input type="file" 
+                                class="photo-input hidden" 
+                                accept="image/*"
+                                onchange="if(this.files.length > 0) { 
+                                    this.parentElement.classList.remove('bg-white', 'text-indigo-500', 'border-indigo-100'); 
+                                    this.parentElement.classList.add('bg-emerald-500', 'text-white', 'border-emerald-600'); 
+                                    this.previousElementSibling.className='fa-solid fa-check text-lg animate-bounce-quick'; 
+                                }">
+                        </label>
+                    </td>
                 `;
+                // -------------------------------
+
                 tableBody.appendChild(row);
             });
         });
@@ -12999,6 +13617,8 @@ async function openMultipleProgressModal(originatingTaskId) {
         if (confirmBtn) confirmBtn.disabled = true;
     }
 }
+
+
 function closeMultipleProgressModal() {
     if (multipleProgressModal) {
         multipleProgressModal.style.display = 'none';
@@ -13851,21 +14471,20 @@ async function handleDeletePhoto(subItemId, itemId, installerId, projectId) {
  * @returns {string} - El texto formateado (ej: "Hace 5 minutos").
  */
 function timeAgoFormat(date) {
+    // 1. Manejo de 'null' (Latencia de serverTimestamp)
+    // Si es null, significa que se acaba de crear y Firebase aún no devuelve la hora.
+    if (!date) return "Ahora mismo";
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // La lógica de 'if' fue desenredada.
-
-    if (date && typeof date.toDate === 'function') {
-        // 1. Si 'date' es un objeto Timestamp de Firestore, conviértelo a JS Date
+    // 2. Si es Timestamp de Firestore, convertir a Date JS
+    if (typeof date.toDate === 'function') {
         date = date.toDate();
-    } else if (!date || !(date instanceof Date)) {
-        // 2. Si no es un Timestamp, ni una Fecha, o es nulo, retorna un valor seguro.
-        console.warn("timeAgoFormat recibió una fecha inválida:", date);
-        return "hace un momento";
     }
-    // --- FIN DE LA CORRECCIÓN ---
 
-    // 3. El resto de la función ahora funciona porque 'date' SIEMPRE es un JS Date.
+    // 3. Validación final: Si no es fecha válida, retornar string vacío (sin error)
+    if (!(date instanceof Date) || isNaN(date.getTime())) {
+        return "Hace un momento";
+    }
+
     const now = new Date();
     const seconds = Math.round((now - date) / 1000);
 
@@ -13873,7 +14492,7 @@ function timeAgoFormat(date) {
     const hour = minute * 60;
     const day = hour * 24;
     const week = day * 7;
-    const month = day * 30; // Aproximación
+    const month = day * 30;
     const year = day * 365;
 
     if (seconds < 30) {
@@ -14364,6 +14983,8 @@ document.addEventListener('DOMContentLoaded', () => {
         () => currentUser ? currentUser.uid : null // Función getter para el ID
     );
 
+    initInformes(db);
+
     initEmpleados(
         db,
         () => usersMap,
@@ -14635,11 +15256,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const confirmBtn = document.getElementById('checkin-confirm-btn');
 
                 scanBtn.disabled = true;
-                // Guardamos el contenido original por si falla
                 const originalContent = scanBtn.innerHTML;
                 scanBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> <span>Procesando...</span>';
 
-                // Activar efecto láser
                 if (scannerLine) {
                     scannerLine.classList.remove('hidden');
                     scannerLine.classList.add('animate-scan');
@@ -14648,55 +15267,62 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     if (!modelsLoaded) throw new Error("Cargando IA...");
 
-                    // 1. Configurar Canvas
+                    // 1. Configurar Canvas (Con optimización de lectura)
                     const videoWidth = videoEl.videoWidth;
                     const videoHeight = videoEl.videoHeight;
                     canvasEl.width = videoWidth;
                     canvasEl.height = videoHeight;
-                    const ctx = canvasEl.getContext('2d');
+                    const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
+
                     ctx.translate(videoWidth, 0);
                     ctx.scale(-1, 1);
                     ctx.drawImage(videoEl, 0, 0, videoWidth, videoHeight);
                     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-                    // 2. Pausar video para efecto de "captura"
                     videoEl.pause();
 
-                    // 3. Detección Facial
-                    faceStatus.textContent = 'Analizando biometría...';
+                    // 2. Detección Facial
+                    faceStatus.textContent = 'Analizando...';
+
+                    // Usamos await para la detección pesada
                     const detection = await faceapi.detectSingleFace(canvasEl).withFaceLandmarks().withFaceDescriptor();
 
                     if (!detection) throw new Error("No se detectó rostro.");
                     if (detection.detection.score < 0.6) throw new Error("Imagen borrosa. Repetir.");
 
-                    // 4. Comparación
-                    if (!currentUserFaceDescriptor) {
-                        faceStatus.textContent = "⚠️ Sin huella registrada. (Paso autorizado)";
-                    } else {
+                    // 3. Comparación
+                    if (currentUserFaceDescriptor) {
                         const distance = faceapi.euclideanDistance(currentUserFaceDescriptor, detection.descriptor);
-                        // Umbral de similitud (0.55)
                         if (distance > 0.55) throw new Error("Identidad no verificada.");
                     }
 
-                    // --- ÉXITO ---
+                    // --- ÉXITO: OPTIMIZACIÓN DE UI ---
+
+                    // A. Primero habilitamos la variable lógica
+                    verifiedCanvas = canvasEl;
+
+                    // B. INMEDIATAMENTE cambiamos los botones (Prioridad Visual)
+                    requestAnimationFrame(() => {
+                        scanBtn.classList.add('hidden');     // Ocultar botón viejo
+                        confirmBtn.classList.remove('hidden'); // Mostrar nuevo
+                        confirmBtn.disabled = false;           // Habilitar clic
+                        confirmBtn.focus();                    // Dar foco para clic rápido
+                    });
+
+                    // C. Actualizamos textos y estilos (Secundario)
                     faceStatus.innerHTML = '<span class="flex items-center justify-center gap-2"><i class="fa-solid fa-circle-check"></i> Identidad Confirmada</span>';
                     faceStatus.className = "text-sm font-bold text-green-600";
 
-                    // Detener animación
                     if (scannerLine) scannerLine.classList.add('hidden');
 
-                    verifiedCanvas = canvasEl;
-
-                    // Cambio de Botones: Ocultar "Escanear", Mostrar "Autorizar"
-                    scanBtn.classList.add('hidden');
-                    confirmBtn.classList.remove('hidden');
-                    confirmBtn.disabled = false;
+                    // Vibración háptica si es móvil
+                    if (navigator.vibrate) navigator.vibrate(50);
 
                 } catch (err) {
                     // --- ERROR ---
                     console.error(err);
-                    videoEl.play(); // Reanudar video
-                    if (scannerLine) scannerLine.classList.add('hidden'); // Parar láser
+                    videoEl.play();
+                    if (scannerLine) scannerLine.classList.add('hidden');
 
                     faceStatus.textContent = err.message;
                     faceStatus.className = "text-sm font-bold text-red-500";
@@ -14709,19 +15335,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Botón: Confirmar Check-in (AUTORIZAR AVANCE)
             if (target.id === 'checkin-confirm-btn') {
-                const taskId = target.dataset.taskId; // Recuperamos el ID de la tarea
+                const taskId = target.dataset.taskId;
 
                 // 1. Validación de Seguridad
                 if (!verifiedCanvas) {
                     alert("Error de seguridad: No se ha verificado el rostro. Por favor, repite el escaneo.");
-                    // Reseteamos la interfaz por seguridad
                     document.getElementById('checkin-take-photo-btn').classList.remove('hidden');
                     target.classList.add('hidden');
                     return;
                 }
 
+                // Guardamos el texto original para restaurarlo si falla
+                const originalBtnText = '<i class="fa-solid fa-check"></i> Autorizar Avance';
+
+                // Bloqueamos el botón
                 target.disabled = true;
-                const originalText = target.innerHTML;
                 target.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Autorizando...';
 
                 try {
@@ -14730,7 +15358,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         // 1. Convertir la foto verificada a archivo (Blob)
                         const selfieBlob = await new Promise(resolve => verifiedCanvas.toBlob(resolve, 'image/jpeg', 0.80));
 
-                        // 2. Subir la evidencia a Storage (Ruta organizada)
+                        // 2. Subir la evidencia a Storage
                         const timestamp = Date.now();
                         const selfiePath = `checkin_evidence/${taskId}/${currentUser.uid}_${timestamp}.jpg`;
                         const selfieStorageRef = ref(storage, selfiePath);
@@ -14738,44 +15366,38 @@ document.addEventListener('DOMContentLoaded', () => {
                         await uploadBytes(selfieStorageRef, selfieBlob);
                         const downloadURL = await getDownloadURL(selfieStorageRef);
 
-                        // 3. Registrar el evento en la bitácora de la tarea (Log inmutable)
+                        // 3. Registrar el evento en la bitácora
                         await addDoc(collection(db, "tasks", taskId, "comments"), {
-                            type: 'log', // Importante para que se vea gris y pequeño
+                            type: 'log',
                             text: `<b>Identidad Verificada.</b> El usuario autorizó un avance.`,
-                            photoURL: downloadURL, // Evidencia biométrica
+                            photoURL: downloadURL,
                             userId: currentUser.uid,
                             userName: `${usersMap.get(currentUser.uid)?.firstName || 'Usuario'} ${usersMap.get(currentUser.uid)?.lastName || ''}`,
-                            createdAt: new Date() // Timestamp del servidor
+                            createdAt: new Date()
                         });
 
                         console.log("Evidencia biométrica guardada correctamente.");
                     }
 
-                    // CASO B: Check-in de PERFIL (Sin taskId, solo validación)
-                    else {
-                        console.log("Validación de perfil exitosa. Procediendo...");
-                    }
-
                     // 4. CERRAR MODAL
-                    // Detenemos la cámara para liberar memoria y luz
                     if (videoStream) videoStream.getTracks().forEach(track => track.stop());
                     document.getElementById('safety-checkin-modal').style.display = 'none';
 
-                    // 5. EJECUTAR LA ACCIÓN FINAL (Callback)
-                    // Esta es la función que realmente guarda el avance o el perfil
+                    // 5. EJECUTAR LA ACCIÓN FINAL
                     if (typeof onSafetyCheckInSuccess === 'function') {
                         onSafetyCheckInSuccess();
-                    } else {
-                        console.warn("No había acción posterior definida (callback).");
                     }
 
                 } catch (err) {
                     console.error("Error crítico en autorización:", err);
-                    alert("Error al autorizar: " + err.message);
+                    alert("Error al autorizar: " + (err.message || "Error desconocido"));
 
-                    // Restaurar botón
+                    // =========================================================
+                    // 🔥 CORRECCIÓN: REACTIVAR BOTÓN SI FALLA
+                    // =========================================================
                     target.disabled = false;
-                    target.innerHTML = originalText;
+                    target.innerHTML = originalText || originalBtnText; // Restaurar texto
+                    // =========================================================
                 }
             }
 
@@ -14929,6 +15551,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             case 'create-daily-report':
                 openMainModal('create-daily-report');
+                break;
+
+            case 'view-my-payment-history':
+                openMainModal('view-my-payment-history', { userId: currentUser.uid });
                 break;
 
 
@@ -15705,6 +16331,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 showDashboard();
                 break;
 
+            case 'go-to-solicitudes':
+                // Carga la vista importada de solicitudes.js
+                loadSolicitudesView();
+                break;
+
             case 'go-to-catalog':
                 // Redirecciona al Catálogo de Materiales
                 showView('catalog');
@@ -15870,12 +16501,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // Para el modal de registro exitoso
     const registerSuccessBtn = document.getElementById('register-success-accept-btn');
     if (registerSuccessBtn) {
-        registerSuccessBtn.addEventListener('click', () => {
-            closeRegisterSuccessModal();
-            handleLogout();
+        registerSuccessBtn.addEventListener('click', async () => {
+            const modal = document.getElementById('register-success-modal');
+            if (modal) modal.style.display = 'none';
+
+            // 3. APAGAR BANDERA Y CERRAR SESIÓN
+            isRegistering = false;
+            await signOut(auth);
+
+            // Reset y volver
             const regForm = document.getElementById('register-form');
             if (regForm) regForm.reset();
             showAuthView('login');
+
+            // Recarga opcional para limpiar estado
+            window.location.reload();
         });
     }
 
@@ -16083,7 +16723,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 } else if (viewName === 'reports') {
                     showView('reports');
-                    loadReportsView();
+                    loadInformesView();
                 } else if (viewName === 'solicitud') { // Coincide con data-view="solicitud" del HTML
                     loadSolicitudesView();
 
@@ -16668,18 +17308,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-         * Maneja el envío del formulario de entrega parcial (CORREGIDO: Actualiza progreso y stock localmente).
-         */
+     * Maneja el envío del formulario de entrega parcial (CORREGIDO: Valida stock antes de descontar).
+     */
     async function handleDeliverySubmit(e) {
         e.preventDefault();
 
-        // --- CORRECCIÓN: Obtener referencia al form aquí dentro ---
         const deliveryModalForm = document.getElementById('delivery-modal-form');
         if (!deliveryModalForm) return;
 
         const requestId = deliveryModalForm.dataset.requestId;
-
-        // Recuperar el ID del proyecto
         const projectId = deliveryModalForm.dataset.projectId || (currentProject ? currentProject.id : null);
 
         if (!projectId) {
@@ -16690,12 +17327,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const confirmBtn = document.getElementById('delivery-modal-confirm-btn');
         if (confirmBtn) {
             confirmBtn.disabled = true;
-            confirmBtn.textContent = 'Procesando...';
+            confirmBtn.textContent = 'Validando Stock...';
         }
         loadingOverlay.classList.remove('hidden');
 
         try {
-            // Usamos una transacción para asegurar que todo se guarde o nada
             await runTransaction(db, async (transaction) => {
 
                 // 1. Leer la solicitud actual
@@ -16724,7 +17360,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const type = row.dataset.type;
                     const length = parseFloat(row.dataset.length) || 0;
 
-                    // Buscar el ítem correspondiente en el array de la solicitud (Normalizado)
+                    // Buscar el ítem correspondiente en el array de la solicitud
                     const index = updatedItems.findIndex(i =>
                         String(i.materialId) === String(matId) &&
                         (i.type || 'full_unit') === (type || 'full_unit') &&
@@ -16733,29 +17369,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     if (index !== -1) {
                         const item = updatedItems[index];
-                        // IMPORTANTE: La tarjeta ahora calcula sola, pero guardamos aquí por si acaso
-                        // (Aunque el historial es la fuente de verdad ahora)
                         const prevDelivered = parseInt(item.deliveredQuantity) || 0;
                         const newTotalDelivered = prevDelivered + val;
 
                         if (newTotalDelivered > item.quantity) {
-                            // Opcional: Podrías permitir sobre-entrega, pero por seguridad lanzamos error
-                            // throw `Error: Intentas entregar más de lo solicitado (${item.itemName}).`;
+                            // Opcional: Advertencia de sobre-entrega si lo requieres
                         }
 
-                        // Actualizamos el contador simple
+                        // Actualizamos el contador local de la solicitud
                         updatedItems[index] = {
                             ...item,
                             deliveredQuantity: newTotalDelivered
                         };
 
-                        // B. Descontar del Stock (Inventario General) - Solo unidades completas
+                        // =========================================================
+                        // 🔥 CORRECCIÓN: VALIDACIÓN DE STOCK REAL
+                        // =========================================================
                         if (type === 'full_unit') {
                             const stockRef = doc(db, "materialCatalog", matId);
+
+                            // A. LEEMOS EL STOCK ACTUAL DENTRO DE LA TRANSACCIÓN
+                            const stockDoc = await transaction.get(stockRef);
+
+                            if (!stockDoc.exists()) {
+                                throw `El material "${item.itemName}" no existe en el catálogo.`;
+                            }
+
+                            const currentStock = stockDoc.data().quantityInStock || 0;
+
+                            // B. COMPARAMOS
+                            if (currentStock < val) {
+                                throw `Stock insuficiente para "${item.itemName}".\nDisponible en bodega: ${currentStock}\nIntentas entregar: ${val}`;
+                            }
+
+                            // C. SI HAY STOCK, PROCEDEMOS A DESCONTAR
                             transaction.update(stockRef, {
                                 quantityInStock: increment(-val)
                             });
                         }
+                        // =========================================================
 
                         itemsToHistory.push({
                             materialId: matId,
@@ -16770,14 +17422,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!hasChanges) throw "No ingresaste ninguna cantidad para entregar.";
 
                 // 3. Calcular nuevo estado
-                // Verificamos si TODO está entregado basándonos en la suma del historial + lo actual
-                // (Simplificación: Si no hay pendientes en el modal, está entregado)
-
-                // Calculamos estado basado en updatedItems (que ya tiene la suma)
                 const isFullyDelivered = updatedItems.every(i => (i.deliveredQuantity || 0) >= i.quantity);
                 const newStatus = isFullyDelivered ? 'entregado' : 'entregado_parcial';
 
-                // 4. Guardar cambios
+                // 4. Guardar cambios en la solicitud
                 transaction.update(requestRef, {
                     consumedItems: updatedItems,
                     status: newStatus,
@@ -16795,8 +17443,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             console.error("Error en entrega:", error);
+            // Mostrar error limpio al usuario
             const msg = typeof error === 'string' ? error : error.message;
-            alert(`No se pudo registrar la entrega: ${msg}`);
+            alert(`⚠️ No se pudo registrar la entrega:\n\n${msg}`);
         } finally {
             if (confirmBtn) {
                 confirmBtn.disabled = false;
@@ -17412,13 +18061,45 @@ async function openRequestDetailsModal(requestId, projectId) {
         };
         const st = statusConfig[requestData.status] || statusConfig['pendiente'];
 
-        // Uso en Obra (Restaurado)
+        // --- 4.5 USO EN OBRA (MEJORADO CON PLANO Y DESCRIPCIÓN) ---
         const destinationItemsHtml = (requestData.itemsToConsume && requestData.itemsToConsume.length > 0)
             ? requestData.itemsToConsume.map(i => {
                 const pItem = projectItemsMap.get(i.itemId);
-                return `<div class="flex justify-between p-2 bg-gray-50 rounded border border-gray-100 mb-2 text-sm"><span class="text-gray-700 truncate max-w-[70%]">${pItem ? pItem.name : 'Ítem'}</span><span class="font-bold text-gray-800">x${i.quantityConsumed}</span></div>`;
+
+                // Datos del ítem destino
+                const itemName = pItem ? pItem.name : 'Ítem (Eliminado o No encontrado)';
+                const itemDesc = pItem ? (pItem.description || '') : '';
+
+                // Botón de Plano (Solo si existe URL)
+                const blueprintBtn = (pItem && pItem.blueprintURL)
+                    ? `<button onclick="viewDocument('${pItem.blueprintURL}', '${itemName.replace(/'/g, "\\'")}')" 
+                         class="mt-1.5 inline-flex items-center gap-1 text-[10px] font-bold bg-white text-indigo-600 border border-indigo-200 px-2 py-1 rounded hover:bg-indigo-50 transition-colors shadow-sm" title="Ver plano de fabricación">
+                         <i class="fa-solid fa-file-contract"></i> Ver Plano
+                       </button>`
+                    : '';
+
+                // HTML de la tarjeta del ítem
+                return `
+                    <div class="flex justify-between items-start p-3 bg-gray-50 rounded-lg border border-gray-100 mb-2 hover:border-indigo-200 transition-colors group">
+                        <div class="min-w-0 pr-3">
+                            <p class="text-sm font-bold text-gray-800 leading-tight flex items-center gap-2">
+                                <i class="fa-solid fa-cube text-gray-400 text-xs"></i> ${itemName}
+                            </p>
+                            
+                            ${itemDesc ? `<p class="text-xs text-gray-500 mt-1 italic line-clamp-2 leading-snug">${itemDesc}</p>` : ''}
+                            
+                            ${blueprintBtn}
+                        </div>
+                        
+                        <div class="flex flex-col items-end shrink-0">
+                            <span class="font-bold text-gray-800 text-sm bg-white px-2 py-1 rounded border border-gray-200 shadow-sm">
+                                x${i.quantityConsumed}
+                            </span>
+                            <span class="text-[9px] text-gray-400 mt-1 uppercase">Cantidad</span>
+                        </div>
+                    </div>`;
             }).join('')
-            : '<div class="text-center py-2 text-gray-400 text-sm">Sin destino específico</div>';
+            : '<div class="text-center py-6 border-2 border-dashed border-gray-100 rounded-lg"><i class="fa-solid fa-person-digging text-gray-300 text-xl mb-1"></i><p class="text-gray-400 text-xs">No se especificó un destino en obra.</p></div>';
 
         // --- 5. BOTONES (FOOTER) ---
         if (modalFooter && (currentUserRole === 'admin' || currentUserRole === 'bodega')) {
@@ -18761,44 +19442,53 @@ async function createTask(taskData) {
         });
     }
 
-    // --- INICIO DE MODIFICACIÓN: Fase 2 ---
+    // --- INICIO DE MODIFICACIÓN: Fase 2 (Lógica corregida) ---
     const specificSubItemIds = [];
     const selectedItemsForTask = [];
-    let totalMetrosAsignados = 0; // 1. Inicializar contador de M²
-    const batchSubItemUpdates = writeBatch(db); // 2. Preparar batch para "estampar" sub-ítems
-    let subItemsToStamp = []; // 3. Array para guardar las referencias a actualizar
+    let totalMetrosAsignados = 0;
+    const batchSubItemUpdates = writeBatch(db);
+    let subItemsToStamp = [];
 
     for (const itemQuery of selectedItemsQueryData) {
 
-        // --- CORRECCIÓN DE BUG (Query Antigua) ---
-        // La consulta anterior usaba la colección raíz "subItems".
-        // Esta consulta usa la ruta de subcolección correcta.
+        // 1. CONSULTA SIMPLIFICADA
+        // Quitamos los 'where' complejos para evitar errores de índices o campos inexistentes.
+        // Solo ordenamos por número para asignar en orden (1, 2, 3...)
         const subItemsQuery = query(
             collection(db, "projects", taskData.projectId, "items", itemQuery.itemId, "subItems"),
-            where("status", "!=", "Instalado"),
-            where("assignedTaskId", "==", null), // 4. SÓLO tomar sub-ítems que no estén ya en otra tarea
-            orderBy("number", "asc"),
-            limit(itemQuery.quantityNeeded)
+            orderBy("number", "asc")
         );
-        // --- FIN DE CORRECCIÓN DE BUG ---
 
         const subItemsSnapshot = await getDocs(subItemsQuery);
-        if (subItemsSnapshot.size < itemQuery.quantityNeeded) {
-            alert(`No se pudieron asignar ${itemQuery.quantityNeeded} unidades para "${itemQuery.itemName}". Solo se encontraron ${subItemsSnapshot.size} unidades libres y pendientes.`); // <-- CORRECCIÓN: throw new Error
-            return;
+
+        // 2. FILTRADO INTELIGENTE EN JAVASCRIPT
+        let assignedCount = 0;
+
+        for (const subItemDoc of subItemsSnapshot.docs) {
+            // Si ya completamos la cantidad necesaria para este ítem, paramos.
+            if (assignedCount >= itemQuery.quantityNeeded) break;
+
+            const data = subItemDoc.data();
+
+            // VERIFICACIÓN MANUAL (Más segura):
+            // A. Que no esté instalado.
+            // B. Que NO tenga tarea asignada (verifica si es null, undefined o false).
+            if (data.status !== 'Instalado' && !data.assignedTaskId) {
+
+                // ¡Encontramos uno libre!
+                specificSubItemIds.push(subItemDoc.id);
+                totalMetrosAsignados += (data.m2 || 0);
+                subItemsToStamp.push(subItemDoc.ref);
+
+                assignedCount++;
+            }
         }
 
-        subItemsSnapshot.forEach(subItemDoc => {
-            const subItemData = subItemDoc.data();
-
-            specificSubItemIds.push(subItemDoc.id);
-
-            // 5. Sumar los M² del sub-ítem (estampados en Fase 1)
-            totalMetrosAsignados += (subItemData.m2 || 0);
-
-            // 6. Guardar la referencia del sub-ítem para actualizarla después
-            subItemsToStamp.push(subItemDoc.ref);
-        });
+        // 3. VALIDACIÓN DE CANTIDAD
+        if (assignedCount < itemQuery.quantityNeeded) {
+            alert(`No hay suficientes unidades disponibles para "${itemQuery.itemName}". Solicitaste ${itemQuery.quantityNeeded}, pero solo hay ${assignedCount} libres.`);
+            return; // Detenemos todo el proceso
+        }
 
         selectedItemsForTask.push({
             itemId: itemQuery.itemId,
@@ -19122,21 +19812,32 @@ async function openTaskDetailsModal(taskId) {
                     const itemsStatus = new Map();
                     const itemIds = [...new Set(selectedItems.map(i => i.itemId))];
 
-                    // MEJORA 3: Cargar Nombres y PLANOS (URLs)
+                    // 1. Cargar Nombres, Descripciones y URLs de Planos
                     const itemDocs = await Promise.all(itemIds.map(id => getDoc(doc(db, "projects", task.projectId, "items", id))));
 
-                    // Mapa con info completa (nombre + plano)
+                    // Mapa con info completa
                     const itemsInfo = new Map(itemDocs.map(d => [
                         d.id,
-                        d.exists() ? { name: d.data().name, url: d.data().blueprintURL } : { name: 'Ítem', url: null }
+                        d.exists() ? {
+                            name: d.data().name,
+                            url: d.data().blueprintURL,
+                            description: d.data().description
+                        } : { name: 'Ítem', url: null, description: '' }
                     ]));
 
+                    // Inicializar estado
                     itemIds.forEach(id => {
                         const info = itemsInfo.get(id);
-                        itemsStatus.set(id, { name: info.name, url: info.url, total: 0, installed: 0 });
+                        itemsStatus.set(id, {
+                            name: info.name,
+                            url: info.url,
+                            description: info.description,
+                            total: 0,
+                            installed: 0
+                        });
                     });
 
-                    // Consultar subítems en lotes
+                    // Consultar subítems en lotes para contar instalados
                     const subItemIdsSet = new Set(subItemIds);
                     for (const itemInfo of selectedItems) {
                         const itemId = itemInfo.itemId;
@@ -19153,24 +19854,35 @@ async function openTaskDetailsModal(taskId) {
                         });
                     }
 
+                    // 2. Construir HTML
                     let htmlRows = '';
                     itemsStatus.forEach(st => {
                         if (st.total === 0) return;
                         const pending = st.total - st.installed;
 
-                        // MEJORA 3: Botón "Ver Plano" si existe URL
-                        let nameCellContent = `<span class="font-bold text-gray-700 block">${st.name}</span>`;
+                        // A. Celda de Nombre + Descripción
+                        let nameCellContent = `
+                            <div class="flex flex-col">
+                                <span class="font-bold text-gray-700 text-sm leading-tight">${st.name}</span>
+                                <span class="text-xs text-gray-500 mt-0.5 whitespace-normal break-words leading-snug">
+                                    ${st.description || '<span class="italic opacity-50">Sin descripción</span>'}
+                                </span>
+                            </div>
+                        `;
+
+                        // B. Botón de Plano (Usando data-attributes en lugar de onclick)
                         if (st.url) {
                             nameCellContent += `
-                                <button onclick="viewDocument('${st.url}', '${st.name}')" 
-                                    class="mt-1 inline-flex items-center text-[10px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded border border-blue-100 transition-colors">
-                                    <i class="fa-solid fa-file-contract mr-1.5"></i> Ver Plano
+                                <button type="button" class="btn-view-plano mt-2 inline-flex items-center text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded border border-indigo-200 transition-colors w-fit shadow-sm"
+                                    data-url="${st.url}" 
+                                    data-name="${st.name}">
+                                    <i class="fa-solid fa-file-contract mr-1.5 pointer-events-none"></i> Ver Plano
                                 </button>`;
                         }
 
                         htmlRows += `
                             <tr class="hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0">
-                                <td class="px-4 py-3 align-middle">${nameCellContent}</td>
+                                <td class="px-4 py-3 align-top">${nameCellContent}</td>
                                 <td class="px-4 py-3 text-center text-gray-600 align-middle font-mono bg-gray-50/50">${st.total}</td>
                                 <td class="px-4 py-3 text-center font-bold align-middle ${pending > 0 ? 'text-orange-600' : 'text-green-600'}">
                                     ${pending > 0 ? pending : '<i class="fa-solid fa-check"></i>'}
@@ -19178,8 +19890,25 @@ async function openTaskDetailsModal(taskId) {
                             </tr>`;
                     });
 
+                    // 3. Renderizar y Asignar Evento Click
                     const tbody = document.getElementById(itemsTbodyId);
-                    if (tbody) tbody.innerHTML = htmlRows || '<tr><td colspan="3" class="p-4 text-center text-sm text-gray-400">Sin ítems</td></tr>';
+                    if (tbody) {
+                        tbody.innerHTML = htmlRows || '<tr><td colspan="3" class="p-4 text-center text-sm text-gray-400">Sin ítems</td></tr>';
+
+                        // CORRECCIÓN FINAL: Listener directo en la tabla
+                        // Esto evita problemas de comillas y funciones globales no encontradas
+                        tbody.onclick = (e) => {
+                            const btn = e.target.closest('.btn-view-plano');
+                            if (btn) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const url = btn.dataset.url;
+                                const name = btn.dataset.name;
+                                // Llamamos a la función global
+                                viewDocument(url, name);
+                            }
+                        };
+                    }
 
                 } catch (e) { console.error(e); }
             };
@@ -20282,4 +21011,132 @@ async function loadUserAuditLogs(targetUserId) {
             { action: 'Cambio Rol', details: 'Rol actualizado a: Operario', date: new Date(Date.now() - 86400000), by: 'Sistema' }
         ];
     }
+}
+
+// =========================================================================
+//  HELPER: GENERAR Y SUBIR PDF DE COTIZACIÓN AUTOMÁTICAMENTE
+// =========================================================================
+
+async function generateAndUploadQuotePDF(quoteData, projectId, projectRefId) {
+    // 1. Construir el HTML de la cotización (Diseño limpio para PDF)
+    // Puedes personalizar esto con tu logo y colores
+    const currencyFmt = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+    const dateStr = new Date().toLocaleDateString('es-CO');
+    
+    // Calcular totales visuales
+    let subtotal = 0;
+    const itemsHtml = (quoteData.items || []).map(item => {
+        const totalRow = parseFloat(String(item.valor_total || item.total || 0).replace(/[$. ]/g, '')) || 0;
+        subtotal += totalRow;
+        return `
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 8px; font-size: 10px;">${item.referencia || item.item_id || '-'}</td>
+                <td style="padding: 8px; font-size: 10px;">${item.descripcion || 'Sin descripción'}</td>
+                <td style="padding: 8px; font-size: 10px; text-align: center;">${item.cantidad}</td>
+                <td style="padding: 8px; font-size: 10px; text-align: right;">${currencyFmt.format(totalRow)}</td>
+            </tr>
+        `;
+    }).join('');
+
+    let taxesHtml = '';
+    let totalGeneral = subtotal;
+
+    // Lógica visual de impuestos (Simplificada para el PDF)
+    if (quoteData.mode === 'AIU' && quoteData.aiu) {
+        const admin = subtotal * (parseFloat(quoteData.aiu.admin)/100);
+        const imprev = subtotal * (parseFloat(quoteData.aiu.imprev)/100);
+        const util = subtotal * (parseFloat(quoteData.aiu.util)/100);
+        const ivaUtil = util * 0.19;
+        totalGeneral = subtotal + admin + imprev + util + ivaUtil;
+        
+        taxesHtml = `
+            <tr><td colspan="3" style="text-align: right; font-size: 10px; font-weight: bold;">Subtotal Costos:</td><td style="text-align: right; font-size: 10px;">${currencyFmt.format(subtotal)}</td></tr>
+            <tr><td colspan="3" style="text-align: right; font-size: 10px;">Admin (${quoteData.aiu.admin}%):</td><td style="text-align: right; font-size: 10px;">${currencyFmt.format(admin)}</td></tr>
+            <tr><td colspan="3" style="text-align: right; font-size: 10px;">Imprev (${quoteData.aiu.imprev}%):</td><td style="text-align: right; font-size: 10px;">${currencyFmt.format(imprev)}</td></tr>
+            <tr><td colspan="3" style="text-align: right; font-size: 10px;">Util (${quoteData.aiu.util}%):</td><td style="text-align: right; font-size: 10px;">${currencyFmt.format(util)}</td></tr>
+            <tr><td colspan="3" style="text-align: right; font-size: 10px;">IVA s/ Util (19%):</td><td style="text-align: right; font-size: 10px;">${currencyFmt.format(ivaUtil)}</td></tr>
+        `;
+    } else {
+        const iva = subtotal * 0.19;
+        totalGeneral = subtotal + iva;
+        taxesHtml = `
+            <tr><td colspan="3" style="text-align: right; font-size: 10px; font-weight: bold;">Subtotal:</td><td style="text-align: right; font-size: 10px;">${currencyFmt.format(subtotal)}</td></tr>
+            <tr><td colspan="3" style="text-align: right; font-size: 10px;">IVA (19%):</td><td style="text-align: right; font-size: 10px;">${currencyFmt.format(iva)}</td></tr>
+        `;
+    }
+
+    // Plantilla HTML Temporal
+    const element = document.createElement('div');
+    element.innerHTML = `
+        <div style="padding: 20px; font-family: Arial, sans-serif; color: #333;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <h2 style="margin: 0; color: #1e3a8a;">COTIZACIÓN APROBADA</h2>
+                <p style="font-size: 12px; color: #666;">Ref: ${projectRefId} | Fecha: ${dateStr}</p>
+            </div>
+            <div style="margin-bottom: 20px; font-size: 12px;">
+                <strong>Cliente:</strong> ${quoteData.clientName || 'General'}<br>
+                <strong>Proyecto:</strong> ${quoteData.projectName || 'Nuevo Proyecto'}
+            </div>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                <thead>
+                    <tr style="background-color: #f3f4f6;">
+                        <th style="padding: 8px; font-size: 10px; text-align: left;">Ref</th>
+                        <th style="padding: 8px; font-size: 10px; text-align: left;">Descripción</th>
+                        <th style="padding: 8px; font-size: 10px; text-align: center;">Cant</th>
+                        <th style="padding: 8px; font-size: 10px; text-align: right;">Total</th>
+                    </tr>
+                </thead>
+                <tbody>${itemsHtml}</tbody>
+                <tfoot>
+                    ${taxesHtml}
+                    <tr style="background-color: #e0e7ff;">
+                        <td colspan="3" style="text-align: right; font-size: 12px; font-weight: bold; padding: 8px;">TOTAL GENERAL:</td>
+                        <td style="text-align: right; font-size: 12px; font-weight: bold; padding: 8px;">${currencyFmt.format(totalGeneral)}</td>
+                    </tr>
+                </tfoot>
+            </table>
+            <p style="font-size: 10px; color: #999; text-align: center;">Documento generado automáticamente al formalizar proyecto.</p>
+        </div>
+    `;
+
+    // 2. Convertir a PDF Blob (Usando html2pdf)
+    const opt = {
+        margin: 10,
+        filename: `Cotizacion_${projectRefId}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { 
+            scale: 2,
+            // 🔥 AGREGAR ESTA LÍNEA PARA CORREGIR LA ADVERTENCIA
+            willReadFrequently: true 
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+    // Generar el Blob
+    const pdfBlob = await html2pdf().set(opt).from(element).output('blob');
+
+    // 3. Subir a Firebase Storage
+    // Usamos las funciones importadas globalmente en tu proyecto
+    const { ref, uploadBytes, getDownloadURL } = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js");
+    
+    const storagePath = `project_documents/${projectId}/Cotizacion_Inicial_${Date.now()}.pdf`;
+    const storageRef = ref(storage, storagePath); // 'storage' debe ser tu variable global
+    
+    const snapshot = await uploadBytes(storageRef, pdfBlob);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+
+    // 4. Guardar Referencia en Firestore (Colección 'documents' del proyecto)
+    const { addDoc, collection } = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js");
+    
+    await addDoc(collection(db, "projects", projectId, "documents"), {
+        name: "Cotización Aprobada (Inicial)",
+        type: "cotizacion",     // <--- CORRECCIÓN: Ahora coincide con el ID de la tarjeta
+        mimeType: "application/pdf", // Guardamos el tipo real aquí por si acaso
+        url: downloadURL,
+        storagePath: storagePath,
+        uploadedAt: new Date(),
+        uploadedBy: "Sistema",
+        size: pdfBlob.size
+    });
+
+    console.log("PDF de cotización guardado exitosamente.");
 }

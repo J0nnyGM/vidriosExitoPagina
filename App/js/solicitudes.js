@@ -1,6 +1,7 @@
-import {
+import { 
     collection, query, where, getDocs, orderBy, limit, onSnapshot, doc, getDoc, 
-    updateDoc, collectionGroup, serverTimestamp
+    updateDoc, collectionGroup, serverTimestamp, 
+    writeBatch, increment // <--- AGREGAR ESTOS DOS
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
 let _db;
@@ -447,22 +448,42 @@ async function handleViewRequestDetails(reqId, projectId) {
         const dateObj = reqData.createdAt ? reqData.createdAt.toDate() : new Date();
         
         let itemsListHtml = '';
+        
         items.forEach(item => {
             const delivered = parseInt(item.deliveredQuantity) || 0;
             const requested = parseInt(item.quantity) || 0;
             const isComplete = delivered >= requested;
             
+            // --- CORRECCIÓN: DETECTAR EL USO O DESTINO ---
+            // Buscamos si existe un subItem (ej: Ventana 1), una nota o un uso específico
+            const usoEnObra = item.subItemName || item.usage || item.notes || ''; 
+            
+            // Creamos una etiqueta visual si existe información
+            const usoHtml = usoEnObra 
+                ? `<p class="text-[10px] text-indigo-600 mt-1 font-bold bg-indigo-50 px-2 py-1 rounded-md inline-block border border-indigo-100">
+                     <i class="fa-solid fa-screwdriver-wrench mr-1"></i> ${usoEnObra}
+                   </p>` 
+                : '';
+            // ----------------------------------------------
+
             itemsListHtml += `
-                <li class="py-3 flex justify-between items-center border-b border-gray-100 last:border-0">
-                    <div>
-                        <p class="font-bold text-gray-800 text-sm">${item.itemName}</p>
-                        <p class="text-xs text-gray-500">Ref: ${item.itemReference || 'N/A'}</p>
+                <li class="py-3 flex justify-between items-start border-b border-gray-100 last:border-0 group hover:bg-gray-50/50 transition-colors px-2 rounded-lg">
+                    <div class="pr-2">
+                        <p class="font-bold text-gray-800 text-sm leading-tight">${item.itemName}</p>
+                        
+                        <div class="flex items-center gap-2 mt-0.5">
+                            <p class="text-xs text-gray-500 font-mono">Ref: ${item.itemReference || '---'}</p>
+                        </div>
+
+                        ${usoHtml}
                     </div>
-                    <div class="text-right">
+
+                    <div class="text-right flex-shrink-0">
                         <p class="text-sm font-mono">
-                            <span class="${isComplete ? 'text-green-600' : 'text-blue-600'} font-bold">${delivered}</span> / ${requested}
+                            <span class="${isComplete ? 'text-green-600' : 'text-blue-600'} font-bold text-lg">${delivered}</span> 
+                            <span class="text-gray-400 text-xs">/ ${requested}</span>
                         </p>
-                        <p class="text-[10px] text-gray-400 uppercase">Entregado</p>
+                        <p class="text-[9px] text-gray-400 uppercase tracking-wide font-bold">Entregado</p>
                     </div>
                 </li>
             `;
@@ -684,8 +705,9 @@ async function handleDeliverySubmit(closeModalCallback) {
     const inputs = document.querySelectorAll('.delivery-input');
     
     let hasChanges = false;
-    let deliveryDataMap = {};
+    let deliveryDataMap = {}; // Mapa: índice -> cantidad a entregar
 
+    // 1. Recolectar datos del formulario
     inputs.forEach(input => {
         const val = parseInt(input.value) || 0;
         if (val > 0) {
@@ -701,16 +723,56 @@ async function handleDeliverySubmit(closeModalCallback) {
 
     if(confirmBtn) {
         confirmBtn.disabled = true;
-        confirmBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
+        confirmBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Validando stock...';
     }
 
     try {
+        const batch = writeBatch(_db); // Iniciamos un lote de escritura
         const originalItems = currentRequestData.consumedItems || currentRequestData.materials || [];
         let allCompleted = true;
-        
+
+        // 2. VALIDACIÓN DE STOCK (CRÍTICO)
+        // Usamos un bucle for...of para poder usar 'await' dentro y detener el proceso si algo falla
+        for (const indexStr of Object.keys(deliveryDataMap)) {
+            const index = parseInt(indexStr);
+            const deliveringNow = deliveryDataMap[index];
+            const item = originalItems[index];
+            
+            // Intentamos obtener el ID del material. 
+            // Nota: En tu estructura debe existir 'materialId' o 'itemId' que enlace al catálogo.
+            const materialId = item.materialId || item.itemId;
+
+            if (!materialId) {
+                throw new Error(`El ítem "${item.itemName}" no tiene un ID de material vinculado para verificar stock.`);
+            }
+
+            // Consultar el inventario global en tiempo real
+            const materialRef = doc(_db, "materialCatalog", materialId);
+            const materialSnap = await getDoc(materialRef);
+
+            if (!materialSnap.exists()) {
+                throw new Error(`El material "${item.itemName}" no se encuentra en el Catálogo de Bodega.`);
+            }
+
+            const currentStock = parseInt(materialSnap.data().quantityInStock) || 0;
+
+            // --- AQUÍ ESTÁ LA MAGIA: CHEQUEO DE STOCK ---
+            if (currentStock < deliveringNow) {
+                throw new Error(`🚫 STOCK INSUFICIENTE para: ${item.itemName}\n\n📦 En Bodega: ${currentStock}\n🚚 Intentas entregar: ${deliveringNow}\n\nPor favor ajusta la cantidad o abastece el inventario.`);
+            }
+
+            // Si pasa la validación, agendamos el descuento en el batch
+            batch.update(materialRef, { 
+                quantityInStock: increment(-deliveringNow) 
+            });
+        }
+
+        // 3. PREPARAR ACTUALIZACIÓN DE LA SOLICITUD
         const updatedItems = originalItems.map((item, index) => {
             const prevDelivered = parseInt(item.deliveredQuantity) || 0;
             const requested = parseInt(item.quantity) || 0;
+            
+            // Si este ítem se está entregando ahora, sumamos
             const deliveringNow = deliveryDataMap[index] || 0;
             const totalDelivered = prevDelivered + deliveringNow;
             
@@ -722,7 +784,7 @@ async function handleDeliverySubmit(closeModalCallback) {
             };
         });
 
-        // Verificar ítems que no estaban en inputs (ya completos)
+        // Verificar también los ítems que NO se están entregando hoy, para ver si faltan
         originalItems.forEach((item, index) => {
              if(!deliveryDataMap.hasOwnProperty(index)) {
                  const prev = parseInt(item.deliveredQuantity) || 0;
@@ -734,19 +796,28 @@ async function handleDeliverySubmit(closeModalCallback) {
         const newStatus = allCompleted ? 'entregado' : 'entregado_parcial';
         const reqRef = doc(_db, "projects", currentDeliveryProjectId, "materialRequests", currentDeliveryReqId);
         
-        await updateDoc(reqRef, {
+        // Actualizamos la solicitud en el mismo batch
+        batch.update(reqRef, {
             consumedItems: updatedItems, 
             status: newStatus,
             lastDeliveryAt: serverTimestamp()
         });
 
+        // 4. EJECUTAR TODO (Inventario + Solicitud) AL TIEMPO
+        if(confirmBtn) confirmBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
+        
+        await batch.commit(); // <-- AQUÍ SE GUARDA TODO. Si falla algo antes, no se guarda nada.
+
+        // Feedback Visual
         if(confirmBtn) {
             confirmBtn.innerHTML = '<i class="fa-solid fa-check"></i> ¡Guardado!';
             confirmBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
             confirmBtn.classList.add('bg-green-600', 'hover:bg-green-700');
         }
+        
         setTimeout(() => {
             if(closeModalCallback) closeModalCallback();
+            // Restaurar botón
             if(confirmBtn) {
                 confirmBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
                 confirmBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
@@ -757,7 +828,12 @@ async function handleDeliverySubmit(closeModalCallback) {
 
     } catch (error) {
         console.error("Error submit:", error);
-        alert("Error al guardar: " + error.message);
-        if(confirmBtn) confirmBtn.disabled = false;
+        // Mostramos el mensaje de error (ej: Stock insuficiente)
+        alert(error.message); 
+        
+        if(confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = 'Confirmar Despacho';
+        }
     }
 }

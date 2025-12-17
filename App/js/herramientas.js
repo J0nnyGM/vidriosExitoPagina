@@ -163,7 +163,8 @@ export function initHerramientas(
                 handleOpenToolModal(toolId, 'register-maintenance');
                 break;
             case 'decommission-tool':
-                openConfirmModal(`¿Seguro que quieres "Dar de Baja" (retirar) la herramienta "${toolName}"? Esta acción guardará la herramienta en el historial de "Retiradas" y no se puede deshacer.`, () => {
+                // CORRECCIÓN: Usar openConfirmModalCallback en lugar de openConfirmModal
+                openConfirmModalCallback(`¿Seguro que quieres "Dar de Baja" (retirar) la herramienta "${toolName}"? Esta acción guardará la herramienta en el historial de "Retiradas" y no se puede deshacer.`, () => {
                     handleDecommissionTool(toolId);
                 });
                 break;
@@ -752,12 +753,12 @@ async function handleOpenToolModal(toolId = null, actionType = 'edit-tool', assi
 }
 
 /**
- * Guarda (Crea, Actualiza, Asigna o Devuelve) una herramienta. (Sin cambios)
+ * Guarda (Crea, Actualiza, Asigna o Devuelve) una herramienta.
  */
 async function handleSaveTool(form) {
     const data = Object.fromEntries(new FormData(form).entries());
     const type = form.dataset.type;
-    const id = form.dataset.id;
+    const id = form.dataset.id; // <--- AQUÍ ES DONDE LLEGABA UNDEFINED
     const currentUser = getCurrentUser();
 
     if (!currentUser) {
@@ -765,23 +766,36 @@ async function handleSaveTool(form) {
         return;
     }
 
+    // --- CORRECCIÓN DE SEGURIDAD ---
+    // Si no es una herramienta nueva, EL ID ES OBLIGATORIO.
+    if (type !== 'new-tool' && !id) {
+        console.error("Error crítico: ID de herramienta no encontrado en el formulario.");
+        alert("Error interno: Faltan datos de la herramienta. Por favor cierra el modal y vuelve a intentarlo.");
+        return;
+    }
+    // -------------------------------
+
     const confirmBtn = document.getElementById('modal-confirm-btn');
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Guardando...';
+    if(confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Guardando...';
+    }
 
     try {
         const batch = writeBatch(db);
 
         if (type === 'new-tool') {
             const photoFile = data.photo;
+            // Validación de foto para herramienta nueva
+            if (!photoFile || photoFile.size === 0) throw new Error("La foto es obligatoria para crear.");
 
             const newToolRef = doc(collection(db, "tools"));
             const newToolId = newToolRef.id;
 
-            confirmBtn.textContent = 'Redimensionando foto...';
+            if(confirmBtn) confirmBtn.textContent = 'Redimensionando foto...';
             const resizedBlob = await resizeImage(photoFile, 800);
-            confirmBtn.textContent = 'Subiendo foto...';
-
+            
+            if(confirmBtn) confirmBtn.textContent = 'Subiendo foto...';
             const photoPath = `tools_photos/${newToolId}/${photoFile.name}`;
             const photoStorageRef = ref(storage, photoPath);
             await uploadBytes(photoStorageRef, resizedBlob);
@@ -790,9 +804,9 @@ async function handleSaveTool(form) {
             const toolData = {
                 name: data.name,
                 reference: data.reference,
-                category: data.category || 'otro', // <-- AÑADIDO
-                purchaseCost: parseFloat(data.purchaseCost.replace(/[$. ]/g, '')) || 0, // <-- AÑADIDO
-                purchaseDate: data.purchaseDate || null, // <-- AÑADIDO
+                category: data.category || 'otro',
+                purchaseCost: parseFloat(data.purchaseCost.replace(/[$. ]/g, '')) || 0,
+                purchaseDate: data.purchaseDate || null,
                 photoURL: downloadURL,
                 status: 'disponible',
                 assignedTo: null,
@@ -807,9 +821,9 @@ async function handleSaveTool(form) {
             batch.update(toolRef, {
                 name: data.name,
                 reference: data.reference,
-                category: data.category || 'otro', // <-- AÑADIDO
-                purchaseCost: parseFloat(data.purchaseCost.replace(/[$. ]/g, '')) || 0, // <-- AÑADIDO
-                purchaseDate: data.purchaseDate || null, // <-- AÑADIDO
+                category: data.category || 'otro',
+                purchaseCost: parseFloat(data.purchaseCost.replace(/[$. ]/g, '')) || 0,
+                purchaseDate: data.purchaseDate || null,
                 lastUpdatedBy: currentUser.uid,
                 updatedAt: serverTimestamp()
             });
@@ -822,10 +836,13 @@ async function handleSaveTool(form) {
             const assignPhotoFile = data.assignPhoto;
             const assignComments = data.assignComments || "";
 
-            confirmBtn.textContent = 'Redimensionando foto...';
-            const resizedBlob = await resizeImage(assignPhotoFile, 800);
-            confirmBtn.textContent = 'Subiendo foto...';
+            // Validación extra
+            if (!assignPhotoFile || assignPhotoFile.size === 0) throw new Error("La foto de evidencia es obligatoria.");
 
+            if(confirmBtn) confirmBtn.textContent = 'Procesando foto...';
+            const resizedBlob = await resizeImage(assignPhotoFile, 800);
+            
+            if(confirmBtn) confirmBtn.textContent = 'Subiendo evidencia...';
             const photoPath = `tool_assignments/${id}/${Date.now()}_${assignPhotoFile.name}`;
             const photoStorageRef = ref(storage, photoPath);
             await uploadBytes(photoStorageRef, resizedBlob);
@@ -848,8 +865,6 @@ async function handleSaveTool(form) {
                 assignComments: assignComments
             });
 
-
-
             sendNotificationCallback(
                 assigneeId,
                 'Herramienta Asignada',
@@ -868,10 +883,12 @@ async function handleSaveTool(form) {
 
             const newToolStatus = (returnStatus === 'dañado') ? 'en_reparacion' : 'disponible';
 
-            confirmBtn.textContent = 'Redimensionando foto...';
-            const resizedBlob = await resizeImage(returnPhotoFile, 800);
-            confirmBtn.textContent = 'Subiendo foto...';
+            if (!returnPhotoFile || returnPhotoFile.size === 0) throw new Error("La foto de devolución es obligatoria.");
 
+            if(confirmBtn) confirmBtn.textContent = 'Procesando foto...';
+            const resizedBlob = await resizeImage(returnPhotoFile, 800);
+            
+            if(confirmBtn) confirmBtn.textContent = 'Subiendo evidencia...';
             const photoPath = `tool_returns/${id}/${Date.now()}_${returnPhotoFile.name}`;
             const photoStorageRef = ref(storage, photoPath);
             await uploadBytes(photoStorageRef, resizedBlob);
@@ -888,7 +905,7 @@ async function handleSaveTool(form) {
             batch.set(historyRef, {
                 action: 'devuelta',
                 adminId: currentUser.uid,
-                returnedByUserId: originalAssigneeId, // <-- AÑADE ESTA LÍNEA
+                returnedByUserId: originalAssigneeId,
                 timestamp: serverTimestamp(),
                 returnPhotoURL: downloadURL,
                 returnStatus: returnStatus,
@@ -902,18 +919,16 @@ async function handleSaveTool(form) {
                     `Recibimos tu devolución de la herramienta: ${toolName}.`,
                     'herramienta'
                 );
-            }// --- INICIO DE CÓDIGO AÑADIDO ---
+            }
         } else if (type === 'register-maintenance') {
             const toolRef = doc(db, "tools", id);
 
-            // 1. Actualizar la herramienta a 'disponible'
             batch.update(toolRef, {
                 status: 'disponible',
                 lastUpdatedBy: currentUser.uid,
                 updatedAt: serverTimestamp()
             });
 
-            // 2. Crear el registro en el historial
             const historyRef = doc(collection(db, "tools", id, "history"));
             batch.set(historyRef, {
                 action: 'mantenimiento',
@@ -923,11 +938,7 @@ async function handleSaveTool(form) {
                 maintenanceCost: parseFloat(data.maintenanceCost.replace(/[$. ]/g, '')) || 0,
                 maintenanceNotes: data.maintenanceNotes || ''
             });
-            // --- FIN DE CÓDIGO AÑADIDO ---
-
         }
-
-
 
         await batch.commit();
         closeMainModalCallback();
@@ -936,15 +947,11 @@ async function handleSaveTool(form) {
         console.error("Error al guardar herramienta:", error);
         alert("Error: " + error.message);
     } finally {
-        confirmBtn.disabled = false;
-
-        const type = form.dataset.type;
-        if (type === 'new-tool') confirmBtn.textContent = 'Crear Herramienta';
-        else if (type === 'edit-tool') confirmBtn.textContent = 'Guardar Cambios';
-        else if (type === 'assign-tool') confirmBtn.textContent = 'Confirmar Asignación';
-        else if (type === 'return-tool') confirmBtn.textContent = 'Confirmar Devolución';
-        else if (type === 'register-maintenance') confirmBtn.textContent = 'Finalizar Mantenimiento';
-        else confirmBtn.textContent = 'Guardar';
+        if(confirmBtn) {
+            confirmBtn.disabled = false;
+            // Restaurar texto original (simple)
+            confirmBtn.textContent = 'Guardar';
+        }
     }
 }
 
