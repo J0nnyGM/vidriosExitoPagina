@@ -211,6 +211,98 @@ const migrateLegacySubItems = async () => {
 };
 
 /**
+ * Lógica central para sincronizar y corregir el inventario.
+ * Se usa tanto en el cronograma diario como en el botón manual.
+ */
+const executeInventoryAudit = async () => {
+    console.log("Ejecutando auditoría y corrección de inventario...");
+    const catalogSnapshot = await db.collection("materialCatalog").get();
+    
+    if (catalogSnapshot.empty) return "Catálogo vacío.";
+
+    let materialsUpdated = 0;
+    let batchesCreated = 0;
+    let remnantsConsolidated = 0;
+
+    for (const materialDoc of catalogSnapshot.docs) {
+        const materialRef = materialDoc.ref;
+        const materialData = materialDoc.data();
+        const currentHeadStock = materialData.quantityInStock || 0;
+        
+        const batch = db.batch();
+        let needsCommit = false;
+
+        const batchesSnapshot = await materialRef.collection("stockBatches").get();
+        const realStockInBatches = batchesSnapshot.docs.reduce((sum, doc) => sum + (doc.data().quantityRemaining || 0), 0);
+
+        // 1. CORRECCIÓN DE IMPORTACIÓN EXCEL (Stock Huérfano)
+        if (currentHeadStock > 0 && realStockInBatches === 0) {
+            const newBatchRef = materialRef.collection("stockBatches").doc();
+            batch.set(newBatchRef, {
+                quantityOriginal: currentHeadStock,
+                quantityRemaining: currentHeadStock,
+                unitCost: materialData.price || 0,
+                purchaseDate: admin.firestore.FieldValue.serverTimestamp(),
+                supplier: "Inventario Inicial (Importado)",
+                invoiceNumber: "INIT-MIGRATION",
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            batchesCreated++;
+            needsCommit = true;
+        } 
+        // 2. SINCRONIZACIÓN NORMAL
+        else if (realStockInBatches !== currentHeadStock) {
+            batch.update(materialRef, { quantityInStock: realStockInBatches });
+            materialsUpdated++;
+            needsCommit = true;
+        }
+
+        // 3. LIMPIEZA DE RETAZOS
+        if (materialData.isDivisible) {
+            const remnantsSnapshot = await materialRef.collection("remnantStock").get();
+            if (!remnantsSnapshot.empty) {
+                const remnantsByLength = new Map();
+                remnantsSnapshot.forEach(doc => {
+                    const d = doc.data();
+                    if (d.length) {
+                        const existing = remnantsByLength.get(d.length) || { total: 0, docs: [] };
+                        existing.total += d.quantity || 0;
+                        existing.docs.push(doc.ref);
+                        remnantsByLength.set(d.length, existing);
+                    } else {
+                        batch.delete(doc.ref);
+                        needsCommit = true;
+                    }
+                });
+
+                for (const [length, group] of remnantsByLength.entries()) {
+                    // Consolidar si hay múltiples docs o limpiar si es <= 0
+                    if (group.docs.length > 1 || group.total <= 0) {
+                        remnantsConsolidated++;
+                        group.docs.forEach(ref => batch.delete(ref));
+                        if (group.total > 0) {
+                            const newRef = materialRef.collection("remnantStock").doc();
+                            batch.set(newRef, { 
+                                length, 
+                                quantity: group.total, 
+                                unit: 'm', 
+                                createdAt: admin.firestore.FieldValue.serverTimestamp() 
+                            });
+                        }
+                        needsCommit = true;
+                    }
+                }
+            }
+        }
+
+        if (needsCommit) {
+            await batch.commit();
+        }
+    }
+    return `Auditoría completada: ${batchesCreated} lotes iniciales creados, ${materialsUpdated} stocks corregidos.`;
+};
+
+/**
  * Trigger que recalcula el Progreso del Proyecto Y
  * ACTUALIZA LAS ESTADÍSTICAS DE M² COMPLETADOS Y BONIFICACIONES (Globales y de Empleado).
  * (VERSIÓN CORREGIDA: Obtiene instaladores desde el TaskId)
@@ -823,25 +915,27 @@ exports.updateTaskStats = onDocumentWritten("tasks/{taskId}", async (event) => {
     }
 });
 
-// --- Función Callable (v2 - CORREGIDA Y AMPLIADA) ---
 exports.runFullRecalculation = onCall(async (request) => {
     if (!request.auth) {
-        throw new HttpsError('unauthenticated', 'La función debe ser llamada por un usuario autenticado.');
+        throw new HttpsError('unauthenticated', 'Debe estar autenticado.');
     }
 
-    console.log("Iniciando recálculo completo de TODOS los módulos...");
+    console.log("Iniciando recálculo completo (Manual)...");
 
-    // 1. Recalcular Proyectos (lógica existente)
-    console.log("Recalculando progreso de proyectos...");
+    // 1. Recalcular Proyectos
     const projectsSnapshot = await db.collection('projects').get();
     const projectPromises = [];
     projectsSnapshot.forEach(doc => {
         projectPromises.push(recalculateProjectProgress(doc.id));
     });
 
-    // 2. Preparamos las promesas de los módulos del Dashboard
+    // 2. Ejecutar Auditoría de Inventario (¡ESTO ES LO QUE FALTABA!)
+    // Esto arreglará los materiales importados desde Excel inmediatamente
+    const inventoryAuditPromise = executeInventoryAudit(); 
+
+    // 3. Otros módulos del Dashboard
     const dashboardPromises = [
-        migrateLegacySubItems(), // <-- AÑADIDO: Migra ítems antiguos
+        migrateLegacySubItems(),
         recalculateToolStats(),
         recalculateDotacionStats(),
         recalculateProjectStats(),
@@ -849,23 +943,23 @@ exports.runFullRecalculation = onCall(async (request) => {
         recalculateInventoryValueStats(),
         recalculateProductivityStats()
     ];
-    // 3. Ejecutamos todas las promesas en paralelo
+
     await Promise.all([
         ...projectPromises,
-        ...dashboardPromises
+        ...dashboardPromises,
+        inventoryAuditPromise // <-- Añadido a la espera
     ]);
 
-    console.log("Recálculo completo finalizado exitosamente.");
-    return { message: `Recálculo completado para ${projectPromises.length} proyectos y todos los módulos del dashboard.` };
+    return { message: `Sistema sincronizado y stocks corregidos correctamente.` };
 });
 
 /**
  * Cloud Function programada que audita y sincroniza el stock de todos los materiales.
- * Se recomienda programarla para que se ejecute una vez al día (ej. cada madrugada).
+ * CORREGIDA: Si encuentra stock en el encabezado pero no hay lotes, CREA un lote inicial.
  */
-
 exports.scheduledInventorySync = onSchedule("every 24 hours", async (event) => {
-    console.log("Executing scheduled inventory audit...");
+    console.log("Executing scheduled inventory audit (Auto-Correction Mode)...");
+    
 
     try {
         const catalogSnapshot = await db.collection("materialCatalog").get();
@@ -875,24 +969,51 @@ exports.scheduledInventorySync = onSchedule("every 24 hours", async (event) => {
         }
 
         let materialsUpdated = 0;
+        let batchesCreated = 0;
         let remnantsConsolidated = 0;
 
         for (const materialDoc of catalogSnapshot.docs) {
             const materialRef = materialDoc.ref;
             const materialData = materialDoc.data();
+            const currentHeadStock = materialData.quantityInStock || 0;
+            
             const batch = db.batch();
+            let needsCommit = false;
 
-            // TAREA 1: Sincronizar el stock de unidades completas
+            // --- TAREA 1: Sincronizar y Auto-Corregir Stock ---
             const batchesSnapshot = await materialRef.collection("stockBatches").get();
-            const realStock = batchesSnapshot.docs.reduce((sum, doc) => sum + (doc.data().quantityRemaining || 0), 0);
+            
+            // Calculamos cuánto stock real existe en los lotes
+            const realStockInBatches = batchesSnapshot.docs.reduce((sum, doc) => sum + (doc.data().quantityRemaining || 0), 0);
 
-            if (realStock !== (materialData.quantityInStock || 0)) {
-                console.log(`- Updating full unit stock for "${materialData.name}": from ${materialData.quantityInStock || 0} to ${realStock}`);
-                batch.update(materialRef, { quantityInStock: realStock });
+            // CASO A: Hay stock en el encabezado (ej: importado de Excel) pero NO hay lotes que lo respalden
+            if (currentHeadStock > 0 && realStockInBatches === 0) {
+                console.log(`- FIXED: Found orphan stock for "${materialData.name}" (${currentHeadStock}). Creating initial batch.`);
+                
+                // Crear un lote inicial automático para respaldar ese número
+                const newBatchRef = materialRef.collection("stockBatches").doc();
+                batch.set(newBatchRef, {
+                    quantityOriginal: currentHeadStock,
+                    quantityRemaining: currentHeadStock,
+                    unitCost: materialData.price || 0, // Usamos el precio de referencia si existe
+                    purchaseDate: admin.firestore.FieldValue.serverTimestamp(),
+                    supplier: "Inventario Inicial (Importado)",
+                    invoiceNumber: "INIT-MIGRATION",
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+                
+                batchesCreated++;
+                needsCommit = true;
+            } 
+            // CASO B: Hay lotes, pero la suma no coincide con el encabezado -> Mandan los lotes
+            else if (realStockInBatches !== currentHeadStock) {
+                console.log(`- SYNC: Updating stock header for "${materialData.name}": from ${currentHeadStock} to ${realStockInBatches}`);
+                batch.update(materialRef, { quantityInStock: realStockInBatches });
                 materialsUpdated++;
+                needsCommit = true;
             }
 
-            // TAREA 2: Consolidar y limpiar los retazos
+            // --- TAREA 2: Consolidar y limpiar retazos (Lógica existente) ---
             if (materialData.isDivisible) {
                 const remnantsSnapshot = await materialRef.collection("remnantStock").get();
                 if (!remnantsSnapshot.empty) {
@@ -903,28 +1024,22 @@ exports.scheduledInventorySync = onSchedule("every 24 hours", async (event) => {
                         const length = remnantData.length;
                         if (length) {
                             const existing = remnantsByLength.get(length) || { totalQuantity: 0, docsToDelete: [] };
-                            // Suma la cantidad, tratando los que no tienen como 0
                             existing.totalQuantity += remnantData.quantity || 0;
                             existing.docsToDelete.push(doc.ref);
                             remnantsByLength.set(length, existing);
                         } else {
-                            // Borra retazos sin medida para limpiar datos
                             batch.delete(doc.ref);
+                            needsCommit = true;
                         }
                     });
 
                     for (const [length, group] of remnantsByLength.entries()) {
-                        // Consolida si hay más de un documento para la misma medida,
-                        // o si la cantidad total es cero (para limpiar),
-                        // o si el único documento no tiene el campo 'quantity' (para repararlo)
                         const needsConsolidation = group.docsToDelete.length > 1 ||
                             group.totalQuantity <= 0 ||
                             (group.docsToDelete.length === 1 && !remnantsSnapshot.docs.find(d => d.ref.path === group.docsToDelete[0].path).data().hasOwnProperty('quantity'));
 
                         if (needsConsolidation) {
                             remnantsConsolidated++;
-                            console.log(`- Consolidating/Cleaning remnants for "${materialData.name}" of length ${length}m.`);
-
                             group.docsToDelete.forEach(docRef => batch.delete(docRef));
 
                             if (group.totalQuantity > 0) {
@@ -933,18 +1048,21 @@ exports.scheduledInventorySync = onSchedule("every 24 hours", async (event) => {
                                     length: length,
                                     quantity: group.totalQuantity,
                                     unit: 'm',
-                                    createdAt: FieldValue.serverTimestamp()
+                                    createdAt: admin.firestore.FieldValue.serverTimestamp()
                                 });
                             }
+                            needsCommit = true;
                         }
                     }
                 }
             }
 
-            await batch.commit();
+            if (needsCommit) {
+                await batch.commit();
+            }
         }
 
-        console.log(`Sync completed! Full units updated: ${materialsUpdated}. Remnant groups consolidated/cleaned: ${remnantsConsolidated}.`);
+        console.log(`Sync completed! Initial batches created: ${batchesCreated}. Headers updated: ${materialsUpdated}. Remnants cleaned: ${remnantsConsolidated}.`);
         return null;
 
     } catch (error) {

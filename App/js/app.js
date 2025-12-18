@@ -7690,24 +7690,36 @@ async function openMainModal(type, data = {}) {
                             </div>
                         </div>
 
-                        <div class="bg-slate-50 p-5 rounded-xl border border-slate-200">
+                            <div class="bg-slate-50 p-5 rounded-xl border border-slate-200">
                              <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-4 flex items-center">
                                 <i class="fa-solid fa-boxes-stacked mr-2"></i> Control de Stock
                              </h4>
 
-                             <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+                             <div class="grid grid-cols-1 md:grid-cols-${!isEditing ? '3' : '2'} gap-5 mb-5">
                                 <div>
                                     <label class="block text-xs font-bold text-slate-700 mb-1.5">Unidad de Medida</label>
                                     <div class="relative">
                                         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><i class="fa-solid fa-ruler"></i></div>
-                                        <input type="text" name="unit" required class="w-full pl-9 border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Unidad, Metro, Lámina..." value="${isEditing ? data.unit : ''}">
+                                        <input type="text" name="unit" required class="w-full pl-9 border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Unidad, Metro..." value="${isEditing ? data.unit : ''}">
                                     </div>
                                 </div>
+                                
+                                ${!isEditing ? `
+                                <div>
+                                    <label class="block text-xs font-bold text-green-700 mb-1.5">Stock Inicial</label>
+                                     <div class="relative">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-green-500"><i class="fa-solid fa-cube"></i></div>
+                                        <input type="number" name="quantityInStock" class="w-full pl-9 border-green-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-green-50" placeholder="0" value="0">
+                                    </div>
+                                    <p class="text-[10px] text-green-600 mt-1">Solo se asigna al crear.</p>
+                                </div>
+                                ` : ''}
+
                                 <div>
                                     <label class="block text-xs font-bold text-slate-700 mb-1.5">Alerta de Stock Bajo</label>
                                      <div class="relative">
                                         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><i class="fa-solid fa-bell"></i></div>
-                                        <input type="number" name="minStockThreshold" class="w-full pl-9 border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Cantidad mínima (Ej: 5)" value="${isEditing ? data.minStockThreshold || '' : ''}">
+                                        <input type="number" name="minStockThreshold" class="w-full pl-9 border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Mínimo (Ej: 5)" value="${isEditing ? data.minStockThreshold || '' : ''}">
                                     </div>
                                 </div>
                             </div>
@@ -21354,3 +21366,358 @@ async function generateAndUploadQuotePDF(quoteData, projectId, projectRefId) {
 
     console.log("PDF de cotización guardado exitosamente.");
 }
+
+// ====================================================================================
+//  MÓDULO DE IMPORTACIÓN DE MATERIALES (EXCEL) - VERSIÓN CORREGIDA
+// ====================================================================================
+
+/**
+ * Abre el modal de importación. Detecta automáticamente si hay un proyecto seleccionado.
+ */
+function openImportModal(projectIdOverride = null) {
+    // --- LÓGICA DE SEGURIDAD PARA EL PROYECTO ---
+    let targetProjectId = projectIdOverride;
+    
+    // Intentamos leer la variable 'currentProject' del scope de app.js
+    if (!targetProjectId && typeof currentProject !== 'undefined' && currentProject) {
+        targetProjectId = currentProject.id;
+    }
+
+    // --- HTML DEL MODAL ---
+    const overlay = document.createElement('div');
+    overlay.className = "fixed inset-0 bg-gray-900 bg-opacity-60 z-[80] flex items-center justify-center opacity-0 transition-opacity duration-300 backdrop-blur-sm";
+    overlay.id = "import-materials-modal";
+
+    const modalHtml = `
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-0 transform scale-95 transition-transform duration-300 flex flex-col overflow-hidden">
+            <div class="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-600 text-xl">
+                        <i class="fa-solid fa-file-import"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-800">Importar Materiales</h3>
+                        <p class="text-xs text-gray-500">
+                            ${targetProjectId ? 'Asociando al Proyecto Actual' : 'Carga al Inventario Global'}
+                        </p>
+                    </div>
+                </div>
+                <button id="close-import-modal" class="text-gray-400 hover:text-gray-600 transition-colors"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+
+            <div class="p-6 space-y-6">
+                <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-4">
+                    <div class="text-blue-500 mt-1"><i class="fa-solid fa-1 text-lg"></i></div>
+                    <div class="flex-1">
+                        <h4 class="text-sm font-bold text-blue-800 mb-1">Descarga la plantilla</h4>
+                        <p class="text-xs text-blue-600 mb-3">Usa este archivo base. No cambies los encabezados.</p>
+                        <button id="btn-download-template" class="bg-white text-blue-600 border border-blue-200 hover:bg-blue-50 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-2">
+                            <i class="fa-solid fa-download"></i> Descargar Plantilla .xlsx
+                        </button>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="block text-sm font-bold text-gray-700">Sube tu archivo diligenciado</label>
+                    <div class="relative group">
+                        <input type="file" id="excel-upload-input" accept=".xlsx, .xls, .csv" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div id="drop-zone" class="border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center justify-center text-center group-hover:border-green-400 group-hover:bg-green-50 transition-all">
+                            <div class="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mb-3 group-hover:bg-white text-gray-400 group-hover:text-green-500 transition-colors">
+                                <i class="fa-solid fa-cloud-arrow-up text-2xl"></i>
+                            </div>
+                            <p class="text-sm font-medium text-gray-600 group-hover:text-green-700"><span class="text-green-600 font-bold">Haz clic para subir</span></p>
+                            <p id="file-name-display" class="text-sm font-bold text-gray-800 mt-3 hidden bg-white px-3 py-1 rounded shadow-sm border"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+                <button id="cancel-import" class="px-4 py-2 rounded-lg text-sm font-bold text-gray-500 hover:text-gray-700 hover:bg-gray-100">Cancelar</button>
+                <button id="confirm-import" disabled class="px-4 py-2 rounded-lg text-sm font-bold text-white bg-gray-300 cursor-not-allowed transition-all flex items-center gap-2">
+                    <i class="fa-solid fa-upload"></i> Importar Datos
+                </button>
+            </div>
+        </div>
+    `;
+
+    overlay.innerHTML = modalHtml;
+    document.body.appendChild(overlay);
+
+    // Animación entrada (Con validación de existencia)
+    requestAnimationFrame(() => {
+        if (overlay) {
+            overlay.classList.remove('opacity-0');
+            const innerDiv = overlay.querySelector('div');
+            if (innerDiv) {
+                innerDiv.classList.remove('scale-95');
+                innerDiv.classList.add('scale-100');
+            }
+        }
+    });
+
+    // --- MANEJO DE EVENTOS (USANDO SELECTORES INTERNOS) ---
+    // Buscamos DENTRO del overlay, no en todo el documento. Es más seguro.
+    const fileInput = overlay.querySelector('#excel-upload-input');
+    const fileNameDisplay = overlay.querySelector('#file-name-display');
+    const confirmBtn = overlay.querySelector('#confirm-import');
+    const downloadBtn = overlay.querySelector('#btn-download-template');
+    const closeBtn = overlay.querySelector('#close-import-modal');
+    const cancelBtn = overlay.querySelector('#cancel-import');
+    const dropZone = overlay.querySelector('#drop-zone');
+
+    const closeModal = () => {
+        overlay.classList.add('opacity-0');
+        const innerDiv = overlay.querySelector('div');
+        if (innerDiv) {
+            innerDiv.classList.remove('scale-100');
+            innerDiv.classList.add('scale-95');
+        }
+        setTimeout(() => {
+            if (overlay.parentNode) {
+                overlay.parentNode.removeChild(overlay);
+            }
+        }, 300);
+    };
+
+    // 1. Descargar Plantilla
+    if (downloadBtn) {
+        downloadBtn.onclick = () => generateMaterialTemplate();
+    }
+
+    // 2. Seleccionar Archivo
+    if (fileInput) {
+        fileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                if (fileNameDisplay) {
+                    fileNameDisplay.textContent = `📄 ${file.name}`;
+                    fileNameDisplay.classList.remove('hidden');
+                }
+                if (dropZone) dropZone.classList.add('border-green-500', 'bg-green-50');
+                
+                if (confirmBtn) {
+                    confirmBtn.disabled = false;
+                    confirmBtn.classList.remove('bg-gray-300', 'cursor-not-allowed');
+                    confirmBtn.classList.add('bg-green-600', 'hover:bg-green-700', 'shadow-md');
+                }
+            }
+        };
+    }
+
+    // 3. Confirmar Importación
+if (confirmBtn) {
+        confirmBtn.onclick = async () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            confirmBtn.innerHTML = '<div class="loader-xs border-white mr-2"></div> Procesando...';
+            confirmBtn.disabled = true;
+
+            try {
+                // Usamos la variable targetProjectId que calculamos al inicio
+                await importMaterialsFromExcel(file, targetProjectId);
+                closeModal();
+                
+                // --- RECARGA DE VISTAS (Lógica corregida) ---
+                
+                // 1. Si estamos en un proyecto específico, recargamos su inventario
+                if (targetProjectId && typeof loadItems === 'function') {
+                    console.log("Recargando inventario de proyecto...");
+                    loadItems(targetProjectId);
+                } 
+                // 2. Si estamos en el catálogo global (Inventory), recargamos esa vista
+                else if (typeof loadCatalogView === 'function') {
+                    console.log("Recargando catálogo global...");
+                    
+                    // Reseteamos la paginación para ver los nuevos items al principio si ordenas por fecha o nombre
+                    if (typeof lastVisibleCatalogDoc !== 'undefined') {
+                        lastVisibleCatalogDoc = null; 
+                    }
+                    
+                    // Llamamos a la función principal de carga
+                    loadCatalogView();
+                }
+
+                // Notificación visual extra (opcional)
+                const successToast = document.createElement('div');
+                successToast.className = "fixed bottom-5 right-5 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-[100] animate-fade-in-up flex items-center gap-3";
+                successToast.innerHTML = '<i class="fa-solid fa-check-circle text-xl"></i> Datos actualizados';
+                document.body.appendChild(successToast);
+                setTimeout(() => successToast.remove(), 3000);
+
+            } catch (error) {
+                console.error(error);
+                alert("Error: " + error.message);
+                confirmBtn.innerHTML = '<i class="fa-solid fa-upload"></i> Reintentar';
+                confirmBtn.disabled = false;
+            }
+        };
+    }
+
+    if (closeBtn) closeBtn.onclick = closeModal;
+    if (cancelBtn) cancelBtn.onclick = closeModal;
+}
+
+/**
+ * Genera y descarga la plantilla de Excel con la columna Tipo Medición obligatoria.
+ */
+function generateMaterialTemplate() {
+    if (!window.XLSX) {
+        alert("Librería XLSX no cargada. Por favor recarga la página.");
+        return;
+    }
+
+    const headers = [
+        { 
+            "Nombre": "Tornillo 3x1 Pulgada", 
+            "Referencia": "TRN-001", 
+            "Unidad": "Caja", 
+            "Stock Inicial": 100, // <--- NUEVO CAMPO
+            "Stock Mínimo": 10,
+            "Tipo Medición": "unit",
+            "Largo Estándar (cm)": "", 
+            "Ancho Estándar (cm)": ""
+        },
+        { 
+            "Nombre": "Perfil Aluminio 2x1", 
+            "Referencia": "ALU-502", 
+            "Unidad": "Tira", 
+            "Stock Inicial": 50, // <--- NUEVO CAMPO
+            "Stock Mínimo": 5,
+            "Tipo Medición": "linear",
+            "Largo Estándar (cm)": 600,
+            "Ancho Estándar (cm)": ""
+        },
+        { 
+            "Nombre": "Vidrio Templado 6mm", 
+            "Referencia": "VID-TEM-6", 
+            "Unidad": "Lámina", 
+            "Stock Inicial": 20, // <--- NUEVO CAMPO
+            "Stock Mínimo": 3,
+            "Tipo Medición": "area",
+            "Largo Estándar (cm)": 240,
+            "Ancho Estándar (cm)": 320
+        }
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(headers);
+    
+    // Ajustar anchos
+    worksheet['!cols'] = [
+        {wch: 30}, {wch: 15}, {wch: 10}, 
+        {wch: 12}, {wch: 12}, // Stock Inicial y Mínimo
+        {wch: 15}, {wch: 18}, {wch: 18}
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Plantilla Materiales");
+    XLSX.writeFile(workbook, "Plantilla_Materiales_V3.xlsx");
+}
+
+/**
+ * Lee el Excel y guarda en Firebase (materialCatalog) con la estructura correcta.
+ */
+async function importMaterialsFromExcel(file, projectId = null) {
+    if (!window.XLSX) throw new Error("Librería XLSX no encontrada");
+
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onload = async (e) => {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                if (!jsonData || jsonData.length === 0) {
+                    alert("El archivo está vacío.");
+                    return resolve();
+                }
+
+                const batchSize = 400;
+                let batches = [];
+                let currentBatch = writeBatch(db);
+                let opCount = 0;
+                let totalCount = 0;
+
+                // Tipos permitidos
+                const validTypes = ['unit', 'linear', 'area'];
+
+                for (const row of jsonData) {
+                    // Helper para leer columnas (ignora mayúsculas/minúsculas)
+                    const getCol = (key) => row[key] || row[key.toLowerCase()] || row[key.toUpperCase()] || '';
+
+                    const name = getCol('Nombre') || getCol('Material');
+                    if (!name) continue;
+
+                    // 1. VALIDACIÓN TIPO DE MEDICIÓN
+                    let rawType = String(getCol('Tipo Medición')).toLowerCase().trim();
+                    let measurementType = validTypes.includes(rawType) ? rawType : 'unit';
+
+                    // 2. DIMENSIONES
+                    const lengthCm = parseFloat(getCol('Largo Estándar (cm)')) || 0;
+                    const widthCm = parseFloat(getCol('Ancho Estándar (cm)')) || 0;
+
+                    let defaultSize = null;
+                    if (measurementType === 'linear') {
+                        defaultSize = { length: lengthCm > 0 ? lengthCm / 100 : 0, width: 0 };
+                    } else if (measurementType === 'area') {
+                        defaultSize = { length: lengthCm > 0 ? lengthCm / 100 : 0, width: widthCm > 0 ? widthCm / 100 : 0 };
+                    }
+
+                    // 3. ESTRUCTURA EXACTA PARA /materialCatalog
+                        const materialData = {
+                            name: String(name).trim(),
+                            reference: String(getCol('Referencia')).trim(),
+                            unit: String(getCol('Unidad') || 'Unidad').trim(),
+                            minStockThreshold: parseInt(getCol('Stock Mínimo')) || 5,
+                            
+                            measurementType: measurementType,
+                            defaultSize: defaultSize,
+
+                            // --- CAMBIO AQUÍ: LEER STOCK INICIAL ---
+                            // Si no ponen nada, se asume 0.
+                            quantityInStock: parseInt(getCol('Stock Inicial')) || 0, 
+                            
+                            isDivisible: measurementType !== 'unit',
+                            createdAt: new Date()
+                        };
+
+                    // --- CORRECCIÓN DE RUTA ---
+                    // Si no hay proyecto, va al catálogo global 'materialCatalog'
+                    const collectionPath = projectId ? `projects/${projectId}/items` : "materialCatalog";
+                    
+                    const newRef = doc(collection(db, collectionPath));
+                    currentBatch.set(newRef, materialData);
+                    
+                    opCount++;
+                    totalCount++;
+
+                    if (opCount >= batchSize) {
+                        batches.push(currentBatch.commit());
+                        currentBatch = writeBatch(db);
+                        opCount = 0;
+                    }
+                }
+
+                if (opCount > 0) batches.push(currentBatch.commit());
+                await Promise.all(batches);
+                
+                alert(`✅ Se importaron ${totalCount} materiales correctamente a ${projectId ? 'Proyecto' : 'Catálogo Global'}.`);
+                resolve();
+
+            } catch (error) {
+                console.error("Error importando:", error);
+                reject(error);
+                alert("Error procesando el archivo: " + error.message);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+// EXPONER LA FUNCIÓN AL HTML GLOBALMENTE
+window.openImportModal = openImportModal;
