@@ -53,6 +53,42 @@ const currencyFormatter = new Intl.NumberFormat('es-CO', {
 });
 
 /**
+ * Calcula la diferencia de días entre dos fechas usando el año comercial de 360 días.
+ * (Meses de 30 días).
+ * @param {Date} startDate 
+ * @param {Date} endDate 
+ * @returns {number} Días totales (inclusivo)
+ */
+function calculateDays360(startDate, endDate) {
+    if (!startDate || !endDate) return 0;
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    let day1 = start.getDate();
+    let month1 = start.getMonth();
+    let year1 = start.getFullYear();
+
+    let day2 = end.getDate();
+    let month2 = end.getMonth();
+    let year2 = end.getFullYear();
+
+    // Ajuste día 31 a 30
+    if (day1 === 31) day1 = 30;
+    if (day2 === 31) day2 = 30;
+
+    // Ajuste Febrero: Si la fecha fin es el último día de febrero, se toma como 30
+    // (Opcional según criterio contable, pero estándar para nómina mensual completa)
+    const isEndFeb = (month2 === 1) && (day2 === 28 || day2 === 29);
+    if (isEndFeb) {
+        day2 = 30;
+    }
+
+    const days = ((year2 - year1) * 360) + ((month2 - month1) * 30) + (day2 - day1) + 1; // +1 inclusivo
+    return Math.max(0, days);
+}
+
+/**
  * Inicializa el módulo de Empleados.
  * Esta función se llama desde app.js CUANDO Firebase ya está listo.
  */
@@ -3916,9 +3952,11 @@ async function renderStandardPayrollForm(container, user) {
         const daysInput = document.getElementById('payment-dias-pagar');
         
         if (val.includes('Mensual') || val.includes('Completo')) {
-            daysInput.value = 30;
+            daysInput.value = 30; // Siempre 30, incluso en Febrero
+        } else if (val.includes('Segunda')) {
+            daysInput.value = 15; // La 2da quincena siempre cierra el mes contable de 30
         } else {
-            daysInput.value = 15; // Asume quincena por defecto
+            daysInput.value = 15; // 1ra quincena siempre es 15
         }
         
         // Importante: Recalcular totales inmediatamente
@@ -4077,15 +4115,15 @@ async function renderPrimaForm(container, user) {
         // Guardamos las fechas exactas para enviarlas al guardar
         currentRange = { start: effectiveStart, end: effectiveEnd };
 
-        const diffTime = Math.abs(effectiveEnd - effectiveStart);
-        let days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        // --- CAMBIO: USAR CÁLCULO 360 DÍAS ---
+        // Antes: const diffTime = Math.abs(effectiveEnd - effectiveStart);
+        // Antes: let days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; 
         
-        if (effectiveStart <= startPeriod && effectiveEnd >= endPeriod) days = 180;
-        else days += 1;
-
+        let days = calculateDays360(effectiveStart, effectiveEnd); 
+        
+        // Ajuste: Si el cálculo da 181 o más (por desfases de fechas), limitar a 180 (semestre)
         if (days > 180) days = 180;
-        if (days < 0) days = 0;
-
+        
         inputDias.value = days;
         
         if (days === 180) diasInfo.textContent = "Semestre completo.";
@@ -4242,19 +4280,13 @@ async function renderCesantiasForm(container, user) {
         }
 
         if (d1 && d2 && !isNaN(d1) && !isNaN(d2)) {
-            const diffTime = d2.getTime() - d1.getTime();
-            if (diffTime < 0) return null;
-
-            // Días calendario 360 (Aprox) o Calendario real
-            // Usamos calendario real + 1 inclusivo
-            let days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            // --- CAMBIO: USAR CÁLCULO 360 DÍAS ---
+            // Antes: const diffTime = d2.getTime() - d1.getTime(); ...
             
-            // Ajuste anual: Si es todo el año, son 360 días
-            // (Si fecha inicio es <= 1 Ene y Fin >= 30 Dic)
-            const isFullYear = (d1.getMonth() === 0 && d1.getDate() === 1) && (d2.getMonth() === 11 && d2.getDate() >= 30);
+            let days = calculateDays360(d1, d2);
             
-            if (isFullYear) days = 360;
-            else if (days > 360) days = 360; // Tope
+            // Tope anual
+            if (days > 360) days = 360;
 
             document.getElementById('ces-dias-calc').textContent = days;
 
@@ -4563,9 +4595,8 @@ async function renderLiquidacionForm(container, user) {
             const startC = new Date(cesantiasStartDate); startC.setHours(0,0,0,0);
             const endC = new Date(endDate); endC.setHours(0,0,0,0);
             
-            const diffTime = Math.abs(endC - startC);
-            // Días calendario + 1
-            let diasCesantias = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; 
+            // --- CAMBIO: USAR 360 ---
+            let diasCesantias = calculateDays360(startC, endC);
             
             document.getElementById('lbl-dias-cesantias').textContent = diasCesantias;
             liquidacionData.diasCesantias = diasCesantias;
@@ -4586,20 +4617,25 @@ async function renderLiquidacionForm(container, user) {
             const effectiveStartPrima = realStartDate > startSemestre ? realStartDate : startSemestre;
             
             const diffPrima = Math.abs(endC - effectiveStartPrima);
-            let diasPrima = Math.ceil(diffPrima / (1000 * 60 * 60 * 24)) + 1;
+
+            let diasPrima = calculateDays360(effectiveStartPrima, endC);
             if (diasPrima > 180) diasPrima = 180; // Tope semestral
 
             const valPrimaTotal = (baseBenefits.value * diasPrima) / 360;
             const valPrimaNeto = Math.max(0, valPrimaTotal - primaPagadaSemestre);
             inputs.prima.value = currencyFormatter.format(valPrimaNeto);
 
-
             // 3. VACACIONES (Históricas)
             const startHistory = new Date(realStartDate); startHistory.setHours(0,0,0,0);
-            const diffHistory = Math.abs(endC - startHistory);
-            const totalDaysWorked = Math.ceil(diffHistory / (1000 * 60 * 60 * 24)) + 1;
+            
+            // --- CAMBIO: USAR 360 PARA VACACIONES TAMBIÉN ---
+            // Nota: Aunque vacaciones suelen ser calendario, para provisión contable se suele usar 360.
+            // Si prefieres calendario estricto para vacaciones, deja la fórmula anterior.
+            // Para consistencia con nómina:
+            const totalDaysWorked = calculateDays360(startHistory, endC);
 
             const totalVacacionesGeneradas = (totalDaysWorked * 15) / 360;
+
             const diasVacPendientes = Math.max(0, totalVacacionesGeneradas - diasVacacionesTomados);
             
             document.getElementById('lbl-total-vac').textContent = totalVacacionesGeneradas.toFixed(1);
@@ -4922,47 +4958,38 @@ function calculateIndemnificationValue(type, startDate, endDate, contractEndDate
     
     // Diferencia en días calendario
     const diffTime = end.getTime() - start.getTime();
-    const daysWorked = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    // --- CAMBIO: USAR 360 ---
+    const daysWorked = calculateDays360(start, end);
 
     if (daysWorked <= 0) return 0;
 
     // 1. CONTRATO A TÉRMINO FIJO
-    // Valor: Salarios correspondientes al tiempo que falte para terminar el contrato.
     if (type === 'fijo') {
-        if (!contractEndDate) return 0; // Se requiere fecha fin pactada
+        if (!contractEndDate) return 0; 
         
         const pactadoEnd = new Date(contractEndDate); pactadoEnd.setHours(0,0,0,0);
-        
-        // Si el contrato ya venció o la fecha de despido es posterior, no hay indemnización por tiempo restante
         if (end >= pactadoEnd) return 0;
 
-        const diffRemaining = pactadoEnd.getTime() - end.getTime();
-        const daysRemaining = Math.ceil(diffRemaining / (1000 * 60 * 60 * 24));
+        // Días faltantes (Base 30)
+        const daysRemaining = calculateDays360(end, pactadoEnd) - 1; // Restamos 1 porque calculateDays360 es inclusivo y queremos el remanente
         
-        // Mínimo 15 días según algunas interpretaciones, pero la ley estricta es "lo que falte".
-        // Usaremos el cálculo exacto de días faltantes.
+        // (salary / 30) es el valor del día
         return (salary / 30) * daysRemaining;
     }
 
     // 2. CONTRATO A TÉRMINO INDEFINIDO
-    // (Para salarios < 10 SMMLV - Regla general Ley 789/2002)
-    // - 30 días por el primer año.
-    // - 20 días por cada año subsiguiente (y proporcionalmente).
     if (type === 'indefinido') {
         let indemnizacionDias = 0;
 
         if (daysWorked <= 360) {
             // Menos o igual a 1 año: Proporcional a 30 días
+            // Usamos base 360 para la proporción
             indemnizacionDias = (30 * daysWorked) / 360;
         } else {
             // Más de 1 año
-            // Primer año fijo: 30 días
-            indemnizacionDias = 30;
+            indemnizacionDias = 30; // Primer año
             
-            // Tiempo restante
             const daysRemaining = daysWorked - 360;
-            
-            // 20 días por cada año extra (proporcional)
             const diasExtra = (20 * daysRemaining) / 360;
             indemnizacionDias += diasExtra;
         }
