@@ -13,7 +13,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js"></script>
-    <link rel="stylesheet" href="/app/css/all.min.css">
+    <link rel="stylesheet" href="/App/css/all.min.css">
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -22,7 +22,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <meta http-equiv="Content-Security-Policy"
-        content="script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com/ https://www.google.com/recaptcha/ https://apis.google.com https://cdn.jsdelivr.net https://kit.fontawesome.com; frame-src 'self' https://www.google.com/recaptcha/ https://www.google.com/ https://accounts.google.com https://firebasestorage.googleapis.com;">
+        content="script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com/ https://www.google.com/recaptcha/ https://apis.google.com https://cdn.jsdelivr.net https://kit.fontawesome.com; frame-src 'self' https://www.google.com/recaptcha/ https://www.google.com/ https://accounts.google.com https://firebasestorage.googleapis.com https://apis.google.com https://vidriosexitoorganizador.firebaseapp.com;">
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
@@ -38,23 +38,25 @@
     <div id="auth-container" class="hidden">
 
         <div id="login-view" class="min-h-screen bg-white flex">
-            
+
             <div class="hidden lg:flex lg:w-1/2 relative bg-slate-900 overflow-hidden">
                 <div class="absolute inset-0 bg-gradient-to-br from-blue-900/40 to-slate-900/60 z-10"></div>
-                <img src="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=2070&auto=format&fit=crop" 
-                    class="absolute inset-0 w-full h-full object-cover opacity-90 animate-fade-in-slow" 
+                <img src="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=2070&auto=format&fit=crop"
+                    class="absolute inset-0 w-full h-full object-cover opacity-90 animate-fade-in-slow"
                     alt="Arquitectura Vidrio">
-                <div class="relative z-20 flex flex-col justify-center items-center h-full text-white px-12 text-center">
+                <div
+                    class="relative z-20 flex flex-col justify-center items-center h-full text-white px-12 text-center">
                     <h1 class="text-5xl font-black mb-6 tracking-tight">Vidrios Exito</h1>
                     <p class="text-lg text-blue-100 font-light max-w-md leading-relaxed">
-                        Transformamos espacios con transparencia y elegancia. Gestiona tus proyectos y cotizaciones en un solo lugar.
+                        Transformamos espacios con transparencia y elegancia. Gestiona tus proyectos y cotizaciones en
+                        un solo lugar.
                     </p>
                 </div>
             </div>
 
             <div class="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white">
                 <div class="w-full max-w-md space-y-8 animate-fade-in-up">
-                    
+
                     <div class="text-center lg:hidden mb-8">
                         <h2 class="text-3xl font-black text-blue-600">Vidrios Exito</h2>
                     </div>
@@ -67,9 +69,12 @@
                     <form id="login-form" class="mt-8 space-y-6">
                         <div class="space-y-5">
                             <div>
-                                <label for="login-email" class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Correo Electrónico</label>
+                                <label for="login-email"
+                                    class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Correo
+                                    Electrónico</label>
                                 <div class="relative">
-                                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                    <div
+                                        class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
                                         <i class="fa-solid fa-envelope"></i>
                                     </div>
                                     <input id="login-email" name="email" type="email" autocomplete="email" required
@@ -80,21 +85,27 @@
 
                             <div>
                                 <div class="flex justify-between items-center mb-2 ml-1">
-                                    <label for="login-password" class="block text-xs font-bold text-slate-500 uppercase">Contraseña</label>
-                                    <a href="#" class="text-xs font-semibold text-blue-600 hover:text-blue-500">¿Olvidaste tu contraseña?</a>
+                                    <label for="login-password"
+                                        class="block text-xs font-bold text-slate-500 uppercase">Contraseña</label>
+                                    <a href="#"
+                                        class="text-xs font-semibold text-blue-600 hover:text-blue-500">¿Olvidaste tu
+                                        contraseña?</a>
                                 </div>
                                 <div class="relative">
-                                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                    <div
+                                        class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
                                         <i class="fa-solid fa-lock"></i>
                                     </div>
-                                    <input id="login-password" name="password" type="password" autocomplete="current-password" required
+                                    <input id="login-password" name="password" type="password"
+                                        autocomplete="current-password" required
                                         class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-slate-700 font-medium placeholder-slate-400"
                                         placeholder="••••••••">
                                 </div>
                             </div>
                         </div>
 
-                        <div id="login-error" class="text-red-500 text-sm text-center font-medium bg-red-50 p-3 rounded-lg hidden"></div>
+                        <div id="login-error"
+                            class="text-red-500 text-sm text-center font-medium bg-red-50 p-3 rounded-lg hidden"></div>
 
                         <button type="submit"
                             class="w-full flex justify-center py-4 px-4 border border-transparent rounded-xl shadow-lg text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transform hover:-translate-y-0.5 transition-all duration-200">
@@ -102,8 +113,9 @@
                         </button>
 
                         <p class="text-center text-sm text-slate-600">
-                            ¿Aún no tienes cuenta? 
-                            <a href="#" id="show-register" class="font-bold text-blue-600 hover:text-indigo-600 transition-colors">
+                            ¿Aún no tienes cuenta?
+                            <a href="#" id="show-register"
+                                class="font-bold text-blue-600 hover:text-indigo-600 transition-colors">
                                 Regístrate aquí
                             </a>
                         </p>
@@ -113,10 +125,11 @@
         </div>
 
         <div id="register-view" class="min-h-screen bg-white flex hidden">
-            
-            <div class="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white h-screen overflow-y-auto custom-scrollbar">
+
+            <div
+                class="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white h-screen overflow-y-auto custom-scrollbar">
                 <div class="w-full max-w-lg space-y-6 animate-fade-in-up py-8">
-                    
+
                     <div class="text-center lg:hidden mb-6">
                         <h2 class="text-2xl font-black text-blue-600">Vidrios Exito</h2>
                     </div>
@@ -127,7 +140,7 @@
                     </div>
 
                     <form id="register-form" class="space-y-5">
-                        
+
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div>
                                 <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Nombre</label>
@@ -136,7 +149,8 @@
                                     placeholder="Tu nombre">
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Apellido</label>
+                                <label
+                                    class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Apellido</label>
                                 <input type="text" id="register-lastName" required
                                     class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                                     placeholder="Tu apellido">
@@ -144,9 +158,11 @@
                         </div>
 
                         <div>
-                            <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Cédula de Ciudadanía</label>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Cédula de
+                                Ciudadanía</label>
                             <div class="relative">
-                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                <div
+                                    class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
                                     <i class="fa-solid fa-id-card"></i>
                                 </div>
                                 <input type="text" id="register-idNumber" required
@@ -157,9 +173,11 @@
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div>
-                                <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Celular</label>
+                                <label
+                                    class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Celular</label>
                                 <div class="relative">
-                                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                    <div
+                                        class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
                                         <i class="fa-solid fa-mobile-screen"></i>
                                     </div>
                                     <input type="tel" id="register-phone" required
@@ -168,9 +186,11 @@
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Dirección</label>
+                                <label
+                                    class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Dirección</label>
                                 <div class="relative">
-                                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                    <div
+                                        class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
                                         <i class="fa-solid fa-location-dot"></i>
                                     </div>
                                     <input type="text" id="register-address" required
@@ -181,9 +201,11 @@
                         </div>
 
                         <div>
-                            <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Correo Electrónico</label>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Correo
+                                Electrónico</label>
                             <div class="relative">
-                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                <div
+                                    class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
                                     <i class="fa-solid fa-at"></i>
                                 </div>
                                 <input type="email" id="register-email" required
@@ -195,7 +217,8 @@
                         <div>
                             <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Contraseña</label>
                             <div class="relative">
-                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                <div
+                                    class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
                                     <i class="fa-solid fa-key"></i>
                                 </div>
                                 <input type="password" id="register-password" required
@@ -210,12 +233,15 @@
                                     class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer">
                             </div>
                             <div class="ml-3 text-sm">
-                                <label for="accept-terms" class="font-medium text-slate-700 cursor-pointer">Acepto los términos y condiciones</label>
-                                <p class="text-slate-500 text-xs mt-0.5">Autorizo el tratamiento de mis datos personales.</p>
+                                <label for="accept-terms" class="font-medium text-slate-700 cursor-pointer">Acepto los
+                                    términos y condiciones</label>
+                                <p class="text-slate-500 text-xs mt-0.5">Autorizo el tratamiento de mis datos
+                                    personales.</p>
                             </div>
                         </div>
 
-                        <div id="register-error" class="text-red-500 text-sm text-center font-medium bg-red-50 p-3 rounded-lg hidden"></div>
+                        <div id="register-error"
+                            class="text-red-500 text-sm text-center font-medium bg-red-50 p-3 rounded-lg hidden"></div>
 
                         <button type="submit"
                             class="w-full flex justify-center py-4 px-4 border border-transparent rounded-xl shadow-lg shadow-emerald-200 text-sm font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transform hover:-translate-y-0.5 transition-all duration-200">
@@ -223,8 +249,9 @@
                         </button>
 
                         <p class="text-center text-sm text-slate-600 pt-4">
-                            ¿Ya tienes una cuenta? 
-                            <a href="#" id="show-login" class="font-bold text-blue-600 hover:text-indigo-600 transition-colors">
+                            ¿Ya tienes una cuenta?
+                            <a href="#" id="show-login"
+                                class="font-bold text-blue-600 hover:text-indigo-600 transition-colors">
                                 Inicia sesión
                             </a>
                         </p>
@@ -234,10 +261,11 @@
 
             <div class="hidden lg:flex lg:w-1/2 relative bg-slate-900 overflow-hidden">
                 <div class="absolute inset-0 bg-gradient-to-bl from-emerald-900/40 to-slate-900/60 z-10"></div>
-                <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=2069&auto=format&fit=crop" 
-                    class="absolute inset-0 w-full h-full object-cover opacity-90 animate-pulse-slow" 
+                <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=2069&auto=format&fit=crop"
+                    class="absolute inset-0 w-full h-full object-cover opacity-90 animate-pulse-slow"
                     alt="Oficina Moderna Vidrio">
-                <div class="relative z-20 flex flex-col justify-center items-center h-full text-white px-12 text-center">
+                <div
+                    class="relative z-20 flex flex-col justify-center items-center h-full text-white px-12 text-center">
                     <h2 class="text-4xl font-bold mb-6">Únete al Equipo</h2>
                     <p class="text-lg text-emerald-100 font-light max-w-md leading-relaxed">
                         Empieza a gestionar obras, herramientas y personal de manera eficiente.
@@ -249,11 +277,13 @@
         <div id="forgot-password-view" class="min-h-screen bg-white flex hidden">
             <div class="hidden lg:flex lg:w-1/2 relative bg-slate-900 overflow-hidden">
                 <div class="absolute inset-0 bg-gradient-to-tr from-indigo-900/50 to-slate-900/60 z-10"></div>
-                <img src="https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2070&auto=format&fit=crop" 
-                    class="absolute inset-0 w-full h-full object-cover opacity-90 animate-pulse-slow" 
+                <img src="https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2070&auto=format&fit=crop"
+                    class="absolute inset-0 w-full h-full object-cover opacity-90 animate-pulse-slow"
                     alt="Seguridad Digital">
-                <div class="relative z-20 flex flex-col justify-center items-center h-full text-white px-12 text-center">
-                    <div class="w-20 h-20 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-md mb-6 border border-white/20">
+                <div
+                    class="relative z-20 flex flex-col justify-center items-center h-full text-white px-12 text-center">
+                    <div
+                        class="w-20 h-20 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-md mb-6 border border-white/20">
                         <i class="fa-solid fa-shield-halved text-4xl"></i>
                     </div>
                     <h2 class="text-4xl font-bold mb-4">Recuperación de Cuenta</h2>
@@ -265,7 +295,7 @@
 
             <div class="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white">
                 <div class="w-full max-w-md space-y-8 animate-fade-in-up">
-                    
+
                     <div class="text-center lg:hidden mb-8">
                         <h2 class="text-2xl font-black text-blue-600">Vidrios Exito</h2>
                     </div>
@@ -279,9 +309,12 @@
 
                     <form id="forgot-password-form" class="mt-8 space-y-6">
                         <div>
-                            <label for="reset-email" class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Correo Registrado</label>
+                            <label for="reset-email"
+                                class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Correo
+                                Registrado</label>
                             <div class="relative">
-                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                <div
+                                    class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
                                     <i class="fa-solid fa-envelope"></i>
                                 </div>
                                 <input id="reset-email" name="email" type="email" autocomplete="email" required
@@ -298,7 +331,8 @@
                         </button>
 
                         <div class="flex items-center justify-center pt-4">
-                            <button type="button" id="back-to-login" class="text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center gap-2 transition-colors">
+                            <button type="button" id="back-to-login"
+                                class="text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center gap-2 transition-colors">
                                 <i class="fa-solid fa-arrow-left"></i> Volver al Login
                             </button>
                         </div>
@@ -404,60 +438,87 @@
 
                 <ul class="space-y-1 mb-8">
                     <li>
-                        <a href="#" class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group" data-view="empleados">
-                            <i class="fa-solid fa-users-gear text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="empleados">
+                            <i
+                                class="fa-solid fa-users-gear text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
                             <span class="sidebar-text text-sm font-medium">Empleados</span>
                         </a>
                     </li>
                     <li>
-                        <a href="#" class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group" data-view="cartera">
-                            <i class="fa-solid fa-wallet text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="cartera">
+                            <i
+                                class="fa-solid fa-wallet text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
                             <span class="sidebar-text text-sm font-medium">Cartera</span>
                         </a>
                     </li>
-                    
+
                     <li>
-                        <a href="#" class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group" data-view="cotizaciones">
-                            <i class="fa-solid fa-file-contract text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="cotizaciones">
+                            <i
+                                class="fa-solid fa-file-contract text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
                             <span class="sidebar-text text-sm font-medium">Cotizaciones</span>
                         </a>
                     </li>
 
                     <li>
-                        <a href="#" class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group" data-view="proveedores">
-                            <i class="fa-solid fa-truck-fast text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="proveedores">
+                            <i
+                                class="fa-solid fa-truck-fast text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
                             <span class="sidebar-text text-sm font-medium">Proveedores</span>
                         </a>
                     </li>
 
                     <li id="inventory-nav-link" class="hidden">
-                        <a href="#" class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group" data-view="catalog">
-                            <i class="fa-solid fa-boxes-stacked text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="catalog">
+                            <i
+                                class="fa-solid fa-boxes-stacked text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
                             <span class="sidebar-text text-sm font-medium">Catálogo</span>
                         </a>
                     </li>
                     <li id="compras-nav-link" class="hidden">
-                        <a href="#" class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group" data-view="compras">
-                            <i class="fa-solid fa-file-invoice-dollar text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="compras">
+                            <i
+                                class="fa-solid fa-file-invoice-dollar text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
                             <span class="sidebar-text text-sm font-medium">Órdenes Compra</span>
                         </a>
                     </li>
                     <li id="reports-nav-link" class="hidden">
-                        <a href="#" class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group" data-view="reports">
-                            <i class="fa-solid fa-chart-line text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="reports">
+                            <i
+                                class="fa-solid fa-chart-line text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
                             <span class="sidebar-text text-sm font-medium">Reportes</span>
                         </a>
                     </li>
                     <li id="admin-nav-link" class="hidden">
-                        <a href="#" class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group" data-view="adminPanel">
-                            <i class="fa-solid fa-user-shield text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                        <a href="#"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="adminPanel">
+                            <i
+                                class="fa-solid fa-user-shield text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
                             <span class="sidebar-text text-sm font-medium">Usuarios</span>
                         </a>
                     </li>
 
                     <li class="admin-nav-item">
-                        <a href="#" id="configuracion-nav-link" class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group" data-view="configuracion">
-                            <i class="fa-solid fa-gears text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
+                        <a href="#" id="configuracion-nav-link"
+                            class="nav-link flex items-center px-4 py-3 rounded-xl hover:bg-slate-800 hover:text-white transition-all group"
+                            data-view="configuracion">
+                            <i
+                                class="fa-solid fa-gears text-lg mr-3 w-6 text-center text-slate-500 group-hover:text-blue-400 transition-colors"></i>
                             <span class="sidebar-text text-sm font-medium">Configuración</span>
                         </a>
                     </li>
@@ -1929,9 +1990,10 @@
                                     <thead class="text-xs text-gray-700 uppercase bg-gray-50">
                                         <tr>
                                             <th class="px-6 py-3">Objeto</th>
-                                            
-                                            <th class="px-6 py-3 text-left min-w-[300px] w-1/3">Descripción / Ubicación</th> 
-                                            
+
+                                            <th class="px-6 py-3 text-left min-w-[300px] w-1/3">Descripción / Ubicación
+                                            </th>
+
                                             <th class="px-6 py-3 text-center">Cant.</th>
                                             <th class="px-6 py-3 text-center">Ancho</th>
                                             <th class="px-6 py-3 text-center">Alto</th>
@@ -2225,9 +2287,9 @@
                     </div>
 
                     <div class="flex gap-2 w-full md:w-auto relative z-10">
-                        
-                        <button onclick="window.openImportModal()" 
-                                class="bg-green-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-green-700 transition flex items-center gap-2">
+
+                        <button onclick="window.openImportModal()"
+                            class="bg-green-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-green-700 transition flex items-center gap-2">
                             <i class="fa-solid fa-file-excel"></i> Importar Excel
                         </button>
 
@@ -2376,7 +2438,7 @@
             </div>
 
             <div id="reports-view" class="view-section hidden p-4 md:p-8 animate-fade-in bg-gray-50 min-h-screen">
-                
+
                 <div class="mb-8">
                     <h2 class="text-2xl font-bold text-slate-800 flex items-center">
                         <i class="fa-solid fa-chart-line mr-3 text-indigo-600"></i> Centro de Inteligencia
@@ -2385,19 +2447,20 @@
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                    
+
                     <div class="lg:col-span-1 space-y-6">
                         <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-3">Tipo de Informe</label>
-                            <select id="report-type-selector" class="w-full p-3 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:ring-2 focus:ring-indigo-500 outline-none font-medium text-slate-700">
+                            <select id="report-type-selector"
+                                class="w-full p-3 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:ring-2 focus:ring-indigo-500 outline-none font-medium text-slate-700">
                                 <option value="" disabled selected>Seleccionar...</option>
-                                
+
                                 <optgroup label="💰 Financiero">
                                     <option value="rentabilidad_proyecto">Rentabilidad por Proyecto</option>
                                     <option value="flujo_caja">Flujo de Caja (Cash Flow)</option>
                                     <option value="gastos_proveedor">Gastos por Proveedor</option>
                                 </optgroup>
-                                
+
                                 <optgroup label="🏗️ Operativo">
                                     <option value="eficiencia_material">Eficiencia Material (Mermas)</option>
                                     <option value="avance_fisico_financiero">Avance Físico vs. Financiero</option>
@@ -2412,32 +2475,35 @@
                             </select>
 
                             <div id="report-filters-container" class="mt-4 space-y-3">
-                                </div>
+                            </div>
 
-                            <button id="btn-generate-report" class="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg shadow-md transition-all flex items-center justify-center gap-2">
+                            <button id="btn-generate-report"
+                                class="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg shadow-md transition-all flex items-center justify-center gap-2">
                                 <i class="fa-solid fa-play"></i> Generar Reporte
                             </button>
                         </div>
 
-                        <button onclick="resizeChartForPrint(); window.print()" class="w-full bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 font-bold py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors">
+                        <button onclick="resizeChartForPrint(); window.print()"
+                            class="w-full bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 font-bold py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors">
                             <i class="fa-solid fa-print"></i> Imprimir / PDF
                         </button>
                     </div>
 
                     <div class="lg:col-span-3 space-y-6">
-                        
+
                         <div id="report-company-header" class="hidden print:flex items-center gap-4 mb-6 border-b pb-4">
-                            </div>
+                        </div>
 
                         <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 h-96 relative">
                             <canvas id="report-chart-canvas"></canvas>
-                            <div id="report-visual-container" class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div id="report-visual-container"
+                                class="absolute inset-0 flex items-center justify-center pointer-events-none">
                                 <p class="text-slate-400 text-sm">Selecciona un reporte para visualizar datos.</p>
                             </div>
                         </div>
 
                         <div id="report-table-container">
-                            </div>
+                        </div>
 
                     </div>
                 </div>
@@ -2537,7 +2603,7 @@
                         <p class="text-slate-500">Crea, edita y descarga tus propuestas comerciales</p>
                     </div>
                     <button id="btn-nueva-cotizacion" type="button"
-                            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl shadow-lg shadow-blue-200 transition-all flex items-center cursor-pointer z-10">
+                        class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl shadow-lg shadow-blue-200 transition-all flex items-center cursor-pointer z-10">
                         <i class="fa-solid fa-plus mr-2"></i>
                         Nueva Cotización
                     </button>
@@ -2545,17 +2611,18 @@
 
                 <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 flex flex-col md:flex-row gap-4">
                     <div class="relative flex-grow">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                        <div
+                            class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                             <i class="fa-solid fa-magnifying-glass"></i>
                         </div>
-                        <input type="text" id="cot-search-input" 
-                            class="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
+                        <input type="text" id="cot-search-input"
+                            class="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                             placeholder="Buscar por cliente, proyecto o fecha...">
                     </div>
 
                     <div class="w-full md:w-64">
-                        <select id="cot-filter-status" 
-                                class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white cursor-pointer">
+                        <select id="cot-filter-status"
+                            class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white cursor-pointer">
                             <option value="all">Todos los Estados</option>
                             <option value="Borrador">📝 Borrador</option>
                             <option value="Enviada">🚀 Enviada</option>
@@ -2573,7 +2640,7 @@
                                 <tr>
                                     <th class="px-6 py-4 text-left text-sm font-semibold text-slate-600">Cliente</th>
                                     <th class="px-6 py-4 text-left text-sm font-semibold text-slate-600">Proyecto</th>
-                                    <th class="px-6 py-4 text-center text-sm font-semibold text-slate-600">Versión</th> 
+                                    <th class="px-6 py-4 text-center text-sm font-semibold text-slate-600">Versión</th>
                                     <th class="px-6 py-4 text-center text-sm font-semibold text-slate-600">Estado</th>
                                     <th class="px-6 py-4 text-left text-sm font-semibold text-slate-600">Fecha</th>
                                     <th class="px-6 py-4 text-left text-sm font-semibold text-slate-600">Total</th>
@@ -2581,7 +2648,7 @@
                                 </tr>
                             </thead>
                             <tbody id="lista-cotizaciones-body" class="divide-y divide-slate-100">
-                                </tbody>
+                            </tbody>
                         </table>
                     </div>
                 </div>
@@ -2589,16 +2656,20 @@
 
             <div id="cotizacion-detalle-view" class="view-section hidden p-4 md:p-8 animate-fade-in">
                 <div class="mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
-                    <button id="btn-volver-cotizacion" type="button" class="flex items-center text-slate-500 hover:text-blue-600 transition-colors font-medium cursor-pointer self-start md:self-auto">
+                    <button id="btn-volver-cotizacion" type="button"
+                        class="flex items-center text-slate-500 hover:text-blue-600 transition-colors font-medium cursor-pointer self-start md:self-auto">
                         <i class="fa-solid fa-arrow-left mr-2"></i> Volver
                     </button>
-                    
+
                     <div class="flex items-center gap-2">
-                        <button id="btn-exportar-pdf" type="button" class="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center">
+                        <button id="btn-exportar-pdf" type="button"
+                            class="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center">
                             <i class="fa-solid fa-file-pdf mr-2"></i> PDF
                         </button>
-                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider" id="label-modo-cobro">MODO: AIU</span>
-                        <button id="btn-editar-config-header" type="button" class="text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-lg text-xs font-bold transition-colors">
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider"
+                            id="label-modo-cobro">MODO: AIU</span>
+                        <button id="btn-editar-config-header" type="button"
+                            class="text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-lg text-xs font-bold transition-colors">
                             <i class="fa-solid fa-gear mr-1"></i> Ajustar
                         </button>
                     </div>
@@ -2607,28 +2678,33 @@
                 <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 md:p-8">
                     <div class="border-b pb-6 mb-6 flex justify-between items-center">
                         <h2 class="text-2xl font-bold text-slate-800" id="titulo-pagina-cot">Nueva Cotización</h2>
-                        <span class="bg-yellow-100 text-yellow-700 py-1 px-3 rounded-full text-xs font-bold uppercase" id="estado-cotizacion-badge">Borrador</span>
+                        <span class="bg-yellow-100 text-yellow-700 py-1 px-3 rounded-full text-xs font-bold uppercase"
+                            id="estado-cotizacion-badge">Borrador</span>
                     </div>
 
                     <form id="form-cotizacion" class="space-y-8">
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div>
                                 <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Cliente</label>
-                                <input type="text" id="cot-cliente" required class="w-full border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                <input type="text" id="cot-cliente" required
+                                    class="w-full border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Proyecto</label>
-                                <input type="text" id="cot-proyecto" class="w-full border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                <input type="text" id="cot-proyecto"
+                                    class="w-full border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Fecha</label>
-                                <input type="date" id="cot-fecha" required class="w-full border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                <input type="date" id="cot-fecha" required
+                                    class="w-full border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                             </div>
                         </div>
 
                         <div class="flex flex-col">
                             <label class="text-xs font-bold text-slate-500 uppercase mb-1">Estado</label>
-                            <select id="cot-estado" class="border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                            <select id="cot-estado"
+                                class="border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white">
                                 <option value="Borrador">📝 Borrador</option>
                                 <option value="Enviada">🚀 Enviada</option>
                                 <option value="Aprobada">✅ Aprobada</option>
@@ -2639,12 +2715,15 @@
 
                         <div class="overflow-x-auto border border-slate-200 rounded-xl">
                             <table class="w-full text-sm">
-                                <thead class="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-xs uppercase" id="tabla-cotizacion-head">
-                                    </thead>
+                                <thead
+                                    class="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-xs uppercase"
+                                    id="tabla-cotizacion-head">
+                                </thead>
                                 <tbody id="items-container" class="divide-y divide-slate-100 bg-white"></tbody>
                             </table>
                         </div>
-                        <button type="button" id="btn-agregar-item-cot" class="text-sm bg-slate-50 hover:bg-slate-100 text-blue-600 font-bold py-3 w-full rounded-b-xl border-t border-slate-100 flex items-center justify-center gap-2 transition-colors cursor-pointer">
+                        <button type="button" id="btn-agregar-item-cot"
+                            class="text-sm bg-slate-50 hover:bg-slate-100 text-blue-600 font-bold py-3 w-full rounded-b-xl border-t border-slate-100 flex items-center justify-center gap-2 transition-colors cursor-pointer">
                             <i class="fa-solid fa-circle-plus"></i> Agregar Ítem
                         </button>
 
@@ -2653,30 +2732,39 @@
                                 <h4 class="text-xs font-bold text-slate-400 uppercase">Condiciones Comerciales</h4>
                                 <div class="grid grid-cols-1 gap-3">
                                     <div>
-                                        <label class="text-[10px] uppercase font-bold text-slate-400">Forma de Pago</label>
-                                        <input type="text" id="term-pago" class="w-full border-slate-200 rounded p-2 text-xs font-medium text-slate-700">
+                                        <label class="text-[10px] uppercase font-bold text-slate-400">Forma de
+                                            Pago</label>
+                                        <input type="text" id="term-pago"
+                                            class="w-full border-slate-200 rounded p-2 text-xs font-medium text-slate-700">
                                     </div>
                                     <div class="grid grid-cols-2 gap-3">
                                         <div>
-                                            <label class="text-[10px] uppercase font-bold text-slate-400">Validez Oferta</label>
-                                            <input type="text" id="term-validez" class="w-full border-slate-200 rounded p-2 text-xs font-medium text-slate-700">
+                                            <label class="text-[10px] uppercase font-bold text-slate-400">Validez
+                                                Oferta</label>
+                                            <input type="text" id="term-validez"
+                                                class="w-full border-slate-200 rounded p-2 text-xs font-medium text-slate-700">
                                         </div>
                                         <div>
-                                            <label class="text-[10px] uppercase font-bold text-slate-400">Tiempo Entrega</label>
-                                            <input type="text" id="term-entrega" class="w-full border-slate-200 rounded p-2 text-xs font-medium text-slate-700">
+                                            <label class="text-[10px] uppercase font-bold text-slate-400">Tiempo
+                                                Entrega</label>
+                                            <input type="text" id="term-entrega"
+                                                class="w-full border-slate-200 rounded p-2 text-xs font-medium text-slate-700">
                                         </div>
                                     </div>
                                     <div>
-                                        <label class="text-[10px] uppercase font-bold text-slate-400">Notas Adicionales</label>
-                                        <textarea id="term-notas" rows="2" class="w-full border-slate-200 rounded p-2 text-xs resize-none"></textarea>
+                                        <label class="text-[10px] uppercase font-bold text-slate-400">Notas
+                                            Adicionales</label>
+                                        <textarea id="term-notas" rows="2"
+                                            class="w-full border-slate-200 rounded p-2 text-xs resize-none"></textarea>
                                     </div>
                                 </div>
                             </div>
 
                             <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 h-fit">
                                 <div id="resumen-financiero-body" class="space-y-2 text-sm text-right">
-                                    </div>
-                                <div class="border-t border-slate-200 mt-4 pt-4 flex justify-between items-center text-xl font-black text-slate-800">
+                                </div>
+                                <div
+                                    class="border-t border-slate-200 mt-4 pt-4 flex justify-between items-center text-xl font-black text-slate-800">
                                     <span>TOTAL NETO:</span>
                                     <span id="display-total-final">$0</span>
                                 </div>
@@ -2684,8 +2772,10 @@
                         </div>
 
                         <div class="flex justify-end gap-3 pt-4">
-                            <button type="button" id="btn-cancelar-cotizacion" class="px-6 py-3 rounded-xl text-slate-600 font-bold hover:bg-slate-100 transition-colors cursor-pointer">Cancelar</button>
-                            <button type="submit" class="px-8 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-200 transition-all cursor-pointer">
+                            <button type="button" id="btn-cancelar-cotizacion"
+                                class="px-6 py-3 rounded-xl text-slate-600 font-bold hover:bg-slate-100 transition-colors cursor-pointer">Cancelar</button>
+                            <button type="submit"
+                                class="px-8 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-200 transition-all cursor-pointer">
                                 <i class="fa-solid fa-save mr-2"></i> Guardar Cotización
                             </button>
                         </div>
@@ -2693,36 +2783,66 @@
                 </div>
             </div>
 
-            <div id="modal-config-cotizacion" class="fixed inset-0 z-[9999] hidden items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
-                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-fade-in-up">
+            <div id="modal-config-cotizacion"
+                class="fixed inset-0 z-[9999] hidden items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
+                <div
+                    class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-fade-in-up">
                     <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                        <h3 class="text-lg font-bold text-slate-800"><i class="fa-solid fa-sliders mr-2 text-blue-600"></i>Configuración de Cotización</h3>
-                        <button id="btn-cerrar-config" type="button" class="text-slate-400 hover:text-slate-600 text-xl"><i class="fa-solid fa-xmark"></i></button>
+                        <h3 class="text-lg font-bold text-slate-800"><i
+                                class="fa-solid fa-sliders mr-2 text-blue-600"></i>Configuración de Cotización</h3>
+                        <button id="btn-cerrar-config" type="button"
+                            class="text-slate-400 hover:text-slate-600 text-xl"><i
+                                class="fa-solid fa-xmark"></i></button>
                     </div>
-                    
+
                     <div class="p-6 overflow-y-auto space-y-6">
                         <div class="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
-                            <h4 class="text-sm font-bold text-blue-800 uppercase tracking-wide mb-3">Columnas Visibles</h4>
+                            <h4 class="text-sm font-bold text-blue-800 uppercase tracking-wide mb-3">Columnas Visibles
+                            </h4>
                             <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
-                                <label class="flex items-center space-x-2"><input type="checkbox" class="col-check rounded text-blue-600" value="item" checked disabled> <span># Ítem</span></label>
-                                <label class="flex items-center space-x-2"><input type="checkbox" class="col-check rounded text-blue-600" value="ubicacion" checked> <span>Ubicación</span></label>
-                                <label class="flex items-center space-x-2"><input type="checkbox" class="col-check rounded text-blue-600" value="descripcion" checked> <span>Descripción</span></label>
-                                
-                                <label class="flex items-center space-x-2"><input type="checkbox" class="col-check rounded text-blue-600" value="ancho" checked> <span>Ancho</span></label>
-                                <label class="flex items-center space-x-2"><input type="checkbox" class="col-check rounded text-blue-600" value="alto" checked> <span>Alto</span></label>
-                                
-                                <label class="flex items-center space-x-2"><input type="checkbox" class="col-check rounded text-blue-600" value="cantidad" checked> <span>Cantidad</span></label>
-                                <label class="flex items-center space-x-2"><input type="checkbox" class="col-check rounded text-blue-600" value="m2" checked> <span>M² Unit</span></label>
-                                <label class="flex items-center space-x-2"><input type="checkbox" class="col-check rounded text-blue-600" value="total_m2"> <span>Total M²</span></label>
-                                
-                                <label class="flex items-center space-x-2"><input type="checkbox" class="col-check rounded text-blue-600" value="valor_unitario" checked> <span>V. Unitario</span></label>
-                                <label class="flex items-center space-x-2"><input type="checkbox" class="col-check rounded text-blue-600" value="total_global" checked> <span>Total</span></label>
-                                
+                                <label class="flex items-center space-x-2"><input type="checkbox"
+                                        class="col-check rounded text-blue-600" value="item" checked disabled> <span>#
+                                        Ítem</span></label>
+                                <label class="flex items-center space-x-2"><input type="checkbox"
+                                        class="col-check rounded text-blue-600" value="ubicacion" checked>
+                                    <span>Ubicación</span></label>
+                                <label class="flex items-center space-x-2"><input type="checkbox"
+                                        class="col-check rounded text-blue-600" value="descripcion" checked>
+                                    <span>Descripción</span></label>
+
+                                <label class="flex items-center space-x-2"><input type="checkbox"
+                                        class="col-check rounded text-blue-600" value="ancho" checked>
+                                    <span>Ancho</span></label>
+                                <label class="flex items-center space-x-2"><input type="checkbox"
+                                        class="col-check rounded text-blue-600" value="alto" checked>
+                                    <span>Alto</span></label>
+
+                                <label class="flex items-center space-x-2"><input type="checkbox"
+                                        class="col-check rounded text-blue-600" value="cantidad" checked>
+                                    <span>Cantidad</span></label>
+                                <label class="flex items-center space-x-2"><input type="checkbox"
+                                        class="col-check rounded text-blue-600" value="m2" checked> <span>M²
+                                        Unit</span></label>
+                                <label class="flex items-center space-x-2"><input type="checkbox"
+                                        class="col-check rounded text-blue-600" value="total_m2"> <span>Total
+                                        M²</span></label>
+
+                                <label class="flex items-center space-x-2"><input type="checkbox"
+                                        class="col-check rounded text-blue-600" value="valor_unitario" checked> <span>V.
+                                        Unitario</span></label>
+                                <label class="flex items-center space-x-2"><input type="checkbox"
+                                        class="col-check rounded text-blue-600" value="total_global" checked>
+                                    <span>Total</span></label>
+
                                 <div class="col-span-2 md:col-span-5 border-t border-blue-200 mt-2 pt-2">
                                     <p class="text-xs text-blue-600 font-bold mb-2">Desglose Financiero (Opcional)</p>
                                     <div class="flex gap-4">
-                                        <label class="flex items-center space-x-2"><input type="checkbox" class="col-check rounded text-blue-600" value="suministro"> <span>Suministro</span></label>
-                                        <label class="flex items-center space-x-2"><input type="checkbox" class="col-check rounded text-blue-600" value="instalacion"> <span>Instalación</span></label>
+                                        <label class="flex items-center space-x-2"><input type="checkbox"
+                                                class="col-check rounded text-blue-600" value="suministro">
+                                            <span>Suministro</span></label>
+                                        <label class="flex items-center space-x-2"><input type="checkbox"
+                                                class="col-check rounded text-blue-600" value="instalacion">
+                                            <span>Instalación</span></label>
                                     </div>
                                 </div>
                             </div>
@@ -2730,57 +2850,77 @@
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                                
+
                                 <h4 class="text-xs font-bold text-slate-500 uppercase mb-3">Modelo de Cobro</h4>
-                                <select id="config-modo" class="w-full border-slate-300 rounded-lg text-sm p-2.5 outline-none focus:ring-2 focus:ring-blue-500 mb-4">
+                                <select id="config-modo"
+                                    class="w-full border-slate-300 rounded-lg text-sm p-2.5 outline-none focus:ring-2 focus:ring-blue-500 mb-4">
                                     <option value="AIU">AIU (Construcción - IVA s/Utilidad)</option>
                                     <option value="IVA_GLOBAL">IVA Global (Ventas - 19% Pleno)</option>
                                     <option value="MIXTO">Mixto (Suministro + IVA / Inst + AIU)</option>
                                 </select>
-                                
+
                                 <h4 class="text-xs font-bold text-slate-500 uppercase mb-3">Numeración de Ítems</h4>
-                                <select id="config-numeracion" class="w-full border-slate-300 rounded-lg text-sm p-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                                <select id="config-numeracion"
+                                    class="w-full border-slate-300 rounded-lg text-sm p-2.5 outline-none focus:ring-2 focus:ring-blue-500">
                                     <option value="auto">Automática (1, 2, 3...)</option>
                                     <option value="manual">Manual / Libre (Escribir ID)</option>
                                 </select>
-                                
+
                                 <div id="config-aiu-inputs" class="mt-4 grid grid-cols-3 gap-2">
-                                    <div><label class="text-[10px] block mb-1 font-bold text-slate-500">Admin %</label><input type="number" id="conf-admin" value="2" class="w-full border rounded p-1 text-center text-sm"></div>
-                                    <div><label class="text-[10px] block mb-1 font-bold text-slate-500">Imprev %</label><input type="number" id="conf-imprev" value="3" class="w-full border rounded p-1 text-center text-sm"></div>
-                                    <div><label class="text-[10px] block mb-1 font-bold text-slate-500">Utilidad %</label><input type="number" id="conf-util" value="5" class="w-full border rounded p-1 text-center text-sm"></div>
+                                    <div><label class="text-[10px] block mb-1 font-bold text-slate-500">Admin
+                                            %</label><input type="number" id="conf-admin" value="2"
+                                            class="w-full border rounded p-1 text-center text-sm"></div>
+                                    <div><label class="text-[10px] block mb-1 font-bold text-slate-500">Imprev
+                                            %</label><input type="number" id="conf-imprev" value="3"
+                                            class="w-full border rounded p-1 text-center text-sm"></div>
+                                    <div><label class="text-[10px] block mb-1 font-bold text-slate-500">Utilidad
+                                            %</label><input type="number" id="conf-util" value="5"
+                                            class="w-full border rounded p-1 text-center text-sm"></div>
                                 </div>
 
                                 <div id="config-split-inputs" class="mt-4 border-t border-slate-100 pt-3">
-                                    <h4 class="text-[10px] font-bold text-blue-600 uppercase mb-2">Desglose del Valor Unitario</h4>
+                                    <h4 class="text-[10px] font-bold text-blue-600 uppercase mb-2">Desglose del Valor
+                                        Unitario</h4>
                                     <div class="flex items-center gap-2">
                                         <div class="flex-1">
                                             <label class="text-[10px] block text-slate-500">Suministro %</label>
-                                            <input type="number" id="conf-split-sum" value="85" class="w-full border border-blue-200 bg-blue-50 rounded p-1 text-center text-sm font-bold text-blue-700">
+                                            <input type="number" id="conf-split-sum" value="85"
+                                                class="w-full border border-blue-200 bg-blue-50 rounded p-1 text-center text-sm font-bold text-blue-700">
                                         </div>
                                         <span class="text-slate-300 mt-4">+</span>
                                         <div class="flex-1">
                                             <label class="text-[10px] block text-slate-500">Instalación %</label>
-                                            <input type="number" id="conf-split-inst" value="15" class="w-full border border-emerald-200 bg-emerald-50 rounded p-1 text-center text-sm font-bold text-emerald-700">
+                                            <input type="number" id="conf-split-inst" value="15"
+                                                class="w-full border border-emerald-200 bg-emerald-50 rounded p-1 text-center text-sm font-bold text-emerald-700">
                                         </div>
                                     </div>
-                                    <p class="text-[10px] text-slate-400 mt-1 italic">* El Valor Unitario ingresado incluirá impuestos.</p>
+                                    <p class="text-[10px] text-slate-400 mt-1 italic">* El Valor Unitario ingresado
+                                        incluirá impuestos.</p>
                                 </div>
                             </div>
 
                             <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
                                 <h4 class="text-xs font-bold text-slate-500 uppercase mb-3">Textos Predeterminados</h4>
                                 <div class="space-y-3">
-                                    <input type="text" id="conf-pago" class="w-full border-slate-300 rounded-lg p-2 text-xs" placeholder="Forma de Pago" value="50% Anticipo - 50% Contra entrega">
-                                    <input type="text" id="conf-validez" class="w-full border-slate-300 rounded-lg p-2 text-xs" placeholder="Validez" value="15 días calendario">
-                                    <input type="text" id="conf-entrega" class="w-full border-slate-300 rounded-lg p-2 text-xs" placeholder="Tiempo de Entrega" value="A convenir según cronograma">
+                                    <input type="text" id="conf-pago"
+                                        class="w-full border-slate-300 rounded-lg p-2 text-xs"
+                                        placeholder="Forma de Pago" value="50% Anticipo - 50% Contra entrega">
+                                    <input type="text" id="conf-validez"
+                                        class="w-full border-slate-300 rounded-lg p-2 text-xs" placeholder="Validez"
+                                        value="15 días calendario">
+                                    <input type="text" id="conf-entrega"
+                                        class="w-full border-slate-300 rounded-lg p-2 text-xs"
+                                        placeholder="Tiempo de Entrega" value="A convenir según cronograma">
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
-                        <button id="btn-cancelar-config" type="button" class="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg transition-colors font-bold text-sm cursor-pointer">Cancelar</button>
-                        <button id="btn-iniciar-cotizacion" type="button" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-md transition-all font-bold text-sm flex items-center cursor-pointer">
+                        <button id="btn-cancelar-config" type="button"
+                            class="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg transition-colors font-bold text-sm cursor-pointer">Cancelar</button>
+                        <button id="btn-iniciar-cotizacion" type="button"
+                            class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-md transition-all font-bold text-sm flex items-center cursor-pointer">
                             Continuar <i class="fa-solid fa-arrow-right ml-2"></i>
                         </button>
                     </div>
@@ -3064,16 +3204,20 @@
         </div>
     </div>
 
-    <div id="register-success-modal" class="fixed inset-0 bg-black/70 hidden items-center justify-center z-50 backdrop-blur-sm">
-        <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 text-center transform transition-all scale-100">
+    <div id="register-success-modal"
+        class="fixed inset-0 bg-black/70 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div
+            class="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 text-center transform transition-all scale-100">
             <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
                 <i class="fa-solid fa-check text-4xl text-green-600"></i>
             </div>
             <h3 class="text-2xl font-bold text-gray-800 mb-2">¡Cuenta Creada!</h3>
             <p class="text-gray-600 mb-6 leading-relaxed">
-                Tu registro se ha realizado correctamente. Tu cuenta está en estado <span class="font-bold text-orange-500">Pendiente</span> hasta que un administrador la active.
+                Tu registro se ha realizado correctamente. Tu cuenta está en estado <span
+                    class="font-bold text-orange-500">Pendiente</span> hasta que un administrador la active.
             </p>
-            <button id="register-success-accept-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform transform hover:-translate-y-1">
+            <button id="register-success-accept-btn"
+                class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform transform hover:-translate-y-1">
                 Entendido, ir al Login
             </button>
         </div>
