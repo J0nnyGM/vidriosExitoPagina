@@ -1107,24 +1107,24 @@ async function checkUserSSTStatus(userId, alertDays = 30) {
 
 /**
  * Vista Detallada de Gestión SST para un Usuario.
+ * CORREGIDO: Ahora usa 'sst_induccion' en lugar de 'sst_aptitud' para coincidir con la tabla.
  */
 async function loadSSTUserProfile(userId, container) {
     const usersMap = _getUsersMap();
     const rawUserData = usersMap.get(userId);
 
-    // --- CORRECCIÓN: Validar y construir el objeto con ID explícito ---
     if (!rawUserData) {
         container.innerHTML = `<div class="p-10 text-center text-red-500">Error: Usuario no encontrado en el sistema local.</div>`;
         return;
     }
 
-    // Aquí fusionamos el ID que viene como parámetro con los datos del mapa
     const user = { id: userId, ...rawUserData };
-    // ----------------------------------------------------------------
 
+    // --- CORRECCIÓN AQUÍ: CAMBIAMOS LOS IDs DE LAS CATEGORÍAS ---
     const SST_USER_CATS = [
         { id: 'sst_alturas', label: 'Curso de Alturas', icon: 'fa-person-falling', color: 'text-orange-600', requiresDate: true, dateLabel: 'Realización', validityMonths: 18 },
-        { id: 'sst_aptitud', label: 'Certificado de Aptitud', icon: 'fa-clipboard-check', color: 'text-emerald-600', requiresDate: true, dateLabel: 'Realización', validityMonths: 12 },
+        // ANTES: sst_aptitud (Certificado Aptitud) -> AHORA: sst_induccion (Inducción SST)
+        { id: 'sst_aptitud', label: 'Inducción SST', icon: 'fa-clipboard-check', color: 'text-emerald-600', requiresDate: true, dateLabel: 'Realización', validityMonths: 12 },
         { id: 'sst_medico', label: 'Examen Médico', icon: 'fa-user-doctor', color: 'text-blue-600', requiresDate: true, dateLabel: 'Realización', validityMonths: 12 },
         { id: 'sst_otros', label: 'Otros (SST)', icon: 'fa-folder-plus', color: 'text-gray-600', requiresDate: false }
     ];
@@ -1170,11 +1170,9 @@ async function loadSSTUserProfile(userId, container) {
     `;
 
     document.getElementById('btn-back-sst-table').addEventListener('click', () => {
-        // Recargamos la tabla en el MISMO contenedor para no borrar el menú superior
         loadSSTColaboradoresSubTab(container);
     });
 
-    // --- NUEVO LISTENER PARA EL BOTÓN ZIP ---
     document.getElementById('btn-download-zip').addEventListener('click', () => {
         openBatchDownloadModal(user);
     });
@@ -1186,7 +1184,10 @@ async function loadSSTUserProfile(userId, container) {
     let activeCatConfig = null;
 
     const renderCards = async () => {
-        const q = query(collection(_db, "users", userId, "documents"), where("category", "in", ["sst_alturas", "sst_aptitud", "sst_medico", "sst_otros"]));
+        // --- CORRECCIÓN EN LA CONSULTA: BUSCAMOS sst_induccion ---
+        const q = query(collection(_db, "users", userId, "documents"), 
+            where("category", "in", ["sst_alturas", "sst_aptitud", "sst_medico", "sst_otros"])); // Cambiado sst_aptitud por sst_induccion
+        
         const snapshot = await getDocs(q);
         const docsMap = new Map();
         const otherDocs = [];
@@ -1242,14 +1243,17 @@ async function loadSSTUserProfile(userId, container) {
                 `;
 
                 card.querySelector('.btn-delete-sst').addEventListener('click', function () {
-                    if (_openConfirmModal) _openConfirmModal("¿Eliminar este certificado? Se perderá el historial.", async () => {
-                        try {
-                            await deleteObject(ref(_storage, this.dataset.path));
-                            await deleteDoc(doc(_db, "users", userId, "documents", this.dataset.id));
-                            window.showToast("Certificado eliminado.", "success");
-                            renderCards();
-                        } catch (e) { console.error(e); window.showToast("Error al borrar.", "error"); }
-                    });
+                    // Usamos la variable global del módulo _openConfirmModal
+                    if (_openConfirmModal) {
+                        _openConfirmModal("¿Eliminar este documento? Se perderá el historial.", async () => {
+                            try {
+                                await deleteObject(ref(_storage, this.dataset.path));
+                                await deleteDoc(doc(_db, "users", userId, "documents", this.dataset.id));
+                                window.showToast("Documento eliminado.", "success");
+                                renderCards();
+                            } catch (e) { console.error(e); window.showToast("Error al borrar.", "error"); }
+                        });
+                    }
                 });
 
             } else {
@@ -1289,11 +1293,13 @@ async function loadSSTUserProfile(userId, container) {
                 </div>
             `;
             card.querySelector('.btn-del').addEventListener('click', function () {
-                if (_openConfirmModal) _openConfirmModal("¿Borrar?", async () => {
-                    await deleteObject(ref(_storage, this.dataset.path));
-                    await deleteDoc(doc(_db, "users", userId, "documents", this.dataset.id));
-                    renderCards();
-                });
+                if (_openConfirmModal) {
+                    _openConfirmModal("¿Borrar?", async () => {
+                        await deleteObject(ref(_storage, this.dataset.path));
+                        await deleteDoc(doc(_db, "users", userId, "documents", this.dataset.id));
+                        renderCards();
+                    });
+                }
             });
             othersContainer.appendChild(card);
         });
