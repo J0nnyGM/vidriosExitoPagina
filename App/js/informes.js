@@ -1,5 +1,5 @@
 // =============================================================================
-// MÓDULO DE INFORMES Y ANALÍTICA (App/js/informes.js)
+// MÓDULO DE INFORMES Y ANALÍTICA (app/js/informes.js)
 // =============================================================================
 import {
     collection, query, where, getDocs, orderBy, getDoc, doc, collectionGroup

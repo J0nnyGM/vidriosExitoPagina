@@ -1,4 +1,4 @@
-// EN App/firebase-messaging-sw.js
+// EN app/firebase-messaging-sw.js
 
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
@@ -32,7 +32,7 @@ messaging.onBackgroundMessage((payload) => {
 // Manejar clic en la notificación
 self.addEventListener('notificationclick', function(event) {
     event.notification.close();
-    const urlToOpen = event.notification.data?.url || '/App/'; 
+    const urlToOpen = event.notification.data?.url || '/app/'; 
     event.waitUntil(
         clients.matchAll({type: 'window', includeUncontrolled: true}).then(function(windowClients) {
             for (var i = 0; i < windowClients.length; i++) {
