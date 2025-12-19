@@ -1,15 +1,21 @@
 {
-  "functions": [
-    {
-      "source": "functions",
-      "codebase": "default",
-      "ignore": [
-        "node_modules",
-        ".git",
-        "firebase-debug.log",
-        "firebase-debug.*.log",
-        "*.local"
-      ]
-    }
-  ]
+  "hosting": {
+    "public": ".",  
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Content-Security-Policy",
+            "value": "frame-src 'self' https://apis.google.com https://accounts.google.com https://www.google.com https://www.google.com/recaptcha/ https://firebasestorage.googleapis.com https://vidriosexitoorganizador.firebaseapp.com"
+          }
+        ]
+      }
+    ]
+  }
 }

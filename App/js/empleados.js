@@ -776,7 +776,6 @@ function loadSSTGeneralSubTab(container) {
     let activeCategoryId = null; // Para saber en qué caja estamos subiendo
 
     // 3. LISTENER DE DOCUMENTOS (REAL-TIME)
-    // Usamos una colección nueva: 'company_documents' con filtro type == 'sst'
     const q = query(collection(_db, "company_documents"), where("system", "==", "sst"), orderBy("uploadedAt", "desc"));
 
     unsubscribeEmpleadosTab = onSnapshot(q, (snapshot) => {
@@ -859,26 +858,38 @@ function loadSSTGeneralSubTab(container) {
                 fileInput.click();
             });
 
-            // Listeners: Borrar Archivos
+            // Listeners: Borrar Archivos (CORREGIDO)
             card.querySelectorAll('.btn-delete-sst-doc').forEach(btn => {
                 btn.addEventListener('click', function () {
                     const docId = this.dataset.id;
                     const path = this.dataset.path;
                     const name = this.dataset.name;
 
-                    openConfirmModal(`¿Eliminar "${name}" del sistema?`, async () => {
-                        try {
-                            await deleteObject(ref(_storage, path)); // Borrar de Storage
-                            await deleteDoc(doc(_db, "company_documents", docId)); // Borrar de BD
+                    // --- AQUÍ ESTÁ EL CAMBIO IMPORTANTE: Usar _openConfirmModal ---
+                    if (_openConfirmModal) {
+                        _openConfirmModal(`¿Eliminar "${name}" del sistema?`, async () => {
+                            try {
+                                await deleteObject(ref(_storage, path)); // Borrar de Storage
+                                await deleteDoc(doc(_db, "company_documents", docId)); // Borrar de BD
 
-                            window.showToast("Documento eliminado.", "success");
-                            if (window.logAuditAction) window.logAuditAction("Eliminar Doc SST", `Borrado: ${name}`, _getCurrentUserId());
+                                window.showToast("Documento eliminado.", "success");
+                                
+                                if (typeof window.logAuditAction === 'function') {
+                                    window.logAuditAction("Eliminar Doc SST", `Borrado: ${name}`, _getCurrentUserId());
+                                }
 
-                        } catch (e) {
-                            console.error(e);
-                            window.showToast("Error al eliminar.", "error");
+                            } catch (e) {
+                                console.error(e);
+                                window.showToast("Error al eliminar.", "error");
+                            }
+                        });
+                    } else {
+                        // Fallback simple
+                        if(confirm(`¿Eliminar "${name}"?`)){
+                           // Lógica de borrado directa si el modal no carga
+                           deleteObject(ref(_storage, path)).then(() => deleteDoc(doc(_db, "company_documents", docId)));
                         }
-                    });
+                    }
                 });
             });
 
@@ -895,7 +906,7 @@ function loadSSTGeneralSubTab(container) {
         const file = e.target.files[0];
         if (!file || !activeCategoryId) return;
 
-        if (file.size > 10 * 1024 * 1024) { // 10MB límite para docs generales
+        if (file.size > 10 * 1024 * 1024) { // 10MB límite
             window.showToast("El archivo supera los 10MB.", "error");
             fileInput.value = '';
             return;
@@ -914,8 +925,8 @@ function loadSSTGeneralSubTab(container) {
             // Guardar en Firestore
             await addDoc(collection(_db, "company_documents"), {
                 name: file.name,
-                system: 'sst', // Identificador del sistema
-                category: activeCategoryId, // politica, matriz, etc.
+                system: 'sst',
+                category: activeCategoryId,
                 url: downloadURL,
                 storagePath: storagePath,
                 type: file.type,
@@ -928,7 +939,7 @@ function loadSSTGeneralSubTab(container) {
 
         } catch (error) {
             console.error("Error subiendo doc SST:", error);
-            window.showToast("Error en la carga.", "error");
+            window.showToast("Error en la carga: " + error.message, "error");
         } finally {
             fileInput.value = '';
             activeCategoryId = null;

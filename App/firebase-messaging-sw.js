@@ -100,10 +100,13 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         (async () => {
-            // Habilitar navegación precargada si es compatible
-            if (self.registration.navigationPreload) {
+            // --- SOLUCIÓN: COMENTAR O BORRAR ESTAS LÍNEAS ---
+            // Si tu estrategia es "Cache First", esto gasta datos innecesariamente y causa el warning.
+            /* if (self.registration.navigationPreload) {
                 await self.registration.navigationPreload.enable();
             }
+            */
+            // ------------------------------------------------
             
             // Limpiar caché antiguo
             const keyList = await caches.keys();
@@ -118,42 +121,35 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// C. INTERCEPTOR (Optimizado para Navigation Preload)
+// C. INTERCEPTOR (Simplificado para Cache First)
 self.addEventListener('fetch', (event) => {
     const url = event.request.url;
 
-    // Ignorar peticiones a la base de datos o storage de Firebase
+    // Ignorar peticiones a la base de datos o storage de Firebase (importante para no romper la app)
     if (url.includes('firestore.googleapis.com') || url.includes('firebasestorage')) {
         return; 
+    }
+
+    // Solo interceptamos peticiones GET (las POST/PUT a APIs no se deben cachear así)
+    if (event.request.method !== 'GET') {
+        return;
     }
 
     event.respondWith(async function() {
         // 1. Intentar obtener del caché primero
         const cachedResponse = await caches.match(event.request);
         if (cachedResponse) {
-            // Si está en caché, lo devolvemos rápido.
-            // Opcional: Aquí podrías actualizar el caché en segundo plano (stale-while-revalidate)
-            // pero para evitar la advertencia, simplificamos el flujo principal.
             return cachedResponse;
         }
 
-        // 2. Si no está en caché, intentar usar la respuesta precargada (PreloadResponse)
-        // ESTO SOLUCIONA LA ADVERTENCIA
-        const preloadResponse = await event.preloadResponse;
-        if (preloadResponse) {
-            // Si existe la precarga, la usamos y la guardamos en caché
-            const responseToCache = preloadResponse.clone();
-            const cache = await caches.open(CACHE_NAME);
-            cache.put(event.request, responseToCache);
-            return preloadResponse;
-        }
-
-        // 3. Si no hay caché ni precarga, ir a la red normalmente
+        // 2. Si no está en caché, ir a la red
         try {
             const networkResponse = await fetch(event.request);
             
             // Solo cacheamos peticiones válidas (status 200) y de tipo basic (del mismo origen)
-            if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+            // OJO: networkResponse.type === 'basic' a veces filtra recursos externos necesarios (como fuentes o scripts CDN)
+            // Si usas scripts externos como face-api desde CDN, quizás quieras permitir 'cors' también.
+            if (networkResponse && networkResponse.status === 200) {
                 const responseToCache = networkResponse.clone();
                 const cache = await caches.open(CACHE_NAME);
                 cache.put(event.request, responseToCache);
@@ -161,8 +157,8 @@ self.addEventListener('fetch', (event) => {
             
             return networkResponse;
         } catch (error) {
-            console.log('[Service Worker] Error en fetch:', error);
-            // Aquí podrías retornar una página offline.html si quisieras
+            console.log('[Service Worker] Error en fetch (Offline):', error);
+            // Opcional: Retornar una página offline personalizada si es una navegación HTML
         }
     }());
 });
