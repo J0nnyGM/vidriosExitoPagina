@@ -46,15 +46,22 @@ self.addEventListener('notificationclick', function(event) {
     );
 });
 
-// --- 2. LÓGICA DE CACHÉ OFFLINE (PWA) ---
-const CACHE_NAME = 'vidrios-exito-v1';
+// 1. CAMBIA EL NOMBRE DE LA VERSIÓN (IMPORTANTE)
+// Al cambiar el nombre (ej: de v1 a v2), obligas al navegador a borrar el caché viejo y bajar el nuevo con los íconos.
+const CACHE_NAME = 'vidrios-exito-v2'; 
 
-// Lista de archivos CRÍTICOS
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
     './css/output.css',
     './css/styles.css',
+    
+    // --- AGREGA ESTAS LÍNEAS NUEVAS ---
+    './css/all.min.css',                // El archivo CSS de los íconos
+    './webfonts/fa-solid-900.woff2',    // La fuente de íconos Sólidos (fa-solid)
+    './webfonts/fa-regular-400.woff2',  // La fuente de íconos Regulares (fa-regular)
+    // ----------------------------------
+
     './js/app.js',
     './js/dashboard.js',
     './js/empleados.js',
@@ -67,9 +74,7 @@ const ASSETS_TO_CACHE = [
     './js/vendor/face-api.min.js',
     './js/vendor/jszip.min.js',
     './js/vendor/FileSaver.min.js'
-    // './recursos/LOGO PRISMA1.png' <--- COMENTADO PORQUE PROBABLEMENTE NO EXISTE EN APP/
 ];
-
 // A. INSTALACIÓN (Versión depurada)
 self.addEventListener('install', (event) => {
     event.waitUntil(
