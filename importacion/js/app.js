@@ -4323,8 +4323,8 @@ function showEditClientModal(cliente) {
         let rutPath = '';
         try {
             const urlString = cliente.rutUrl;
-            // 1. Encontrar el final del nombre del bucket (después de .app/ o .com/)
-            const bucketEndMarker = '.app/';
+            // 1. Encontrar el final del nombre del bucket (después de .App/ o .com/)
+            const bucketEndMarker = '.App/';
             const bucketEndIndex = urlString.indexOf(bucketEndMarker);
 
             if (bucketEndIndex !== -1) {
@@ -4334,7 +4334,7 @@ function showEditClientModal(cliente) {
                 const encodedPath = urlString.substring(bucketEndIndex + bucketEndMarker.length, queryStartIndex);
                 rutPath = decodeURIComponent(encodedPath);
             } else {
-                throw new Error("La URL no contiene un nombre de bucket reconocible (.app/).");
+                throw new Error("La URL no contiene un nombre de bucket reconocible (.App/).");
             }
         } catch (e) {
             console.error("Error al procesar la URL del RUT del cliente:", e.message, cliente.rutUrl);
@@ -4405,7 +4405,7 @@ function showEditProviderModal(proveedor) {
         let rutPath = '';
         try {
             const urlString = proveedor.rutUrl;
-            const bucketEndMarker = '.app/';
+            const bucketEndMarker = '.App/';
             const bucketEndIndex = urlString.indexOf(bucketEndMarker);
 
             if (bucketEndIndex !== -1) {
@@ -4413,7 +4413,7 @@ function showEditProviderModal(proveedor) {
                 const encodedPath = urlString.substring(bucketEndIndex + bucketEndMarker.length, queryStartIndex);
                 rutPath = decodeURIComponent(encodedPath);
             } else {
-                throw new Error("La URL no contiene un nombre de bucket reconocible (.app/).");
+                throw new Error("La URL no contiene un nombre de bucket reconocible (.App/).");
             }
         } catch (e) {
             console.error("Error al procesar la URL del RUT del proveedor:", e.message, proveedor.rutUrl);
