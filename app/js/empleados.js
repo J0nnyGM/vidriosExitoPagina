@@ -1124,7 +1124,7 @@ async function loadSSTUserProfile(userId, container) {
     const SST_USER_CATS = [
         { id: 'sst_alturas', label: 'Curso de Alturas', icon: 'fa-person-falling', color: 'text-orange-600', requiresDate: true, dateLabel: 'Realización', validityMonths: 18 },
         // ANTES: sst_aptitud (Certificado Aptitud) -> AHORA: sst_induccion (Inducción SST)
-        { id: 'sst_aptitud', label: 'Inducción SST', icon: 'fa-clipboard-check', color: 'text-emerald-600', requiresDate: true, dateLabel: 'Realización', validityMonths: 12 },
+        { id: 'sst_induccion', label: 'Inducción SST', icon: 'fa-clipboard-check', color: 'text-emerald-600', requiresDate: true, dateLabel: 'Realización', validityMonths: 12 },
         { id: 'sst_medico', label: 'Examen Médico', icon: 'fa-user-doctor', color: 'text-blue-600', requiresDate: true, dateLabel: 'Realización', validityMonths: 12 },
         { id: 'sst_otros', label: 'Otros (SST)', icon: 'fa-folder-plus', color: 'text-gray-600', requiresDate: false }
     ];
@@ -1186,7 +1186,7 @@ async function loadSSTUserProfile(userId, container) {
     const renderCards = async () => {
         // --- CORRECCIÓN EN LA CONSULTA: BUSCAMOS sst_induccion ---
         const q = query(collection(_db, "users", userId, "documents"), 
-            where("category", "in", ["sst_alturas", "sst_aptitud", "sst_medico", "sst_otros"])); // Cambiado sst_aptitud por sst_induccion
+            where("category", "in", ["sst_alturas", "sst_induccion", "sst_medico", "sst_otros"])); // Cambiado sst_aptitud por sst_induccion
         
         const snapshot = await getDocs(q);
         const docsMap = new Map();
