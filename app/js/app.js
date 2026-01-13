@@ -11156,19 +11156,34 @@ async function openMainModal(type, data = {}) {
 
             break;
         }
-        case 'edit-task': {
-            // --- CORRECCIÓN CRÍTICA: Leemos 'id' del objeto 'data' ---
-            const taskId = data.id;
-            // --- FIN CORRECCIÓN ---
-
+case 'edit-task': {
+            // ============================================================
+            // 1. CONFIGURACIÓN INICIAL Y VARIABLES
+            // ============================================================
+            // Corregimos la lectura del ID
+            const taskId = data.id; 
+            
             title = 'Editar Tarea';
             btnText = 'Guardar Cambios';
-            btnClass = 'bg-yellow-500 hover:bg-yellow-600 shadow-lg transition-all';
+            // Estilo amarillo para edición
+            btnClass = 'bg-yellow-500 hover:bg-yellow-600 shadow-lg transition-all text-white font-bold';
             modalContentDiv.classList.add('max-w-6xl');
+
+            // Ocultar título default
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
 
             modalBody.innerHTML = '<div class="text-center py-5"><div class="loader mx-auto"></div> Cargando datos...</div>';
             mainModal.style.display = 'flex';
 
+            // Declaramos instancias afuera para usarlas en el botón Guardar
+            let assigneeChoicesInstance = null;
+            let additionalChoicesInstance = null;
+
+            // ============================================================
+            // 2. CARGA DE USUARIOS
+            // ============================================================
             let allActiveUsers = [];
             try {
                 usersMap.forEach((user, userId) => {
@@ -11180,204 +11195,286 @@ async function openMainModal(type, data = {}) {
             } catch (error) {
                 console.error("Error cargando usuarios:", error);
                 closeMainModal();
-                alert("Error al cargar usuarios.");
                 return;
             }
 
-            // --- DISEÑO MODERNO HTML ---
+            // ============================================================
+            // 3. DISEÑO HTML (TEMA AMARILLO/AMBER)
+            // ============================================================
             bodyHtml = `
                 <div class="flex flex-col h-full max-h-[80vh]">
                     
                     <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-r from-yellow-500 to-amber-600 px-8 py-4 rounded-t-lg text-white shadow-md flex justify-between items-center">
                          <div class="flex items-center gap-3">
                             <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl backdrop-blur-sm"><i class="fa-solid fa-pen-to-square"></i></div>
-                            <h2 class="text-xl font-bold tracking-tight">Editar Tarea Operativa</h2>
+                            <div>
+                                <h2 class="text-xl font-bold tracking-tight">Editar Tarea Operativa</h2>
+                                <p class="text-xs text-yellow-100 opacity-90">Modificar responsables y detalles</p>
+                            </div>
                         </div>
-                        <span class="text-xs font-mono bg-white/20 px-2 py-0.5 rounded">ID: ${taskId.substring(0, 6).toUpperCase()}</span>
+                        <span class="text-xs font-mono bg-white/20 px-2 py-0.5 rounded border border-white/30">ID: ${taskId.substring(0, 6).toUpperCase()}</span>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-grow overflow-y-auto custom-scrollbar p-1 pb-20">
 
                         <div class="space-y-6">
                             
-                            <div class="bg-gray-100 p-5 rounded-xl border border-gray-300 shadow-inner">
-                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-300 pb-2 flex items-center">
-                                    <i class="fa-solid fa-city mr-2 text-gray-500"></i> Proyecto Asignado
+                            <div class="bg-gray-50 p-5 rounded-xl border border-gray-200 shadow-inner opacity-90">
+                                <h4 class="text-sm font-bold text-gray-500 mb-3 border-b border-gray-200 pb-2 flex items-center uppercase tracking-wide">
+                                    <i class="fa-solid fa-city mr-2"></i> Proyecto Original
                                 </h4>
                                 <div class="relative z-50">
-                                    <label for="task-project-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Proyecto (No editable)</label>
-                                    <select id="task-project-choices" name="projectId" class="w-full" disabled placeholder="Cargando proyecto..."></select>
+                                    <select id="task-project-choices" name="projectId" class="w-full" disabled></select>
                                     <input type="hidden" name="projectName" value="${data.projectName || ''}"> 
                                 </div>
                             </div>
 
-                            <div id="task-items-selection" class="bg-white p-5 rounded-xl border border-gray-200 shadow-md relative z-10">
-                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
-                                    <i class="fa-solid fa-layer-group mr-2 text-orange-500"></i> Ítems Relacionados
+                            <div id="task-items-selection" class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm relative z-10">
+                                <h4 class="text-sm font-bold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center uppercase tracking-wide">
+                                    <i class="fa-solid fa-layer-group mr-2 text-orange-500"></i> Ítems Asignados
                                 </h4>
                                 <div id="task-items-list" class="max-h-64 overflow-y-auto space-y-2 text-sm pr-2 custom-scrollbar">
                                     <p class="text-gray-400 italic text-center py-4">Cargando ítems...</p>
                                 </div>
-                                <p class="text-xs text-red-500 mt-3"><i class="fa-solid fa-info-circle mr-1"></i> Los ítems de una tarea en curso no pueden modificarse.</p>
+                                <div class="mt-3 flex items-start gap-2 text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-100">
+                                    <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
+                                    <p>Para modificar los ítems o cantidades, es mejor eliminar la tarea y crear una nueva para no afectar el inventario.</p>
+                                </div>
                             </div>
                         </div>
 
                         <div class="space-y-6">
 
-                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-md space-y-4">
-                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
-                                    <i class="fa-solid fa-user-tag mr-2 text-green-500"></i> 1. Responsables
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center uppercase tracking-wide">
+                                    <i class="fa-solid fa-users-gear mr-2 text-green-600"></i> Responsables
                                 </h4>
                                 
                                 <div class="relative z-50"> 
-                                    <label for="task-assignee-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Asignar A (Principal)</label>
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Asignado A (Principal)</label>
                                     <select id="task-assignee-choices" name="assigneeId" required></select>
                                     <input type="hidden" name="assigneeName" value="${data.assigneeName || ''}">
                                 </div>
 
                                 <div class="relative z-40"> 
-                                    <label for="task-additional-assignees-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Personas Adicionales</label>
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Personas Adicionales (Apoyo)</label>
                                     <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple></select>
                                 </div>
                             </div>
                             
-                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-md space-y-4 relative z-10">
-                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
-                                    <i class="fa-solid fa-clipboard-list mr-2 text-indigo-500"></i> 2. Descripción y Plazo
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4 relative z-10">
+                                <h4 class="text-sm font-bold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center uppercase tracking-wide">
+                                    <i class="fa-solid fa-pen-nib mr-2 text-indigo-500"></i> Detalles
                                 </h4>
                                 
                                 <div>
-                                    <label for="task-description" class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción de la Tarea</label>
-                                    <textarea id="task-description" name="description" rows="3" required class="w-full border rounded-lg p-2 text-sm resize-none">${data.description || ''}</textarea>
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción</label>
+                                    <textarea id="task-description" name="description" rows="3" required class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-yellow-500 outline-none transition-shadow resize-none">${data.description || ''}</textarea>
                                 </div>
                                 
                                 <div>
-                                    <label for="task-dueDate" class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Límite</label>
-                                    <input type="date" id="task-dueDate" name="dueDate" class="w-full border rounded-lg p-2 text-sm" value="${data.dueDate || ''}">
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Límite</label>
+                                    <input type="date" id="task-dueDate" name="dueDate" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-yellow-500 outline-none" value="${data.dueDate || ''}">
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
             `;
-            // --- FIN DISEÑO MODERNO HTML ---
 
             modalBody.innerHTML = bodyHtml;
 
-            // Lógica JS para inicializar el modal
+            // ============================================================
+            // 4. PREPARACIÓN DEL BOTÓN GUARDAR (CLONACIÓN)
+            // ============================================================
+            const oldConfirmBtn = document.getElementById('modal-confirm-btn');
+            const confirmBtn = oldConfirmBtn.cloneNode(true);
+            oldConfirmBtn.parentNode.replaceChild(confirmBtn, oldConfirmBtn);
+            
+            // Aplicar estilos
+            confirmBtn.textContent = btnText;
+            confirmBtn.className = `py-2 px-6 rounded-lg ${btnClass}`;
+            confirmBtn.style.display = 'block';
+
+            // ============================================================
+            // 5. LÓGICA DE INICIALIZACIÓN
+            // ============================================================
             setTimeout(() => {
-                // 1. Selector de Proyecto (Solo lectura)
+                // A. Proyecto (Dummy choices para visualización)
                 const projectElement = document.getElementById('task-project-choices');
                 const projectChoices = new Choices(projectElement, {
-                    choices: [{ value: data.projectId, label: data.projectName || 'Cargando...' }],
+                    choices: [{ value: data.projectId, label: data.projectName || 'Proyecto Actual' }],
                     itemSelectText: '', allowHTML: false,
                 });
-                projectChoices.setValue([{ value: data.projectId, label: data.projectName || 'Proyecto' }]);
+                projectChoices.setValue([{ value: data.projectId, label: data.projectName }]);
                 projectChoices.disable();
 
-                // 2. Asignado Principal
+                // B. Asignado Principal
                 const assigneeElement = document.getElementById('task-assignee-choices');
-                const assigneeChoices = new Choices(assigneeElement, {
+                assigneeChoicesInstance = new Choices(assigneeElement, {
                     choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
-                    searchPlaceholderValue: "Buscar usuario...", itemSelectText: 'Seleccionar', allowHTML: false,
+                    searchPlaceholderValue: "Buscar usuario...", itemSelectText: '', allowHTML: false,
                 });
+                
                 if (data.assigneeId) {
-                    const selectedUser = allActiveUsers.find(u => u.id === data.assigneeId);
-                    assigneeChoices.setValue([{ value: data.assigneeId, label: selectedUser ? selectedUser.name : 'Usuario' }]);
+                    // Verificamos si el usuario aún existe en la lista activa, si no, lo agregamos temporalmente
+                    const exists = allActiveUsers.some(u => u.id === data.assigneeId);
+                    if (!exists) assigneeChoicesInstance.setChoices([{ value: data.assigneeId, label: data.assigneeName || 'Usuario Inactivo', selected: true }], 'value', 'label', false);
+                    else assigneeChoicesInstance.setChoiceByValue(data.assigneeId);
                 }
+
+                // Listener para actualizar nombre oculto
                 assigneeElement.addEventListener('change', (event) => {
-                    const selectedAssigneeId = event.detail.value;
-                    const assigneeNameInput = modalForm.querySelector('input[name="assigneeName"]');
-                    const selectedUser = allActiveUsers.find(u => u.id === selectedAssigneeId);
-                    assigneeNameInput.value = selectedUser ? selectedUser.name : '';
+                    const selectedUser = allActiveUsers.find(u => u.id === event.detail.value);
+                    const nameInput = modalForm.querySelector('input[name="assigneeName"]');
+                    if (nameInput) nameInput.value = selectedUser ? selectedUser.name : '';
                 });
 
-                // 3. Asignados Adicionales
-                const additionalAssigneesElement = document.getElementById('task-additional-assignees-choices');
-                const additionalAssigneesChoices = new Choices(additionalAssigneesElement, {
+                // C. Asignados Adicionales (Multiselect)
+                const additionalElement = document.getElementById('task-additional-assignees-choices');
+                additionalChoicesInstance = new Choices(additionalElement, {
                     choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
-                    removeItemButton: true, searchPlaceholderValue: "Añadir más usuarios...", allowHTML: false,
+                    removeItemButton: true, searchPlaceholderValue: "Añadir apoyo...", allowHTML: false,
+                    shouldSort: false
                 });
+
                 if (data.additionalAssigneeIds && data.additionalAssigneeIds.length > 0) {
-                    const preSelectedLabels = data.additionalAssigneeIds.map(v => {
-                        const user = allActiveUsers.find(u => u.id === v);
-                        return { value: v, label: user ? user.name : 'Usuario Desconocido' };
-                    });
-                    additionalAssigneesChoices.setValue(preSelectedLabels);
+                    additionalChoicesInstance.setChoiceByValue(data.additionalAssigneeIds);
                 }
 
-                // 4. Cargar y mostrar los ítems (Modo solo lectura)
+                // D. Renderizado de Ítems (Visualización mejorada)
                 const itemsListDiv = document.getElementById('task-items-list');
-                const itemsListUl = document.createElement('ul');
-                itemsListUl.className = 'space-y-2';
-
                 if (data.selectedItems && data.selectedItems.length > 0) {
-                    const itemDetailPromises = data.selectedItems.map(async itemInfo => {
-                        try {
-                            const itemDoc = await getDoc(doc(db, "projects", data.projectId, "items", itemInfo.itemId));
-                            const itemData = itemDoc.exists() ? itemDoc.data() : { name: `ID: ${itemInfo.itemId}`, blueprintURL: null };
-                            const planoBtn = itemData.blueprintURL ? `
-                                <button type="button" onclick="viewDocument('${itemData.blueprintURL}', '${itemData.name}'); return false;" class="text-blue-500 hover:text-blue-700 ml-1 p-1 rounded-md text-xs border border-blue-200 bg-white shadow-sm">
-                                    <i class="fa-solid fa-file-contract"></i>
-                                </button>` : '';
-
-                            return `
-                                <li class="flex items-center justify-between py-1 px-1 border-b border-gray-100 last:border-0">
-                                    <span class="font-medium text-gray-700">
-                                        <i class="fa-solid fa-check-square mr-2 text-green-500"></i>
-                                        ${itemData.name} (x${itemInfo.quantity})
-                                    </span>
-                                    <div class="flex items-center">
-                                        ${planoBtn}
-                                    </div>
-                                </li>
-                            `;
-                        } catch (e) {
-                            return `<li class="text-red-500">Error cargando ítem</li>`;
-                        }
-                    });
-                    Promise.all(itemDetailPromises).then(htmlItems => {
-                        itemsListUl.innerHTML = htmlItems.join('');
-                        itemsListDiv.innerHTML = '';
-                        itemsListDiv.appendChild(itemsListUl);
+                    itemsListDiv.innerHTML = '';
+                    data.selectedItems.forEach(item => {
+                         // Intentamos buscar detalles extra si están disponibles en caché, o mostramos lo básico
+                         itemsListDiv.innerHTML += `
+                            <div class="flex justify-between items-center py-2 px-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                                <span class="text-gray-700 font-medium text-xs">
+                                    <i class="fa-solid fa-check text-green-500 mr-2"></i> ${item.itemName || 'Ítem'}
+                                </span>
+                                <span class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-mono font-bold">
+                                    x${item.quantity || item.quantityNeeded}
+                                </span>
+                            </div>
+                         `;
                     });
                 } else {
-                    itemsListDiv.innerHTML = '<p class="italic text-gray-500 text-center py-4">No hay ítems asociados.</p>';
+                    itemsListDiv.innerHTML = '<p class="text-xs text-gray-400 text-center py-2">Sin ítems registrados.</p>';
                 }
 
-                // 5. Fecha mínima y limpieza
-                const dueDateInput = modalBody.querySelector('#task-dueDate');
-                if (dueDateInput) dueDateInput.min = new Date().toISOString().split("T")[0];
-
+                // E. Limpieza
                 mainModal.addEventListener('close', () => {
-                    projectChoices.destroy(); assigneeChoices.destroy(); additionalAssigneesChoices.destroy();
+                    projectChoices.destroy(); 
+                    if(assigneeChoicesInstance) assigneeChoicesInstance.destroy(); 
+                    if(additionalChoicesInstance) additionalChoicesInstance.destroy();
                 }, { once: true });
 
-            }, 150);
+            }, 100);
+
+            // ============================================================
+            // 6. EVENTO GUARDAR (ACTUALIZAR TAREA)
+            // ============================================================
+            confirmBtn.addEventListener('click', async () => {
+                if (confirmBtn.dataset.isProcessing === 'true') return;
+                
+                confirmBtn.dataset.isProcessing = 'true';
+                confirmBtn.disabled = true;
+                const originalText = confirmBtn.textContent;
+                confirmBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Guardando...';
+
+                try {
+                    const formData = new FormData(modalForm);
+                    const updates = {
+                        description: formData.get('description'),
+                        dueDate: formData.get('dueDate'),
+                        assigneeId: formData.get('assigneeId'),
+                        assigneeName: formData.get('assigneeName')
+                    };
+
+                    // --- LÓGICA DE USUARIOS (FILTRO DE DUPLICADOS) ---
+                    let rawAdditional = [];
+                    if (additionalChoicesInstance) {
+                        const vals = additionalChoicesInstance.getValue(true);
+                        rawAdditional = Array.isArray(vals) ? vals : [vals];
+                    }
+                    
+                    // Crear Set para filtrar
+                    const uniqueAdditionalSet = new Set(rawAdditional);
+                    
+                    // Si el principal está en adicionales, quitarlo
+                    if (uniqueAdditionalSet.has(updates.assigneeId)) {
+                        uniqueAdditionalSet.delete(updates.assigneeId);
+                    }
+                    
+                    updates.additionalAssigneeIds = Array.from(uniqueAdditionalSet);
+                    // ----------------------------------------------------
+
+                    // Actualizar en Firebase
+                    const taskRef = doc(db, "tasks", taskId);
+                    await updateDoc(taskRef, updates);
+                    
+                    // Opcional: Crear notificación de cambio si cambió el asignado
+                    if (updates.assigneeId !== data.assigneeId && updates.assigneeId !== currentUser.uid) {
+                        addDoc(collection(db, "notifications"), {
+                            userId: updates.assigneeId,
+                            message: `Te han reasignado la tarea: ${updates.description.substring(0,20)}...`,
+                            read: false,
+                            createdAt: new Date(),
+                            type: 'task_update'
+                        });
+                    }
+
+                    showToast("Tarea actualizada correctamente");
+                    closeMainModal();
+
+                } catch (error) {
+                    console.error("Error al actualizar:", error);
+                    alert("Error al guardar cambios: " + error.message);
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = originalText;
+                    confirmBtn.dataset.isProcessing = 'false';
+                }
+            });
+
             break;
         }
 
         case 'new-task': {
-            // 1. Ocultar el título por defecto del modal para usar el personalizado
-            if (document.getElementById('modal-title')) {
-                document.getElementById('modal-title').parentElement.style.display = 'none';
+            // ============================================================
+            // 1. CONFIGURACIÓN VISUAL
+            // ============================================================
+            const defaultTitle = document.getElementById('modal-title');
+            if (defaultTitle && defaultTitle.parentElement) {
+                defaultTitle.parentElement.style.display = 'none';
             }
 
-            title = 'Crear Nueva Tarea'; // Título interno (no se verá en header default)
+            title = 'Crear Nueva Tarea';
             btnText = 'Guardar Tarea';
             btnClass = 'bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white shadow-lg transform hover:-translate-y-0.5 transition-all';
             modalContentDiv.classList.add('max-w-6xl');
-
-            modalBody.innerHTML = '<div class="text-center py-5"><div class="loader mx-auto"></div> Cargando datos...</div>';
+            
+            modalBody.innerHTML = '<div class="text-center py-10"><div class="loader mx-auto mb-2"></div><p class="text-gray-500">Cargando formulario...</p></div>';
             mainModal.style.display = 'flex';
 
+            // Variables para mantener vivas las instancias mientras el modal está abierto
+            let projectChoicesInstance = null;
+            let assigneeChoicesInstance = null;
+            let additionalChoicesInstance = null;
+
+            // ============================================================
+            // 2. OBTENER DATOS
+            // ============================================================
             let activeProjects = [];
             let allActiveUsers = [];
+
             try {
+                // Proyectos
                 const projectsQuery = query(collection(db, "projects"), where("status", "==", "active"), orderBy("name"));
                 const projectsSnapshot = await getDocs(projectsQuery);
                 activeProjects = projectsSnapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
 
+                // Usuarios (del mapa global)
                 usersMap.forEach((user, userId) => {
                     if (user.status === 'active') {
                         allActiveUsers.push({ id: userId, name: `${user.firstName} ${user.lastName}` });
@@ -11386,75 +11483,66 @@ async function openMainModal(type, data = {}) {
                 allActiveUsers.sort((a, b) => a.name.localeCompare(b.name));
 
             } catch (error) {
-                console.error("Error cargando datos para nueva tarea:", error);
+                console.error("Error datos:", error);
                 closeMainModal();
-                alert("Error al cargar la información necesaria para crear la tarea.");
+                alert("Error de conexión.");
                 return;
             }
 
-            // --- DISEÑO MODERNO HTML CORREGIDO (Z-INDEX) ---
+            // ============================================================
+            // 3. HTML DEL FORMULARIO
+            // ============================================================
             bodyHtml = `
                 <div class="flex flex-col h-full max-h-[80vh]">
-                    
                     <div class="-mx-6 -mt-6 mb-6 bg-gradient-to-r from-indigo-600 to-blue-700 px-8 py-4 rounded-t-lg text-white shadow-md flex justify-between items-center">
                         <div class="flex items-center gap-3">
                             <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl backdrop-blur-sm"><i class="fa-solid fa-file-circle-plus"></i></div>
-                            <h2 class="text-xl font-bold tracking-tight">Crear Nueva Tarea Operativa</h2>
+                            <h2 class="text-xl font-bold tracking-tight">Nueva Tarea</h2>
                         </div>
-                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white p-1"><i class="fa-solid fa-xmark text-xl"></i></button>
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-grow overflow-y-auto custom-scrollbar p-1 pb-20"> <div class="space-y-6">
-                            
-                            <div class="bg-white p-5 rounded-xl border border-blue-200 shadow-md">
-                                <h4 class="text-md font-extrabold text-blue-700 mb-3 border-b border-blue-100 pb-2 flex items-center">
-                                    <i class="fa-solid fa-city mr-2 text-blue-500"></i> 1. Proyecto
-                                </h4>
-                                <div class="relative z-50"> <label for="task-project-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Proyecto (Activos)</label>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-grow overflow-y-auto custom-scrollbar p-1 pb-10"> 
+                        <div class="space-y-6">
+                            <div class="bg-white p-5 rounded-xl border border-blue-200 shadow-sm">
+                                <h4 class="text-sm font-bold text-blue-800 mb-3">1. Seleccionar Proyecto</h4>
+                                <div class="relative z-50"> 
                                     <select id="task-project-choices" name="projectId" required class="w-full"></select>
                                     <input type="hidden" name="projectName">
                                 </div>
                             </div>
 
-                            <div id="task-items-selection" class="bg-white p-5 rounded-xl border border-gray-200 shadow-md hidden relative z-10">
-                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
-                                    <i class="fa-solid fa-layer-group mr-2 text-orange-500"></i> 2. Ítems a Asignar <span class="text-red-500 ml-1">*</span>
-                                </h4>
-                                <div id="task-items-list" class="max-h-64 overflow-y-auto space-y-2 text-sm pr-2 custom-scrollbar">
-                                    <p class="text-gray-400 italic text-center py-4">Selecciona un proyecto...</p>
-                                </div>
+                            <div id="task-items-selection" class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm hidden relative z-10">
+                                <h4 class="text-sm font-bold text-gray-700 mb-3">2. Seleccionar Ítems</h4>
+                                <div id="task-items-list" class="max-h-80 overflow-y-auto space-y-1 pr-1 custom-scrollbar bg-slate-50 p-2 rounded border border-gray-100"></div>
                             </div>
                         </div>
 
                         <div class="space-y-6">
-
-                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-md space-y-4">
-                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
-                                    <i class="fa-solid fa-user-tag mr-2 text-green-500"></i> 3. Responsables
-                                </h4>
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2">3. Asignación</h4>
                                 
-                                <div class="relative z-50"> <label for="task-assignee-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Asignar A (Principal)</label>
+                                <div class="relative z-50"> 
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Responsable Principal</label>
                                     <select id="task-assignee-choices" name="assigneeId" required></select>
                                     <input type="hidden" name="assigneeName">
                                 </div>
 
-                                <div class="relative z-40"> <label for="task-additional-assignees-choices" class="block text-xs font-bold text-gray-500 uppercase mb-1">Personas Adicionales</label>
-                                    <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple></select>
+                                <div class="relative z-40"> 
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Personal de Apoyo (Múltiple)</label>
+                                    <select id="task-additional-assignees-choices" name="additionalAssigneeIds" multiple class="w-full"></select>
+                                    <p class="text-[10px] text-gray-400 mt-1">Selecciona a todos los colaboradores necesarios.</p>
                                 </div>
                             </div>
                             
-                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-md space-y-4 relative z-10">
-                                <h4 class="text-md font-extrabold text-gray-700 mb-3 border-b border-gray-200 pb-2 flex items-center">
-                                    <i class="fa-solid fa-clipboard-list mr-2 text-indigo-500"></i> 4. Descripción y Plazo
-                                </h4>
-                                
+                            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4 relative z-10">
+                                <h4 class="text-sm font-bold text-gray-700 mb-2">4. Detalles</h4>
                                 <div>
-                                    <label for="task-description" class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción de la Tarea</label>
-                                    <textarea id="task-description" name="description" rows="3" required class="w-full border rounded-lg p-2 text-sm resize-none" placeholder="Describe brevemente la tarea..."></textarea>
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción</label>
+                                    <textarea id="task-description" name="description" rows="3" required class="w-full border rounded-lg p-2 text-sm resize-none"></textarea>
                                 </div>
-                                
                                 <div>
-                                    <label for="task-dueDate" class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Límite (Opcional)</label>
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Límite</label>
                                     <input type="date" id="task-dueDate" name="dueDate" class="w-full border rounded-lg p-2 text-sm">
                                 </div>
                             </div>
@@ -11462,121 +11550,151 @@ async function openMainModal(type, data = {}) {
                     </div>
                 </div>
             `;
-            // --- FIN DISEÑO MODERNO HTML ---
 
             modalBody.innerHTML = bodyHtml;
             document.getElementById('modal-title').textContent = title;
-            const confirmBtn = document.getElementById('modal-confirm-btn');
+
+            // ============================================================
+            // 4. EL BOTÓN "GUARDAR" (Limpio de clones)
+            // ============================================================
+            const oldConfirmBtn = document.getElementById('modal-confirm-btn');
+            const confirmBtn = oldConfirmBtn.cloneNode(true); // Clonar para eliminar listeners viejos
+            oldConfirmBtn.parentNode.replaceChild(confirmBtn, oldConfirmBtn);
+            
             confirmBtn.textContent = btnText;
             confirmBtn.className = `text-white font-bold py-2 px-4 rounded-lg transition-all ${btnClass}`;
+            confirmBtn.style.display = 'block';
+            confirmBtn.disabled = false;
+            delete confirmBtn.dataset.isProcessing; // Resetear flag
 
+            // ============================================================
+            // 5. INICIALIZAR INTERFAZ
+            // ============================================================
             setTimeout(() => {
-                const projectElement = document.getElementById('task-project-choices');
-                const projectChoices = new Choices(projectElement, {
-                    choices: activeProjects.map(p => ({ value: p.id, label: p.name })),
-                    searchPlaceholderValue: "Buscar proyecto...", itemSelectText: 'Seleccionar', allowHTML: false,
-                });
+                const projectEl = document.getElementById('task-project-choices');
+                const assigneeEl = document.getElementById('task-assignee-choices');
+                const additionalEl = document.getElementById('task-additional-assignees-choices');
 
-                const assigneeElement = document.getElementById('task-assignee-choices');
-                const assigneeChoices = new Choices(assigneeElement, {
+                // A. Inicializar Choices
+                projectChoicesInstance = new Choices(projectEl, { choices: activeProjects.map(p => ({ value: p.id, label: p.name })), searchPlaceholderValue: "Buscar...", itemSelectText: '', allowHTML: false });
+                
+                assigneeChoicesInstance = new Choices(assigneeEl, { choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })), searchPlaceholderValue: "Buscar...", itemSelectText: '', allowHTML: false });
+
+                // Configuración especial para MULTI-SELECT
+                additionalChoicesInstance = new Choices(additionalEl, { 
                     choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
-                    searchPlaceholderValue: "Buscar usuario...", itemSelectText: 'Seleccionar', allowHTML: false,
+                    removeItemButton: true,
+                    searchPlaceholderValue: "Escribe para buscar...",
+                    placeholderValue: "Seleccionar colaboradores...",
+                    allowHTML: false,
+                    shouldSort: false
                 });
 
-                const additionalAssigneesElement = document.getElementById('task-additional-assignees-choices');
-                const additionalAssigneesChoices = new Choices(additionalAssigneesElement, {
-                    choices: allActiveUsers.map(u => ({ value: u.id, label: u.name })),
-                    removeItemButton: true, searchPlaceholderValue: "Añadir más usuarios...", allowHTML: false,
-                });
+                // B. Lógica Proyectos e Items
+                projectEl.addEventListener('change', async (event) => {
+                    const pid = event.detail.value;
+                    const itemsList = document.getElementById('task-items-list');
+                    const itemsDiv = document.getElementById('task-items-selection');
+                    const pName = modalForm.querySelector('input[name="projectName"]');
+                    
+                    const proj = activeProjects.find(p => p.id === pid);
+                    if (pName && proj) pName.value = proj.name;
 
-                // Lógica para cargar ítems al seleccionar proyecto
-                projectElement.addEventListener('change', async (event) => {
-                    const selectedProjectId = event.detail.value;
-                    const itemsSelectionDiv = document.getElementById('task-items-selection');
-                    const itemsListDiv = document.getElementById('task-items-list');
-                    const projectNameInput = modalForm.querySelector('input[name="projectName"]');
-
-                    const selectedProject = activeProjects.find(p => p.id === selectedProjectId);
-                    projectNameInput.value = selectedProject ? selectedProject.name : '';
-
-                    if (selectedProjectId) {
-                        itemsListDiv.innerHTML = '<p class="text-gray-400">Cargando ítems...</p>';
-                        itemsSelectionDiv.classList.remove('hidden');
-
+                    if (pid) {
+                        itemsDiv.classList.remove('hidden');
+                        itemsList.innerHTML = '<div class="text-center py-2"><div class="loader"></div></div>';
+                        
                         try {
-                            const itemsQuery = query(collection(db, "projects", selectedProjectId, "items"), orderBy("name"));
-                            const itemsSnapshot = await getDocs(itemsQuery);
-                            if (itemsSnapshot.empty) {
-                                itemsListDiv.innerHTML = '<p class="text-gray-400">Este proyecto no tiene ítems definidos.</p>';
-                            } else {
-                                itemsListDiv.innerHTML = '';
-                                itemsSnapshot.forEach(doc => {
-                                    const item = { id: doc.id, ...doc.data() };
-                                    const planoBtn = item.blueprintURL ? `
-                                        <button type="button" onclick="viewDocument('${item.blueprintURL}', '${item.name}'); return false;" class="text-blue-500 hover:text-blue-700 ml-1.5 p-1 rounded-md text-xs border border-blue-200 bg-white shadow-sm">
-                                            <i class="fa-solid fa-file-contract"></i>
-                                        </button>` : '';
-
-                                    itemsListDiv.innerHTML += `
-                                        <div class="task-item-row flex items-start justify-between py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50 px-2 rounded transition-colors">
-                                            
-                                            <label class="inline-flex items-start flex-grow mr-2 cursor-pointer"> 
-                                                <input type="checkbox" name="selectedItemIds" value="${item.id}" data-item-quantity="${item.quantity}" class="item-checkbox mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0">
-                                                
-                                                <div class="ml-2 flex flex-col">
-                                                    <span class="text-sm font-bold text-gray-800 leading-tight">${item.name}</span>
-                                                    
-                                                    <span class="text-xs text-gray-500 whitespace-normal break-words leading-snug mt-0.5">
-                                                        ${item.description || '<span class="italic opacity-50">Sin descripción</span>'}
-                                                    </span>
+                            const snap = await getDocs(query(collection(db, "projects", pid, "items"), orderBy("name")));
+                            if (snap.empty) itemsList.innerHTML = '<p class="text-center text-xs text-gray-400">Sin ítems.</p>';
+                            else {
+                                itemsList.innerHTML = '';
+                                snap.forEach(doc => {
+                                    const i = {id: doc.id, ...doc.data()};
+                                    // Búsqueda robusta de nombre (sin HTML dentro del span del nombre)
+                                    itemsList.innerHTML += `
+                                        <div class="task-item-row flex items-center justify-between py-2 border-b border-gray-100 px-2 hover:bg-blue-50 transition-colors">
+                                            <label class="flex items-center gap-2 cursor-pointer flex-grow"> 
+                                                <input type="checkbox" name="selectedItemIds" value="${i.id}" data-item-quantity="${i.quantity}" class="item-checkbox rounded text-blue-600 focus:ring-blue-500">
+                                                <div class="flex flex-col">
+                                                    <span class="text-sm font-bold text-gray-700">${i.name}</span>
+                                                    ${i.blueprintURL ? `<span class="text-[10px] text-blue-500"><i class="fa-solid fa-file-contract"></i> Plano disponible</span>` : ''}
                                                 </div>
                                             </label>
-
-                                            <div class="flex items-center shrink-0 mt-0.5">
-                                                ${planoBtn}
-                                                <input type="number" name="itemQuantity_${item.id}" min="1" max="${item.quantity}" placeholder="Cant." class="item-quantity-input w-20 border rounded-md p-1 text-sm bg-gray-100 focus:bg-white focus:ring-1 focus:ring-blue-300 ml-2" disabled>
-                                            </div>
-                                        </div>
-                                    `;
+                                            <input type="number" name="itemQuantity_${i.id}" min="1" max="${i.quantity}" placeholder="Max: ${i.quantity}" class="item-quantity-input w-20 border rounded p-1 text-xs text-center" disabled>
+                                        </div>`;
                                 });
-                                // Listener para habilitar el input de cantidad
-                                itemsListDiv.addEventListener('change', (e) => {
-                                    if (e.target.classList.contains('item-checkbox')) {
-                                        const quantityInput = e.target.closest('.task-item-row').querySelector('.item-quantity-input');
-                                        if (quantityInput) {
-                                            quantityInput.disabled = !e.target.checked;
-                                            quantityInput.classList.toggle('bg-gray-100', !e.target.checked);
-                                            if (!e.target.checked) quantityInput.value = '';
-                                            else quantityInput.focus();
-                                        }
-                                    }
+                                // Listeners para inputs de cantidad
+                                itemsList.querySelectorAll('.item-checkbox').forEach(chk => {
+                                    chk.addEventListener('change', (e) => {
+                                        const inp = e.target.closest('.task-item-row').querySelector('.item-quantity-input');
+                                        inp.disabled = !e.target.checked;
+                                        if(!e.target.checked) inp.value = ''; else inp.focus();
+                                    });
                                 });
                             }
-                        } catch (error) {
-                            console.error("Error cargando ítems:", error);
-                            itemsListDiv.innerHTML = '<p class="text-red-500">Error al cargar ítems.</p>';
-                        }
-                    } else {
-                        itemsSelectionDiv.classList.add('hidden');
-                        itemsListDiv.innerHTML = '<p class="text-gray-400">Selecciona un proyecto para ver sus ítems.</p>';
-                        projectNameInput.value = '';
-                    }
+                        } catch (e) { console.error(e); }
+                    } else { itemsDiv.classList.add('hidden'); }
                 });
 
-                assigneeElement.addEventListener('change', (event) => {
-                    const selectedAssigneeId = event.detail.value;
-                    const assigneeNameInput = modalForm.querySelector('input[name="assigneeName"]');
-                    const selectedUser = allActiveUsers.find(u => u.id === selectedAssigneeId);
-                    assigneeNameInput.value = selectedUser ? selectedUser.name : '';
+                // C. Nombre Asignado
+                assigneeEl.addEventListener('change', (e) => {
+                    const u = allActiveUsers.find(us => us.id === e.detail.value);
+                    if (u) modalForm.querySelector('input[name="assigneeName"]').value = u.name;
                 });
 
-                const dueDateInput = modalBody.querySelector('#task-dueDate');
-                if (dueDateInput) dueDateInput.min = new Date().toISOString().split("T")[0];
+                // D. Fecha
+                const dInp = modalBody.querySelector('#task-dueDate');
+                if(dInp) dInp.min = new Date().toISOString().split("T")[0];
 
+                // Limpieza
                 mainModal.addEventListener('close', () => {
-                    projectChoices.destroy(); assigneeChoices.destroy(); additionalAssigneesChoices.destroy();
+                    if(projectChoicesInstance) projectChoicesInstance.destroy();
+                    if(assigneeChoicesInstance) assigneeChoicesInstance.destroy();
+                    if(additionalChoicesInstance) additionalChoicesInstance.destroy();
                 }, { once: true });
-            }, 150);
+
+            }, 100);
+
+            // ============================================================
+            // 6. EVENTO CLICK: GUARDAR TAREA (CORREGIDO PARA MÚLTIPLES USUARIOS)
+            // ============================================================
+            confirmBtn.addEventListener('click', async () => {
+                if (confirmBtn.dataset.isProcessing === 'true') return;
+                
+                confirmBtn.dataset.isProcessing = 'true';
+                confirmBtn.disabled = true;
+                const originalText = confirmBtn.textContent;
+                confirmBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
+
+                try {
+                    const formData = new FormData(modalForm);
+                    const taskData = Object.fromEntries(formData.entries());
+
+                    // --- SOLUCIÓN DEFINITIVA PARA MÚLTIPLES USUARIOS ---
+                    // No confiamos en FormData ni en la instancia de JS.
+                    // Leemos el DOM nativo. Choices.js actualiza el <select multiple> subyacente.
+                    const rawSelect = document.getElementById('task-additional-assignees-choices');
+                    let selectedIds = [];
+                    
+                    if (rawSelect) {
+                        // Usamos la propiedad nativa del navegador selectedOptions
+                        selectedIds = Array.from(rawSelect.selectedOptions).map(option => option.value);
+                    }
+
+                    // Forzamos el array obtenido manualmente sobre el objeto de datos
+                    taskData.additionalAssigneeIds = selectedIds;
+                    
+                    await createTask(taskData);
+
+                    // Si llega aquí sin error, el modal se cerrará vía createTask
+                } catch (error) {
+                    console.error("Error en botón guardar:", error);
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = originalText;
+                    delete confirmBtn.dataset.isProcessing;
+                }
+            });
 
             break;
         }
@@ -19600,206 +19718,190 @@ async function addCommentToTask(taskId) {
 }
 
 /**
- * Guarda una nueva tarea en Firestore, incluyendo ítems seleccionados con cantidad
- * y envía notificaciones a los asignados.
- * (VERSIÓN ACTUALIZADA: "Estampa" el ID de la tarea en los sub-ítems y
- * calcula los M² asignados para las estadísticas del operario)
- * @param {object} taskData - Datos de la tarea obtenidos del formulario del modal.
+ * Guarda una nueva tarea en Firestore.
+ * (VERSIÓN FLEXIBLE: Permite tareas generales sin ítems seleccionados)
  */
 async function createTask(taskData) {
-    // Validaciones básicas (se mantienen projectId, assigneeId, description)
+    // 1. Validaciones básicas (Proyecto y Responsable siguen siendo obligatorios para mantener orden)
     if (!taskData.projectId || !taskData.assigneeId || !taskData.description) {
         alert("Por favor, completa Proyecto, Asignado Principal y Descripción.");
         return;
     }
 
-    // --- Recolectar datos de ítems y encontrar subItemIds ---
-    const itemCheckboxes = modalForm.querySelectorAll('input[name="selectedItemIds"]:checked');
-    if (itemCheckboxes.length === 0) {
-        alert("Debes seleccionar al menos un Ítem Relacionado e ingresar su cantidad.");
-        return;
+    loadingOverlay.classList.remove('hidden');
+
+    // =========================================================================
+    // 2. LÓGICA DE USUARIOS (FILTRO DE DUPLICADOS)
+    // =========================================================================
+    let rawAdditional = taskData.additionalAssigneeIds;
+    if (!rawAdditional) rawAdditional = [];
+    else if (!Array.isArray(rawAdditional)) rawAdditional = [rawAdditional];
+
+    const uniqueAdditionalSet = new Set(rawAdditional);
+    if (uniqueAdditionalSet.has(taskData.assigneeId)) {
+        uniqueAdditionalSet.delete(taskData.assigneeId);
     }
+    const finalAdditionalAssignees = Array.from(uniqueAdditionalSet);
+    // =========================================================================
+
+
+    // Variables para el proceso de ítems (se llenarán solo si hay selección)
     const selectedItemsQueryData = [];
-    // (Bucle for...of para validar cantidades y llenar selectedItemsQueryData)
-    for (const checkbox of itemCheckboxes) {
-        const itemId = checkbox.value;
-        const quantityInput = modalForm.querySelector(`input[name="itemQuantity_${itemId}"]`);
-        const quantity = parseInt(quantityInput?.value);
-        const maxQuantity = parseInt(checkbox.dataset.itemQuantity) || 1;
-
-        if (!quantity || quantity <= 0) {
-            alert(`Por favor, ingresa una cantidad válida (mayor a 0) para el ítem "${checkbox.nextElementSibling.textContent}".`); // <-- CORRECCIÓN: throw new Error
-            return;
-        }
-        if (quantity > maxQuantity) {
-            alert(`La cantidad para el ítem "${checkbox.nextElementSibling.textContent}" (${quantity}) excede el máximo permitido (${maxQuantity}).`); // <-- CORRECCIÓN: throw new Error
-            return;
-        }
-
-        selectedItemsQueryData.push({
-            itemId: itemId,
-            quantityNeeded: quantity,
-            itemName: checkbox.nextElementSibling.textContent
-        });
-    }
-
-    // --- INICIO DE MODIFICACIÓN: Fase 2 (Lógica corregida) ---
     const specificSubItemIds = [];
     const selectedItemsForTask = [];
     let totalMetrosAsignados = 0;
     const batchSubItemUpdates = writeBatch(db);
     let subItemsToStamp = [];
 
-    for (const itemQuery of selectedItemsQueryData) {
-
-        // 1. CONSULTA SIMPLIFICADA
-        // Quitamos los 'where' complejos para evitar errores de índices o campos inexistentes.
-        // Solo ordenamos por número para asignar en orden (1, 2, 3...)
-        const subItemsQuery = query(
-            collection(db, "projects", taskData.projectId, "items", itemQuery.itemId, "subItems"),
-            orderBy("number", "asc")
-        );
-
-        const subItemsSnapshot = await getDocs(subItemsQuery);
-
-        // 2. FILTRADO INTELIGENTE EN JAVASCRIPT
-        let assignedCount = 0;
-
-        for (const subItemDoc of subItemsSnapshot.docs) {
-            // Si ya completamos la cantidad necesaria para este ítem, paramos.
-            if (assignedCount >= itemQuery.quantityNeeded) break;
-
-            const data = subItemDoc.data();
-
-            // VERIFICACIÓN MANUAL (Más segura):
-            // A. Que no esté instalado.
-            // B. Que NO tenga tarea asignada (verifica si es null, undefined o false).
-            if (data.status !== 'Instalado' && !data.assignedTaskId) {
-
-                // ¡Encontramos uno libre!
-                specificSubItemIds.push(subItemDoc.id);
-                totalMetrosAsignados += (data.m2 || 0);
-                subItemsToStamp.push(subItemDoc.ref);
-
-                assignedCount++;
-            }
-        }
-
-        // 3. VALIDACIÓN DE CANTIDAD
-        if (assignedCount < itemQuery.quantityNeeded) {
-            alert(`No hay suficientes unidades disponibles para "${itemQuery.itemName}". Solicitaste ${itemQuery.quantityNeeded}, pero solo hay ${assignedCount} libres.`);
-            return; // Detenemos todo el proceso
-        }
-
-        selectedItemsForTask.push({
-            itemId: itemQuery.itemId,
-            quantity: itemQuery.quantityNeeded
-        });
-    }
-    // --- FIN DE MODIFICACIÓN: Fase 2 ---
-
-
-    // Recolectar asignados adicionales (sin cambios)
-    const additionalAssignees = taskData.additionalAssigneeIds ?
-        (Array.isArray(taskData.additionalAssigneeIds) ? taskData.additionalAssigneeIds : [taskData.additionalAssigneeIds])
-        : [];
 
     try {
-        // --- Guardar la Tarea ---
+        // 3. VERIFICAR SI HAY ÍTEMS SELECCIONADOS (Lógica Opcional)
+        const itemCheckboxes = modalForm.querySelectorAll('input[name="selectedItemIds"]:checked');
+        
+        if (itemCheckboxes.length > 0) {
+            // --- SOLO SI SELECCIONÓ ÍTEMS, EJECUTAMOS LA LÓGICA DE INVENTARIO ---
+            
+            // A. Validar cantidades
+            for (const checkbox of itemCheckboxes) {
+                const itemId = checkbox.value;
+                const quantityInput = modalForm.querySelector(`input[name="itemQuantity_${itemId}"]`);
+                const quantity = parseInt(quantityInput?.value);
+                const maxQuantity = parseInt(checkbox.dataset.itemQuantity) || 1;
+
+                // Obtener nombre seguro
+                const row = checkbox.closest('.task-item-row');
+                let nameEl = row ? row.querySelector('.font-bold') : null;
+                let itemName = nameEl ? nameEl.textContent : "Ítem";
+                itemName = itemName.replace('Plano', '').trim();
+
+                if (!quantity || quantity <= 0) throw new Error(`Cantidad inválida para "${itemName}".`);
+                if (quantity > maxQuantity) throw new Error(`Exceso de cantidad para "${itemName}".`);
+
+                selectedItemsQueryData.push({
+                    itemId: itemId,
+                    quantityNeeded: quantity,
+                    itemName: itemName
+                });
+            }
+
+            // B. Buscar Sub-ítems disponibles (Fase 2)
+            for (const itemQuery of selectedItemsQueryData) {
+                const subItemsQuery = query(
+                    collection(db, "projects", taskData.projectId, "items", itemQuery.itemId, "subItems"),
+                    orderBy("number", "asc")
+                );
+
+                const subItemsSnapshot = await getDocs(subItemsQuery);
+                let assignedCount = 0;
+
+                for (const subItemDoc of subItemsSnapshot.docs) {
+                    if (assignedCount >= itemQuery.quantityNeeded) break;
+                    const data = subItemDoc.data();
+
+                    if (data.status !== 'Instalado' && !data.assignedTaskId) {
+                        specificSubItemIds.push(subItemDoc.id);
+                        totalMetrosAsignados += (data.m2 || 0);
+                        subItemsToStamp.push(subItemDoc.ref);
+                        assignedCount++;
+                    }
+                }
+
+                if (assignedCount < itemQuery.quantityNeeded) {
+                    throw new Error(`No hay suficientes unidades disponibles para "${itemQuery.itemName}".`);
+                }
+
+                selectedItemsForTask.push({
+                    itemId: itemQuery.itemId,
+                    quantity: itemQuery.quantityNeeded,
+                    itemName: itemQuery.itemName // Guardamos el nombre para referencia futura
+                });
+            }
+        } else {
+            console.log("Creando tarea general (sin ítems asociados).");
+        }
+
+        // 4. Guardar la Tarea Principal
         const newTaskRef = await addDoc(collection(db, "tasks"), {
             projectId: taskData.projectId,
             projectName: taskData.projectName,
             assigneeId: taskData.assigneeId,
             assigneeName: taskData.assigneeName,
-            additionalAssigneeIds: additionalAssignees,
-            selectedItems: selectedItemsForTask,
-            specificSubItemIds: specificSubItemIds,
+            additionalAssigneeIds: finalAdditionalAssignees,
+            selectedItems: selectedItemsForTask,     // Será [] si es tarea general
+            specificSubItemIds: specificSubItemIds,  // Será [] si es tarea general
             description: taskData.description,
             dueDate: taskData.dueDate || null,
             status: 'pendiente',
             createdAt: new Date(),
             createdBy: currentUser.uid,
-            totalMetrosAsignados: totalMetrosAsignados // 7. Guardar los M² totales en la tarea
+            totalMetrosAsignados: totalMetrosAsignados // Será 0 si es tarea general
         });
-        console.log("Nueva tarea guardada en Firestore con ID:", newTaskRef.id);
 
-        // --- INICIO DE MODIFICACIÓN: Fase 2 (Continuación) ---
+        console.log("Tarea creada con éxito. ID:", newTaskRef.id);
 
-        // 8. "Estampar" los sub-ítems con el ID de la tarea recién creada
-        subItemsToStamp.forEach(subItemRef => {
-            batchSubItemUpdates.update(subItemRef, {
-                assignedTaskId: newTaskRef.id // <-- El "estampado"
+        // 5. Actualizar Sub-ítems (Solo si hubo ítems que estampar)
+        if (subItemsToStamp.length > 0) {
+            subItemsToStamp.forEach(subItemRef => {
+                batchSubItemUpdates.update(subItemRef, { assignedTaskId: newTaskRef.id });
             });
-        });
-        await batchSubItemUpdates.commit();
-        console.log(`${subItemsToStamp.length} sub-items estampados con el ID de tarea: ${newTaskRef.id}`);
-
-        // 9. Actualizar las estadísticas mensuales del operario
-        if (totalMetrosAsignados > 0) {
-            const assigneeId = taskData.assigneeId;
-            const today = new Date();
-            const year = today.getFullYear();
-            const month = String(today.getMonth() + 1).padStart(2, '0'); // Formato "MM"
-            const statDocId = `${year}_${month}`; // Ej: "2025_11"
-
-            // Referencia al documento de estadísticas de ese mes para ese usuario
-            const statsRef = doc(db, "employeeStats", assigneeId, "monthlyStats", statDocId);
-
-            // Usamos setDoc con merge:true para crear el documento si no existe,
-            // e increment() para sumar los metros de forma segura.
-            await setDoc(statsRef, {
-                metrosAsignados: increment(totalMetrosAsignados),
-                // Inicializamos los otros campos si no existen
-                metrosCompletados: increment(0),
-                metrosEnTiempo: increment(0),
-                metrosFueraDeTiempo: increment(0)
-            }, { merge: true });
-
-            console.log(`Estadísticas mensuales del operario (${assigneeId} / ${statDocId}) actualizadas: +${totalMetrosAsignados}m² asignados.`);
-
+            await batchSubItemUpdates.commit();
         }
-        // --- FIN DE MODIFICACIÓN ---
 
+        // 6. Actualizar Estadísticas (Solo si hay metros > 0)
+        if (totalMetrosAsignados > 0) {
+            try {
+                const today = new Date();
+                const statDocId = `${today.getFullYear()}_${String(today.getMonth() + 1).padStart(2, '0')}`;
+                const statsRef = doc(db, "employeeStats", taskData.assigneeId, "monthlyStats", statDocId);
+                await setDoc(statsRef, {
+                    metrosAsignados: increment(totalMetrosAsignados),
+                    metrosCompletados: increment(0)
+                }, { merge: true });
+            } catch (statsError) {
+                console.warn("Error actualizando estadísticas:", statsError);
+            }
+        }
 
-        // --- Lógica de Notificaciones (sin cambios) ---
-        const projectName = taskData.projectName || "un proyecto";
-        const notificationMessage = `Nueva tarea asignada: ${taskData.description.substring(0, 50)}${taskData.description.length > 50 ? '...' : ''}`;
+        // 7. Enviar Notificaciones
         const notificationData = {
-            message: notificationMessage,
-            projectName: projectName,
+            message: `Nueva tarea: ${taskData.description.substring(0, 30)}...`,
+            projectName: taskData.projectName || "Proyecto",
             taskId: newTaskRef.id,
             read: false,
             createdAt: new Date(),
             type: 'new_task_assignment'
         };
-        // (Notificación a principal)
-        if (taskData.assigneeId && taskData.assigneeId !== currentUser.uid) {
-            await addDoc(collection(db, "notifications"), {
-                ...notificationData,
-                userId: taskData.assigneeId
-            });
+
+        const usersToNotify = new Set(finalAdditionalAssignees);
+        if (taskData.assigneeId !== currentUser.uid) usersToNotify.add(taskData.assigneeId);
+
+        for (const userId of usersToNotify) {
+            if (userId === currentUser.uid) continue;
+            try {
+                await addDoc(collection(db, "notifications"), { ...notificationData, userId: userId });
+            } catch (e) { console.warn("Error notificando:", e); }
         }
-        // (Notificación a adicionales)
-        for (const additionalId of additionalAssignees) {
-            if (additionalId && additionalId !== currentUser.uid) {
-                await addDoc(collection(db, "notifications"), {
-                    ...notificationData,
-                    userId: additionalId
-                });
-            }
-        }
-        // --- Fin Lógica de Notificaciones ---
 
         closeMainModal();
+        showToast("Tarea registrada correctamente.");
 
     } catch (error) {
-        console.error("Error al guardar la nueva tarea o actualizar sub-ítems:", error);
-        alert(`No se pudo guardar la tarea: ${error.message}`);
+        console.error("Error al crear tarea:", error);
+        alert(`Error: ${error.message}`);
+        
+        const confirmBtn = document.getElementById('modal-confirm-btn');
+        if(confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = 'Guardar Tarea';
+            confirmBtn.dataset.isProcessing = 'false';
+        }
+    } finally {
+        loadingOverlay.classList.add('hidden');
     }
 }
 
 /**
- * Abre el modal con los detalles completos de una tarea (DISEÑO MODERNO + PLANOS + ANCHO).
+ * Abre el modal con los detalles completos de una tarea (DISEÑO MEJORADO EQUIPO).
  * @param {string} taskId - El ID de la tarea a mostrar.
  */
 async function openTaskDetailsModal(taskId) {
@@ -19812,21 +19914,18 @@ async function openTaskDetailsModal(taskId) {
     const modalContainer = modal.querySelector('.w-11\\/12');
     if (modalContainer) {
         modalContainer.classList.remove('md:max-w-2xl', 'md:max-w-4xl');
-        modalContainer.classList.add('md:max-w-6xl'); // Mucho más ancho para ver bitácora y planos
+        modalContainer.classList.add('md:max-w-6xl');
     }
 
     if (!modal || !bodyEl || !actionsEl) return;
 
-    // Marcar comentarios como leídos
     try {
         const taskRef = doc(db, "tasks", taskId);
         updateDoc(taskRef, { unreadCommentFor: arrayRemove(currentUser.uid) });
     } catch (e) { console.error(e); }
 
-    // Contexto para retorno
     materialRequestReturnContext = { view: 'detalle-tarea', taskId: taskId };
 
-    // Reset visual
     modal.style.display = 'flex';
     if (titleEl.parentElement) titleEl.parentElement.style.display = 'none';
 
@@ -19846,14 +19945,29 @@ async function openTaskDetailsModal(taskId) {
         const assigneeName = assigneeUser ? `${assigneeUser.firstName} ${assigneeUser.lastName}` : 'Sin asignar';
         const assigneeInitial = assigneeUser ? assigneeUser.firstName.charAt(0) : '?';
 
-        let additionalNamesHtml = '';
+        // --- MEJORA VISUAL: Generar HTML de Colaboradores como "Chips" en Grid ---
+        let additionalMembersHtml = '';
         if (task.additionalAssigneeIds && task.additionalAssigneeIds.length > 0) {
-            additionalNamesHtml = task.additionalAssigneeIds.map(id => {
+            // Creamos un contenedor Grid para los colaboradores
+            let membersGrid = '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">';
+            
+            task.additionalAssigneeIds.forEach(id => {
                 const u = usersMap.get(id);
-                return u ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">${u.firstName}</span>` : '';
-            }).join(' ');
+                if(u) {
+                    membersGrid += `
+                        <div class="flex items-center p-2 bg-gray-50 rounded-lg border border-gray-100 hover:bg-gray-100 transition-colors">
+                            <div class="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-[10px] border border-blue-200 mr-2 shrink-0">
+                                ${u.firstName.charAt(0)}
+                            </div>
+                            <span class="text-xs font-medium text-gray-600 truncate">${u.firstName} ${u.lastName}</span>
+                        </div>
+                    `;
+                }
+            });
+            membersGrid += '</div>';
+            additionalMembersHtml = membersGrid;
         } else {
-            additionalNamesHtml = '<span class="text-gray-400 italic text-xs">Nadie más</span>';
+            additionalMembersHtml = '<p class="text-xs text-gray-400 italic mt-2 bg-gray-50 p-2 rounded text-center">Sin personal de apoyo asignado.</p>';
         }
 
         const formatDate = (dateStr) => dateStr ? new Date(dateStr + 'T00:00:00').toLocaleDateString('es-CO', { month: 'short', day: 'numeric' }) : '---';
@@ -19905,27 +20019,31 @@ async function openTaskDetailsModal(taskId) {
                     
                     <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
                         <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4 flex items-center">
-                            <i class="fa-solid fa-users mr-2"></i> Equipo Asignado
+                            <i class="fa-solid fa-users mr-2"></i> Equipo de Trabajo
                         </h4>
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold border border-indigo-200">
-                                    ${assigneeInitial}
-                                </div>
-                                <div>
-                                    <p class="text-sm font-bold text-gray-800">${assigneeName}</p>
-                                    <p class="text-xs text-gray-500">Responsable</p>
-                                </div>
+                        
+                        <div class="flex items-center p-3 bg-indigo-50 rounded-xl border border-indigo-100 mb-4 shadow-sm">
+                            <div class="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xl border-2 border-white shadow mr-3 shrink-0">
+                                ${assigneeInitial}
                             </div>
-                            <div class="text-right">
-                                <p class="text-xs text-gray-400 mb-1">Apoyo</p>
-                                <div class="flex flex-wrap justify-end gap-1">
-                                    ${additionalNamesHtml}
+                            <div class="flex-grow">
+                                <p class="text-sm font-bold text-gray-900">${assigneeName}</p>
+                                <div class="flex items-center mt-0.5">
+                                    <span class="bg-white text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded border border-indigo-200 flex items-center">
+                                        <i class="fa-solid fa-star text-yellow-400 mr-1"></i> Responsable
+                                    </span>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
+                        <div>
+                            <div class="flex items-center mb-1">
+                                <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Colaboradores de Apoyo</p>
+                                <div class="h-px bg-gray-100 flex-grow ml-3"></div>
+                            </div>
+                            ${additionalMembersHtml}
+                        </div>
+                    </div>
                     <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                          <div class="px-5 py-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
                             <h4 class="text-xs font-bold text-gray-700 uppercase tracking-wide">
@@ -19960,11 +20078,9 @@ async function openTaskDetailsModal(taskId) {
                             </div>
                         </div>
                     </div>
-
                 </div>
 
                 <div class="lg:col-span-5 space-y-6">
-                    
                     <div class="bg-indigo-50 rounded-xl border border-indigo-100 p-5 flex justify-between items-center">
                         <div>
                             <p class="text-xs font-bold text-indigo-400 uppercase mb-1">Fecha Límite</p>
@@ -20001,22 +20117,16 @@ async function openTaskDetailsModal(taskId) {
             </div>
         `;
 
-        // --- 2. CARGA DE DATOS ASÍNCRONA ---
-
-        // Cargar detalle de ítems (Tabla) + PLANOS
+        // 2. LOGICA ITEMS (Misma lógica, sin cambios en funcionalidad)
         if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
             const loadItems = async () => {
                 try {
                     const subItemIds = task.specificSubItemIds;
                     const selectedItems = task.selectedItems || [];
-
                     const itemsStatus = new Map();
                     const itemIds = [...new Set(selectedItems.map(i => i.itemId))];
-
-                    // 1. Cargar Nombres, Descripciones y URLs de Planos
                     const itemDocs = await Promise.all(itemIds.map(id => getDoc(doc(db, "projects", task.projectId, "items", id))));
 
-                    // Mapa con info completa
                     const itemsInfo = new Map(itemDocs.map(d => [
                         d.id,
                         d.exists() ? {
@@ -20026,7 +20136,6 @@ async function openTaskDetailsModal(taskId) {
                         } : { name: 'Ítem', url: null, description: '' }
                     ]));
 
-                    // Inicializar estado
                     itemIds.forEach(id => {
                         const info = itemsInfo.get(id);
                         itemsStatus.set(id, {
@@ -20038,7 +20147,6 @@ async function openTaskDetailsModal(taskId) {
                         });
                     });
 
-                    // Consultar subítems en lotes para contar instalados
                     const subItemIdsSet = new Set(subItemIds);
                     for (const itemInfo of selectedItems) {
                         const itemId = itemInfo.itemId;
@@ -20055,13 +20163,10 @@ async function openTaskDetailsModal(taskId) {
                         });
                     }
 
-                    // 2. Construir HTML
                     let htmlRows = '';
                     itemsStatus.forEach(st => {
                         if (st.total === 0) return;
                         const pending = st.total - st.installed;
-
-                        // A. Celda de Nombre + Descripción
                         let nameCellContent = `
                             <div class="flex flex-col">
                                 <span class="font-bold text-gray-700 text-sm leading-tight">${st.name}</span>
@@ -20070,17 +20175,13 @@ async function openTaskDetailsModal(taskId) {
                                 </span>
                             </div>
                         `;
-
-                        // B. Botón de Plano (Usando data-attributes en lugar de onclick)
                         if (st.url) {
                             nameCellContent += `
                                 <button type="button" class="btn-view-plano mt-2 inline-flex items-center text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded border border-indigo-200 transition-colors w-fit shadow-sm"
-                                    data-url="${st.url}" 
-                                    data-name="${st.name}">
+                                    data-url="${st.url}" data-name="${st.name}">
                                     <i class="fa-solid fa-file-contract mr-1.5 pointer-events-none"></i> Ver Plano
                                 </button>`;
                         }
-
                         htmlRows += `
                             <tr class="hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0">
                                 <td class="px-4 py-3 align-top">${nameCellContent}</td>
@@ -20091,13 +20192,9 @@ async function openTaskDetailsModal(taskId) {
                             </tr>`;
                     });
 
-                    // 3. Renderizar y Asignar Evento Click
                     const tbody = document.getElementById(itemsTbodyId);
                     if (tbody) {
                         tbody.innerHTML = htmlRows || '<tr><td colspan="3" class="p-4 text-center text-sm text-gray-400">Sin ítems</td></tr>';
-
-                        // CORRECCIÓN FINAL: Listener directo en la tabla
-                        // Esto evita problemas de comillas y funciones globales no encontradas
                         tbody.onclick = (e) => {
                             const btn = e.target.closest('.btn-view-plano');
                             if (btn) {
@@ -20105,12 +20202,10 @@ async function openTaskDetailsModal(taskId) {
                                 e.stopPropagation();
                                 const url = btn.dataset.url;
                                 const name = btn.dataset.name;
-                                // Llamamos a la función global
                                 viewDocument(url, name);
                             }
                         };
                     }
-
                 } catch (e) { console.error(e); }
             };
             loadItems();
@@ -20118,16 +20213,13 @@ async function openTaskDetailsModal(taskId) {
             document.getElementById(itemsTbodyId).innerHTML = '<tr><td colspan="3" class="p-4 text-center text-sm text-gray-400">No hay ítems asociados.</td></tr>';
         }
 
-        // Cargar estado de materiales
         if (task.specificSubItemIds && task.specificSubItemIds.length > 0) {
-            // CAMBIO AQUÍ: Cambiar 'summary' por 'detail'
             loadTaskMaterialStatus(task.id, task.projectId, materialStatusId, 'detail');
         } else {
             document.getElementById(materialStatusId).innerHTML = '<p class="text-sm text-gray-400 italic">No aplica (sin ítems).</p>';
         }
 
-        // --- 3. LÓGICA DE COMENTARIOS (CHAT) ---
-        // (Este bloque se mantiene igual que la versión anterior, funcional y correcto)
+        // 3. LOGICA COMENTARIOS (Igual)
         const commentsList = document.getElementById('task-comments-list');
         const submitBtn = document.getElementById('task-comment-submit-btn');
 
@@ -20148,13 +20240,11 @@ async function openTaskDetailsModal(taskId) {
                     const date = c.createdAt ? c.createdAt.toDate() : new Date();
                     const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     const isMe = c.userId === currentUser.uid;
-
                     let msgHtml = '';
                     if (isLog) {
                         msgHtml = `<div class="flex justify-center my-2"><div class="bg-gray-100 text-gray-500 text-[10px] py-1 px-3 rounded-full border border-gray-200 flex items-center gap-1"><i class="fa-solid fa-info-circle"></i> ${c.text} <span class="opacity-60 ml-1">${time}</span></div></div>`;
                     } else {
-                        msgHtml = `
-                            <div class="flex flex-col ${isMe ? 'items-end' : 'items-start'} mb-3 animate-fade-in">
+                        msgHtml = `<div class="flex flex-col ${isMe ? 'items-end' : 'items-start'} mb-3 animate-fade-in">
                                 <div class="flex items-end gap-2 max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'}">
                                     <div class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-600 border border-gray-300 shrink-0">${c.userName.charAt(0)}</div>
                                     <div class="py-2 px-3 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-blue-100 text-blue-900 rounded-br-none' : 'bg-white border border-gray-200 text-gray-800 rounded-bl-none'}"><p>${c.text}</p></div>
@@ -20169,7 +20259,7 @@ async function openTaskDetailsModal(taskId) {
             taskCommentListeners.set(task.id, unsubComments);
         }
 
-        // --- 4. BOTONES DE ACCIÓN (FOOTER) ---
+        // 4. BOTONES ACCIÓN
         const actionBtnsContainer = document.createElement('div');
         actionBtnsContainer.className = 'flex flex-wrap gap-2 mr-auto';
 
@@ -20179,32 +20269,27 @@ async function openTaskDetailsModal(taskId) {
                     <i class="fa-solid fa-pen-to-square mr-2"></i> Editar
                 </button>`;
         }
-
         if (task.status === 'pendiente' && task.specificSubItemIds && task.specificSubItemIds.length > 0) {
             const progressBtn = document.createElement('button');
             progressBtn.dataset.action = 'register-task-progress';
             progressBtn.dataset.taskId = task.id;
             progressBtn.className = "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center transform hover:-translate-y-0.5 text-sm";
             progressBtn.innerHTML = `<i class="fa-solid fa-camera mr-2"></i> Registrar Avance`;
-
             const materialBtn = document.createElement('button');
             materialBtn.dataset.action = 'request-material-from-task';
             materialBtn.dataset.projectId = task.projectId;
             materialBtn.dataset.taskId = task.id;
             materialBtn.className = "bg-white border border-purple-200 text-purple-600 hover:bg-purple-50 font-bold py-2 px-4 rounded-lg shadow-sm transition-colors text-sm flex items-center";
             materialBtn.innerHTML = `<i class="fa-solid fa-dolly mr-2"></i> Pedir Material`;
-
             actionBtnsContainer.appendChild(progressBtn);
             actionBtnsContainer.appendChild(materialBtn);
         }
-
         if (task.status === 'pendiente') {
             actionBtnsContainer.innerHTML += `
                 <button data-action="complete-task" data-id="${task.id}" class="text-green-600 hover:text-green-800 hover:bg-green-50 border border-green-200 font-bold py-2 px-3 rounded-lg text-sm transition-colors ml-2" title="Marcar como completada">
                     <i class="fa-solid fa-check-double mr-1"></i> Completar
                 </button>`;
         }
-
         actionsEl.insertBefore(actionBtnsContainer, actionsEl.firstChild);
 
     } catch (error) {
