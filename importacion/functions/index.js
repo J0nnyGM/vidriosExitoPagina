@@ -725,7 +725,10 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 (afterData.items || []).forEach(item => {
                     if (item.itemId && item.cantidad > 0) {
                         const itemRef = db.collection("items").doc(item.itemId);
-                        batch.update(itemRef, { stock: admin.firestore.FieldValue.increment(item.cantidad) });
+                        batch.update(itemRef, { 
+                            stock: admin.firestore.FieldValue.increment(item.cantidad),
+                            _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
+                        });
                     }
                 });
                 await batch.commit();
@@ -745,7 +748,8 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 // 3. Actualizar Firestore solo con las rutas
                 await change.after.ref.update({
                     pdfPath: filePathAdmin,
-                    pdfPlantaPath: filePathPlanta
+                    pdfPlantaPath: filePathPlanta,
+                    _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
                 });
                 log("Rutas de PDFs actualizadas para anulación.");
 
@@ -765,11 +769,11 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 log("Error al procesar anulación:", error);
             }
         }
-        // --- Caso 2: La remisión es ENTREGADA (ignorando otros estados) ---
+// --- Caso 2: La remisión es ENTREGADA (ignorando otros estados) ---
         else if (beforeData.estado !== "Entregado" && afterData.estado === "Entregado") {
             log("Detectada entrega. Regenerando PDFs y notificando.");
             try {
-                // 1. Regenerar PDFs (la lógica es similar a la anulación)
+                // Regenerar PDFs
                 const pdfBufferCliente = await generarPDFCliente(afterData);
                 const pdfBufferAdmin = await generarPDF(afterData, false);
                 const pdfBufferPlanta = await generarPDF(afterData, true);
@@ -782,11 +786,12 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
 
                 await change.after.ref.update({
                     pdfPath: filePathAdmin,
-                    pdfPlantaPath: filePathPlanta
+                    pdfPlantaPath: filePathPlanta,
+                    _lastUpdated: admin.firestore.FieldValue.serverTimestamp()
                 });
                 log("Rutas de PDFs actualizadas por entrega.");
 
-                // 2. Enviar notificaciones
+                // Enviar notificaciones
                 try {
                     const msg = {
                          to: afterData.clienteEmail, from: FROM_EMAIL, subject: `Tu orden N° ${afterData.numeroRemision} ha sido entregada`,
@@ -800,6 +805,38 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
 
             } catch (error) {
                 log("Error al procesar entrega:", error);
+            }
+        }
+        // --- Caso 3: Se añadió el IVA manualmente desde el botón "Enviar a Facturar" ---
+        else if (!beforeData.incluyeIVA && afterData.incluyeIVA) {
+            log("Detectado cambio: Se añadió IVA. Regenerando PDFs silenciosamente...");
+            try {
+                // 1. Regenerar PDFs con los nuevos valores de IVA
+                const pdfBufferCliente = await generarPDFCliente(afterData);
+                const pdfBufferAdmin = await generarPDF(afterData, false);
+                const pdfBufferPlanta = await generarPDF(afterData, true);
+
+                // 2. Guardarlos en Storage (sobreescribe los anteriores)
+                const bucket = admin.storage().bucket();
+                const filePathAdmin = `remisiones/${afterData.numeroRemision}.pdf`;
+                await bucket.file(filePathAdmin).save(pdfBufferAdmin);
+                
+                const filePathPlanta = `remisiones/planta-${afterData.numeroRemision}.pdf`;
+                await bucket.file(filePathPlanta).save(pdfBufferPlanta);
+
+                // 3. Actualizamos las rutas y forzamos el caché, pero SIN LLAMAR a sendNotifications()
+                await change.after.ref.update({
+                    pdfPath: filePathAdmin,
+                    pdfPlantaPath: filePathPlanta,
+                    pdfUrl: admin.firestore.FieldValue.delete(), // Limpieza de URLs viejas por seguridad
+                    pdfPlantaUrl: admin.firestore.FieldValue.delete(),
+                    _lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+                });
+                
+                log("PDFs regenerados y guardados con IVA. No se envió notificación al cliente.");
+
+            } catch (error) {
+                log("Error al regenerar PDFs tras añadir IVA:", error);
             }
         }
 
@@ -880,7 +917,8 @@ exports.applyDiscount = functions.https.onCall(async (data, context) => {
             pdfPath: filePathAdmin,
             pdfPlantaPath: filePathPlanta,
             pdfUrl: admin.firestore.FieldValue.delete(),
-            pdfPlantaUrl: admin.firestore.FieldValue.delete()
+            pdfPlantaUrl: admin.firestore.FieldValue.delete(),
+            _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
         });
         log(`Descuento aplicado y PDFs regenerados para la remisión ${remisionId}.`);
         
@@ -1066,7 +1104,8 @@ exports.onImportacionUpdate = functions.firestore
                         isAbono: true,
                         importacionId: importacionId,
                         gastoTipo: tipoGasto,
-                        facturaId: factura.id
+                        facturaId: factura.id,
+                        _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
                     };
 
                     // Crear el documento en la colección de gastos
@@ -1116,42 +1155,6 @@ exports.setMyUserAsAdmin = functions.https.onRequest(async (req, res) => {
 });
 
 
-/**
-* NUEVA FUNCIÓN: Cambia el estado de un usuario (active, inactive).
-* Invocable solo por administradores.
-*/
-exports.setUserStatus = functions.https.onCall(async (data, context) => {
-    // 1. Verificar que el que llama es un administrador
-    if (!context.auth || !context.auth.token.admin) {
-        throw new functions.https.HttpsError(
-            "permission-denied",
-            "Solo los administradores pueden cambiar el estado de un usuario."
-        );
-    }
-
-    // 2. Validar los datos de entrada
-    const { userId, newStatus } = data;
-    if (!userId || !['active', 'inactive', 'pending'].includes(newStatus)) {
-        throw new functions.https.HttpsError(
-            "invalid-argument",
-            "Faltan datos o el nuevo estado no es válido (userId, newStatus)."
-        );
-    }
-
-    try {
-        // 3. Actualizar el documento del usuario en Firestore
-        const userRef = admin.firestore().collection("users").doc(userId);
-        await userRef.update({ status: newStatus });
-
-        return { success: true, message: `Estado del usuario ${userId} actualizado a ${newStatus}.` };
-    } catch (error) {
-        functions.logger.error(`Error al actualizar estado para ${userId}:`, error);
-        throw new functions.https.HttpsError(
-            "internal",
-            "No se pudo actualizar el estado del usuario."
-        );
-    }
-});
 /**
  * --- VERSIÓN MEJORADA ---
  * Se activa cuando se escribe en un documento de usuario.
@@ -1482,7 +1485,8 @@ exports.deleteGastoNacionalizacion = functions.region("us-central1").https.onCal
 
             transaction.update(importacionRef, {
                 gastosNacionalizacion,
-                totalNacionalizacionCOP: nuevoTotalNacionalizacionCOP
+                totalNacionalizacionCOP: nuevoTotalNacionalizacionCOP,
+                lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
             });
         });
 
@@ -1694,26 +1698,25 @@ exports.confirmTransfer = functions.https.onCall(async (data, context) => {
             transaction.update(transferRef, {
                 estado: 'confirmada',
                 confirmadoPor: context.auth.uid,
-                confirmadoEn: admin.firestore.FieldValue.serverTimestamp()
+                confirmadoEn: admin.firestore.FieldValue.serverTimestamp(),
+                _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
             });
 
-// Se usa la fecha de la transferencia para los gastos
             const fechaGasto = transferData.fechaTransferencia; 
-            const timestamp = admin.firestore.FieldValue.serverTimestamp(); // Se mantiene el timestamp de registro
+            const timestamp = admin.firestore.FieldValue.serverTimestamp(); 
 
-            
-            
             // Gasto de SALIDA
             const gastoSalida = {
-                fecha: fechaGasto, // <-- Usa la fecha correcta
+                fecha: fechaGasto,
                 proveedorNombre: `Transferencia Salida -> ${transferData.cuentaDestino}`,
                 valorTotal: transferData.monto,
-                fuentePago: transferData.cuentaOrigen, // Dinero sale de aquí
+                fuentePago: transferData.cuentaOrigen,
                 registradoPor: context.auth.uid,
                 timestamp: timestamp,
                 isTransfer: true,
                 transferId: transferId,
-                referencia: transferData.referencia || ''
+                referencia: transferData.referencia || '',
+                _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
             };
             transaction.set(gastosRef.doc(), gastoSalida);
 
@@ -1721,13 +1724,14 @@ exports.confirmTransfer = functions.https.onCall(async (data, context) => {
             const gastoEntrada = {
                 fecha: fechaGasto,
                 proveedorNombre: `Transferencia Entrada <- ${transferData.cuentaOrigen}`,
-                valorTotal: -transferData.monto, // Valor negativo para simular ingreso
-                fuentePago: transferData.cuentaDestino, // Dinero entra aquí
+                valorTotal: -transferData.monto, 
+                fuentePago: transferData.cuentaDestino, 
                 registradoPor: context.auth.uid,
                 timestamp: timestamp,
                 isTransfer: true,
                 transferId: transferId,
-                referencia: transferData.referencia || ''
+                referencia: transferData.referencia || '',
+                _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
             };
             transaction.set(gastosRef.doc(), gastoEntrada);
         });
@@ -1929,9 +1933,9 @@ exports.applyRetention = functions.https.onCall(async (data, context) => {
             ...updatedData,
             pdfPath: filePathAdmin,
             pdfPlantaPath: filePathPlanta,
-            // Forzamos actualización de URLs antiguas por si acaso
             pdfUrl: admin.firestore.FieldValue.delete(),
-            pdfPlantaUrl: admin.firestore.FieldValue.delete()
+            pdfPlantaUrl: admin.firestore.FieldValue.delete(),
+            _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
         });
 
         return { success: true, message: "Retención aplicada y total actualizado." };

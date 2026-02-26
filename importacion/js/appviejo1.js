@@ -9,13 +9,13 @@ import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/12.0.
 
 // --- INICIALIZACIÓN Y CONFIGURACIÓN ---
 const firebaseConfig = {
-    apiKey: "AIzaSyCBTjIT0q2X5K_aSnyTgZSRSyZc6Cc3FJ4",
-    authDomain: "vidrioexpres1.firebaseapp.com",
-    projectId: "vidrioexpres1",
-    storageBucket: "vidrioexpres1.firebasestorage.app",
-    messagingSenderId: "59380378063",
-    appId: "1:59380378063:web:de9accc5f9ddc48d274aba",
-    measurementId: "G-BXZJWX9ZKG"
+  apiKey: "AIzaSyC3cAvG47JSR7fNc5YbBisG7BxJhfLQxRg",
+  authDomain: "importadorave-7d1a0.firebaseapp.com",
+  projectId: "importadorave-7d1a0",
+  storageBucket: "importadorave-7d1a0.firebasestorage.app",
+  messagingSenderId: "14979091937",
+  appId: "1:14979091937:web:b415c75ada1fe0e688d6a0",
+  measurementId: "G-EDX2L0J4Z0"
 };
 let app, auth, db, storage, functions, analytics;
 try {
@@ -33,6 +33,8 @@ try {
 // --- VISTAS Y ESTADO GLOBAL ---
 
 const authView = document.getElementById('auth-view');
+const METODOS_DE_PAGO_IMPORTACION = ['Efectivo', 'Nequi', 'Bancolombia', 'Transferencia'];
+const METODOS_DE_PAGO = ['Efectivo', 'Nequi', 'Bancolombia'];
 const appView = document.getElementById('app-view');
 const deniedView = document.getElementById('denied-view');
 const loginForm = document.getElementById('login-form');
@@ -44,10 +46,6 @@ let dynamicElementCounter = 0;
 let isRegistering = false;
 let modalTimeout;
 let initialBalances = {};
-let unsubscribePendingTransfers = null;
-let unsubscribeConfirmedTransfers = null;
-const METODOS_DE_PAGO_IMPORTACION = ['Efectivo', 'Nequi', 'Bancolombia'];
-const METODOS_DE_PAGO = ['Efectivo', 'Nequi', 'Bancolombia'];
 const ESTADOS_REMISION = ['Recibido', 'En Proceso', 'Procesado', 'Entregado'];
 const ALL_MODULES = ['remisiones', 'facturacion', 'inventario', 'clientes', 'gastos', 'proveedores', 'prestamos', 'empleados', 'items'];
 const RRHH_DOCUMENT_TYPES = [
@@ -153,6 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function startApp() {
     if (isAppInitialized) return;
 
+    console.log("Iniciando la aplicación principal...");
 
     // 1. Ajustar la visibilidad de la UI según los permisos del usuario.
     updateUIVisibility(currentUserData);
@@ -197,6 +196,7 @@ function startApp() {
     setupSearchInputs();
 
     isAppInitialized = true;
+    console.log("Aplicación inicializada correctamente.");
 }
 
 // --- LÓGICA DE CARGA DE DATOS ---
@@ -216,11 +216,6 @@ function loadAllData() {
 }
 
 function loadViewTemplates() {
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Generamos las opciones de pago una sola vez para reutilizarlas
-    const metodosDePagoHTML = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
-    // --- FIN DE LA CORRECCIÓN ---
-
     registerForm.innerHTML = `
         <h2 class="text-2xl font-bold text-center mb-6">Crear Cuenta</h2>
         <div class="space-y-4">
@@ -241,7 +236,9 @@ function loadViewTemplates() {
         </div>
         <p class="text-center mt-4 text-sm">¿Ya tienes una cuenta? <a href="#" id="show-login-link-register" class="font-semibold text-indigo-600 hover:underline">Inicia sesión</a></p>
     `;
+    document.getElementById('show-login-link-register').addEventListener('click', (e) => { e.preventDefault(); registerForm.classList.add('hidden'); loginForm.classList.remove('hidden'); });
 
+    // REEMPLAZA la línea de 'view-inventario'.innerHTML con esta versión:
     document.getElementById('view-inventario').innerHTML = `
     <div class="bg-white p-6 rounded-xl shadow-md max-w-7xl mx-auto">
         <div class="border-b border-gray-200 mb-6">
@@ -250,6 +247,7 @@ function loadViewTemplates() {
                 <button id="tab-nacional" class="dashboard-tab-btn py-3 px-1 font-semibold">Compras Nacionales</button>
             </nav>
         </div>
+
         <div id="view-importaciones-content">
             <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
                 <h2 class="text-xl font-semibold">Gestión de Importaciones</h2>
@@ -257,6 +255,7 @@ function loadViewTemplates() {
             </div>
             <div id="importaciones-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6"></div>
             </div>
+
         <div id="view-nacional-content" class="hidden">
             <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
                 <h2 class="text-xl font-semibold">Gestión de Compras Nacionales</h2>
@@ -267,6 +266,7 @@ function loadViewTemplates() {
             </div>
         </div>
     </div>`;
+
 
     document.getElementById('view-items').innerHTML = `
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
@@ -291,8 +291,10 @@ function loadViewTemplates() {
             </div>
             <div id="items-list" class="space-y-3"></div>
         </div>
-    </div>`;
-
+    </div>
+`;
+    // Se añade el listener para el enlace recién creado
+    document.getElementById('show-login-link-register').addEventListener('click', (e) => { e.preventDefault(); registerForm.classList.add('hidden'); loginForm.classList.remove('hidden'); });
     document.getElementById('view-remisiones').innerHTML = `
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
             <div id="remision-form-container" class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
@@ -315,7 +317,11 @@ function loadViewTemplates() {
                     <select id="forma-pago" class="w-full p-3 border border-gray-300 rounded-lg bg-white" required>
                         <option value="" disabled selected>Forma de Pago</option>
                         <option value="Pendiente">Pendiente</option>
-                        ${metodosDePagoHTML}
+                        <option value="Efectivo">Efectivo</option>
+                        <option value="Nequi">Nequi</option>
+                        <option value="Davivienda">Davivienda</option>
+                        <option value="Bancolombia">Bancolombia</option>
+                        <option value="Consignacion">Consignación</option>
                     </select>
                     <div>
                         <label for="remision-observaciones" class="block text-sm font-medium text-gray-700">Observaciones</label>
@@ -342,42 +348,9 @@ function loadViewTemplates() {
             </div>
             </div>`;
 
-    document.getElementById('view-facturacion').innerHTML = `
-    <div class="bg-white p-6 rounded-xl shadow-md max-w-7xl mx-auto">
-        <h2 class="text-2xl font-semibold mb-4">Gestión de Facturación</h2>
-        
-        <div class="border-b border-gray-200 mb-6 flex flex-col lg:flex-row justify-between items-end gap-4 pb-2">
-            
-            <nav id="facturacion-nav" class="-mb-px flex space-x-6">
-                <button id="tab-pendientes" class="dashboard-tab-btn active py-3 px-1 font-semibold text-gray-500 hover:text-gray-800 border-b-2 border-transparent hover:border-gray-300">Pendientes</button>
-                <button id="tab-realizadas" class="dashboard-tab-btn py-3 px-1 font-semibold text-gray-500 hover:text-gray-800 border-b-2 border-transparent hover:border-gray-300">Realizadas</button>
-            </nav>
-
-            <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-                <div class="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
-                    <span class="text-xs font-semibold text-gray-500 pl-2">Desde:</span>
-                    <input type="month" id="factura-filter-start" class="p-1 bg-white border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500">
-                    <span class="text-xs font-semibold text-gray-500">Hasta:</span>
-                    <input type="month" id="factura-filter-end" class="p-1 bg-white border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500">
-                </div>
-                <div class="relative flex-grow lg:flex-grow-0">
-                    <input type="search" id="search-facturacion" placeholder="Buscar cliente, N° remisión..." class="w-full lg:w-64 p-2 pl-3 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500">
-                </div>
-            </div>
-        </div>
-
-        <div id="view-pendientes">
-            <h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Pendientes de Facturar</h3>
-            <div id="facturacion-pendientes-list" class="space-y-3"></div>
-        </div>
-        <div id="view-realizadas" class="hidden">
-            <h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Facturadas</h3>
-            <div id="facturacion-realizadas-list" class="space-y-3"></div>
-        </div>
-    </div>`;
+    document.getElementById('view-facturacion').innerHTML = `<div class="bg-white p-6 rounded-xl shadow-md max-w-6xl mx-auto"><h2 class="text-2xl font-semibold mb-4">Gestión de Facturación</h2><div class="border-b border-gray-200 mb-6"><nav id="facturacion-nav" class="-mb-px flex space-x-6"><button id="tab-pendientes" class="dashboard-tab-btn active py-3 px-1 font-semibold">Pendientes</button><button id="tab-realizadas" class="dashboard-tab-btn py-3 px-1 font-semibold">Realizadas</button></nav></div><div id="view-pendientes"><h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Pendientes de Facturar</h3><div id="facturacion-pendientes-list" class="space-y-3"></div></div><div id="view-realizadas" class="hidden"><h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Facturadas</h3><div id="facturacion-realizadas-list" class="space-y-3"></div></div></div>`;
     document.getElementById('view-clientes').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Cliente</h2><form id="add-cliente-form" class="space-y-4"><input type="text" id="nuevo-cliente-nombre-empresa" placeholder="Nombre Empresa" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="text" id="nuevo-cliente-contacto" placeholder="Nombre del Contacto" class="w-full p-3 border border-gray-300 rounded-lg"><input type="email" id="nuevo-cliente-email" placeholder="Correo Electrónico" class="w-full p-3 border border-gray-300 rounded-lg"><input type="tel" id="nuevo-cliente-telefono1" placeholder="Teléfono 1" class="w-full p-3 border border-gray-300 rounded-lg" required oninput="this.value = this.value.replace(/[^0-9]/g, '')"><input type="tel" id="nuevo-cliente-telefono2" placeholder="Teléfono 2 (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg" oninput="this.value = this.value.replace(/[^0-9]/g, '')"><input type="text" id="nuevo-cliente-nit" placeholder="NIT (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg"><div class="space-y-1"><label for="nuevo-cliente-rut" class="block text-sm font-medium text-gray-700">RUT (Opcional)</label><input type="file" id="nuevo-cliente-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/></div><button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Clientes</h2><input type="search" id="search-clientes" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="clientes-list" class="space-y-3"></div></div></div>`;
-    document.getElementById('view-proveedores').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Proveedor</h2><form id="add-proveedor-form" class="space-y-4"><input type="text" id="nuevo-proveedor-nombre" placeholder="Nombre del Proveedor" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="text" id="nuevo-proveedor-contacto" placeholder="Nombre de Contacto" class="w-full p-3 border border-gray-300 rounded-lg"><input type="tel" id="nuevo-proveedor-telefono" placeholder="Teléfono" class="w-full p-3 border border-gray-300 rounded-lg"><input type="email" id="nuevo-proveedor-email" placeholder="Correo" class="w-full p-3 border border-gray-300 rounded-lg"><div><label for="nuevo-proveedor-rut" class="block text-sm font-medium text-gray-700">RUT</Opcional></label><input type="file" id="nuevo-proveedor-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"/></div><button type="submit" class="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Proveedores</h2><input type="search" id="search-proveedores" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="proveedores-list" class="space-y-3"></div></div></div>`;
-
+    document.getElementById('view-proveedores').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto"><div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md"><h2 class="text-xl font-semibold mb-4">Añadir Proveedor</h2><form id="add-proveedor-form" class="space-y-4"><input type="text" id="nuevo-proveedor-nombre" placeholder="Nombre del Proveedor" class="w-full p-3 border border-gray-300 rounded-lg" required><input type="text" id="nuevo-proveedor-contacto" placeholder="Nombre de Contacto" class="w-full p-3 border border-gray-300 rounded-lg"><input type="tel" id="nuevo-proveedor-telefono" placeholder="Teléfono" class="w-full p-3 border border-gray-300 rounded-lg"><input type="email" id="nuevo-proveedor-email" placeholder="Correo" class="w-full p-3 border border-gray-300 rounded-lg"><div><label for="nuevo-proveedor-rut" class="block text-sm font-medium text-gray-700">RUT</label><input type="file" id="nuevo-proveedor-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"/></div><button type="submit" class="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-700">Registrar</button></form></div><div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Proveedores</h2><input type="search" id="search-proveedores" placeholder="Buscar..." class="p-2 border rounded-lg"></div><div id="proveedores-list" class="space-y-3"></div></div></div>`;
     document.getElementById('view-gastos').innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
     <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
         <h2 class="text-xl font-semibold mb-4">Nuevo Gasto</h2>
@@ -401,7 +374,11 @@ function loadViewTemplates() {
             <div>
                 <label for="gasto-fuente">Fuente del Pago</label>
                 <select id="gasto-fuente" class="w-full p-3 border border-gray-300 rounded-lg mt-1 bg-white" required>
-                    ${metodosDePagoHTML}
+                    <option>Efectivo</option>
+                    <option>Nequi</option>
+                    <option>Davivienda</option>
+                    <option>Bancolombia</option>
+                    <option>Consignación</option>
                 </select>
             </div>
             <button type="submit" class="w-full bg-orange-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-orange-700">Registrar</button>
@@ -432,10 +409,6 @@ function loadViewTemplates() {
     </div>
 </div>`;
     document.getElementById('view-empleados').innerHTML = `<div class="bg-white p-6 rounded-xl shadow-md max-w-4xl mx-auto"><h2 class="text-xl font-semibold mb-4">Gestión de Empleados</h2><div id="empleados-list" class="space-y-3"></div></div>`;
-
-    // Se mueven los listeners al final para asegurar que todos los elementos existan
-    document.getElementById('show-policy-link').addEventListener('click', (e) => { e.preventDefault(); showPolicyModal(); });
-    document.getElementById('show-login-link-register').addEventListener('click', (e) => { e.preventDefault(); registerForm.classList.add('hidden'); loginForm.classList.remove('hidden'); });
 }
 
 function updateUIVisibility(userData) {
@@ -458,7 +431,7 @@ function updateUIVisibility(userData) {
 
     // --- LÍNEA AÑADIDA AQUÍ ---
     // Muestra el botón de regenerar URLs solo si el usuario es admin
-    //document.getElementById('regenerate-urls-btn').style.display = isAdmin ? 'block' : 'none';
+   // document.getElementById('regenerate-urls-btn').style.display = isAdmin ? 'block' : 'none';
 
     // Muestra/oculta botones específicos para no administradores
     document.getElementById('loan-request-btn').style.display = isAdmin ? 'none' : 'block';
@@ -968,25 +941,6 @@ function setupEventListeners() {
             }
         });
     }
-
-    // --- LÓGICA DE FILTROS DE FACTURACIÓN ---
-    const factStart = document.getElementById('factura-filter-start');
-    const factEnd = document.getElementById('factura-filter-end');
-    const factSearch = document.getElementById('search-facturacion');
-
-    if (factStart && factEnd && factSearch) {
-        // 1. Establecer mes actual por defecto
-        const now = new Date();
-        const currentMonthStr = now.toISOString().slice(0, 7); // Formato "YYYY-MM"
-        factStart.value = currentMonthStr;
-        factEnd.value = currentMonthStr;
-
-        // 2. Listeners para refrescar la lista al cambiar filtros
-        factStart.addEventListener('change', renderFacturacion);
-        factEnd.addEventListener('change', renderFacturacion);
-        factSearch.addEventListener('input', renderFacturacion);
-    }
-
 }
 
 function switchView(viewName, tabs, views) {
@@ -1313,8 +1267,8 @@ function renderClientes() {
 
         // --- INICIO DEL CAMBIO ---
         // Se añade una línea para mostrar el nombre del contacto
-        const nombreContactoHtml = cliente.contacto
-            ? `<p class="text-sm text-gray-700"><span class="font-medium">Contacto:</span> ${cliente.contacto}</p>`
+        const nombreContactoHtml = cliente.contacto 
+            ? `<p class="text-sm text-gray-700"><span class="font-medium">Contacto:</span> ${cliente.contacto}</p>` 
             : '';
         // --- FIN DEL CAMBIO ---
 
@@ -1423,18 +1377,8 @@ function renderRemisiones() {
         const esEntregada = remision.estado === 'Entregado';
         el.className = `border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${esAnulada ? 'remision-anulada' : ''}`;
 
-        // --- INICIO DE LA CORRECCIÓN ---
-        // Asegurarse de que remision.payments sea un array antes de usar filter/reduce
-        const paymentsArray = Array.isArray(remision.payments) ? remision.payments : [];
-
-        const totalPagadoConfirmado = paymentsArray // Usar paymentsArray en lugar de (remision.payments || [])
-            .filter(p => p.status === 'confirmado')
-            .reduce((sum, p) => sum + p.amount, 0);
-
-        // También actualizamos el cálculo del saldo para usar paymentsArray
+        const totalPagadoConfirmado = (remision.payments || []).filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
         const saldoPendiente = remision.valorTotal - totalPagadoConfirmado;
-        // --- FIN DE LA CORRECCIÓN ---
-
 
         let paymentStatusBadge = '';
         if (!esAnulada) {
@@ -1488,15 +1432,10 @@ function renderRemisiones() {
     // Reasignar listeners para los otros botones
     remisionesListEl.querySelectorAll('.anular-btn').forEach(button => button.addEventListener('click', (e) => { const remisionId = e.currentTarget.dataset.remisionId; if (confirm(`¿Estás seguro de que quieres ANULAR esta remisión?`)) { handleAnularRemision(remisionId); } }));
     remisionesListEl.querySelectorAll('.status-update-btn').forEach(button => button.addEventListener('click', (e) => { const remisionId = e.currentTarget.dataset.remisionId; const currentStatus = e.currentTarget.dataset.currentStatus; handleStatusUpdate(remisionId, currentStatus); }));
-    remisionesListEl.querySelectorAll('.payment-btn').forEach(button => button.addEventListener('click', (e) => {
-        const remisionData = JSON.parse(e.currentTarget.dataset.remisionJson);
-        // Asegurar que payments sea un array aquí también antes de pasar a showPaymentModal
-        if (!Array.isArray(remisionData.payments)) {
-            remisionData.payments = [];
-        }
-        showPaymentModal(remisionData); // Pasar la remisión con payments asegurado como array
-    })); remisionesListEl.querySelectorAll('.discount-btn').forEach(button => button.addEventListener('click', (e) => { const remision = JSON.parse(e.currentTarget.dataset.remisionJson); showDiscountModal(remision); }));
+    remisionesListEl.querySelectorAll('.payment-btn').forEach(button => button.addEventListener('click', (e) => { const remision = JSON.parse(e.currentTarget.dataset.remisionJson); showPaymentModal(remision); }));
+    remisionesListEl.querySelectorAll('.discount-btn').forEach(button => button.addEventListener('click', (e) => { const remision = JSON.parse(e.currentTarget.dataset.remisionJson); showDiscountModal(remision); }));
 }
+
 function loadGastos() {
     const q = query(collection(db, "gastos"), orderBy("fecha", "desc"));
     return onSnapshot(q, (snapshot) => {
@@ -1548,65 +1487,25 @@ function renderGastos() {
     });
 }
 
-/**
- * Renderiza la lista de facturación aplicando filtros de búsqueda y fecha.
- * VERSIÓN ACTUALIZADA: Oculta el botón "Retenciones" si ya se aplicó una.
- */
 function renderFacturacion() {
     const pendientesListEl = document.getElementById('facturacion-pendientes-list');
     const realizadasListEl = document.getElementById('facturacion-realizadas-list');
-    
-    // Obtener valores de los filtros
-    const searchInput = document.getElementById('search-facturacion');
-    const startDateInput = document.getElementById('factura-filter-start');
-    const endDateInput = document.getElementById('factura-filter-end');
-
     if (!pendientesListEl || !realizadasListEl) return;
 
-    const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
-    const startVal = startDateInput ? startDateInput.value : '';
-    const endVal = endDateInput ? endDateInput.value : '';
+    const remisionesParaFacturar = allRemisiones.filter(r => r.incluyeIVA && r.estado !== 'Anulada');
+    const pendientes = remisionesParaFacturar.filter(r => !r.facturado);
+    const realizadas = remisionesParaFacturar.filter(r => r.facturado === true);
 
-    // Filtrado Base
-    let filtered = allRemisiones.filter(r => r.incluyeIVA && r.estado !== 'Anulada');
-
-    // 1. Filtro por Fechas
-    if (startVal && endVal) {
-        const startDate = new Date(startVal + '-01T00:00:00');
-        const [endYear, endMonth] = endVal.split('-').map(Number);
-        const endDate = new Date(endYear, endMonth, 0, 23, 59, 59);
-
-        filtered = filtered.filter(r => {
-            const rDate = new Date(r.fechaRecibido + 'T00:00:00');
-            return rDate >= startDate && rDate <= endDate;
-        });
-    }
-
-    // 2. Filtro por Búsqueda
-    if (searchTerm) {
-        filtered = filtered.filter(r => 
-            r.clienteNombre.toLowerCase().includes(searchTerm) || 
-            r.numeroRemision.toString().includes(searchTerm) ||
-            (r.numeroFactura && r.numeroFactura.toString().toLowerCase().includes(searchTerm))
-        );
-    }
-
-    const pendientes = filtered.filter(r => !r.facturado);
-    const realizadas = filtered.filter(r => r.facturado === true);
-
-    // --- RENDERIZAR PENDIENTES ---
     pendientesListEl.innerHTML = '';
     if (pendientes.length === 0) {
-        pendientesListEl.innerHTML = '<p class="text-center text-gray-500 py-8">No se encontraron remisiones pendientes.</p>';
+        pendientesListEl.innerHTML = '<p class="text-center text-gray-500 py-8">No hay remisiones pendientes de facturar.</p>';
     } else {
         pendientes.forEach(remision => {
             const el = document.createElement('div');
             el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4';
-            
             const clienteDeRemision = allClientes.find(c => c.id === remision.idCliente);
             let botonRUT = '';
             let infoClienteExtra = '';
-            
             if (clienteDeRemision) {
                 if (clienteDeRemision.rutUrl) {
                     let rutPath = '';
@@ -1617,101 +1516,49 @@ function renderFacturacion() {
                             const encodedPath = urlString.substring(pathStartIndex + 3);
                             rutPath = decodeURIComponent(encodedPath.split('?')[0]);
                         }
-                    } catch (e) { console.error("Error URL RUT:", e); }
+                    } catch (e) { console.error("Error procesando URL de RUT:", e); }
                     if (rutPath) {
                         botonRUT = `<button data-file-path="${rutPath}" data-file-title="RUT de ${clienteDeRemision.nombre}" class="bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-600">RUT</button>`;
                     }
                 }
                 infoClienteExtra = `<p class="text-sm text-gray-500 mt-1">${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}${clienteDeRemision.email || ''}</p>`;
             }
-
             const remisionPdfButton = remision.pdfPath ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-600">Ver Remisión</button>` : `<button class="bg-gray-400 text-white px-4 py-2 rounded-lg text-sm font-semibold cursor-not-allowed">Generando...</button>`;
-            
-            // --- CAMBIO AQUÍ: Solo mostrar botón si NO hay retención ---
-            let btnRetencion = '';
-            if (!remision.retention || !remision.retention.amount) {
-                btnRetencion = `<button data-remision-json='${JSON.stringify(remision)}' class="retention-btn bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-amber-700">Retenciones</button>`;
-            }
-
-            el.innerHTML = `
-                <div class="flex-grow">
-                    <div class="flex items-center gap-3 flex-wrap">
-                        <span class="remision-id">N° ${remision.numeroRemision}</span>
-                        <p class="font-semibold text-lg">${remision.clienteNombre}</p>
-                    </div>
-                    ${infoClienteExtra}
-                    <p class="text-sm text-gray-600 mt-1">Fecha: ${remision.fechaRecibido} &bull; Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>
-                </div>
-                <div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end">
-                    ${botonRUT}
-                    ${remisionPdfButton}
-                    ${btnRetencion}
-                    <button data-remision-id="${remision.id}" class="facturar-btn bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Facturar</button>
-                </div>`;
-            
+            el.innerHTML = `<div class="flex-grow"><div class="flex items-center gap-3 flex-wrap"><span class="remision-id">N° ${remision.numeroRemision}</span><p class="font-semibold text-lg">${remision.clienteNombre}</p></div>${infoClienteExtra}<p class="text-sm text-gray-600 mt-1">Fecha: ${remision.fechaRecibido} &bull; Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p></div><div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end">${botonRUT}${remisionPdfButton}<button data-remision-id="${remision.id}" class="facturar-btn bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Facturar</button></div>`;
             pendientesListEl.appendChild(el);
         });
     }
 
-    // --- RENDERIZAR REALIZADAS ---
     realizadasListEl.innerHTML = '';
     if (realizadas.length === 0) {
-        realizadasListEl.innerHTML = '<p class="text-center text-gray-500 py-8">No se encontraron facturas.</p>';
+        realizadasListEl.innerHTML = '<p class="text-center text-gray-500 py-8">No hay remisiones facturadas.</p>';
     } else {
         realizadas.forEach(remision => {
             const el = document.createElement('div');
             el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4';
-            
             const clienteDeRemision = allClientes.find(c => c.id === remision.idCliente);
             let infoClienteExtra = '';
             if (clienteDeRemision) {
                 infoClienteExtra = `<p class="text-sm text-gray-500 mt-1">${clienteDeRemision.nit ? `NIT: ${clienteDeRemision.nit}` : ''}${clienteDeRemision.nit && clienteDeRemision.email ? ' &bull; ' : ''}${clienteDeRemision.email || ''}</p>`;
             }
-
+            
+            // --- INICIO DE LA CORRECCIÓN CLAVE ---
+            // 1. Botón de Ver Remisión usa la ruta
             const remisionPdfButton = remision.pdfPath ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-600">Ver Remisión</button>` : '';
             
+            // 2. Lógica de Factura ahora busca 'facturaPdfPath'
             let facturaButtons = remision.facturaPdfPath
                 ? `<button data-file-path="${remision.facturaPdfPath}" data-file-title="Factura N° ${remision.numeroFactura || remision.numeroRemision}" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700">Ver Factura</button>`
                 : `<button data-remision-id="${remision.id}" class="facturar-btn bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-orange-600">Adjuntar Factura</button>`;
+            // --- FIN DE LA CORRECCIÓN CLAVE ---
 
-            // --- CAMBIO AQUÍ TAMBIÉN: Solo mostrar si NO hay retención ---
-            let btnRetencion = '';
-            if (!remision.retention || !remision.retention.amount) {
-                 btnRetencion = `<button data-remision-json='${JSON.stringify(remision)}' class="retention-btn bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-amber-700">Retenciones</button>`;
-            }
-
-            el.innerHTML = `
-                <div class="flex-grow">
-                    <div class="flex items-center gap-3 flex-wrap">
-                        <span class="remision-id">N° ${remision.numeroRemision}</span>
-                        <p class="font-semibold text-lg">${remision.clienteNombre}</p>
-                    </div>
-                    ${infoClienteExtra}
-                    <p class="text-sm text-gray-600 mt-1">Fecha: ${remision.fechaRecibido} &bull; Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>
-                </div>
-                <div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end">
-                    <div class="text-right mr-2">
-                        <span class="status-badge status-entregado">Facturado</span>
-                        ${remision.numeroFactura ? `<p class="text-sm text-gray-600 mt-1">Factura N°: <span class="font-semibold">${remision.numeroFactura}</span></p>` : ''}
-                    </div>
-                    ${facturaButtons}
-                    ${btnRetencion}
-                    ${remisionPdfButton}
-                </div>`;
-            
+            el.innerHTML = `<div class="flex-grow"><div class="flex items-center gap-3 flex-wrap"><span class="remision-id">N° ${remision.numeroRemision}</span><p class="font-semibold text-lg">${remision.clienteNombre}</p></div>${infoClienteExtra}<p class="text-sm text-gray-600 mt-1">Fecha: ${remision.fechaRecibido} &bull; Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p></div><div class="flex-shrink-0 flex items-center gap-2 flex-wrap justify-end"><div class="text-right"><span class="status-badge status-entregado">Facturado</span>${remision.numeroFactura ? `<p class="text-sm text-gray-600 mt-1">Factura N°: <span class="font-semibold">${remision.numeroFactura}</span></p>` : ''}</div>${facturaButtons}${remisionPdfButton}</div>`;
             realizadasListEl.appendChild(el);
         });
     }
-
+    
     document.querySelectorAll('.facturar-btn').forEach(btn => btn.addEventListener('click', (e) => showFacturaModal(e.currentTarget.dataset.remisionId)));
-    document.querySelectorAll('.retention-btn').forEach(btn => 
-        btn.addEventListener('click', (e) => {
-            const remisionData = JSON.parse(e.currentTarget.dataset.remisionJson);
-            showRetentionModal(remisionData);
-        })
-    );
 }
-
 // --- FUNCIONES DEL MÓDULO DE INVENTARIO ---
 function loadImportaciones() {
     const q = query(collection(db, "importaciones"), orderBy("numeroImportacion", "desc"));
@@ -1930,11 +1777,6 @@ function createGastoFacturaElement(gastoTipo, factura = null) {
 
     let cardContentHTML = '';
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Generamos las opciones de pago una sola vez para reutilizarlas
-    const metodosDePagoHTML = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
-    // --- FIN DE LA CORRECCIÓN ---
-
     if (isSaved) {
         // --- DISEÑO PARA FACTURAS GUARDADAS ---
         const totalAbonado = (facturaData.abonos || []).reduce((sum, abono) => sum + abono.valor, 0);
@@ -1960,7 +1802,7 @@ function createGastoFacturaElement(gastoTipo, factura = null) {
                     <div class="mt-2">${pdfSectionHTML}</div>
                 </div>
                 <div class="md:col-span-1 text-xs space-y-1 bg-gray-50 p-2 rounded-lg h-full flex flex-col justify-center"><div class="flex justify-between"><span>Abonado:</span> <span class="font-medium">${formatCurrency(totalAbonado)}</span></div><div class="flex justify-between text-red-600"><span>Saldo:</span> <span class="font-bold">${formatCurrency(saldoPendiente)}</span></div></div>
-                <div class="bg-gray-50 p-2 rounded-lg"><label class="text-xs font-semibold">Registrar Abono</label><div class="mt-2 space-y-2"><input type="text" placeholder="Valor Abono" class="abono-valor-input cost-input-cop w-full p-1 border rounded text-xs"><select class="abono-forma-pago-input w-full p-1 border rounded text-xs bg-white">${metodosDePagoHTML}</select><button type="button" class="add-abono-gasto-btn w-full bg-green-500 text-white text-xs font-bold py-1 rounded hover:bg-green-600" data-gasto-tipo="${gastoTipo}" data-factura-id="${facturaData.id}">+ Abono</button></div></div>
+                <div class="bg-gray-50 p-2 rounded-lg"><label class="text-xs font-semibold">Registrar Abono</label><div class="mt-2 space-y-2"><input type="text" placeholder="Valor Abono" class="abono-valor-input cost-input-cop w-full p-1 border rounded text-xs"><select class="abono-forma-pago-input w-full p-1 border rounded text-xs bg-white"><option>Efectivo</option><option>Nequi</option><option>Davivienda</option><option>Bancolombia</option><option>Consignación</option></select><button type="button" class="add-abono-gasto-btn w-full bg-green-500 text-white text-xs font-bold py-1 rounded hover:bg-green-600" data-gasto-tipo="${gastoTipo}" data-factura-id="${facturaData.id}">+ Abono</button></div></div>
             </div>`;
     } else {
         // --- DISEÑO PARA FACTURAS NUEVAS ---
@@ -2255,11 +2097,7 @@ async function showNacionalModal(compra = null) {
     const title = isEditing ? `Gestionar Compra Nacional` : "Registrar Compra Nacional";
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Generamos las opciones de pago una sola vez para reutilizarlas
-    const metodosDePagoHTML = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
-    // --- FIN DE LA CORRECCIÓN ---
-
+    // Lógica para la sección de abonos (solo visible en modo edición)
     let abonosHTML = '';
     if (isEditing) {
         const totalAbonado = (compra.abonos || []).reduce((sum, abono) => sum + abono.valor, 0);
@@ -2282,7 +2120,7 @@ async function showNacionalModal(compra = null) {
                         <div class="space-y-2">
                             <div><label class="text-xs font-semibold">Fecha Abono</label><input type="date" id="abono-nacional-fecha" class="w-full p-1 border rounded text-xs" value="${new Date().toISOString().slice(0, 10)}"></div>
                             <div><label class="text-xs font-semibold">Valor Abono (COP)</label><input type="text" id="abono-nacional-valor" class="cost-input-cop w-full p-1 border rounded text-xs"></div>
-                            <div><label class="text-xs font-semibold">Forma de Pago</label><select id="abono-nacional-forma-pago" class="w-full p-1 border rounded text-xs bg-white">${metodosDePagoHTML}</select></div>
+                            <div><label class="text-xs font-semibold">Forma de Pago</label><select id="abono-nacional-forma-pago" class="w-full p-1 border rounded text-xs bg-white"><option>Efectivo</option><option>Nequi</option><option>Davivienda</option><option>Bancolombia</option><option>Consignación</option></select></div>
                         </div>
                         <button type="button" id="add-abono-nacional-btn" class="mt-2 w-full bg-green-600 text-white text-xs font-bold py-2 rounded hover:bg-green-700">+ Registrar Abono</button>
                     </div>
@@ -2335,14 +2173,17 @@ async function showNacionalModal(compra = null) {
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('close-nacional-modal').addEventListener('click', hideModal);
 
+    // Asignar el listener al botón de guardar.
     const saveBtn = document.getElementById('save-nacional-btn');
     if (isEditing) {
+        // En modo edición, el botón de guardar principal no hace nada por ahora
         saveBtn.disabled = true;
         saveBtn.classList.add('opacity-50');
     } else {
         saveBtn.addEventListener('click', handleNacionalSubmit);
     }
 
+    // Inicializar buscadores y listeners si estamos creando una nueva compra
     if (!isEditing) {
         initSearchableInput(
             document.getElementById('nacional-proveedor-search'),
@@ -2357,36 +2198,17 @@ async function showNacionalModal(compra = null) {
             itemsContainer.appendChild(createNacionalItemElement());
         });
 
+        // Añadir una fila inicial
         itemsContainer.appendChild(createNacionalItemElement());
     } else {
+        // Si estamos editando, renderizamos los ítems existentes
         const itemsContainer = document.getElementById('nacional-items-container');
         compra.items.forEach(item => {
-            itemsContainer.appendChild(createNacionalItemElement(item, true));
+            itemsContainer.appendChild(createNacionalItemElement(item, true)); // 'true' para modo edición
         });
 
+        // Añadir listener para el botón de abonos
         document.getElementById('add-abono-nacional-btn')?.addEventListener('click', () => handleAbonoNacionalSubmit(compra.id));
-    }
-}
-
-// Al cerrar el modal, detenemos el listener de transferencias
-function hideModal() {
-    const primaryModal = document.getElementById('modal');
-    if (primaryModal) {
-        primaryModal.classList.add('hidden');
-        primaryModal.querySelector('#modal-content-wrapper').innerHTML = '';
-
-        // Detener listener de PENDIENTES
-        if (unsubscribePendingTransfers) {
-            unsubscribePendingTransfers();
-            unsubscribePendingTransfers = null;
-        }
-        // --- ASEGÚRATE DE TENER ESTO ---
-        // Detener listener de CONFIRMADAS
-        if (unsubscribeConfirmedTransfers) {
-            unsubscribeConfirmedTransfers();
-            unsubscribeConfirmedTransfers = null;
-        }
-        // --- FIN DE LA VERIFICACIÓN ---
     }
 }
 
@@ -2550,10 +2372,7 @@ async function showImportacionModal(importacion = null) {
     const title = isEditing ? `Gestionar Importación N° ${importacion.numeroImportacion}` : "Crear Nueva Importación";
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Generamos las opciones de pago para importaciones desde la nueva constante
-    const metodosDePagoImportacionHTML = METODOS_DE_PAGO_IMPORTACION.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
-    // --- FIN DE LA CORRECCIÓN ---
+    // --- Lógica para construir las secciones dinámicas del HTML ---
 
     let abonosChinaHTML = '';
     if (isEditing) {
@@ -2583,7 +2402,7 @@ async function showImportacionModal(importacion = null) {
                             <div><label class="text-xs font-semibold">Fecha Abono</label><input type="date" id="abono-china-fecha" class="w-full p-1 border rounded text-xs" value="${new Date().toISOString().slice(0, 10)}"></div>
                             <div><label class="text-xs font-semibold">Valor Abono (COP)</label><input type="text" id="abono-china-valor-cop" class="cost-input-cop w-full p-1 border rounded text-xs"></div>
                             <div><label class="text-xs font-semibold">Valor Abono (USD)</label><input type="text" id="abono-china-valor-usd" class="cost-input-usd w-full p-1 border rounded text-xs"></div>
-                            <div><label class="text-xs font-semibold">Forma de Pago</label><select id="abono-china-forma-pago" class="w-full p-1 border rounded text-xs bg-white">${metodosDePagoImportacionHTML}</select></div>
+                            <div><label class="text-xs font-semibold">Forma de Pago</label><select id="abono-china-forma-pago" class="w-full p-1 border rounded text-xs bg-white"><option>Efectivo</option><option>Nequi</option><option>Davivienda</option><option>Bancolombia</option><option>Consignación</option><option>Transferencia</option></select></div>
                         </div>
                         <button type="button" id="add-abono-china-btn" class="mt-2 w-full bg-green-600 text-white text-xs font-bold py-2 rounded hover:bg-green-700">+ Registrar Abono</button>
                     </div>
@@ -2613,6 +2432,7 @@ async function showImportacionModal(importacion = null) {
             </div>`;
     }
 
+    // --- Construcción del HTML Principal ---
     modalContentWrapper.innerHTML = `
         <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl mx-auto flex flex-col" style="max-height: 95vh;">
             <div class="flex justify-between items-center p-4 border-b sticky top-0 bg-white z-10">
@@ -2636,6 +2456,7 @@ async function showImportacionModal(importacion = null) {
         </div>
     `;
 
+    // --- Lógica de Inicialización (después de crear el HTML) ---
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('close-importacion-modal').addEventListener('click', hideModal);
     document.getElementById('save-importacion-btn').addEventListener('click', handleImportacionSubmit);
@@ -2669,7 +2490,11 @@ async function showImportacionModal(importacion = null) {
 }
 
 /**
- * --- VERSIÓN CORREGIDA: ELIMINA EL ERROR DE 'UNDEFINED' ---
+ * --- VERSIÓN CON CONFIRMACIÓN DE BORRADO ---
+ * Centraliza todos los event listeners del modal de importación.
+ * AÑADIDO: Un diálogo de confirmación antes de eliminar una factura.
+ * @param {HTMLElement} modalBody - El cuerpo del modal.
+ * @param {object|null} importacion - El objeto de la importación si se está editando.
  */
 function setupModalEventListeners(modalBody, importacion) {
     const importacionId = importacion ? importacion.id : null;
@@ -2677,27 +2502,23 @@ function setupModalEventListeners(modalBody, importacion) {
     modalBody.addEventListener('click', (event) => {
         const target = event.target;
 
-        // 1. ESTE ES EL BLOQUE CORRECTO (MANTENLO)
-        // Capturamos el botón y lo pasamos a la función
         const abonoChinaBtn = target.closest('#add-abono-china-btn');
         if (abonoChinaBtn) {
+            // Ahora pasamos el elemento del botón como segundo argumento
             handleAbonoChinaSubmit(importacionId, abonoChinaBtn);
-            return; // IMPORTANTE: Detiene la ejecución para no activar nada más
         }
 
-        // 2. Otros botones de estado
         if (target.closest('#set-en-puerto-btn')) {
             handleEstadoUpdate(importacionId, 'En Puerto');
         }
         else if (target.closest('#set-en-bodega-btn')) {
             handleEstadoUpdate(importacionId, 'En Bodega');
         }
+        else if (target.closest('#add-abono-china-btn')) { // Listener de abonos de China
+            handleAbonoChinaSubmit(importacionId);
+        }
 
-        // *** AQUÍ ESTABA EL ERROR: ELIMINAMOS EL 'ELSE IF' DUPLICADO ***
-        // (El bloque que llamaba a handleAbonoChinaSubmit sin el segundo argumento ya no existe)
-
-        // 3. Gestión de Ítems
-        else if (target.id === 'add-importacion-item-btn') {
+        if (target.id === 'add-importacion-item-btn') {
             const newRow = createImportacionItemElement();
             document.getElementById('importacion-items-container').appendChild(newRow);
             initializeItemRowSearch(newRow);
@@ -2706,8 +2527,6 @@ function setupModalEventListeners(modalBody, importacion) {
             target.closest('.import-item-row').remove();
             calcularTotalesImportacionCompleto();
         }
-        
-        // 4. Gestión de Facturas de Gastos
         else if (target.closest('.add-factura-btn')) {
             const gastoTipo = target.closest('.add-factura-btn').dataset.gastoTipo;
             document.getElementById(`facturas-container-${gastoTipo}`).appendChild(createGastoFacturaElement(gastoTipo));
@@ -2724,10 +2543,12 @@ function setupModalEventListeners(modalBody, importacion) {
                 deleteGasto({ importacionId: importacion.id, gastoTipo, facturaId })
                     .then(() => {
                         showTemporaryMessage("Gasto eliminado con éxito.", "success");
+                        // La vista se actualizará sola gracias a onSnapshot, pero cerramos el modal de carga.
                         hideModal();
                     })
                     .catch((error) => {
                         console.error("Error al eliminar:", error);
+                        // Muestra el error específico que viene del backend (ej: "No se puede eliminar...")
                         showModalMessage(`Error: ${error.message}`);
                     });
             }
@@ -2748,10 +2569,14 @@ function setupModalEventListeners(modalBody, importacion) {
             const btn = target.closest('.update-pdf-btn');
             handleUpdateFacturaPdf(importacionId, btn.dataset.gastoTipo, btn.dataset.facturaId);
         }
+        else if (target.closest('#add-abono-china-btn')) {
+            handleAbonoChinaSubmit(importacionId);
+        }
     });
 
-    // Listeners de Inputs (Focus/Blur/Input) - Se mantienen igual
+
     modalBody.addEventListener('focusin', (e) => {
+        // Añadido '#abono-china-valor-cop' al selector
         if (e.target.classList.contains('cost-input-usd') || e.target.classList.contains('cost-input-cop') || e.target.id === 'abono-china-valor-cop') {
             unformatCurrencyInput(e.target);
         }
@@ -2778,18 +2603,22 @@ function setupModalEventListeners(modalBody, importacion) {
 }
 
 /**
- * --- VERSIÓN CORREGIDA: REGISTRA ABONO Y GASTO ---
- * Ahora crea automáticamente el registro en la colección 'gastos' al abonar a China.
+ * --- VERSIÓN ROBUSTA CON BÚSQUEDA RELATIVA ---
+ * Maneja el registro de un abono a Costos de Origen.
+ * Ahora encuentra los campos de input relativo al botón presionado,
+ * evitando errores de 'null'.
+ * @param {string} importacionId - El ID de la importación.
+ * @param {HTMLElement} buttonElement - El elemento del botón que fue presionado.
  */
 async function handleAbonoChinaSubmit(importacionId, buttonElement) {
-    // Encontrar el contenedor del formulario de abono
+    // Encontrar el contenedor del formulario de abono, subiendo desde el botón
     const formContainer = buttonElement.closest('.bg-gray-50');
     if (!formContainer) {
         showModalMessage("Error: No se pudo encontrar el formulario de abono.");
         return;
     }
 
-    // Buscar los inputs
+    // Buscar los inputs DENTRO de ese contenedor
     const valorCopInput = formContainer.querySelector('#abono-china-valor-cop');
     const valorUsdInput = formContainer.querySelector('#abono-china-valor-usd');
     const formaPagoSelect = formContainer.querySelector('#abono-china-forma-pago');
@@ -2830,58 +2659,25 @@ async function handleAbonoChinaSubmit(importacionId, buttonElement) {
         registradoPor: currentUser.uid
     };
 
-    // --- PREPARAR EL OBJETO DE GASTO ---
-    const nuevoGasto = {
-        fecha: nuevoAbono.fecha,
-        proveedorId: importacionId, // Usamos el ID de importación como referencia
-        proveedorNombre: `Imp. N° ${importacionActual.numeroImportacion} (Abono China)`,
-        numeroFactura: `Ref: BL ${importacionActual.numeroBl || 'N/A'}`,
-        valorTotal: valorCOP, // El gasto siempre es en COP
-        fuentePago: nuevoAbono.formaPago,
-        registradoPor: currentUser.uid,
-        timestamp: new Date(),
-        isImportacionAbono: true, // Marca para identificar que viene de importación
-        importacionId: importacionId
-    };
-
-    showModalMessage("Registrando abono y gasto...", true);
+    showModalMessage("Registrando abono...", true);
 
     try {
-        // --- USAR BATCH PARA GUARDAR AMBOS AL TIEMPO ---
-        const batch = writeBatch(db);
-        
         const importacionRef = doc(db, "importaciones", importacionId);
-        batch.update(importacionRef, { abonos: arrayUnion(nuevoAbono) });
+        await updateDoc(importacionRef, { abonos: arrayUnion(nuevoAbono) });
 
-        const gastoRef = doc(collection(db, "gastos")); // Crear referencia nueva para gasto
-        batch.set(gastoRef, nuevoGasto);
-
-        await batch.commit();
-        // -----------------------------------------------
-
-        // Actualizar estado local (Importación)
         const importacionIndex = allImportaciones.findIndex(i => i.id === importacionId);
         if (importacionIndex !== -1) {
             if (!allImportaciones[importacionIndex].abonos) allImportaciones[importacionIndex].abonos = [];
             allImportaciones[importacionIndex].abonos.push(nuevoAbono);
         }
 
-        // Actualizar estado local (Gastos) para que aparezca sin recargar
-        nuevoGasto.id = gastoRef.id;
-        allGastos.push(nuevoGasto);
-        // Ordenar gastos por fecha descendente para mantener consistencia visual
-        allGastos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-        renderGastos(); // Refrescar la lista de gastos de fondo
-
         hideModal();
-        showTemporaryMessage("Abono y gasto registrados con éxito.", "success");
-        
-        // Recargar el modal de importación para ver los cambios
+        showTemporaryMessage("Abono registrado con éxito.", "success");
         showImportacionModal(allImportaciones[importacionIndex]);
 
     } catch (error) {
         console.error("Error al registrar abono de China:", error);
-        showModalMessage("Error al guardar el abono: " + error.message);
+        showModalMessage("Error al guardar el abono.");
     }
 }
 
@@ -4314,39 +4110,14 @@ function calcularCostoDeCortes(totalCortes) {
     return { costo: 20000, descripcion: `Cargo especial por ${totalCortes} cortes`, ivaIncluido: true };
 }
 
-// REEMPLAZA esta función en tu app.js
 function showEditClientModal(cliente) {
     let rutHtml = '';
-
     if (cliente.rutUrl) {
-        // --- INICIO DE LA CORRECCIÓN UNIVERSAL ---
-        let rutPath = '';
-        try {
-            const urlString = cliente.rutUrl;
-            // 1. Encontrar el final del nombre del bucket (después de .app/ o .com/)
-            const bucketEndMarker = '.app/';
-            const bucketEndIndex = urlString.indexOf(bucketEndMarker);
-
-            if (bucketEndIndex !== -1) {
-                // 2. Encontrar el inicio de los parámetros de la URL (el '?')
-                const queryStartIndex = urlString.indexOf('?');
-                // 3. La ruta es lo que está entre esos dos puntos
-                const encodedPath = urlString.substring(bucketEndIndex + bucketEndMarker.length, queryStartIndex);
-                rutPath = decodeURIComponent(encodedPath);
-            } else {
-                throw new Error("La URL no contiene un nombre de bucket reconocible (.app/).");
-            }
-        } catch (e) {
-            console.error("Error al procesar la URL del RUT del cliente:", e.message, cliente.rutUrl);
-            rutPath = '';
-        }
-        // --- FIN DE LA CORRECCIÓN UNIVERSAL ---
-
         rutHtml = `
             <div class="mt-4 pt-4 border-t">
                 <p class="block text-sm font-medium text-gray-700 mb-2">Gestión de RUT</p>
                 <div class="flex gap-2">
-                    <button type="button" data-file-path="${rutPath}" data-file-title="RUT de ${cliente.nombre}" class="flex-1 text-center bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Ver</button>
+                    <button type="button" data-file-url="${cliente.rutUrl}" data-file-title="RUT de ${cliente.nombre}" class="view-file-btn flex-1 text-center bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Ver</button>
                     <button type="button" id="btn-actualizar-rut-cliente" class="flex-1 bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-600">Actualizar</button>
                 </div>
                 <div id="rut-upload-container-cliente" class="hidden mt-2">
@@ -4373,7 +4144,9 @@ function showEditClientModal(cliente) {
                 <input type="tel" id="edit-cliente-telefono1" value="${cliente.telefono1 || ''}" placeholder="Teléfono 1" class="w-full p-3 border rounded-lg" required oninput="this.value = this.value.replace(/[^0-9]/g, '')">
                 <input type="tel" id="edit-cliente-telefono2" value="${cliente.telefono2 || ''}" placeholder="Teléfono 2" class="w-full p-3 border rounded-lg" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
                 <input type="text" id="edit-cliente-nit" value="${cliente.nit || ''}" placeholder="NIT" class="w-full p-3 border rounded-lg">
+                
                 ${rutHtml}
+
                 <div class="mt-6 flex justify-end gap-3">
                     <button type="button" id="cancel-edit-client" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button>
                     <button type="submit" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Guardar Cambios</button>
@@ -4391,41 +4164,20 @@ function showEditClientModal(cliente) {
             btnActualizarRutCliente.classList.add('hidden');
         });
     }
-
     document.getElementById('cancel-edit-client').addEventListener('click', () => {
         document.getElementById('modal').classList.add('hidden');
     });
 }
 
 function showEditProviderModal(proveedor) {
+    // Generar los botones del RUT de forma condicional
     let rutHtml = '';
-
     if (proveedor.rutUrl) {
-        // --- INICIO DE LA CORRECCIÓN UNIVERSAL ---
-        let rutPath = '';
-        try {
-            const urlString = proveedor.rutUrl;
-            const bucketEndMarker = '.app/';
-            const bucketEndIndex = urlString.indexOf(bucketEndMarker);
-
-            if (bucketEndIndex !== -1) {
-                const queryStartIndex = urlString.indexOf('?');
-                const encodedPath = urlString.substring(bucketEndIndex + bucketEndMarker.length, queryStartIndex);
-                rutPath = decodeURIComponent(encodedPath);
-            } else {
-                throw new Error("La URL no contiene un nombre de bucket reconocible (.app/).");
-            }
-        } catch (e) {
-            console.error("Error al procesar la URL del RUT del proveedor:", e.message, proveedor.rutUrl);
-            rutPath = '';
-        }
-        // --- FIN DE LA CORRECCIÓN UNIVERSAL ---
-
         rutHtml = `
             <div class="mt-4 pt-4 border-t">
                 <p class="block text-sm font-medium text-gray-700 mb-2">Gestión de RUT</p>
                 <div class="flex gap-2">
-                    <button type="button" data-file-path="${rutPath}" data-file-title="RUT de ${proveedor.nombre}" class="flex-1 text-center bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Ver</button>
+                    <button type="button" data-file-url="${proveedor.rutUrl}" data-file-title="RUT de ${proveedor.nombre}" class="view-file-btn flex-1 text-center bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Ver</button>
                     <button type="button" id="btn-actualizar-rut" class="flex-1 bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-600">Actualizar</button>
                 </div>
                 <div id="rut-upload-container" class="hidden mt-2">
@@ -4436,7 +4188,7 @@ function showEditProviderModal(proveedor) {
     } else {
         rutHtml = `
             <div class="mt-4 pt-4 border-t">
-                <label for="edit-proveedor-rut" class="block text-sm font-medium text-gray-700">Subir RUT (Opcional)</label>
+                <label for="edit-proveedor-rut" class="block text-sm font-medium text-gray-700">Subir RUT</label>
                 <input type="file" id="edit-proveedor-rut" class="mt-1 w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"/>
             </div>
         `;
@@ -4450,7 +4202,9 @@ function showEditProviderModal(proveedor) {
                 <input type="text" id="edit-proveedor-contacto" value="${proveedor.contacto || ''}" placeholder="Nombre de Contacto" class="w-full p-3 border rounded-lg mb-2">
                 <input type="tel" id="edit-proveedor-telefono" value="${proveedor.telefono || ''}" placeholder="Teléfono" class="w-full p-3 border rounded-lg mb-2">
                 <input type="email" id="edit-proveedor-email" value="${proveedor.email || ''}" placeholder="Correo" class="w-full p-3 border rounded-lg">
+                
                 ${rutHtml}
+                
                 <div class="mt-6 flex justify-end gap-3">
                     <button type="button" id="cancel-edit-provider" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button>
                     <button type="submit" class="bg-teal-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-teal-700">Guardar Cambios</button>
@@ -4461,6 +4215,7 @@ function showEditProviderModal(proveedor) {
     document.getElementById('modal-content').innerHTML = modalContent;
     document.getElementById('modal').classList.remove('hidden');
 
+    // Listener para el botón "Actualizar RUT"
     const btnActualizarRut = document.getElementById('btn-actualizar-rut');
     if (btnActualizarRut) {
         btnActualizarRut.addEventListener('click', () => {
@@ -4469,11 +4224,11 @@ function showEditProviderModal(proveedor) {
         });
     }
 
+    // Listener para el botón de cancelar
     document.getElementById('cancel-edit-provider').addEventListener('click', () => {
         document.getElementById('modal').classList.add('hidden');
     });
 }
-
 // UBICADA DENTRO DE /importacion/js/app.js
 // ---> ESTA ES LA SOLUCIÓN FINAL Y DEFINITIVA PARA EL ERROR DE CACHÉ EN IOS <---
 
@@ -4498,791 +4253,279 @@ function showPdfModal(pdfUrl, title) {
     }
 }
 
-/**
- * Muestra el modal SECUNDARIO para gestionar los pagos de una remisión.
- * BLINDADO: Incluye validación visual y LÓGICA para impedir auto-confirmación.
- */
 function showPaymentModal(remision) {
-    const secondaryModal = document.getElementById('modal-secondary');
-    const secondaryModalContentWrapper = document.getElementById('modal-secondary-content-wrapper');
-    if (!secondaryModal || !secondaryModalContentWrapper) {
-        console.error("Error: Contenedor de modal secundario no encontrado.");
-        showModalMessage("Error al abrir la gestión de pagos.");
-        return;
-    }
-
-    const paymentsArray = Array.isArray(remision.payments) ? remision.payments : [];
-
-    // Cálculos de saldos
-    const totalConfirmado = paymentsArray.filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
-    const totalPorConfirmar = paymentsArray.filter(p => p.status === 'por confirmar').reduce((sum, p) => sum + p.amount, 0);
+    const totalConfirmado = (remision.payments || []).filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
+    const totalPorConfirmar = (remision.payments || []).filter(p => p.status === 'por confirmar').reduce((sum, p) => sum + p.amount, 0);
     const saldoPendiente = remision.valorTotal - totalConfirmado;
     const saldoRealPendiente = remision.valorTotal - totalConfirmado - totalPorConfirmar;
+
     const metodosDePagoHTML = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
 
-    // Generar HTML de la tabla
-    const paymentsHTML = paymentsArray
-        .map((p, i) => ({ ...p, originalIndex: i })) // Mapear índice original
-        .sort((a, b) => new Date(b.date) - new Date(a.date)) // Ordenar visualmente
-        .map((p) => {
-            let statusBadge = '';
-            let confirmButton = '';
-            const indexParaBoton = p.originalIndex; 
+    const paymentsHTML = (remision.payments || []).sort((a,b) => new Date(b.date) - new Date(a.date)).map((p, index) => {
+        let statusBadge = '';
+        let confirmButton = '';
 
-            if (p.status === 'por confirmar') {
-                statusBadge = `<span class="text-xs font-semibold bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">Por Confirmar</span>`;
-                
-                if (currentUserData.role === 'admin') {
-                    // VALIDACIÓN VISUAL:
-                    if (p.registeredBy !== currentUser.uid) {
-                        confirmButton = `<button data-remision-id="${remision.id}" data-payment-index="${indexParaBoton}" class="confirm-payment-btn bg-green-500 text-white text-xs px-2 py-1 rounded hover:bg-green-600">Confirmar</button>`;
-                    } else {
-                        // Botón deshabilitado si es el mismo usuario
-                        confirmButton = `<button class="bg-gray-400 text-white text-xs px-2 py-1 rounded cursor-not-allowed" disabled title="No puedes confirmar tu propio registro.">Confirmar</button>`;
-                    }
+        if (p.status === 'por confirmar') {
+            statusBadge = `<span class="text-xs font-semibold bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">Por Confirmar</span>`;
+            
+            // --- INICIO DE LA CORRECCIÓN CLAVE ---
+            if (currentUserData.role === 'admin') {
+                if (p.registeredBy !== currentUser.uid) {
+                    // Si es un admin DIFERENTE, puede confirmar.
+                    confirmButton = `<button data-remision-id="${remision.id}" data-payment-index="${index}" class="confirm-payment-btn bg-green-500 text-white text-xs px-2 py-1 rounded hover:bg-green-600">Confirmar</button>`;
+                } else {
+                    // Si es el MISMO admin, el botón está deshabilitado.
+                    confirmButton = `<button class="bg-gray-400 text-white text-xs px-2 py-1 rounded cursor-not-allowed" title="Otro administrador debe confirmar este pago.">Confirmar</button>`;
                 }
-            } else { 
-                statusBadge = `<span class="text-xs font-semibold bg-green-200 text-green-800 px-2 py-1 rounded-full">Confirmado</span>`;
             }
-            return `<tr class="border-b"> <td class="p-2">${p.date}</td> <td class="p-2">${p.method}</td> <td class="p-2 text-right">${formatCurrency(p.amount)}</td> <td class="p-2">${statusBadge}</td> <td class="p-2">${confirmButton}</td> </tr>`;
-        }).join('');
+            // Si no es admin, no se muestra ningún botón.
+            // --- FIN DE LA CORRECCIÓN CLAVE ---
 
-    // Inyectar HTML
-    secondaryModalContentWrapper.innerHTML = `
-        <div class="bg-white rounded-lg p-6 shadow-xl max-w-3xl w-full mx-auto text-left">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-semibold">Gestionar Pagos (Remisión N° ${remision.numeroRemision})</h2>
-                <button id="close-secondary-payment-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 text-center">
-                 <div class="bg-blue-50 p-3 rounded-lg"><div class="text-sm text-blue-800">VALOR TOTAL</div><div class="font-bold text-lg">${formatCurrency(remision.valorTotal)}</div></div>
-                 <div class="bg-green-50 p-3 rounded-lg"><div class="text-sm text-green-800">PAGADO (CONF.)</div><div class="font-bold text-lg">${formatCurrency(totalConfirmado)}</div></div>
-                 <div class="bg-yellow-50 p-3 rounded-lg"><div class="text-sm text-yellow-800">POR CONFIRMAR</div><div class="font-bold text-lg">${formatCurrency(totalPorConfirmar)}</div></div>
-                 <div class="bg-red-50 p-3 rounded-lg"><div class="text-sm text-red-800">SALDO PENDIENTE</div><div class="font-bold text-lg">${formatCurrency(saldoPendiente)}</div></div>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 <div>
-                     <h3 class="font-semibold mb-2">Historial de Pagos</h3>
-                     <div class="border rounded-lg max-h-60 overflow-y-auto">
-                         <table class="w-full text-sm">
-                             <thead class="bg-gray-50"><tr><th class="p-2 text-left">Fecha</th><th class="p-2 text-left">Método</th><th class="p-2 text-right">Monto</th><th class="p-2 text-left">Estado</th><th></th></tr></thead>
-                             <tbody>${paymentsHTML || '<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay pagos registrados.</td></tr>'}</tbody>
-                         </table>
-                     </div>
-                 </div>
-                 <div>
-                     <h3 class="font-semibold mb-2">Registrar Nuevo Pago</h3>
-                     ${saldoRealPendiente > 0.01 ? `
-                         <form id="add-payment-form" class="space-y-3 bg-gray-50 p-4 rounded-lg">
-                             <div> <label for="new-payment-amount" class="text-sm font-medium">Monto del Abono</label> <input type="text" inputmode="numeric" id="new-payment-amount" class="w-full p-2 border rounded-md mt-1" max="${saldoRealPendiente}" required> </div>
-                             <div> <label for="new-payment-date" class="text-sm font-medium">Fecha del Pago</label> <input type="date" id="new-payment-date" class="w-full p-2 border rounded-md mt-1" value="${new Date().toISOString().split('T')[0]}" required> </div>
-                             <div> <label for="new-payment-method" class="text-sm font-medium">Método de Pago</label> <select id="new-payment-method" class="w-full p-2 border rounded-md mt-1 bg-white" required>${metodosDePagoHTML}</select> </div>
-                             <button type="submit" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700">Registrar Pago</button>
-                         </form>
-                     ` : `
-                         <div class="bg-green-100 text-green-800 p-4 rounded-lg text-center font-semibold">Esta remisión ya ha sido pagada en su totalidad.</div>
-                     `}
-                 </div>
-             </div>
-        </div>
-    `;
+        } else {
+            statusBadge = `<span class="text-xs font-semibold bg-green-200 text-green-800 px-2 py-1 rounded-full">Confirmado</span>`;
+        }
 
-    secondaryModal.classList.remove('hidden');
+        return `<tr class="border-b">
+            <td class="p-2">${p.date}</td>
+            <td class="p-2">${p.method}</td>
+            <td class="p-2 text-right">${formatCurrency(p.amount)}</td>
+            <td class="p-2">${statusBadge}</td>
+            <td class="p-2">${confirmButton}</td>
+        </tr>`;
+    }).join('');
 
-    secondaryModalContentWrapper.querySelector('#close-secondary-payment-modal').addEventListener('click', () => {
-        secondaryModal.classList.add('hidden');
-        secondaryModalContentWrapper.innerHTML = '';
-    });
+    const modalContentWrapper = document.getElementById('modal-content-wrapper');
+    modalContentWrapper.innerHTML = `<div class="bg-white rounded-lg p-6 shadow-xl max-w-3xl w-full mx-auto text-left"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Gestionar Pagos (Remisión N° ${remision.numeroRemision})</h2><button id="close-payment-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button></div><div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 text-center"><div class="bg-blue-50 p-3 rounded-lg"><div class="text-sm text-blue-800">VALOR TOTAL</div><div class="font-bold text-lg">${formatCurrency(remision.valorTotal)}</div></div><div class="bg-green-50 p-3 rounded-lg"><div class="text-sm text-green-800">PAGADO (CONF.)</div><div class="font-bold text-lg">${formatCurrency(totalConfirmado)}</div></div><div class="bg-yellow-50 p-3 rounded-lg"><div class="text-sm text-yellow-800">POR CONFIRMAR</div><div class="font-bold text-lg">${formatCurrency(totalPorConfirmar)}</div></div><div class="bg-red-50 p-3 rounded-lg"><div class="text-sm text-red-800">SALDO PENDIENTE</div><div class="font-bold text-lg">${formatCurrency(saldoPendiente)}</div></div></div><div class="grid grid-cols-1 md:grid-cols-2 gap-6"><div><h3 class="font-semibold mb-2">Historial de Pagos</h3><div class="border rounded-lg max-h-60 overflow-y-auto"><table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="p-2 text-left">Fecha</th><th class="p-2 text-left">Método</th><th class="p-2 text-right">Monto</th><th class="p-2 text-left">Estado</th><th></th></tr></thead><tbody>${paymentsHTML || '<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay pagos registrados.</td></tr>'}</tbody></table></div></div><div><h3 class="font-semibold mb-2">Registrar Nuevo Pago</h3>${saldoRealPendiente > 0 ? `<form id="add-payment-form" class="space-y-3 bg-gray-50 p-4 rounded-lg"><div><label for="new-payment-amount" class="text-sm font-medium">Monto del Abono</label><input type="text" inputmode="numeric" id="new-payment-amount" class="w-full p-2 border rounded-md mt-1" max="${saldoRealPendiente}" required></div><div><label for="new-payment-date" class="text-sm font-medium">Fecha del Pago</label><input type="date" id="new-payment-date" class="w-full p-2 border rounded-md mt-1" value="${new Date().toISOString().split('T')[0]}" required></div><div><label for="new-payment-method" class="text-sm font-medium">Método de Pago</label><select id="new-payment-method" class="w-full p-2 border rounded-md mt-1 bg-white" required>${metodosDePagoHTML}</select></div><button type="submit" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700">Registrar Pago</button></form>` : '<div class="bg-green-100 text-green-800 p-4 rounded-lg text-center font-semibold">Esta remisión ya ha sido pagada en su totalidad.</div>'}</div></div></div>`;
+    
+    document.getElementById('modal').classList.remove('hidden');
+    document.getElementById('close-payment-modal').addEventListener('click', hideModal);
 
-    // --- LISTENER DE CONFIRMACIÓN (CON VALIDACIÓN LÓGICA) ---
-    secondaryModalContentWrapper.querySelectorAll('.confirm-payment-btn').forEach(btn => {
+    document.querySelectorAll('.confirm-payment-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const remisionId = e.currentTarget.dataset.remisionId;
             const paymentIndex = parseInt(e.currentTarget.dataset.paymentIndex);
-            const remisionRef = doc(db, "remisiones", remisionId);
-
-            if (paymentIndex < 0 || isNaN(paymentIndex)) return;
-
-            showModalMessage("Confirmando pago...", true);
-            try {
-                await runTransaction(db, async (transaction) => {
-                    const remisionDoc = await transaction.get(remisionRef);
-                    if (!remisionDoc.exists()) throw "¡La remisión no existe!";
-
-                    const data = remisionDoc.data();
-                    const currentPaymentsArray = Array.isArray(data.payments) ? data.payments : [];
-
-                    if (paymentIndex >= currentPaymentsArray.length) throw `El pago ya no existe.`;
-                    const pago = currentPaymentsArray[paymentIndex];
-
-                    // --- VALIDACIÓN DE SEGURIDAD CRÍTICA ---
-                    // Si el usuario intenta confirmar su propio pago (incluso hackeando el botón),
-                    // la transacción fallará aquí.
-                    if (pago.registeredBy === currentUser.uid) {
-                        throw "Error de Seguridad: No puedes confirmar un pago registrado por ti mismo.";
-                    }
-                    // ---------------------------------------
-
-                    currentPaymentsArray[paymentIndex].status = 'confirmado';
-                    currentPaymentsArray[paymentIndex].confirmedBy = currentUser.uid;
-                    currentPaymentsArray[paymentIndex].confirmedAt = new Date();
-
-                    transaction.update(remisionRef, { payments: currentPaymentsArray });
-                });
-
-                // Actualización local
-                remision.payments[paymentIndex].status = 'confirmado';
-                remision.payments[paymentIndex].confirmedBy = currentUser.uid;
-                remision.payments[paymentIndex].confirmedAt = new Date();
-
-                hideModal();
-                showTemporaryMessage("¡Pago confirmado!", "success");
-                showPaymentModal(remision);
-
-            } catch (error) {
-                console.error("Error confirmando pago:", error);
-                hideModal(); // Asegurar que se cierra el loader
-                showModalMessage(typeof error === 'string' ? error : "Error al confirmar el pago.");
+            const remisionToUpdate = allRemisiones.find(r => r.id === remisionId);
+            if (remisionToUpdate && remisionToUpdate.payments[paymentIndex]) {
+                remisionToUpdate.payments[paymentIndex].status = 'confirmado';
+                remisionToUpdate.payments[paymentIndex].confirmedBy = currentUser.uid;
+                remisionToUpdate.payments[paymentIndex].confirmedAt = new Date();
+                showModalMessage("Confirmando pago...", true);
+                try {
+                    await updateDoc(doc(db, "remisiones", remisionId), { payments: remisionToUpdate.payments });
+                    hideModal();
+                    showModalMessage("¡Pago confirmado!", false, 1500);
+                } catch (error) {
+                    console.error("Error al confirmar pago:", error);
+                    showModalMessage("Error al confirmar el pago.");
+                }
             }
         });
     });
 
-    // Listener para añadir nuevo pago (Mantenemos el bloqueo de botón para evitar duplicados)
-    if (saldoRealPendiente > 0.01) {
-        const paymentAmountInput = secondaryModalContentWrapper.querySelector('#new-payment-amount');
+    if (saldoRealPendiente > 0) {
+        const paymentAmountInput = document.getElementById('new-payment-amount');
         paymentAmountInput.addEventListener('focus', (e) => unformatCurrencyInput(e.target));
         paymentAmountInput.addEventListener('blur', (e) => formatCurrencyInput(e.target));
-
-        secondaryModalContentWrapper.querySelector('#add-payment-form').addEventListener('submit', async (e) => {
+        document.getElementById('add-payment-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const submitBtn = e.target.querySelector('button[type="submit"]');
-            if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Procesando..."; }
-
             const amount = unformatCurrency(paymentAmountInput.value);
-            
-            if (amount <= 0 || isNaN(amount)) {
-                showModalMessage("El monto debe ser mayor a cero.");
-                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Registrar Pago"; }
-                return;
-            }
-
-            const currentRemision = allRemisiones.find(r => r.id === remision.id);
-            const currentPayments = Array.isArray(currentRemision?.payments) ? currentRemision.payments : [];
-            const confirmed = currentPayments.filter(p => p.status === 'confirmado').reduce((s, p) => s + p.amount, 0);
-            const pending = currentPayments.filter(p => p.status === 'por confirmar').reduce((s, p) => s + p.amount, 0);
-            const realPending = (currentRemision?.valorTotal || 0) - confirmed - pending;
-
-            if (amount > realPending + 0.01) {
-                showModalMessage(`El monto no puede superar el saldo pendiente de ${formatCurrency(realPending)}.`);
-                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Registrar Pago"; }
+            if (amount <= 0 || !amount) { showModalMessage("El monto debe ser mayor a cero."); return; }
+            if (amount > saldoRealPendiente + 0.01) {
+                showModalMessage(`El monto del pago no puede superar el saldo pendiente de ${formatCurrency(saldoRealPendiente)}.`);
                 return;
             }
 
             const newPayment = {
                 amount: amount,
-                date: secondaryModalContentWrapper.querySelector('#new-payment-date').value,
-                method: secondaryModalContentWrapper.querySelector('#new-payment-method').value,
+                date: document.getElementById('new-payment-date').value,
+                method: document.getElementById('new-payment-method').value,
                 registeredAt: new Date(),
                 registeredBy: currentUser.uid,
                 status: 'por confirmar'
             };
-
             showModalMessage("Registrando pago...", true);
             try {
-                await updateDoc(doc(db, "remisiones", remision.id), {
-                    payments: arrayUnion(newPayment)
-                });
-
+                await updateDoc(doc(db, "remisiones", remision.id), { payments: arrayUnion(newPayment) });
                 hideModal();
-                showTemporaryMessage("¡Pago registrado! Pendiente de confirmación.", "success");
-
-                if (!Array.isArray(remision.payments)) remision.payments = [];
-                remision.payments.push(newPayment);
-                showPaymentModal(remision);
-
+                showModalMessage("¡Pago registrado! Pendiente de confirmación.", false, 2000);
             } catch (error) {
                 console.error("Error al registrar pago:", error);
-                hideModal();
                 showModalMessage("Error al registrar el pago.");
-                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Registrar Pago"; }
             }
         });
     }
 }
 
 /**
- * Muestra el modal de Resumen Financiero (Dashboard).
- * AHORA INCLUYE: Sub-pestañas en Cartera (Detalle vs Total Cliente).
+ * --- VERSIÓN MEJORADA CON BOTÓN CONDICIONAL ---
+ * Muestra el modal de resumen. Revisa si los saldos iniciales ya han sido
+ * establecidos. Si no, muestra el botón para configurarlos; de lo contrario, lo oculta.
  */
 async function showDashboardModal() {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
 
-    // Cargar/Verificar saldos iniciales
+    // --- NUEVA LÓGICA: VERIFICAR SI LOS SALDOS YA EXISTEN ---
     const balanceDocRef = doc(db, "saldosIniciales", "current");
     const balanceDoc = await getDoc(balanceDocRef);
     const balancesExist = balanceDoc.exists();
-    if (!balancesExist && Object.keys(initialBalances).length === 0) {
-        const balanceData = balanceDoc.data();
-        if (balanceData) initialBalances = balanceData;
+
+    let initialBalanceButtonHTML = '';
+    // Solo mostrar el botón si el documento de saldos NO existe
+    if (!balancesExist) {
+        initialBalanceButtonHTML = `<button id="set-initial-balance-btn" class="bg-gray-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700">Saldos Iniciales</button>`;
     }
-    let initialBalanceButtonHTML = !balancesExist ? `<button id="set-initial-balance-btn" class="bg-gray-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700">Saldos Iniciales</button>` : '';
+    // --- FIN DE LA NUEVA LÓGICA ---
 
-    const saldosHTML = METODOS_DE_PAGO.map(metodo => `
-        <div class="bg-gray-100 p-4 rounded-lg">
-            <div class="text-sm font-semibold text-gray-800">${metodo.toUpperCase()}</div>
-            <div id="summary-${metodo.toLowerCase()}" class="text-xl font-bold"></div>
-        </div>
-    `).join('');
-
-    // --- HTML Completo del Modal ---
     modalContentWrapper.innerHTML = `
     <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl mx-auto text-left flex flex-col" style="height: 80vh;">
         <div class="flex justify-between items-center p-4 border-b flex-wrap gap-2">
             <h2 class="text-xl font-semibold">Resumen Financiero</h2>
-            <div class="flex items-center gap-4 flex-wrap justify-end">
+            <div class="flex items-center gap-4">
                 ${initialBalanceButtonHTML}
-                <button id="show-transfer-modal-btn" class="bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-700 whitespace-nowrap">Transferir Fondos</button>
-                <button id="download-report-btn" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 whitespace-nowrap">Descargar PDF</button>
-                <button id="export-pagos-btn" class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 whitespace-nowrap">Exportar Pagos</button>
+                <button id="download-report-btn" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Descargar Reporte PDF</button>
                 <button id="close-dashboard-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
             </div>
         </div>
         <div class="border-b border-gray-200">
-            <nav class="-mb-px flex space-x-6 px-6 overflow-x-auto">
-                <button id="dashboard-tab-summary" class="dashboard-tab-btn active py-4 px-1 font-semibold whitespace-nowrap">Resumen Mensual</button>
-                <button id="dashboard-tab-cartera" class="dashboard-tab-btn py-4 px-1 font-semibold whitespace-nowrap">Cartera</button>
-                <button id="dashboard-tab-clientes" class="dashboard-tab-btn py-4 px-1 font-semibold whitespace-nowrap">Clientes</button>
-                <button id="dashboard-tab-transferencias" class="dashboard-tab-btn py-4 px-1 font-semibold whitespace-nowrap">Transferencias</button>
+            <nav class="-mb-px flex space-x-6 px-6">
+                <button id="dashboard-tab-summary" class="dashboard-tab-btn active py-4 px-1 font-semibold">Resumen Mensual</button>
+                <button id="dashboard-tab-cartera" class="dashboard-tab-btn py-4 px-1 font-semibold">Cartera</button>
+                <button id="dashboard-tab-clientes" class="dashboard-tab-btn py-4 px-1 font-semibold">Clientes</button>
             </nav>
         </div>
-        
         <div id="dashboard-summary-view" class="p-6 space-y-6 overflow-y-auto flex-grow">
-             <div class="flex items-center gap-4"> <select id="summary-month" class="p-2 border rounded-lg"></select> <select id="summary-year" class="p-2 border rounded-lg"></select> </div>
-             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"> 
-                <div class="bg-green-100 p-4 rounded-lg"><div class="text-sm font-semibold text-green-800">VENTAS (MES)</div><div id="summary-sales" class="text-2xl font-bold"></div></div> 
-                <div class="bg-red-100 p-4 rounded-lg"><div class="text-sm font-semibold text-red-800">GASTOS (MES)</div><div id="summary-expenses" class="text-2xl font-bold"></div></div> 
-                <div class="bg-indigo-100 p-4 rounded-lg"><div class="text-sm font-semibold text-indigo-800">UTILIDAD (MES)</div><div id="summary-profit" class="text-2xl font-bold"></div></div> 
-                <div class="bg-yellow-100 p-4 rounded-lg"><div class="text-sm font-semibold text-yellow-800">CARTERA PENDIENTE (MES)</div><div id="summary-cartera" class="text-2xl font-bold"></div></div> 
-             </div>
-             <div> 
-                <h3 class="font-semibold mb-2">Saldos Estimados (Total Cuentas)</h3> 
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4"> ${saldosHTML} </div> 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"> 
-                    <div class="bg-gray-100 p-4 rounded-lg"> 
-                        <div class="text-sm font-semibold text-gray-800">CARTERA TOTAL ACUMULADA</div> 
-                        <div id="summary-cartera-total" class="text-xl font-bold"></div> 
-                    </div> 
-                    <div class="bg-teal-100 p-4 rounded-lg border-l-4 border-teal-500"> 
-                        <div class="text-sm font-semibold text-teal-800">INGRESO CONFIRMADO DEL DÍA</div> 
-                        <div id="summary-daily-sales" class="text-xl font-bold"></div> 
-                    </div> 
-                </div> 
-                <div class="mt-4">
-                    <h4 class="text-sm font-semibold text-gray-600 mb-2">Desglose Venta del Día (Ingresos vs Crédito)</h4>
-                    <div id="daily-sales-breakdown-cards" class="grid grid-cols-2 sm:grid-cols-4 gap-4"></div>
+            <div class="flex items-center gap-4">
+                <select id="summary-month" class="p-2 border rounded-lg"></select>
+                <select id="summary-year" class="p-2 border rounded-lg"></select>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-green-100 p-4 rounded-lg"><div class="text-sm font-semibold text-green-800">VENTAS</div><div id="summary-sales" class="text-2xl font-bold"></div></div>
+                <div class="bg-red-100 p-4 rounded-lg"><div class="text-sm font-semibold text-red-800">GASTOS</div><div id="summary-expenses" class="text-2xl font-bold"></div></div>
+                <div class="bg-indigo-100 p-4 rounded-lg"><div class="text-sm font-semibold text-indigo-800">UTILIDAD/PÉRDIDA</div><div id="summary-profit" class="text-2xl font-bold"></div></div>
+                <div class="bg-yellow-100 p-4 rounded-lg"><div class="text-sm font-semibold text-yellow-800">CARTERA PENDIENTE (MES)</div><div id="summary-cartera" class="text-2xl font-bold"></div></div>
+            </div>
+            <div>
+                <h3 class="font-semibold mb-2">Saldos Estimados (Total)</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div class="bg-gray-100 p-4 rounded-lg"><div class="text-sm font-semibold text-gray-800">EFECTIVO</div><div id="summary-efectivo" class="text-xl font-bold"></div></div>
+                    <div class="bg-gray-100 p-4 rounded-lg"><div class="text-sm font-semibold text-gray-800">NEQUI</div><div id="summary-nequi" class="text-xl font-bold"></div></div>
+                    <div class="bg-gray-100 p-4 rounded-lg"><div class="text-sm font-semibold text-gray-800">DAVIVIENDA</div><div id="summary-davivienda" class="text-xl font-bold"></div></div>
+                    <div class="bg-gray-100 p-4 rounded-lg"><div class="text-sm font-semibold text-gray-800">BANCOLOMBIA</div><div id="summary-bancolombia" class="text-xl font-bold"></div></div>
+                    <div class="bg-gray-100 p-4 rounded-lg"><div class="text-sm font-semibold text-gray-800">CONSIGNACIÓN</div><div id="summary-consignacion" class="text-xl font-bold"></div></div>
                 </div>
-             </div>
-             <div> <h3 class="font-semibold mb-2">Utilidad/Pérdida (Últimos 6 Meses)</h3> <div class="bg-gray-50 p-4 rounded-lg"><canvas id="profitLossChart"></canvas></div> </div>
-        </div>
-
-        <div id="dashboard-cartera-view" class="p-6 hidden flex-grow overflow-y-auto flex-col">
-            <h3 class="font-semibold mb-2 text-xl">Cartera Pendiente de Cobro</h3>
-            
-            <div class="flex space-x-1 bg-gray-100 p-1 rounded-lg mb-4 w-fit">
-                <button id="subtab-cartera-detalle" class="px-4 py-2 rounded-md text-sm font-semibold bg-white shadow text-gray-800 transition-all">Detalle por Remisión</button>
-                <button id="subtab-cartera-cliente" class="px-4 py-2 rounded-md text-sm font-semibold text-gray-500 hover:text-gray-800 transition-all">Total por Cliente</button>
-            </div>
-
-            <div id="view-cartera-detalle">
-                <div id="cartera-list" class="space-y-4"></div>
-                <div id="cartera-total" class="text-right font-bold text-xl mt-4"></div>
-            </div>
-
-            <div id="view-cartera-cliente" class="hidden">
-                <div id="cartera-clientes-list" class="space-y-4"></div>
-                <div id="cartera-clientes-total" class="text-right font-bold text-xl mt-4"></div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div class="bg-gray-100 p-4 rounded-lg">
+                        <div class="text-sm font-semibold text-gray-800">CARTERA TOTAL</div>
+                        <div id="summary-cartera-total" class="text-xl font-bold"></div>
+                    </div>
+                    <div class="bg-teal-100 p-4 rounded-lg border-l-4 border-teal-500">
+                        <div class="text-sm font-semibold text-teal-800">VENTA DEL DÍA</div>
+                        <div id="summary-daily-sales" class="text-xl font-bold"></div>
+                    </div>
+                </div>
+                </div>
+            <div>
+                <h3 class="font-semibold mb-2">Utilidad/Pérdida (Últimos 6 Meses)</h3>
+                <div class="bg-gray-50 p-4 rounded-lg"><canvas id="profitLossChart"></canvas></div>
             </div>
         </div>
-
+        <div id="dashboard-cartera-view" class="p-6 hidden flex-grow overflow-y-auto"><h3 class="font-semibold mb-2 text-xl">Cartera Pendiente de Cobro</h3><div id="cartera-list" class="space-y-4"></div><div id="cartera-total" class="text-right font-bold text-xl mt-4"></div></div>
         <div id="dashboard-clientes-view" class="p-6 hidden flex-grow overflow-y-auto">
             <h3 class="font-semibold mb-2 text-xl">Ranking de Clientes</h3>
-            <div class="flex flex-wrap items-center gap-4 mb-4 p-2 bg-gray-50 rounded-lg border"> <div class="flex items-center gap-2"><label class="text-sm font-medium">Desde:</label><select id="rank-start-month" class="p-2 border rounded-lg"></select><select id="rank-start-year" class="p-2 border rounded-lg"></select></div> <div class="flex items-center gap-2"><label class="text-sm font-medium">Hasta:</label><select id="rank-end-month" class="p-2 border rounded-lg"></select><select id="rank-end-year" class="p-2 border rounded-lg"></select></div> <button id="rank-filter-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Filtrar</button> <button id="rank-show-all-btn" class="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-700">Mostrar Todos</button> </div>
+            <div class="flex flex-wrap items-center gap-4 mb-4 p-2 bg-gray-50 rounded-lg">
+                <div class="flex items-center gap-2"><label class="text-sm font-medium">Desde:</label><select id="rank-start-month" class="p-2 border rounded-lg"></select><select id="rank-start-year" class="p-2 border rounded-lg"></select></div>
+                <div class="flex items-center gap-2"><label class="text-sm font-medium">Hasta:</label><select id="rank-end-month" class="p-2 border rounded-lg"></select><select id="rank-end-year" class="p-2 border rounded-lg"></select></div>
+                <button id="rank-filter-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Filtrar</button>
+                <button id="rank-show-all-btn" class="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-700">Mostrar Todos</button>
+            </div>
             <div id="top-clientes-list" class="space-y-3"></div>
-        </div>
-        <div id="dashboard-transferencias-view" class="p-6 hidden flex-grow overflow-y-auto">
-            <h3 class="font-semibold mb-2 text-xl">Historial de Transferencias Confirmadas</h3>
-             <div class="flex flex-col sm:flex-row gap-4 my-4 p-4 bg-gray-50 rounded-lg border">
-                 <div class="flex-1"> <label for="filter-transfer-month" class="text-sm font-medium text-gray-700">Mes</label> <select id="filter-transfer-month" class="p-2 border rounded-lg bg-white w-full mt-1"></select> </div>
-                 <div class="flex-1"> <label for="filter-transfer-year" class="text-sm font-medium text-gray-700">Año</label> <select id="filter-transfer-year" class="p-2 border rounded-lg bg-white w-full mt-1"></select> </div>
-             </div>
-            <div id="transferencias-list" class="space-y-3"></div>
-        </div>
-
-        <div id="pending-transfers-section" class="p-6 border-t mt-auto bg-yellow-50 hidden">
-            <h3 class="font-semibold mb-2 text-lg text-yellow-800">Transferencias Pendientes de Confirmación</h3>
-            <div id="pending-transfers-list" class="space-y-3 max-h-40 overflow-y-auto"></div>
         </div>
     </div>
     `;
-
     document.getElementById('modal').classList.remove('hidden');
+    document.getElementById('close-dashboard-modal').addEventListener('click', hideModal);
 
-    // --- Lógica de Sub-Pestañas de Cartera (NUEVO) ---
-    const subTabDetalle = document.getElementById('subtab-cartera-detalle');
-    const subTabCliente = document.getElementById('subtab-cartera-cliente');
-    const viewDetalle = document.getElementById('view-cartera-detalle');
-    const viewCliente = document.getElementById('view-cartera-cliente');
-
-    if (subTabDetalle && subTabCliente) {
-        subTabDetalle.addEventListener('click', () => {
-            // Estilos
-            subTabDetalle.classList.add('bg-white', 'shadow', 'text-gray-800');
-            subTabDetalle.classList.remove('text-gray-500');
-            subTabCliente.classList.remove('bg-white', 'shadow', 'text-gray-800');
-            subTabCliente.classList.add('text-gray-500');
-
-            // Vistas
-            viewDetalle.classList.remove('hidden');
-            viewCliente.classList.add('hidden');
-        });
-
-        subTabCliente.addEventListener('click', () => {
-            // Estilos
-            subTabCliente.classList.add('bg-white', 'shadow', 'text-gray-800');
-            subTabCliente.classList.remove('text-gray-500');
-            subTabDetalle.classList.remove('bg-white', 'shadow', 'text-gray-800');
-            subTabDetalle.classList.add('text-gray-500');
-
-            // Vistas
-            viewCliente.classList.remove('hidden');
-            viewDetalle.classList.add('hidden');
-
-            // Llamar a la función de renderizado (que crearemos abajo)
-            renderCarteraClientes();
-        });
+    // Asignar el listener solo si el botón existe
+    const initialBalanceBtn = document.getElementById('set-initial-balance-btn');
+    if (initialBalanceBtn) {
+        initialBalanceBtn.addEventListener('click', showInitialBalanceModal);
     }
 
-    // --- Listeners Generales ---
-    document.getElementById('close-dashboard-modal').addEventListener('click', () => {
-        if (unsubscribePendingTransfers) { unsubscribePendingTransfers(); unsubscribePendingTransfers = null; }
-        if (unsubscribeConfirmedTransfers) { unsubscribeConfirmedTransfers(); unsubscribeConfirmedTransfers = null; }
-        hideModal();
-    });
-
-    const initialBalanceBtn = document.getElementById('set-initial-balance-btn');
-    if (initialBalanceBtn) initialBalanceBtn.addEventListener('click', showInitialBalanceModal);
-
-    // Configuración de filtros (Mes/Año) - Sin cambios
     const monthSelect = document.getElementById('summary-month');
     const yearSelect = document.getElementById('summary-year');
     const rankStartMonth = document.getElementById('rank-start-month');
     const rankStartYear = document.getElementById('rank-start-year');
     const rankEndMonth = document.getElementById('rank-end-month');
     const rankEndYear = document.getElementById('rank-end-year');
+
     const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
     const now = new Date();
+
     [monthSelect, rankStartMonth, rankEndMonth].forEach(sel => {
-        if (!sel) return;
-        sel.innerHTML = '';
         for (let i = 0; i < 12; i++) { const option = document.createElement('option'); option.value = i; option.textContent = monthNames[i]; if (i === now.getMonth()) option.selected = true; sel.appendChild(option); }
     });
     [yearSelect, rankStartYear, rankEndYear].forEach(sel => {
-        if (!sel) return;
-        sel.innerHTML = '';
         for (let i = 0; i < 5; i++) { const year = now.getFullYear() - i; const option = document.createElement('option'); option.value = year; option.textContent = year; sel.appendChild(option); }
     });
 
     const updateDashboardView = () => updateDashboard(parseInt(yearSelect.value), parseInt(monthSelect.value));
-    if (monthSelect) monthSelect.addEventListener('change', updateDashboardView);
-    if (yearSelect) yearSelect.addEventListener('change', updateDashboardView);
+    monthSelect.addEventListener('change', updateDashboardView);
+    yearSelect.addEventListener('change', updateDashboardView);
 
-    const rankFilterBtn = document.getElementById('rank-filter-btn');
-    if (rankFilterBtn) rankFilterBtn.addEventListener('click', () => {
+    document.getElementById('rank-filter-btn').addEventListener('click', () => {
         const startDate = new Date(rankStartYear.value, rankStartMonth.value, 1);
         const endDate = new Date(rankEndYear.value, parseInt(rankEndMonth.value) + 1, 0);
         renderTopClientes(startDate, endDate);
     });
-    const rankShowAllBtn = document.getElementById('rank-show-all-btn');
-    if (rankShowAllBtn) rankShowAllBtn.addEventListener('click', () => renderTopClientes());
+    document.getElementById('rank-show-all-btn').addEventListener('click', () => renderTopClientes());
 
-    const tabs = {
-        summary: document.getElementById('dashboard-tab-summary'),
-        cartera: document.getElementById('dashboard-tab-cartera'),
-        clientes: document.getElementById('dashboard-tab-clientes'),
-        transferencias: document.getElementById('dashboard-tab-transferencias')
-    };
-    const views = {
-        summary: document.getElementById('dashboard-summary-view'),
-        cartera: document.getElementById('dashboard-cartera-view'),
-        clientes: document.getElementById('dashboard-clientes-view'),
-        transferencias: document.getElementById('dashboard-transferencias-view')
-    };
 
-    Object.keys(tabs).forEach(key => {
-        if (tabs[key]) {
-            tabs[key].addEventListener('click', () => {
-                Object.values(tabs).forEach(t => t?.classList.remove('active'));
-                Object.values(views).forEach(v => v?.classList.add('hidden'));
-                tabs[key].classList.add('active');
-                if (views[key]) views[key].classList.remove('hidden');
-                if (key === 'transferencias') { renderConfirmedTransfers(); }
-            });
-        }
+    const summaryTab = document.getElementById('dashboard-tab-summary');
+    const carteraTab = document.getElementById('dashboard-tab-cartera');
+    const clientesTab = document.getElementById('dashboard-tab-clientes');
+    const summaryView = document.getElementById('dashboard-summary-view');
+    const carteraView = document.getElementById('dashboard-cartera-view');
+    const clientesView = document.getElementById('dashboard-clientes-view');
+
+    summaryTab.addEventListener('click', () => {
+        summaryTab.classList.add('active');
+        carteraTab.classList.remove('active');
+        clientesTab.classList.remove('active');
+        summaryView.classList.remove('hidden');
+        carteraView.classList.add('hidden');
+        clientesView.classList.add('hidden');
+    });
+    carteraTab.addEventListener('click', () => {
+        carteraTab.classList.add('active');
+        summaryTab.classList.remove('active');
+        clientesTab.classList.remove('active');
+        carteraView.classList.remove('hidden');
+        summaryView.classList.add('hidden');
+        clientesView.classList.add('hidden');
+    });
+    clientesTab.addEventListener('click', () => {
+        clientesTab.classList.add('active');
+        summaryTab.classList.remove('active');
+        carteraTab.classList.remove('active');
+        clientesView.classList.remove('hidden');
+        summaryView.classList.add('hidden');
+        carteraView.classList.add('hidden');
     });
 
-    populateDateFilters('filter-transfer');
-    const transferMonthFilter = document.getElementById('filter-transfer-month');
-    const transferYearFilter = document.getElementById('filter-transfer-year');
-    if (transferMonthFilter) transferMonthFilter.addEventListener('change', renderConfirmedTransfers);
-    if (transferYearFilter) transferYearFilter.addEventListener('change', renderConfirmedTransfers);
+    document.getElementById('download-report-btn').addEventListener('click', showReportDateRangeModal);
 
-    const downloadBtn = document.getElementById('download-report-btn');
-    if (downloadBtn) downloadBtn.addEventListener('click', showReportDateRangeModal);
-    const transferBtn = document.getElementById('show-transfer-modal-btn');
-    if (transferBtn) transferBtn.addEventListener('click', showTransferModal);
-
-    renderPendingTransfers();
     updateDashboardView();
-    renderCartera(); // Renderiza la vista por defecto (Detalle)
+    renderCartera();
     renderTopClientes();
 }
 
-document.addEventListener('click', function (event) {
-    // Verificamos si el elemento clickeado es nuestro botón
-    if (event.target && event.target.id === 'export-pagos-btn') {
-        event.preventDefault();
-        showExportPagosModal();
-    }
-});
-
-// Dentro de showDashboardModal, después de inyectar el HTML:
-const exportPagosBtn = document.getElementById('export-pagos-btn');
-if (exportPagosBtn) {
-    exportPagosBtn.addEventListener('click', showExportPagosModal);
-}
-
 /**
- * Carga y muestra el historial de transferencias confirmadas,
- * aplicando los filtros de mes y año seleccionados.
- */
-function renderConfirmedTransfers() {
-    const listContainer = document.getElementById('transferencias-list');
-    const monthFilter = document.getElementById('filter-transfer-month');
-    const yearFilter = document.getElementById('filter-transfer-year');
-
-    if (!listContainer || !monthFilter || !yearFilter) {
-        console.warn("Elementos para renderizar transferencias confirmadas no encontrados.");
-        return;
-    }
-
-    const selectedMonth = monthFilter.value;
-    const selectedYear = yearFilter.value;
-
-    if (unsubscribeConfirmedTransfers) {
-        unsubscribeConfirmedTransfers();
-        unsubscribeConfirmedTransfers = null;
-    }
-
-    listContainer.innerHTML = '<p class="text-gray-500">Cargando historial...</p>';
-
-    let q = query(collection(db, "transferencias"), where("estado", "==", "confirmada"));
-
-    if (selectedYear !== 'all') {
-        const yearNum = parseInt(selectedYear);
-        let startDate, endDate;
-        if (selectedMonth !== 'all') {
-            const monthNum = parseInt(selectedMonth);
-            startDate = new Date(yearNum, monthNum, 1);
-            endDate = new Date(yearNum, monthNum + 1, 1); // Primer día del mes siguiente
-        } else {
-            startDate = new Date(yearNum, 0, 1);
-            endDate = new Date(yearNum + 1, 0, 1);
-        }
-        // Usar 'confirmadoEn' para filtrar por fecha de confirmación
-        q = query(q, where("confirmadoEn", ">=", startDate), where("confirmadoEn", "<", endDate));
-    }
-
-    q = query(q, orderBy("confirmadoEn", "desc"));
-
-    unsubscribeConfirmedTransfers = onSnapshot(q, (snapshot) => {
-        if (snapshot.empty) {
-            listContainer.innerHTML = '<p class="text-center text-gray-500 py-4">No se encontraron transferencias confirmadas para este período.</p>';
-            return;
-        }
-
-        listContainer.innerHTML = ''; // Limpiar lista
-        snapshot.docs.forEach(doc => {
-            const transfer = doc.data();
-            const el = document.createElement('div');
-            // Añadido: Clases para un mejor diseño de tarjeta
-            el.className = 'bg-white p-4 rounded-lg shadow border border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-4 items-start';
-
-            // --- INICIO: EXTRACCIÓN Y FORMATEO DE DATOS ADICIONALES ---
-            let fechaConfirmacionStr = 'N/A';
-            let horaConfirmacionStr = '';
-            if (transfer.confirmadoEn && transfer.confirmadoEn.seconds) {
-                const confirmDate = new Date(transfer.confirmadoEn.seconds * 1000);
-                fechaConfirmacionStr = confirmDate.toLocaleDateString();
-                horaConfirmacionStr = confirmDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            }
-
-            let fechaRegistroStr = 'N/A';
-            if (transfer.fechaRegistro && transfer.fechaRegistro.seconds) {
-                fechaRegistroStr = new Date(transfer.fechaRegistro.seconds * 1000).toLocaleDateString();
-            }
-            // Asegurarse de mostrar la fecha de transferencia si existe
-            const fechaTransferenciaStr = transfer.fechaTransferencia ? new Date(transfer.fechaTransferencia + 'T00:00:00').toLocaleDateString() : fechaRegistroStr;
-
-
-            // Buscar nombres de usuario (asegúrate que 'allUsers' esté disponible globalmente)
-            const registradoPorNombre = allUsers.find(u => u.id === transfer.registradoPor)?.nombre || 'Desconocido';
-            const confirmadoPorNombre = allUsers.find(u => u.id === transfer.confirmadoPor)?.nombre || 'Desconocido';
-            // --- FIN: EXTRACCIÓN Y FORMATEO ---
-
-            // --- HTML de la tarjeta mejorado ---
-            el.innerHTML = `
-                <div class="md:col-span-1 space-y-1">
-                    <p class="font-bold text-xl text-indigo-700">${formatCurrency(transfer.monto)}</p>
-                    <p class="text-sm font-semibold text-gray-800">
-                        <span class="text-red-600">${transfer.cuentaOrigen}</span> &rarr; <span class="text-green-600">${transfer.cuentaDestino}</span>
-                    </p>
-                     <p class="text-xs text-gray-500">Fecha Transferencia: ${fechaTransferenciaStr}</p>
-                    ${transfer.referencia ? `<p class="text-xs text-gray-600 italic break-all">Ref: ${transfer.referencia}</p>` : ''}
-                </div>
-
-                <div class="md:col-span-1 text-xs text-gray-600 border-t md:border-t-0 md:border-l md:pl-4 pt-2 md:pt-0">
-                    <p class="font-semibold text-gray-800">Registrado:</p>
-                    <p>Por: ${registradoPorNombre}</p>
-                    <p>Fecha: ${fechaRegistroStr}</p>
-                </div>
-
-                <div class="md:col-span-1 text-xs text-gray-600 border-t md:border-t-0 md:border-l md:pl-4 pt-2 md:pt-0">
-                    <p class="font-semibold text-gray-800">Confirmado:</p>
-                    <p>Por: ${confirmadoPorNombre}</p>
-                    <p>Fecha: ${fechaConfirmacionStr}</p>
-                    <p>Hora: ${horaConfirmacionStr}</p>
-                </div>
-            `;
-            listContainer.appendChild(el);
-        });
-
-    }, (error) => {
-        console.error("Error escuchando transferencias confirmadas:", error);
-        listContainer.innerHTML = '<p class="text-red-500 text-center">Error al cargar el historial de transferencias.</p>';
-    });
-}
-
-// NUEVA FUNCIÓN en app.js
-function showTransferModal() {
-    const modalContentWrapper = document.getElementById('modal-content-wrapper');
-
-    // Opciones para origen y destino (excluyendo la seleccionada)
-    const origenOptions = METODOS_DE_PAGO.map(m => `<option value="${m}">${m}</option>`).join('');
-
-    modalContentWrapper.innerHTML = `
-        <div class="bg-white rounded-lg p-6 shadow-xl max-w-md w-full mx-auto text-left">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-semibold">Registrar Transferencia Interna</h2>
-                <button id="close-transfer-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
-            </div>
-            <form id="transfer-form" class="space-y-4">
-                <div>
-                    <label for="transfer-origen" class="block text-sm font-medium">Cuenta Origen</label>
-                    <select id="transfer-origen" class="w-full p-2 border rounded-lg mt-1 bg-white" required>
-                        <option value="">-- Seleccionar --</option>
-                        ${origenOptions}
-                    </select>
-                </div>
-                <div>
-                    <label for="transfer-destino" class="block text-sm font-medium">Cuenta Destino</label>
-                    <select id="transfer-destino" class="w-full p-2 border rounded-lg mt-1 bg-white" required>
-                        <option value="">-- Seleccionar --</option>
-                    </select>
-                </div>
-                <div>
-                    <label for="transfer-fecha" class="block text-sm font-medium">Fecha de Transferencia</label>
-                    <input type="date" id="transfer-fecha" class="w-full p-2 border rounded-lg mt-1" value="${new Date().toISOString().split('T')[0]}" required>
-                </div>
-                 <div>
-                    <label for="transfer-amount" class="block text-sm font-medium">Monto (COP)</label>
-                    <input type="text" id="transfer-amount" inputmode="numeric" class="w-full p-2 border rounded-lg mt-1" required>
-                </div>
-                 <div>
-                    <label for="transfer-reference" class="block text-sm font-medium">Referencia (Opcional)</label>
-                    <input type="text" id="transfer-reference" class="w-full p-2 border rounded-lg mt-1">
-                </div>
-                <button type="submit" class="w-full bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-700">Registrar Transferencia</button>
-            </form>
-        </div>
-    `;
-
-    document.getElementById('modal').classList.remove('hidden');
-    document.getElementById('close-transfer-modal').addEventListener('click', hideModal);
-
-    const origenSelect = document.getElementById('transfer-origen');
-    const destinoSelect = document.getElementById('transfer-destino');
-    const amountInput = document.getElementById('transfer-amount');
-
-    // Llenar dinámicamente las opciones de destino excluyendo el origen
-    origenSelect.addEventListener('change', () => {
-        const origen = origenSelect.value;
-        destinoSelect.innerHTML = '<option value="">-- Seleccionar --</option>'; // Limpiar
-        METODOS_DE_PAGO.forEach(m => {
-            if (m !== origen) {
-                destinoSelect.innerHTML += `<option value="${m}">${m}</option>`;
-            }
-        });
-    });
-
-    amountInput.addEventListener('focus', (e) => unformatCurrencyInput(e.target));
-    amountInput.addEventListener('blur', (e) => formatCurrencyInput(e.target));
-
-    document.getElementById('transfer-form').addEventListener('submit', handleTransferSubmit);
-}
-
-async function handleTransferSubmit(e) {
-    e.preventDefault();
-    const origen = document.getElementById('transfer-origen').value;
-    const destino = document.getElementById('transfer-destino').value;
-    const amount = unformatCurrency(document.getElementById('transfer-amount').value);
-    const reference = document.getElementById('transfer-reference').value;
-    // --- LÍNEA AÑADIDA ---
-    const fechaTransferencia = document.getElementById('transfer-fecha').value;
-
-    if (!origen || !destino || origen === destino) { /* ... (Validaciones sin cambios) ... */ }
-    if (isNaN(amount) || amount <= 0) { /* ... (Validaciones sin cambios) ... */ }
-    // --- NUEVA VALIDACIÓN ---
-    if (!fechaTransferencia) {
-        showModalMessage("Debes seleccionar la fecha de la transferencia.");
-        return;
-    }
-
-    showModalMessage("Registrando transferencia...", true);
-    try {
-        const recordTransfer = httpsCallable(functions, 'recordTransfer');
-        await recordTransfer({
-            cuentaOrigen: origen,
-            cuentaDestino: destino,
-            monto: amount,
-            referencia: reference,
-            fechaTransferencia: fechaTransferencia // <-- Enviar la fecha
-        });
-        hideModal();
-        showTemporaryMessage("Transferencia registrada. Pendiente de confirmación.", "success");
-    } catch (error) {
-        console.error("Error al registrar transferencia:", error);
-        showModalMessage(`Error: ${error.message}`);
-    }
-}
-
-
-function renderPendingTransfers() {
-    const container = document.getElementById('pending-transfers-list');
-    const section = document.getElementById('pending-transfers-section');
-
-    // Detener cualquier listener anterior para evitar duplicados
-    if (unsubscribePendingTransfers) {
-        unsubscribePendingTransfers();
-        unsubscribePendingTransfers = null;
-    }
-
-    if (!container || !section || !currentUserData || currentUserData.role !== 'admin') {
-        section?.classList.add('hidden');
-        return; // Salir si no es admin o los elementos no existen
-    }
-
-    const q = query(collection(db, "transferencias"), where("estado", "==", "pendiente"));
-
-    // Guardamos la función para detener el listener cuando ya no sea necesario
-    unsubscribePendingTransfers = onSnapshot(q, (snapshot) => {
-        const pendingTransfers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        if (pendingTransfers.length === 0) {
-            container.innerHTML = '<p class="text-sm text-gray-500">No hay transferencias pendientes.</p>';
-            section.classList.add('hidden'); // Oculta si no hay pendientes
-            return;
-        }
-
-        section.classList.remove('hidden'); // Muestra la sección
-        container.innerHTML = ''; // Limpia la lista
-
-        pendingTransfers.forEach(transfer => {
-            const el = document.createElement('div');
-            el.className = 'border p-3 rounded-lg flex justify-between items-center';
-
-            const canConfirm = currentUser.uid !== transfer.registradoPor;
-            const confirmButton = `
-                <button
-                    data-transfer-id="${transfer.id}"
-                    class="confirm-transfer-btn bg-green-500 text-white text-xs px-3 py-1 rounded hover:bg-green-600 ${!canConfirm ? 'opacity-50 cursor-not-allowed' : ''}"
-                    ${!canConfirm ? 'disabled title="Otro administrador debe confirmar esta transferencia."' : ''}>
-                    Confirmar
-                </button>
-            `;
-            // Corrección: Asegurarse de que 'transfer.fecha' existe antes de acceder a 'seconds'
-            const fechaRegistro = transfer.fechaRegistro ? new Date(transfer.fechaRegistro.seconds * 1000).toLocaleDateString() : 'Fecha no disponible';
-            const fechaMostrar = transfer.fechaTransferencia || fechaRegistro;
-
-
-            el.innerHTML = `
-                <div>
-                    <p class="font-semibold">${formatCurrency(transfer.monto)}</p>
-                    <p class="text-sm text-gray-600">${transfer.cuentaOrigen} &rarr; ${transfer.cuentaDestino}</p>
-                    <p class="text-xs text-gray-400">Fecha Transferencia: ${fechaMostrar}</p>
-                    ${transfer.referencia ? `<p class="text-xs text-gray-500">Ref: ${transfer.referencia}</p>` : ''}
-                </div>
-                ${confirmButton}
-            `;
-            container.appendChild(el);
-        });
-
-    }, (error) => { // Manejo de errores del listener
-        console.error("Error en el listener de transferencias pendientes:", error);
-        container.innerHTML = '<p class="text-sm text-red-500">Error al cargar transferencias.</p>';
-        section.classList.remove('hidden');
-    });
-
-    // Usar Delegación de Eventos para los botones de confirmar
-    container.removeEventListener('click', handleConfirmTransferClick); // Limpiar listener previo
-    container.addEventListener('click', handleConfirmTransferClick);
-}
-
-// Asegúrate de que esta función auxiliar también exista
-function handleConfirmTransferClick(e) {
-    const confirmButton = e.target.closest('.confirm-transfer-btn:not([disabled])');
-    if (confirmButton) {
-        handleConfirmTransfer(e); // Llama a la función que ya tenías
-    }
-}
-
-
-async function handleConfirmTransfer(e) {
-    const transferId = e.target.dataset.transferId;
-    if (!transferId) return;
-
-    if (!confirm("¿Estás seguro de que quieres confirmar esta transferencia? Esta acción registrará los gastos correspondientes.")) {
-        return;
-    }
-
-    showModalMessage("Confirmando transferencia y registrando gastos...", true);
-    try {
-        const confirmTransfer = httpsCallable(functions, 'confirmTransfer');
-        await confirmTransfer({ transferId: transferId });
-        hideModal();
-        showTemporaryMessage("¡Transferencia confirmada y gastos registrados!", "success");
-        // El dashboard se actualizará automáticamente porque los gastos cambiaron
-    } catch (error) {
-        console.error("Error al confirmar transferencia:", error);
-        showModalMessage(`Error: ${error.message}`);
-    }
-}
-
-/**
- * --- VERSIÓN FINAL MIXTA: FLUJO DE CAJA + CARTERA DEL DÍA ---
- * Muestra los ingresos confirmados del día Y la cartera generada por las ventas del día.
+ * --- VERSIÓN CORREGIDA FINAL CON CÁLCULO DE REMISIONES DIARIAS ---
+ * Calcula y muestra el resumen financiero. "Ventas del Día" ahora suma
+ * el valor total de las remisiones creadas en el día.
  */
 async function updateDashboard(year, month) {
-    // --- 1. Carga de Saldos Iniciales (Sin cambios) ---
+    // Cargar saldos iniciales si la variable global está vacía.
     if (Object.keys(initialBalances).length === 0) {
         const balanceDocRef = doc(db, "saldosIniciales", "current");
         const balanceDoc = await getDoc(balanceDocRef);
@@ -5291,138 +4534,56 @@ async function updateDashboard(year, month) {
         }
     }
 
-    // --- 2. Cálculos Mensuales Generales (Sin cambios) ---
-    const salesThisMonth = allRemisiones
-        .flatMap(r => Array.isArray(r.payments) ? r.payments : [])
-        .filter(p => { const d = new Date(p.date + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year; })
-        .reduce((sum, p) => sum + p.amount, 0);
-
-    const expensesThisMonth = allGastos.filter(g => { const d = new Date(g.fecha + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year; }).reduce((sum, g) => sum + g.valorTotal, 0);
-
-    const carteraThisMonth = allRemisiones.filter(r => { const d = new Date(r.fechaRecibido + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year && r.estado !== 'Anulada'; })
-        .reduce((sum, r) => {
-            const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
-            const totalPagado = paymentsArray.reduce((s, p) => s + p.amount, 0);
-            const saldo = r.valorTotal - totalPagado;
-            return sum + (saldo > 0 ? saldo : 0);
-        }, 0);
-
+    const salesThisMonth = allRemisiones.flatMap(r => r.payments || []).filter(p => { const d = new Date(p.date); return d.getMonth() === month && d.getFullYear() === year; }).reduce((sum, p) => sum + p.amount, 0);
+    const expensesThisMonth = allGastos.filter(g => { const d = new Date(g.fecha); return d.getMonth() === month && d.getFullYear() === year; }).reduce((sum, g) => sum + g.valorTotal, 0);
     document.getElementById('summary-sales').textContent = formatCurrency(salesThisMonth);
     document.getElementById('summary-expenses').textContent = formatCurrency(expensesThisMonth);
     document.getElementById('summary-profit').textContent = formatCurrency(salesThisMonth - expensesThisMonth);
+    const carteraThisMonth = allRemisiones.filter(r => { const d = new Date(r.fechaRecibido); return d.getMonth() === month && d.getFullYear() === year && r.estado !== 'Anulada'; }).reduce((sum, r) => { const totalPagado = (r.payments || []).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
     document.getElementById('summary-cartera').textContent = formatCurrency(carteraThisMonth);
-
-    const totalCartera = allRemisiones.filter(r => r.estado !== 'Anulada')
-        .reduce((sum, r) => {
-            const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
-            const totalPagado = paymentsArray.reduce((s, p) => s + p.amount, 0);
-            const saldo = r.valorTotal - totalPagado;
-            return sum + (saldo > 0 ? saldo : 0);
-        }, 0);
+    const totalCartera = allRemisiones.filter(r => r.estado !== 'Anulada').reduce((sum, r) => { const totalPagado = (r.payments || []).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
     document.getElementById('summary-cartera-total').textContent = formatCurrency(totalCartera);
 
-    // --- 3. Cálculo de Saldos Totales de Cuentas (Sin cambios) ---
-    const accountBalances = {};
-    METODOS_DE_PAGO.forEach(metodo => { accountBalances[metodo] = initialBalances[metodo] || 0; });
+    const accountBalances = {
+        Efectivo: initialBalances.Efectivo || 0,
+        Nequi: initialBalances.Nequi || 0,
+        Davivienda: initialBalances.Davivienda || 0,
+        Bancolombia: initialBalances.Bancolombia || 0,
+        Consignacion: initialBalances.Consignacion || 0
+    };
 
-    allRemisiones.forEach(r => {
-        const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
-        paymentsArray.forEach(p => {
-            if (accountBalances[p.method] !== undefined) {
-                accountBalances[p.method] += p.amount;
-            }
-        });
-    });
-
+    allRemisiones.forEach(r => (r.payments || []).forEach(p => {
+        if (accountBalances[p.method] !== undefined) {
+            accountBalances[p.method] += p.amount;
+        }
+    }));
     allGastos.forEach(g => {
         if (accountBalances[g.fuentePago] !== undefined) {
             accountBalances[g.fuentePago] -= g.valorTotal;
         }
     });
 
-    METODOS_DE_PAGO.forEach(metodo => {
-        const elementId = `summary-${metodo.toLowerCase()}`;
-        const element = document.getElementById(elementId);
-        if (element) { element.textContent = formatCurrency(accountBalances[metodo]); }
-    });
+    document.getElementById('summary-efectivo').textContent = formatCurrency(accountBalances.Efectivo);
+    document.getElementById('summary-nequi').textContent = formatCurrency(accountBalances.Nequi);
+    document.getElementById('summary-davivienda').textContent = formatCurrency(accountBalances.Davivienda);
+    document.getElementById('summary-bancolombia').textContent = formatCurrency(accountBalances.Bancolombia);
+    document.getElementById('summary-consignacion').textContent = formatCurrency(accountBalances.Consignacion);
 
-    // --- 4. LÓGICA MIXTA: INGRESO CONFIRMADO + CARTERA DEL DÍA ---
+    // --- INICIO DE LA NUEVA LÓGICA ---
     const now = new Date();
     const localYear = now.getFullYear();
     const localMonth = (now.getMonth() + 1).toString().padStart(2, '0');
     const localDay = now.getDate().toString().padStart(2, '0');
     const today = `${localYear}-${localMonth}-${localDay}`;
 
-    // A. Calcular Ingresos Reales Confirmados (De TODAS las remisiones, pagadas hoy)
-    const breakdown = {};
-    METODOS_DE_PAGO.forEach(m => breakdown[m] = 0);
-    let totalConfirmedToday = 0;
+    // Suma el 'valorTotal' de las remisiones creadas hoy que no estén anuladas.
+    const salesToday = allRemisiones
+        .filter(r => r.fechaRecibido === today && r.estado !== 'Anulada')
+        .reduce((sum, r) => sum + r.valorTotal, 0);
 
-    allRemisiones.forEach(r => {
-        if (r.estado === 'Anulada') return;
-        const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
-        paymentsArray.forEach(p => {
-            // CONDICIÓN: Fecha de hoy Y estado CONFIRMADO
-            if (p.date === today && p.status === 'confirmado') {
-                if (breakdown[p.method] !== undefined) {
-                    breakdown[p.method] += p.amount;
-                    totalConfirmedToday += p.amount;
-                }
-            }
-        });
-    });
+    document.getElementById('summary-daily-sales').textContent = formatCurrency(salesToday);
+    // --- FIN DE LA NUEVA LÓGICA ---
 
-    // B. Calcular Cartera Generada HOY (Deuda nueva creada hoy)
-    // Solo miramos las remisiones creadas HOY
-    const todayRemisiones = allRemisiones.filter(r => r.fechaRecibido === today && r.estado !== 'Anulada');
-    let carteraToday = 0;
-
-    todayRemisiones.forEach(r => {
-        const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
-        // Cuánto se ha pagado (confirmado) de ESTA remisión hoy
-        const paidConfirmedToday = paymentsArray
-            .filter(p => p.date === today && p.status === 'confirmado')
-            .reduce((sum, p) => sum + p.amount, 0);
-
-        // El resto es crédito otorgado hoy
-        const saldo = r.valorTotal - paidConfirmedToday;
-        if (saldo > 0) carteraToday += saldo;
-    });
-
-    // C. Actualizar UI
-    document.getElementById('summary-daily-sales').textContent = formatCurrency(totalConfirmedToday);
-
-    const breakdownContainer = document.getElementById('daily-sales-breakdown-cards');
-    if (breakdownContainer) {
-        let cardsHTML = '';
-
-        // Tarjetas de Métodos de Pago (Ingreso Real)
-        METODOS_DE_PAGO.forEach(metodo => {
-            const valor = breakdown[metodo] || 0;
-            cardsHTML += `
-                <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                    <div class="text-xs font-semibold text-gray-500 uppercase">${metodo}</div>
-                    <div class="text-lg font-bold text-gray-800">${formatCurrency(valor)}</div>
-                </div>
-            `;
-        });
-
-        // Tarjeta de Cartera (Deuda generada hoy)
-        cardsHTML += `
-            <div class="bg-red-50 p-3 rounded-lg border border-red-200">
-                <div class="text-xs font-semibold text-red-800 uppercase">EN CARTERA (HOY)</div>
-                <div class="text-lg font-bold text-red-700">${formatCurrency(carteraToday)}</div>
-            </div>
-        `;
-
-        if (totalConfirmedToday === 0 && carteraToday === 0) {
-            cardsHTML = '<div class="col-span-full text-center text-sm text-gray-500 italic py-2">No hay movimientos hoy.</div>';
-        }
-
-        breakdownContainer.innerHTML = cardsHTML;
-    }
-
-    // --- 5. Gráfica (Sin cambios) ---
     const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
     const labels = [];
     const salesData = [];
@@ -5433,25 +4594,36 @@ async function updateDashboard(year, month) {
         const m = d.getMonth();
         const y = d.getFullYear();
         labels.push(monthNames[m]);
-
-        const monthlySales = allRemisiones
-            .flatMap(r => Array.isArray(r.payments) ? r.payments : [])
-            .filter(p => { const pDate = new Date(p.date + 'T00:00:00'); return pDate.getMonth() === m && pDate.getFullYear() === y; })
-            .reduce((sum, p) => sum + p.amount, 0);
-        const monthlyExpenses = allGastos.filter(g => { const gDate = new Date(g.fecha + 'T00:00:00'); return gDate.getMonth() === m && gDate.getFullYear() === y; }).reduce((sum, g) => sum + g.valorTotal, 0);
-
+        const monthlySales = allRemisiones.flatMap(r => r.payments || []).filter(p => { const pDate = new Date(p.date); return pDate.getMonth() === m && pDate.getFullYear() === y; }).reduce((sum, p) => sum + p.amount, 0);
+        const monthlyExpenses = allGastos.filter(g => { const gDate = new Date(g.fecha); return gDate.getMonth() === m && gDate.getFullYear() === y; }).reduce((sum, g) => sum + g.valorTotal, 0);
         salesData.push(monthlySales);
         expensesData.push(monthlyExpenses);
     }
     const ctx = document.getElementById('profitLossChart').getContext('2d');
-    if (profitLossChart) { profitLossChart.destroy(); }
+    if (profitLossChart) {
+        profitLossChart.destroy();
+    }
     profitLossChart = new Chart(ctx, {
         type: 'bar',
         data: {
             labels,
-            datasets: [{ label: 'Ventas', data: salesData, backgroundColor: 'rgba(75, 192, 192, 0.6)' }, { label: 'Gastos', data: expensesData, backgroundColor: 'rgba(255, 99, 132, 0.6)' }]
+            datasets: [{
+                label: 'Ventas',
+                data: salesData,
+                backgroundColor: 'rgba(75, 192, 192, 0.6)'
+            }, {
+                label: 'Gastos',
+                data: expensesData,
+                backgroundColor: 'rgba(255, 99, 132, 0.6)'
+            }]
         },
-        options: { scales: { y: { beginAtZero: true } } }
+        options: {
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
     });
 }
 
@@ -5468,17 +4640,13 @@ function calculateOverdueDays(dateString) {
 function renderCartera() {
     const carteraListEl = document.getElementById('cartera-list');
     const carteraTotalEl = document.getElementById('cartera-total');
-
-    // Asegurar que 'payments' sea un array antes de filtrar
     const pendingRemisiones = allRemisiones.filter(r => {
         if (r.estado === 'Anulada') return false;
-        const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
-        const totalPagado = paymentsArray.reduce((sum, p) => sum + p.amount, 0);
-        // Usar un pequeño margen (e.g., 0.01) para evitar problemas con decimales flotantes
+        const totalPagado = (r.payments || []).reduce((sum, p) => sum + p.amount, 0);
         return r.valorTotal - totalPagado > 0.01;
     }).sort((a, b) => new Date(a.fechaRecibido) - new Date(b.fechaRecibido));
 
-    carteraListEl.innerHTML = ''; // Limpiar contenido previo
+    carteraListEl.innerHTML = ''; // Clear previous content
 
     if (pendingRemisiones.length === 0) {
         carteraListEl.innerHTML = '<p class="text-center text-gray-500 py-8">¡No hay cartera pendiente!</p>';
@@ -5488,9 +4656,7 @@ function renderCartera() {
 
     let totalCartera = 0;
     pendingRemisiones.forEach(r => {
-        // Asegurar array para cálculo dentro del bucle
-        const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
-        const totalPagado = paymentsArray.reduce((sum, p) => sum + p.amount, 0);
+        const totalPagado = (r.payments || []).reduce((sum, p) => sum + p.amount, 0);
         const saldoPendiente = r.valorTotal - totalPagado;
         totalCartera += saldoPendiente;
         const overdueDays = calculateOverdueDays(r.fechaRecibido);
@@ -5499,142 +4665,27 @@ function renderCartera() {
         if (overdueDays > 60) overdueColor = 'text-red-600';
 
         const card = document.createElement('div');
-        // Se añade `data-remision-json` al div principal para la delegación de eventos
         card.className = 'bg-white p-4 rounded-lg shadow-md border border-gray-200';
-        card.dataset.remisionJson = JSON.stringify(r); // Guardar datos de remisión aquí
-
         card.innerHTML = `
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-                <div class="mb-2 sm:mb-0 flex-grow">
-                    <p class="font-bold text-gray-800">${r.clienteNombre}</p>
-                    <p class="text-sm text-gray-500">Remisión N° <span class="font-mono">${r.numeroRemision}</span> &bull; Recibido: ${r.fechaRecibido}</p>
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                    <div class="mb-2 sm:mb-0">
+                        <p class="font-bold text-gray-800">${r.clienteNombre}</p>
+                        <p class="text-sm text-gray-500">Remisión N° <span class="font-mono">${r.numeroRemision}</span> &bull; Recibido: ${r.fechaRecibido}</p>
+                    </div>
+                    <div class="text-left sm:text-right w-full sm:w-auto">
+                        <p class="text-sm text-gray-500">Saldo Pendiente</p>
+                        <p class="font-bold text-xl text-red-600">${formatCurrency(saldoPendiente)}</p>
+                    </div>
                 </div>
-                <div class="text-left sm:text-right w-full sm:w-auto flex-shrink-0"> 
-                    <p class="text-sm text-gray-500">Saldo Pendiente</p>
-                    <p class="font-bold text-xl text-red-600">${formatCurrency(saldoPendiente)}</p>
+                <div class="mt-2 pt-2 border-t border-gray-200 text-sm flex justify-between items-center">
+                    <p><span class="font-semibold">Valor Total:</span> ${formatCurrency(r.valorTotal)}</p>
+                    <p class="${overdueColor} font-semibold">${overdueDays} días de vencido</p>
                 </div>
-            </div>
-            <div class="mt-2 pt-2 border-t border-gray-200 text-sm flex justify-between items-center">
-                <p><span class="font-semibold">Valor Total:</span> ${formatCurrency(r.valorTotal)}</p>
-                <p class="${overdueColor} font-semibold">${overdueDays} días de vencido</p>
-                <button class="cartera-payment-btn bg-purple-600 text-white font-bold py-1 px-3 rounded-lg hover:bg-purple-700 text-xs">
-                    Gestionar Pagos
-                </button>
-            </div>
-        `;
+            `;
         carteraListEl.appendChild(card);
     });
 
     carteraTotalEl.innerHTML = `Total Cartera: <span class="text-red-600">${formatCurrency(totalCartera)}</span>`;
-
-    // --- INICIO: Listener de eventos delegado para los botones ---
-    // Eliminar listener previo si existe para evitar duplicados
-    const oldListener = carteraListEl._paymentClickListener;
-    if (oldListener) {
-        carteraListEl.removeEventListener('click', oldListener);
-    }
-
-    // Crear la nueva función listener
-    const newListener = (event) => {
-        const paymentButton = event.target.closest('.cartera-payment-btn');
-        if (paymentButton) {
-            const cardElement = paymentButton.closest('[data-remision-json]');
-            if (cardElement && cardElement.dataset.remisionJson) {
-                try {
-                    const remisionData = JSON.parse(cardElement.dataset.remisionJson);
-                    // Asegurar que payments sea un array antes de llamar al modal
-                    if (!Array.isArray(remisionData.payments)) {
-                        remisionData.payments = [];
-                    }
-                    showPaymentModal(remisionData);
-                } catch (e) {
-                    console.error("Error al parsear datos de remisión desde el botón de cartera:", e);
-                }
-            }
-        }
-    };
-
-    // Añadir el nuevo listener y guardarlo para poder removerlo después
-    carteraListEl.addEventListener('click', newListener);
-    carteraListEl._paymentClickListener = newListener; // Guardar referencia
-    // --- FIN: Listener de eventos ---
-}
-
-/**
- * Renderiza la lista de cartera agrupada por cliente.
- * VERSIÓN AJUSTADA: Muestra cantidad de remisiones (sin números) y deuda total.
- */
-function renderCarteraClientes() {
-    const container = document.getElementById('cartera-clientes-list');
-    const totalEl = document.getElementById('cartera-clientes-total');
-    if (!container || !totalEl) return;
-
-    // 1. Filtrar todas las remisiones con saldo pendiente
-    const pendingRemisiones = allRemisiones.filter(r => {
-        if (r.estado === 'Anulada') return false;
-        const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
-        const totalPagado = paymentsArray.reduce((sum, p) => sum + p.amount, 0);
-        return r.valorTotal - totalPagado > 0.01;
-    });
-
-    if (pendingRemisiones.length === 0) {
-        container.innerHTML = '<p class="text-center text-gray-500 py-8">¡No hay cartera pendiente!</p>';
-        totalEl.innerHTML = '';
-        return;
-    }
-
-    // 2. Agrupar la deuda por Cliente
-    const carteraPorCliente = {};
-    let granTotal = 0;
-
-    pendingRemisiones.forEach(r => {
-        const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
-        const totalPagado = paymentsArray.reduce((sum, p) => sum + p.amount, 0);
-        const saldo = r.valorTotal - totalPagado;
-
-        const clienteId = r.idCliente || 'DESCONOCIDO';
-
-        if (!carteraPorCliente[clienteId]) {
-            carteraPorCliente[clienteId] = {
-                nombre: r.clienteNombre || 'Cliente Desconocido',
-                telefono: r.clienteTelefono || '',
-                remisionesCount: 0, // Reiniciamos el contador
-                totalDeuda: 0
-            };
-        }
-
-        carteraPorCliente[clienteId].totalDeuda += saldo;
-        carteraPorCliente[clienteId].remisionesCount += 1; // Sumamos 1 por cada remisión pendiente
-        granTotal += saldo;
-    });
-
-    // 3. Convertir a array y ordenar por deuda descendente
-    const clientesOrdenados = Object.values(carteraPorCliente).sort((a, b) => b.totalDeuda - a.totalDeuda);
-
-    // 4. Renderizar
-    container.innerHTML = '';
-    clientesOrdenados.forEach(c => {
-        const card = document.createElement('div');
-        card.className = 'bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4';
-
-        // Ajuste gramatical simple (singular/plural)
-        const labelRemisiones = c.remisionesCount === 1 ? 'remisión pendiente' : 'remisiones pendientes';
-
-        card.innerHTML = `
-            <div>
-                <p class="font-bold text-lg text-gray-800">${c.nombre}</p>
-                <p class="text-sm text-gray-600 font-medium">${c.remisionesCount} ${labelRemisiones}</p>
-                ${c.telefono && c.telefono !== 'N/A' ? `<p class="text-xs text-gray-400 mt-1">Tel: ${c.telefono}</p>` : ''}
-            </div>
-            <div class="text-left sm:text-right w-full sm:w-auto border-t sm:border-t-0 pt-2 sm:pt-0 mt-2 sm:mt-0">
-                <p class="text-xs text-gray-500 uppercase tracking-wider">Deuda Total</p>
-                <p class="font-bold text-xl text-red-600">${formatCurrency(c.totalDeuda)}</p>
-            </div>
-        `;
-        container.appendChild(card);
-    });
-
-    totalEl.innerHTML = `Total Cartera: <span class="text-red-600">${formatCurrency(granTotal)}</span>`;
 }
 
 /**
@@ -5825,6 +4876,12 @@ function showModalMessage(message, isLoader = false, duration = 0) {
         }
     }
 }
+function hideModal() {
+    const modal = document.getElementById('modal'); // <-- Se obtiene el modal aquí
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
 
 /**
  * Detecta si el usuario está en un dispositivo móvil (iOS o Android).
@@ -5968,7 +5025,7 @@ function generateSummaryPDF(startYear, startMonth, endYear, endMonth) {
     doc.setFontSize(20);
     doc.text(`Reporte Financiero: ${rangeTitle}`, 105, 20, { align: "center" });
 
-    // Resumen del período (sin cambios)
+    // Calculate totals for the entire period
     const salesInRange = allRemisiones.flatMap(r => r.payments || []).filter(p => { const d = new Date(p.date); return d >= startDate && d <= endDate; }).reduce((sum, p) => sum + p.amount, 0);
     const expensesInRange = allGastos.filter(g => { const d = new Date(g.fecha); return d >= startDate && d <= endDate; }).reduce((sum, g) => sum + g.valorTotal, 0);
     const profitInRange = salesInRange - expensesInRange;
@@ -5987,7 +5044,7 @@ function generateSummaryPDF(startYear, startMonth, endYear, endMonth) {
         headStyles: { fillColor: [41, 128, 185] }
     });
 
-    // Desglose mensual (sin cambios)
+    // Monthly breakdown
     const monthlyData = [];
     let currentDate = new Date(startDate);
     while (currentDate <= endDate) {
@@ -6000,6 +5057,7 @@ function generateSummaryPDF(startYear, startMonth, endYear, endMonth) {
         const monthlyProfit = monthlySales - monthlyExpenses;
         const endOfMonth = new Date(year, month + 1, 0);
         const carteraAtEndOfMonth = allRemisiones.filter(r => new Date(r.fechaRecibido) <= endOfMonth && r.estado !== 'Anulada').reduce((sum, r) => { const totalPagado = (r.payments || []).filter(p => new Date(p.date) <= endOfMonth).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
+
 
         monthlyData.push([
             `${monthName} ${year}`,
@@ -6019,20 +5077,17 @@ function generateSummaryPDF(startYear, startMonth, endYear, endMonth) {
         headStyles: { fillColor: [22, 160, 133] }
     });
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // 1. Inicializamos los saldos y calculamos dinámicamente
-    const accountBalances = {};
-    METODOS_DE_PAGO.forEach(metodo => accountBalances[metodo] = 0);
-
+    const accountBalances = { Efectivo: 0, Nequi: 0, Davivienda: 0 };
     allRemisiones.forEach(r => (r.payments || []).forEach(p => { if (accountBalances[p.method] !== undefined) accountBalances[p.method] += p.amount; }));
     allGastos.forEach(g => { if (accountBalances[g.fuentePago] !== undefined) accountBalances[g.fuentePago] -= g.valorTotal; });
-
     const totalCartera = allRemisiones.filter(r => r.estado !== 'Anulada').reduce((sum, r) => { const totalPagado = (r.payments || []).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
 
-    // 2. Generamos las filas de la tabla dinámicamente
-    const accountData = METODOS_DE_PAGO.map(metodo => [metodo, formatCurrency(accountBalances[metodo])]);
-    accountData.push(['Cartera Total Pendiente', formatCurrency(totalCartera)]);
-    // --- FIN DE LA CORRECCIÓN ---
+    const accountData = [
+        ['Efectivo', formatCurrency(accountBalances.Efectivo)],
+        ['Nequi', formatCurrency(accountBalances.Nequi)],
+        ['Davivienda', formatCurrency(accountBalances.Davivienda)],
+        ['Cartera Total Pendiente', formatCurrency(totalCartera)],
+    ];
 
     doc.autoTable({
         startY: doc.lastAutoTable.finalY + 10,
@@ -6374,20 +5429,16 @@ function renderPagosTab(empleado, container) {
     const salario = empleado.contratacion?.salario || 0;
     const pagos = empleado.pagos || [];
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Generamos las opciones de pago dinámicamente
-    const metodosDePagoHTML = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
-    // --- FIN DE LA CORRECCIÓN ---
-
     const pagosHTML = pagos.length > 0 ? pagos.slice().sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map(p => `
-        <tr class="border-b">
-            <td class="p-2">${p.fecha}</td>
-            <td class="p-2">${p.motivo}</td>
-            <td class="p-2 text-right">${formatCurrency(p.valor)}</td>
-            <td class="p-2">${p.fuentePago}</td>
-        </tr>
-    `).join('') : '<tr><td colspan="4" class="p-4 text-center text-gray-500">No hay pagos registrados.</td></tr>';
+            <tr class="border-b">
+                <td class="p-2">${p.fecha}</td>
+                <td class="p-2">${p.motivo}</td>
+                <td class="p-2 text-right">${formatCurrency(p.valor)}</td>
+                <td class="p-2">${p.fuentePago}</td>
+            </tr>
+        `).join('') : '<tr><td colspan="4" class="p-4 text-center text-gray-500">No hay pagos registrados.</td></tr>';
 
+    // Fetch and render pending loans
     const q = query(collection(db, "prestamos"), where("employeeId", "==", empleado.id), where("status", "==", "aprobado"));
     getDocs(q).then(snapshot => {
         const prestamos = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -6395,18 +5446,18 @@ function renderPagosTab(empleado, container) {
         if (prestamosContainer) {
             if (prestamos.length > 0) {
                 prestamosContainer.innerHTML = `
-                    <h4 class="font-semibold text-md mb-2">Préstamos Pendientes de Cobro</h4>
-                    <div class="space-y-2">
-                        ${prestamos.map(p => `
-                            <div class="bg-yellow-100 p-3 rounded-lg flex justify-between items-center">
-                                <div>
-                                    <p class="font-semibold">${formatCurrency(p.amount)}</p>
-                                    <p class="text-xs text-yellow-800">${p.reason}</p>
+                        <h4 class="font-semibold text-md mb-2">Préstamos Pendientes de Cobro</h4>
+                        <div class="space-y-2">
+                            ${prestamos.map(p => `
+                                <div class="bg-yellow-100 p-3 rounded-lg flex justify-between items-center">
+                                    <div>
+                                        <p class="font-semibold">${formatCurrency(p.amount)}</p>
+                                        <p class="text-xs text-yellow-800">${p.reason}</p>
+                                    </div>
+                                    <button data-loan-id="${p.id}" class="cobrar-prestamo-btn bg-yellow-500 text-white text-xs px-3 py-1 rounded-full hover:bg-yellow-600">Marcar Cancelado</button>
                                 </div>
-                                <button data-loan-id="${p.id}" class="cobrar-prestamo-btn bg-yellow-500 text-white text-xs px-3 py-1 rounded-full hover:bg-yellow-600">Marcar Cancelado</button>
-                            </div>
-                        `).join('')}
-                    </div>`;
+                            `).join('')}
+                        </div>`;
                 prestamosContainer.querySelectorAll('.cobrar-prestamo-btn').forEach(btn => {
                     btn.addEventListener('click', async (e) => {
                         const loanId = e.currentTarget.dataset.loanId;
@@ -6422,44 +5473,44 @@ function renderPagosTab(empleado, container) {
     });
 
     container.innerHTML = `
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="md:col-span-1 space-y-4">
-                 <div class="bg-gray-50 p-4 rounded-lg">
-                    <h3 class="text-lg font-semibold mb-2">Liquidador Horas Extra</h3>
-                    <div class="space-y-2">
-                        <div><label class="text-sm">Salario Base (sin auxilio)</label><input type="text" id="salario-base-he" class="w-full p-2 border bg-gray-200 rounded-lg mt-1" value="${formatCurrency(salario > 200000 ? salario - 200000 : 0)}" readonly></div>
-                        <div><label for="horas-extra-input" class="text-sm">Cantidad de Horas Extra</label><input type="number" id="horas-extra-input" class="w-full p-2 border rounded-lg mt-1" min="0"></div>
-                        <button id="calcular-horas-btn" class="w-full bg-blue-500 text-white font-semibold py-2 rounded-lg hover:bg-blue-600">Calcular</button>
-                        <div id="horas-extra-resultado" class="text-center font-bold text-xl mt-2 p-2 bg-blue-100 rounded-lg"></div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="md:col-span-1 space-y-4">
+                     <div class="bg-gray-50 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-2">Liquidador Horas Extra</h3>
+                        <div class="space-y-2">
+                            <div><label class="text-sm">Salario Base (sin auxilio)</label><input type="text" id="salario-base-he" class="w-full p-2 border bg-gray-200 rounded-lg mt-1" value="${formatCurrency(salario > 200000 ? salario - 200000 : 0)}" readonly></div>
+                            <div><label for="horas-extra-input" class="text-sm">Cantidad de Horas Extra</label><input type="number" id="horas-extra-input" class="w-full p-2 border rounded-lg mt-1" min="0"></div>
+                            <button id="calcular-horas-btn" class="w-full bg-blue-500 text-white font-semibold py-2 rounded-lg hover:bg-blue-600">Calcular</button>
+                            <div id="horas-extra-resultado" class="text-center font-bold text-xl mt-2 p-2 bg-blue-100 rounded-lg"></div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-2">Registrar Nuevo Pago</h3>
+                        <form id="rrhh-pago-form" class="space-y-3">
+                            <div id="prestamos-pendientes-container" class="mb-4"></div>
+                            <div><label class="text-sm">Motivo</label><select id="rrhh-pago-motivo" class="w-full p-2 border rounded-lg mt-1 bg-white"><option>Sueldo</option><option>Prima</option><option>Horas Extra</option><option>Liquidación</option></select></div>
+                            <div>
+                                <label class="text-sm">Valor</label>
+                                <input type="text" id="rrhh-pago-valor" class="w-full p-2 border rounded-lg mt-1" required>
+                                <p id="pago-sugerido-info" class="text-xs text-gray-500 mt-1 hidden">Valor quincenal sugerido (salario/2 - aportes).</p>
+                            </div>
+                            <div><label class="text-sm">Fecha</label><input type="date" id="rrhh-pago-fecha" class="w-full p-2 border rounded-lg mt-1" value="${new Date().toISOString().split('T')[0]}" required></div>
+                            <div><label class="text-sm">Fuente de Pago</label><select id="rrhh-pago-fuente" class="w-full p-2 border rounded-lg mt-1 bg-white"><option>Efectivo</option><option>Nequi</option><option>Davivienda</option><option>Bancolombia</option><option>Consignación</option></select></div>
+                            <button type="submit" class="w-full bg-green-600 text-white font-semibold py-2 rounded-lg hover:bg-green-700">Registrar Pago</button>
+                        </form>
                     </div>
                 </div>
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <h3 class="text-lg font-semibold mb-2">Registrar Nuevo Pago</h3>
-                    <form id="rrhh-pago-form" class="space-y-3">
-                        <div id="prestamos-pendientes-container" class="mb-4"></div>
-                        <div><label class="text-sm">Motivo</label><select id="rrhh-pago-motivo" class="w-full p-2 border rounded-lg mt-1 bg-white"><option>Sueldo</option><option>Prima</option><option>Horas Extra</option><option>Liquidación</option></select></div>
-                        <div>
-                            <label class="text-sm">Valor</label>
-                            <input type="text" id="rrhh-pago-valor" class="w-full p-2 border rounded-lg mt-1" required>
-                            <p id="pago-sugerido-info" class="text-xs text-gray-500 mt-1 hidden">Valor quincenal sugerido (salario/2 - aportes).</p>
-                        </div>
-                        <div><label class="text-sm">Fecha</label><input type="date" id="rrhh-pago-fecha" class="w-full p-2 border rounded-lg mt-1" value="${new Date().toISOString().split('T')[0]}" required></div>
-                        <div><label class="text-sm">Fuente de Pago</label><select id="rrhh-pago-fuente" class="w-full p-2 border rounded-lg mt-1 bg-white">${metodosDePagoHTML}</select></div>
-                        <button type="submit" class="w-full bg-green-600 text-white font-semibold py-2 rounded-lg hover:bg-green-700">Registrar Pago</button>
-                    </form>
+                <div class="md:col-span-2">
+                    <h3 class="text-lg font-semibold mb-2">Historial de Pagos</h3>
+                    <div class="border rounded-lg max-h-96 overflow-y-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-100"><tr><th class="p-2 text-left">Fecha</th><th class="p-2 text-left">Motivo</th><th class="p-2 text-right">Valor</th><th class="p-2 text-left">Fuente</th></tr></thead>
+                            <tbody id="rrhh-pagos-historial">${pagosHTML}</tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-            <div class="md:col-span-2">
-                <h3 class="text-lg font-semibold mb-2">Historial de Pagos</h3>
-                <div class="border rounded-lg max-h-96 overflow-y-auto">
-                    <table class="w-full text-sm">
-                        <thead class="bg-gray-100"><tr><th class="p-2 text-left">Fecha</th><th class="p-2 text-left">Motivo</th><th class="p-2 text-right">Valor</th><th class="p-2 text-left">Fuente</th></tr></thead>
-                        <tbody id="rrhh-pagos-historial">${pagosHTML}</tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    `;
+        `;
 
     const valorPagoInput = document.getElementById('rrhh-pago-valor');
     const motivoPagoSelect = document.getElementById('rrhh-pago-motivo');
@@ -7012,64 +6063,6 @@ function showDiscountModal(remision) {
     });
 }
 
-function showRetentionModal(remision) {
-    const modalContentWrapper = document.getElementById('modal-content-wrapper');
-    const currentRetention = remision.retention ? remision.retention.amount : 0;
-
-    modalContentWrapper.innerHTML = `
-        <div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-auto text-left">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-semibold">Aplicar Retenciones</h2>
-                <button id="close-retention-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
-            </div>
-            <p class="text-sm text-gray-600 mb-2">Remisión N°: <span class="font-bold">${remision.numeroRemision}</span></p>
-            <p class="text-sm text-gray-600 mb-4">Total Actual: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>
-            
-            <form id="retention-form" class="space-y-4">
-                <div>
-                    <label for="retention-amount" class="block text-sm font-medium">Valor Retención (COP)</label>
-                    <input type="text" id="retention-amount" class="w-full p-2 border rounded-lg mt-1" inputmode="numeric" required placeholder="0" value="${currentRetention > 0 ? formatCurrency(currentRetention) : ''}">
-                    <p class="text-xs text-gray-500 mt-1">Este valor se restará del total a pagar.</p>
-                </div>
-                <button type="submit" class="w-full bg-amber-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-700">Aplicar Retención</button>
-            </form>
-        </div>
-    `;
-
-    document.getElementById('modal').classList.remove('hidden');
-    document.getElementById('close-retention-modal').addEventListener('click', hideModal);
-
-    const amountInput = document.getElementById('retention-amount');
-    amountInput.addEventListener('focus', (e) => unformatCurrencyInput(e.target));
-    amountInput.addEventListener('blur', (e) => formatCurrencyInput(e.target));
-
-    document.getElementById('retention-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const retentionAmount = unformatCurrency(amountInput.value);
-
-        if (isNaN(retentionAmount) || retentionAmount < 0) {
-            showModalMessage("Por favor, ingresa un valor válido.");
-            return;
-        }
-
-        showModalMessage("Aplicando retención y actualizando...", true);
-
-        try {
-            const applyRetentionFn = httpsCallable(functions, 'applyRetention');
-            const result = await applyRetentionFn({
-                remisionId: remision.id,
-                retentionAmount: retentionAmount
-            });
-
-            hideModal();
-            showTemporaryMessage("¡Retención aplicada con éxito!", "success");
-        } catch (error) {
-            console.error("Error al aplicar retención:", error);
-            showModalMessage(`Error: ${error.message}`);
-        }
-    });
-}
-
 /**
  * --- FUNCIÓN RESTAURADA ---
  * Muestra el modal para registrar los datos de una factura
@@ -7244,30 +6237,27 @@ async function handleLoanRequestSubmit(e) {
 // +++ NUEVA FUNCIÓN: Muestra el modal para aprobar un préstamo y seleccionar el método de pago +++
 function showApproveLoanModal(loan) {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
-
-    // --- INICIO DE LA CORRECCIÓN ---
-    const metodosDePagoHTML = METODOS_DE_PAGO.map(metodo => `<option value="${metodo}">${metodo}</option>`).join('');
-    // --- FIN DE LA CORRECCIÓN ---
-
     modalContentWrapper.innerHTML = `
-        <div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-auto text-left">
-            <h2 class="text-xl font-semibold mb-4">Aprobar Préstamo</h2>
-            <p class="mb-1"><span class="font-semibold">Empleado:</span> ${loan.employeeName}</p>
-            <p class="mb-4"><span class="font-semibold">Monto:</span> ${formatCurrency(loan.amount)}</p>
-            <form id="approve-loan-form">
-                <div>
-                    <label for="loan-payment-method" class="block text-sm font-medium">Fuente del Pago</label>
-                    <select id="loan-payment-method" class="w-full p-3 border border-gray-300 rounded-lg mt-1 bg-white" required>
-                        ${metodosDePagoHTML}
-                    </select>
-                </div>
-                <div class="flex gap-4 justify-end pt-4 mt-4 border-t">
-                    <button type="button" id="cancel-approve-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-semibold">Cancelar</button>
-                    <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold">Confirmar Aprobación</button>
-                </div>
-            </form>
-        </div>
-    `;
+            <div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-auto text-left">
+                <h2 class="text-xl font-semibold mb-4">Aprobar Préstamo</h2>
+                <p class="mb-1"><span class="font-semibold">Empleado:</span> ${loan.employeeName}</p>
+                <p class="mb-4"><span class="font-semibold">Monto:</span> ${formatCurrency(loan.amount)}</p>
+                <form id="approve-loan-form">
+                    <div>
+                        <label for="loan-payment-method" class="block text-sm font-medium">Fuente del Pago</label>
+                        <select id="loan-payment-method" class="w-full p-3 border border-gray-300 rounded-lg mt-1 bg-white" required>
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Nequi">Nequi</option>
+                            <option value="Davivienda">Davivienda</option>
+                        </select>
+                    </div>
+                    <div class="flex gap-4 justify-end pt-4 mt-4 border-t">
+                        <button type="button" id="cancel-approve-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-semibold">Cancelar</button>
+                        <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold">Confirmar Aprobación</button>
+                    </div>
+                </form>
+            </div>
+        `;
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('cancel-approve-btn').addEventListener('click', hideModal);
     document.getElementById('approve-loan-form').addEventListener('submit', (e) => {
@@ -7785,19 +6775,10 @@ async function handleViewPdf(filePath, remisionNum) {
 async function showInitialBalanceModal() {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
 
+    // Cargar los saldos actuales para pre-llenar el formulario
     const balanceDocRef = doc(db, "saldosIniciales", "current");
     const balanceDoc = await getDoc(balanceDocRef);
     const balances = balanceDoc.exists() ? balanceDoc.data() : {};
-
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Generamos dinámicamente los campos de saldo
-    const balanceFieldsHTML = METODOS_DE_PAGO.map(metodo => `
-        <div>
-            <label class="block text-sm font-medium">${metodo}</label>
-            <input type="text" id="balance-${metodo.toLowerCase()}" class="cost-input-cop w-full p-2 border rounded-lg mt-1" value="${formatCurrency(balances[metodo] || 0)}">
-        </div>
-    `).join('');
-    // --- FIN DE LA CORRECCIÓN ---
 
     modalContentWrapper.innerHTML = `
         <div class="bg-white rounded-lg p-6 shadow-xl max-w-lg w-full mx-auto text-left">
@@ -7807,7 +6788,11 @@ async function showInitialBalanceModal() {
             </div>
             <p class="text-sm text-gray-600 mb-4">Ingresa el saldo con el que inicia cada cuenta. Este valor se sumará al cálculo de movimientos para obtener el saldo actual.</p>
             <form id="initial-balance-form" class="space-y-3">
-                ${balanceFieldsHTML}
+                <div><label class="block text-sm font-medium">Efectivo</label><input type="text" id="balance-efectivo" class="cost-input-cop w-full p-2 border rounded-lg mt-1" value="${formatCurrency(balances.Efectivo || 0)}"></div>
+                <div><label class="block text-sm font-medium">Nequi</label><input type="text" id="balance-nequi" class="cost-input-cop w-full p-2 border rounded-lg mt-1" value="${formatCurrency(balances.Nequi || 0)}"></div>
+                <div><label class="block text-sm font-medium">Davivienda</label><input type="text" id="balance-davivienda" class="cost-input-cop w-full p-2 border rounded-lg mt-1" value="${formatCurrency(balances.Davivienda || 0)}"></div>
+                <div><label class="block text-sm font-medium">Bancolombia</label><input type="text" id="balance-bancolombia" class="cost-input-cop w-full p-2 border rounded-lg mt-1" value="${formatCurrency(balances.Bancolombia || 0)}"></div>
+                <div><label class="block text-sm font-medium">Consignación</label><input type="text" id="balance-consignacion" class="cost-input-cop w-full p-2 border rounded-lg mt-1" value="${formatCurrency(balances.Consignacion || 0)}"></div>
                 <div class="pt-4"><button type="submit" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700">Guardar Saldos</button></div>
             </form>
         </div>
@@ -7816,6 +6801,7 @@ async function showInitialBalanceModal() {
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('close-balance-modal').addEventListener('click', hideModal);
 
+    // Aplicar formato de moneda a los inputs
     document.querySelectorAll('.cost-input-cop').forEach(input => {
         input.addEventListener('focus', (e) => unformatCurrencyInput(e.target));
         input.addEventListener('blur', (e) => formatCurrencyInput(e.target));
@@ -7831,35 +6817,42 @@ async function showInitialBalanceModal() {
  */
 async function handleInitialBalanceSubmit(e) {
     e.preventDefault();
-    const submitButton = e.target.querySelector('button[type="submit"]');
-    submitButton.disabled = true;
-    submitButton.textContent = 'Guardando...';
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Leemos los valores de los saldos dinámicamente
-    const balancesToSave = {};
-    METODOS_DE_PAGO.forEach(metodo => {
-        const inputId = `balance-${metodo.toLowerCase()}`;
-        const value = unformatCurrency(document.getElementById(inputId).value);
-        balancesToSave[metodo] = value;
-    });
-    // --- FIN DE LA CORRECCIÓN ---
+    // PASO 1: Leer los valores del formulario PRIMERO.
+    const newBalances = {
+        Efectivo: unformatCurrency(document.getElementById('balance-efectivo').value),
+        Nequi: unformatCurrency(document.getElementById('balance-nequi').value),
+        Davivienda: unformatCurrency(document.getElementById('balance-davivienda').value),
+        Bancolombia: unformatCurrency(document.getElementById('balance-bancolombia').value),
+        Consignacion: unformatCurrency(document.getElementById('balance-consignacion').value),
+    };
+
+    // PASO 2: Ahora sí, mostrar el mensaje de carga.
+    showModalMessage("Guardando saldos...", true);
 
     try {
-        const setBalances = httpsCallable(functions, 'setInitialBalances');
-        await setBalances(balancesToSave);
+        const setInitialBalances = httpsCallable(functions, 'setInitialBalances');
+        await setInitialBalances(newBalances);
 
-        // Actualizamos la variable global
-        initialBalances = balancesToSave;
+        // Actualizamos la variable global para uso inmediato
+        initialBalances = newBalances;
 
-        Swal.fire('¡Éxito!', 'Saldos iniciales guardados correctamente.', 'success');
-        hideModal();
+        hideModal(); // Cierra el modal de carga/saldos
+        showTemporaryMessage("Saldos iniciales guardados.", "success");
+
+        // Disparamos la actualización del dashboard que está visible
+        const yearSelect = document.getElementById('summary-year');
+        const monthSelect = document.getElementById('summary-month');
+        if (yearSelect && monthSelect) {
+            await updateDashboard(
+                parseInt(yearSelect.value),
+                parseInt(monthSelect.value)
+            );
+        }
+
     } catch (error) {
-        console.error("Error al guardar saldos:", error);
-        Swal.fire('Error', 'No se pudieron guardar los saldos.', 'error');
-    } finally {
-        submitButton.disabled = false;
-        submitButton.textContent = 'Guardar Saldos';
+        console.error("Error al guardar saldos iniciales:", error);
+        showModalMessage(`Error: ${error.message}`);
     }
 }
 
@@ -7946,77 +6939,6 @@ async function handleExportGastos(e) {
     }
 }
 
-
-
-/**
- * Muestra el modal para exportar pagos.
- */
-function showExportPagosModal() {
-    const modal = document.getElementById('export-pagos-modal');
-    if (modal) {
-        const endDateInput = document.getElementById('export-pagos-end-date');
-        if (endDateInput) {
-            endDateInput.valueAsDate = new Date(); // Poner fecha de hoy por defecto
-        }
-        modal.classList.remove('hidden');
-    }
-}
-
-/**
- * Maneja el envío del formulario de exportación de pagos.
- */
-async function handleExportPagos(e) {
-    e.preventDefault();
-    const startDate = document.getElementById('export-pagos-start-date').value;
-    const endDate = document.getElementById('export-pagos-end-date').value;
-
-    if (!startDate || !endDate) {
-        showModalMessage("Por favor, selecciona ambas fechas.");
-        return;
-    }
-
-    showModalMessage("Generando historial de pagos, por favor espera...", true);
-
-    try {
-        const exportFunction = httpsCallable(functions, 'exportPagosRemisionesToExcel');
-        const result = await exportFunction({ startDate, endDate });
-
-        if (result.data.success) {
-            // Decodificar y descargar el archivo (lógica idéntica a gastos)
-            const byteCharacters = atob(result.data.fileContent);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-                byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `Historial_Pagos_Remisiones_${startDate}_a_${endDate}.xlsx`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            hideModal(); // Cerrar modal de carga
-            document.getElementById('export-pagos-modal').classList.add('hidden'); // Cerrar modal de fechas
-            showTemporaryMessage("¡Historial descargado con éxito!", "success");
-        } else {
-            throw new Error(result.data.message || "No se encontraron datos.");
-        }
-    } catch (error) {
-        console.error("Error al exportar pagos:", error);
-        showModalMessage(`Error al generar el reporte: ${error.message}`);
-    }
-}
-
-document.addEventListener('submit', function (event) {
-    if (event.target && event.target.id === 'export-pagos-form') {
-        handleExportPagos(event);
-    }
-    // ... tus otros listeners existentes ...
-});
-
 // Se añade un solo event listener al documento que maneja los eventos
 // de los elementos que se crean dinámicamente.
 document.addEventListener('click', function (event) {
@@ -8032,14 +6954,12 @@ document.addEventListener('click', function (event) {
     }
 });
 
-
 // El listener para el formulario también usa delegación de eventos.
 document.addEventListener('submit', function (event) {
     if (event.target && event.target.id === 'export-gastos-form') {
         handleExportGastos(event);
     }
 });
-
 
 // Escucha el evento de envío del formulario para añadir un nuevo proveedor
 // Usamos 'body' y 'delegación de eventos' para asegurarnos de que el listener funcione
@@ -8082,7 +7002,7 @@ document.body.addEventListener('submit', async (e) => {
             await addDoc(collection(db, 'clientes'), clienteData);
 
             Swal.fire('¡Cliente Registrado!', 'El nuevo cliente ha sido guardado con éxito.', 'success');
-
+            
             e.target.reset();
 
         } catch (error) {
@@ -8208,6 +7128,7 @@ document.body.addEventListener('submit', async (e) => {
         }
     }
 });
+
 document.body.addEventListener('submit', async (e) => {
     if (e.target && e.target.id === 'edit-cliente-form') {
         e.preventDefault();
@@ -8241,7 +7162,7 @@ document.body.addEventListener('submit', async (e) => {
                         const oldFileRef = ref(storage, clienteActual.rutUrl);
                         await deleteObject(oldFileRef);
                     } catch (storageError) {
-                        console.warn("No se pudo eliminar el archivo antiguo, puede que ya no exista:", storageError);
+                         console.warn("No se pudo eliminar el archivo antiguo, puede que ya no exista:", storageError);
                     }
                 }
 
@@ -8286,7 +7207,7 @@ function showFileModal(url, title = 'Visualizador de Archivos') {
             </div>
         </div>
     `;
-
+    
     modal.classList.remove('hidden');
 
     // El listener para cerrar debe estar dentro para capturar el botón recién creado
@@ -8300,12 +7221,12 @@ function showFileModal(url, title = 'Visualizador de Archivos') {
 document.body.addEventListener('click', (e) => {
     // Este selector busca cualquier botón que tenga el atributo data-file-path
     const secureFileButton = e.target.closest('[data-file-path]');
-
+    
     if (secureFileButton) {
         e.preventDefault(); // Previene cualquier otra acción del botón
         const path = secureFileButton.dataset.filePath;
         const title = secureFileButton.dataset.fileTitle || 'Visualizador de Archivo';
-
+        
         // Llama a la función segura que ya creamos
         if (path) {
             viewSecureFile(path, title);
@@ -8342,7 +7263,7 @@ async function viewSecureFile(filePath, title) {
         const result = await getSignedUrl({ filePath: filePath });
 
         const secureUrl = result.data.url;
-
+        
         // Muestra el archivo en el modal que ya teníamos
         showFileModal(secureUrl, title);
         Swal.close(); // Cierra la alerta de "cargando"
@@ -8352,31 +7273,3 @@ async function viewSecureFile(filePath, title) {
         Swal.fire('Error', 'No se pudo obtener el enlace para ver el archivo. Por favor, intenta de nuevo.', 'error');
     }
 }
-
-// --- HERRAMIENTA DE REPARACIÓN TEMPORAL ---
-// Puedes borrar esta función después de usarla.
-window.runRutRepair = async () => {
-    try {
-        console.log("Iniciando reparación de URLs de RUTs...");
-        Swal.fire({
-            title: 'Reparando enlaces de RUTs...',
-            text: 'Este proceso puede tardar unos segundos. Por favor, espera.',
-            allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
-            }
-        });
-
-        // Como esta función está dentro de app.js, sí tiene acceso a 'httpsCallable' y 'functions'
-        const repairFunction = httpsCallable(functions, 'repairRutUrls');
-        const result = await repairFunction();
-
-        Swal.close();
-        console.log("¡Éxito!", result.data.message);
-        Swal.fire('¡Reparación Completada!', result.data.message, 'success');
-
-    } catch (error) {
-        console.error("Error al ejecutar la reparación:", error);
-        Swal.fire('Error', `Ocurrió un error al ejecutar la reparación: ${error.message}`, 'error');
-    }
-};
