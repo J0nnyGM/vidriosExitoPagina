@@ -1,7 +1,7 @@
 // js/modules/gastos.js
 
 import { db, functions } from '../firebase-config.js';
-import { collection, addDoc, query, getDocs, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+import { collection, addDoc, query, getDocs, where, serverTimestamp, onSnapshot } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { 
     allGastos, setAllGastos, currentUser, 
@@ -18,19 +18,24 @@ const SYNC_KEY = 'gastos_last_sync';
 let currentPage = 1;
 const itemsPerPage = 20;
 
-export async function loadGastos() {
-    // 1. Intentar cargar desde el caché local primero
+// --- CARGA DE DATOS (INTELIGENTE + TIEMPO REAL INFALIBLE) ---
+export function loadGastos() {
     const cachedData = localStorage.getItem(CACHE_KEY);
-    const lastSyncStr = localStorage.getItem(SYNC_KEY);
     
-    let lastSync = null;
     let mapGastos = new Map();
+    let maxLastUpdated = 0; // Guardará la fecha exacta del documento más reciente
 
+    // 1. Cargar desde el caché local (Velocidad instantánea)
     if (cachedData) {
         try {
             const parsedData = JSON.parse(cachedData);
-            parsedData.forEach(g => mapGastos.set(g.id, g));
-            
+            parsedData.forEach(g => {
+                mapGastos.set(g.id, g);
+                // Buscamos cuál es el timestamp más reciente que tenemos guardado
+                if (g._lastUpdated && g._lastUpdated > maxLastUpdated) {
+                    maxLastUpdated = g._lastUpdated;
+                }
+            });
             setAllGastos(Array.from(mapGastos.values()));
             renderGastos();
         } catch (e) {
@@ -40,49 +45,64 @@ export async function loadGastos() {
         }
     }
 
-    if (lastSyncStr) lastSync = new Date(parseInt(lastSyncStr));
+    // 2. onSnapshot Diferencial basado en la información real del servidor
+    const colRef = collection(db, "gastos");
+    let q;
 
-    // 2. Sincronización Diferencial con Firebase
-    try {
-        const colRef = collection(db, "gastos");
-        let q;
+    if (maxLastUpdated > 0) {
+        // Restamos 2 minutos de margen de seguridad a la fecha del último documento
+        const syncTime = new Date(maxLastUpdated - 120000); 
+        q = query(colRef, where("_lastUpdated", ">=", syncTime));
+    } else {
+        // Si no hay caché, descarga todo
+        q = query(colRef);
+    }
 
-        if (lastSync) {
-            const syncTime = new Date(lastSync.getTime() - 60000); // 1 minuto de margen
-            q = query(colRef, where("_lastUpdated", ">=", syncTime));
-        } else {
-            q = query(colRef);
-        }
-
-        const snapshot = await getDocs(q);
+    // 3. Quedarse escuchando los cambios en vivo
+    const unsubscribe = onSnapshot(q, (snapshot) => {
         let huboCambios = false;
 
-        snapshot.forEach(doc => {
+        snapshot.docChanges().forEach((change) => {
+            const doc = change.doc;
             const data = doc.data();
+
+            // Limpieza de Timestamps para poder serializar en JSON local
             if (data._lastUpdated && typeof data._lastUpdated.toMillis === 'function') data._lastUpdated = data._lastUpdated.toMillis();
             if (data.timestamp && typeof data.timestamp.toMillis === 'function') data.timestamp = data.timestamp.toMillis();
             
-            mapGastos.set(doc.id, { id: doc.id, ...data });
-            huboCambios = true;
+            if (change.type === "added" || change.type === "modified") {
+                mapGastos.set(doc.id, { id: doc.id, ...data });
+                huboCambios = true;
+            }
+            if (change.type === "removed") {
+                mapGastos.delete(doc.id);
+                huboCambios = true;
+            }
         });
 
-        // 3. Guardar en caché si hubo cambios
-        if (huboCambios || !lastSync) {
+        // 4. Si hubo un cambio, actualizamos la memoria, el caché local y la pantalla
+        if (huboCambios) {
             const finalArray = Array.from(mapGastos.values());
+            
             // Ordenar por fecha de forma descendente (los más recientes primero)
             finalArray.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-
+            
             localStorage.setItem(CACHE_KEY, JSON.stringify(finalArray));
-            localStorage.setItem(SYNC_KEY, Date.now().toString());
-
             setAllGastos(finalArray);
+            
             renderGastos();
-            console.log(`[Caché] Gastos sincronizados. ${snapshot.size} lecturas de Firebase.`);
+            
+            // Si el dashboard está abierto, podríamos querer actualizar los saldos en vivo (opcional pero elegante)
+            if (document.getElementById('modal') && !document.getElementById('modal').classList.contains('hidden') && document.getElementById('dashboard-summary-view')) {
+                // Aquí podrías disparar una recarga del dashboard si fuera necesario
+                console.log("[Gastos] Dashboard detectado en vivo.");
+            }
         }
+    }, (error) => {
+        console.error("Error en onSnapshot diferencial de gastos:", error);
+    });
 
-    } catch (error) {
-        console.error("Error sincronizando gastos:", error);
-    }
+    return unsubscribe;
 }
 
 // Función auxiliar para actualizar el caché localmente

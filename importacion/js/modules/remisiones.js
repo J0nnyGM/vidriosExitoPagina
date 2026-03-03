@@ -1438,38 +1438,31 @@ function showPendingPaymentsModal() {
     });
 }
 
-// --- FUNCIONALIDAD: AÑADIR IVA Y ENVIAR A FACTURAR ---
+// --- FUNCIONALIDAD: EXTRAER IVA Y ENVIAR A FACTURAR ---
 async function handleEnviarAFacturar(remisionId) {
     const remision = allRemisiones.find(r => r.id === remisionId);
     if (!remision) return;
 
-    if (!confirm(`¿Estás seguro de añadir el IVA (19%) a la remisión N° ${remision.numeroRemision} y enviarla a facturación?\n\nNota: El cliente no será notificado en este momento. El PDF se generará con el IVA cuando marques la remisión como "Entregado".`)) {
+    if (!confirm(`¿Estás seguro de extraer el IVA (19%) del total de la remisión N° ${remision.numeroRemision} y enviarla a facturación?\n\nNota: El precio total para el cliente NO cambiará. Solo se desglosará el IVA internamente para facturar.`)) {
         return;
     }
 
-    showModalMessage("Calculando y enviando a facturación...", true);
+    showModalMessage("Calculando IVA y regenerando PDFs en la nube...", true);
     
     try {
-        const iva = Math.round(remision.subtotal * 0.19);
-        const nuevoTotal = remision.valorTotal + iva;
+        const toggleIvaFn = httpsCallable(functions, 'toggleFacturacionIVA');
+        await toggleIvaFn({ remisionId: remisionId, action: 'extract' });
 
-        const updateData = {
-            incluyeIVA: true,
-            valorIVA: iva,
-            valorTotal: nuevoTotal,
-            _lastUpdated: serverTimestamp() 
-        };
-
-        await updateDoc(doc(db, "remisiones", remisionId), updateData);
-
-        const updatedRem = { ...remision, ...updateData, _lastUpdated: Date.now() };
-        updateLocalCache(updatedRem);
+        // Forzamos actualización local para mayor velocidad
+        const { getDoc } = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js");
+        const updatedDoc = await getDoc(doc(db, "remisiones", remisionId));
+        updateLocalCache({ id: updatedDoc.id, ...updatedDoc.data() });
 
         hideModal();
-        showTemporaryMessage("¡Remisión enviada a facturación con éxito!", "success");
+        showTemporaryMessage("¡Remisión enviada a facturación!", "success");
 
     } catch (error) {
-        console.error("Error al añadir IVA:", error);
+        console.error("Error al extraer IVA:", error);
         hideModal();
         showModalMessage("Error al procesar la solicitud.");
     }

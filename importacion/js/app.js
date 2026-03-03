@@ -15,8 +15,8 @@ import { showDashboardModal, cleanupDashboardListeners } from './modules/dashboa
 import { setupFacturacionEvents } from './modules/facturacion.js';
 import { setupFuncionesEvents } from './modules/funciones.js'; 
 
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged, updateEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
-import { doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged, updateEmail, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
+import { doc, getDoc, updateDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { logEvent } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js";
 

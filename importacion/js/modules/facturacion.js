@@ -1,11 +1,13 @@
 // js/modules/facturacion.js
 
-import { db, storage } from '../firebase-config.js';
+import { db, storage, functions } from '../firebase-config.js'; // Añade functions aquí
 import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { ref, uploadBytes } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
-import { allRemisiones, allClientes, showModalMessage, hideModal, showTemporaryMessage } from '../app.js';
+import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js"; // Añade esto
+import { allRemisiones, allClientes, currentUserData, showModalMessage, hideModal, showTemporaryMessage } from '../app.js';
 import { formatCurrency } from '../utils.js';
 import { showRetentionModal } from './remisiones.js'; 
+
 
 // --- VARIABLES DE PAGINACIÓN ---
 let currentPagePendientes = 1;
@@ -97,6 +99,12 @@ export function renderFacturacion() {
                 btnRetencion = `<button data-remision-json='${JSON.stringify(remision)}' class="retention-btn bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-amber-700">Retenciones</button>`;
             }
 
+            // --- NUEVO: Botón de revertir solo para Admins ---
+            let btnRevertir = '';
+            if (currentUserData && currentUserData.role === 'admin') {
+                btnRevertir = `<button data-remision-id="${remision.id}" class="no-facturar-btn bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-600 shadow">No Facturar</button>`;
+            }
+
             el.innerHTML = `
                 <div class="flex-grow">
                     <div class="flex items-center gap-3 flex-wrap">
@@ -110,7 +118,8 @@ export function renderFacturacion() {
                     ${botonRUT}
                     ${remisionPdfButton}
                     ${btnRetencion}
-                    <button data-remision-id="${remision.id}" class="facturar-btn bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Facturar</button>
+                    ${btnRevertir} 
+                    <button data-remision-id="${remision.id}" class="facturar-btn bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 shadow">Facturar</button>
                 </div>`;
             pendientesListEl.appendChild(el);
         });
@@ -211,11 +220,17 @@ export function renderFacturacion() {
     }
 
     // Reasignar Eventos de los Botones
-    document.querySelectorAll('.facturar-btn').forEach(btn => btn.addEventListener('click', (e) => showFacturaModal(e.currentTarget.dataset.remisionId)));
-    document.querySelectorAll('.retention-btn').forEach(btn => 
-        btn.addEventListener('click', (e) => { showRetentionModal(JSON.parse(e.currentTarget.dataset.remisionJson)); })
-    );
-}
+        document.querySelectorAll('.facturar-btn').forEach(btn => btn.addEventListener('click', (e) => showFacturaModal(e.currentTarget.dataset.remisionId)));
+        document.querySelectorAll('.retention-btn').forEach(btn => 
+            btn.addEventListener('click', (e) => { showRetentionModal(JSON.parse(e.currentTarget.dataset.remisionJson)); })
+        );
+        // --- NUEVO EVENTO ---
+        document.querySelectorAll('.no-facturar-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                handleNoFacturar(e.currentTarget.dataset.remisionId);
+            });
+        });
+    }
 
 export function showFacturaModal(remisionId) {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
@@ -261,6 +276,27 @@ export function showFacturaModal(remisionId) {
             if(submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Marcar como Facturado'; }
         }
     });
+}
+
+// --- FUNCIONALIDAD: REVERTIR "ENVIAR A FACTURAR" ---
+async function handleNoFacturar(remisionId) {
+    if (!confirm("¿Estás seguro de revertir esta remisión a 'No Facturable'?\nEl IVA se eliminará y el subtotal volverá a ser igual al Total actual.")) return;
+
+    showModalMessage("Revirtiendo valores y regenerando PDFs en la nube...", true);
+    
+    try {
+        const toggleIvaFn = httpsCallable(functions, 'toggleFacturacionIVA');
+        await toggleIvaFn({ remisionId: remisionId, action: 'revert' });
+
+        // Como usamos onSnapshot en remisiones, la tabla se limpiará sola mágicamente
+        hideModal();
+        showTemporaryMessage("¡Remisión retirada de facturación!", "success");
+
+    } catch (error) {
+        console.error("Error al revertir facturación:", error);
+        hideModal();
+        showModalMessage("Error al procesar la solicitud.");
+    }
 }
 
 export function setupFacturacionEvents() {

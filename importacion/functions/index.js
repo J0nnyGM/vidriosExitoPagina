@@ -1,21 +1,29 @@
 // index.js (en tu carpeta /functions)
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const sgMail = require("@sendgrid/mail");
+const nodemailer = require("nodemailer"); // <--- NUEVA LIBRERÍA
 const { jsPDF } = require("jspdf");
 require("jspdf-autotable");
 const axios = require("axios");
 const { getStorage } = require("firebase-admin/storage");
 const { PDFDocument, rgb, StandardFonts, PageSizes } = require("pdf-lib");
 const cors = require("cors")({ origin: true });
-
+const ExcelJS = require('exceljs');
 
 admin.initializeApp();
 const db = admin.firestore();
 
-// Configurar SendGrid
-sgMail.setApiKey(process.env.SENDGRID_KEY);
-const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL;
+// --- CONFIGURACIÓN DE NODEMAILER (cPanel SMTP) ---
+const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT) || 465,
+    secure: parseInt(process.env.SMTP_PORT) === 465, // true para puerto 465, false para otros (587)
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+    },
+});
+const FROM_EMAIL = process.env.SMTP_USER;
 
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -23,20 +31,12 @@ const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const BUCKET_NAME = "vidrioexpres1.firebasestorage.app";
 
 // **** INICIO DE LA NUEVA FUNCIÓN ****
-/**
- * Se activa cuando un nuevo usuario se crea en Firebase Authentication.
- * Revisa si es el primer usuario y, si es así, le asigna el rol de 'admin' y lo activa.
- */
 exports.onUserCreate = functions.auth.user().onCreate(async (user) => {
     const usersCollection = admin.firestore().collection("users");
-
-    // Revisa cuántos documentos hay en la colección de usuarios.
     const snapshot = await usersCollection.limit(2).get();
 
-    // Si solo hay 1 documento (el que se acaba de crear en el app.js), es el primer usuario.
     if (snapshot.size === 1) {
         functions.logger.log(`Asignando rol de 'admin' y estado 'active' al primer usuario: ${user.uid}`);
-        // Actualiza el documento del usuario para cambiar su rol y estado.
         return usersCollection.doc(user.uid).update({
             role: "admin",
             status: "active",
@@ -51,14 +51,9 @@ exports.onUserCreate = functions.auth.user().onCreate(async (user) => {
     }
 
     functions.logger.log(`El nuevo usuario ${user.uid} se ha registrado con rol 'planta' y estado 'pending'.`);
-    return null; // No hace nada para los siguientes usuarios.
+    return null; 
 });
 
-/**
- * Formatea un número como moneda colombiana (COP).
- * @param {number} value El valor numérico a formatear.
- * @return {string} El valor formateado como moneda.
- */
 function formatCurrency(value) {
     return new Intl.NumberFormat("es-CO", {
         style: "currency",
@@ -67,26 +62,17 @@ function formatCurrency(value) {
     }).format(value || 0);
 }
 
-// Función HTTP que devuelve la configuración de Firebase del lado del cliente.
 exports.getFirebaseConfig = functions.https.onRequest((request, response) => {
-    // Usamos cors para permitir que tu página web llame a esta función.
     cors(request, response, () => {
-        // Verifica que la configuración exista antes de enviarla.
         if (!functions.config().prisma) {
             return response.status(500).json({
                 error: "La configuración de Firebase no está definida en el servidor.",
             });
         }
-        // Envía la configuración como una respuesta JSON.
         return response.status(200).json(functions.config().prisma);
     });
 });
 
-/**
- * --- NUEVO: Formatea un número de teléfono de Colombia al formato E.164. ---
- * @param {string} phone El número de teléfono.
- * @return {string|null} El número formateado o null si es inválido.
- */
 function formatColombianPhone(phone) {
     if (!phone || typeof phone !== "string") {
         return null;
@@ -101,17 +87,6 @@ function formatColombianPhone(phone) {
     return null;
 }
 
-/**
- * --- VERSIÓN CORREGIDA Y ROBUSTA ---
- * Envía un mensaje de plantilla de WhatsApp con un documento.
- * AÑADIDO: .trim() para limpiar espacios en blanco en las variables de texto.
- * @param {string} toPhoneNumber Número del destinatario en formato E.164.
- * @param {string} customerName Nombre del cliente para la plantilla.
- * @param {string} remisionNumber Número de la remisión.
- * @param {string} status Estado actual de la remisión.
- * @param {string} pdfUrl URL pública del PDF a enviar.
- * @return {Promise<object>} La respuesta de la API de Meta.
- */
 async function sendWhatsAppRemision(toPhoneNumber, customerName, remisionNumber, status, pdfUrl) {
     const formattedPhone = formatColombianPhone(toPhoneNumber);
     if (!formattedPhone) {
@@ -155,10 +130,7 @@ async function sendWhatsAppRemision(toPhoneNumber, customerName, remisionNumber,
     };
 
     try {
-        // --- LÍNEA DE DIAGNÓSTICO AÑADIDA ---
-        // Esto nos mostrará el paquete de datos completo que se envía a Meta.
         functions.logger.info("Enviando el siguiente payload a WhatsApp:", JSON.stringify(payload, null, 2));
-
         await axios.post(url, payload, { headers });
         functions.logger.info(`Solicitud de envío a WhatsApp para ${formattedPhone} fue aceptada por Meta.`);
     } catch (error) {
@@ -168,14 +140,7 @@ async function sendWhatsAppRemision(toPhoneNumber, customerName, remisionNumber,
         throw new Error(`Falló el envío de WhatsApp a ${formattedPhone}: ${error.message}`);
     }
 }
-/**
- * --- VERSIÓN FINAL Y DEFINITIVA ---
- * 1.  Corrige el error de la firma repetida, asegurando que la sección
- * "Firma y Sello" aparezca UNA SOLA VEZ en la última página del documento.
- * 2.  Mantiene todas las demás funcionalidades intactas.
- * @param {object} remision El objeto con los datos de la remisión.
- * @return {Buffer} El PDF como un buffer de datos.
- */
+
 function generarPDFCliente(remision) {
     const { jsPDF } = require("jspdf");
     require("jspdf-autotable");
@@ -183,7 +148,7 @@ function generarPDFCliente(remision) {
     const doc = new jsPDF();
     const pageHeight = doc.internal.pageSize.height;
     const headerHeight = 85;
-    const footerMargin = 20; // Espacio solo para el número de página
+    const footerMargin = 20;
 
     const addHeader = () => {
         doc.setFont("helvetica", "bold").setFontSize(18).text("Remisión de Servicio", 105, 20, { align: "center" });
@@ -193,7 +158,6 @@ function generarPDFCliente(remision) {
         doc.setFontSize(14).setFont("helvetica", "bold").text(`Remisión N°: ${remision.numeroRemision}`, 190, 45, { align: "right" });
     };
 
-    // --- LÓGICA DE PIE DE PÁGINA CORREGIDA ---
     const addPageNumber = (data) => {
         doc.setFontSize(8);
         doc.text(`Página ${data.pageNumber} de ${data.pageCount}`, 105, pageHeight - 10, { align: 'center' });
@@ -201,7 +165,7 @@ function generarPDFCliente(remision) {
 
     const addFinalSignature = () => {
         const footerY = pageHeight - 45;
-        doc.line(40, footerY, 120, footerY); // Línea de Firma
+        doc.line(40, footerY, 120, footerY);
         doc.setFontSize(10).setFont("helvetica", "normal").text("Firma y Sello de Recibido", 75, footerY + 5, { align: "center" });
         doc.setLineCap(2).line(20, footerY + 20, 190, footerY + 20);
         doc.setFontSize(8).setFont("helvetica", "bold");
@@ -230,7 +194,7 @@ function generarPDFCliente(remision) {
         margin: { top: 50, bottom: footerMargin },
         didDrawPage: function (data) {
             addHeader();
-            addPageNumber(data); // Solo el número de página se dibuja aquí
+            addPageNumber(data);
 
             if (data.pageNumber === 1) {
                 doc.setFontSize(11).setFont("helvetica", "bold").text("Cliente:", 20, 60).setFont("helvetica", "normal").text(remision.clienteNombre, 55, 60);
@@ -248,7 +212,7 @@ function generarPDFCliente(remision) {
     const pageCount = doc.internal.getNumberOfPages();
     doc.setPage(pageCount);
     let yPos = finalY + 15;
-    const spaceNeeded = 80; // Espacio para totales y firma
+    const spaceNeeded = 80;
 
     if (yPos > pageHeight - spaceNeeded) {
         doc.addPage();
@@ -278,7 +242,6 @@ function generarPDFCliente(remision) {
     doc.setFont("helvetica", "bold").text("TOTAL:", 130, yPos);
     doc.text(formatCurrency(remision.valorTotal), 190, yPos, { align: "right" });
 
-    // Se llama a la función de la firma UNA SOLA VEZ, al final de todo.
     addFinalSignature();
 
     if (remision.estado === "Anulada") {
@@ -294,14 +257,6 @@ function generarPDFCliente(remision) {
     return Buffer.from(doc.output("arraybuffer"));
 }
 
-/**
- * --- VERSIÓN COMPLETA Y FINAL BASADA EN TU CÓDIGO ---
- * Integra el campo de "observaciones" en tu lógica de generación de PDF existente.
- * Mantiene intacta toda la funcionalidad de anexos, planos de corte y manejo de multi-páginas.
- * @param {object} remision El objeto con los datos de la remisión.
- * @param {boolean} isForPlanta Indica si el PDF es para el rol de planta.
- * @return {Buffer} El PDF como un buffer de datos.
- */
 async function generarPDF(remision, isForPlanta = false) {
     const db = admin.firestore();
 
@@ -309,7 +264,6 @@ async function generarPDF(remision, isForPlanta = false) {
     const font = await pdfDocFinal.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDocFinal.embedFont(StandardFonts.HelveticaBold);
 
-    // --- FUNCIÓN REUTILIZABLE PARA AÑADIR ENCABEZADOS A CADA PÁGINA ---
     const addHeader = (doc, title) => {
         doc.setFont("helvetica", "bold").setFontSize(18).text(title, 105, 20, { align: "center" });
         if (remision.estado === "Anulada") {
@@ -325,14 +279,12 @@ async function generarPDF(remision, isForPlanta = false) {
         doc.setFontSize(14).setFont("helvetica", "bold").text(`Remisión N°: ${remision.numeroRemision}`, 190, 45, { align: "right" });
     };
 
-    // --- FUNCIÓN REUTILIZABLE PARA AÑADIR PIE DE PÁGINA ---
     const addFooter = (doc, pageNumber, pageCount) => {
         const pageHeight = doc.internal.pageSize.height;
         doc.setFontSize(8);
         doc.text(`Página ${pageNumber} de ${pageCount}`, 105, pageHeight - 10, { align: 'center' });
     };
 
-    // --- PÁGINA(S) 1: RESUMEN DE MATERIALES ---
     const paginaResumen = new jsPDF();
     const headerHeight = 85;
     const footerHeight = 20;
@@ -378,38 +330,25 @@ async function generarPDF(remision, isForPlanta = false) {
         }
     });
 
-    // --- OBTENER POSICIÓN FINAL DE LA TABLA ---
     let finalY = paginaResumen.lastAutoTable.finalY;
     const pageCountAfterTable = paginaResumen.internal.getNumberOfPages();
     paginaResumen.setPage(pageCountAfterTable);
 
-    // ▼▼▼ INICIO DE LA MODIFICACIÓN CLAVE ▼▼▼
-    // Dibuja las observaciones DESPUÉS de la tabla de ítems
     if (remision.observaciones && remision.observaciones.trim() !== '') {
-        finalY += 7; // Añadir un pequeño espacio
-
-        // Comprobar si hay espacio suficiente en la página actual
-        if (finalY > paginaResumen.internal.pageSize.height - 40) { // 40 es un margen de seguridad
+        finalY += 7; 
+        if (finalY > paginaResumen.internal.pageSize.height - 40) {
             paginaResumen.addPage();
             addHeader(paginaResumen, isForPlanta ? "Orden de Producción" : "Remisión de Servicio");
-            // Se actualiza el número de página en el pie de la nueva página
             addFooter(paginaResumen, pageCountAfterTable + 1, pageCountAfterTable + 1);
-            finalY = headerHeight - 20; // Posición inicial en la nueva página
+            finalY = headerHeight - 20;
         }
-
         paginaResumen.setFontSize(10).setFont("helvetica", "bold").text("Observaciones:", 20, finalY);
         finalY += 5;
-
-        // Dibuja el texto de las observaciones con saltos de línea automáticos
-        const observacionesText = paginaResumen.setFont("helvetica", "normal").setFontSize(9).splitTextToSize(remision.observaciones, 170); // 170 es el ancho del cuadro de texto
+        const observacionesText = paginaResumen.setFont("helvetica", "normal").setFontSize(9).splitTextToSize(remision.observaciones, 170);
         paginaResumen.text(observacionesText, 20, finalY);
-
-        // Actualiza la posición 'y' final después de añadir las observaciones
-        finalY += (observacionesText.length * 4); // 4 es un estimado de la altura de línea
+        finalY += (observacionesText.length * 4);
     }
-    // ▲▲▲ FIN DE LA MODIFICACIÓN CLAVE ▲▲▲
 
-    // --- DIBUJAR TOTALES Y FIRMA ---
     if (!isForPlanta) {
         const pageCount = paginaResumen.internal.getNumberOfPages();
         paginaResumen.setPage(pageCount);
@@ -461,10 +400,8 @@ async function generarPDF(remision, isForPlanta = false) {
         pdfDocFinal.addPage(copiedPage);
     }
 
-    // --- LÓGICA DE ANEXOS Y PLANOS DE CORTE (SIN CAMBIOS) ---
     const itemsCortados = remision.items.filter(item => item.tipo === 'Cortada' && item.planoDespiece && item.planoDespiece.length > 0);
     if (itemsCortados.length > 0) {
-        // --- ANEXO DE PRODUCCIÓN (4 COLUMNAS) ---
         const paginaAnexo = new jsPDF();
         addHeader(paginaAnexo, "Anexo: Despiece Detallado");
 
@@ -508,7 +445,6 @@ async function generarPDF(remision, isForPlanta = false) {
             pdfDocFinal.addPage(copiedPage);
         }
 
-        // --- PLANOS 2D (VERTICALES Y SIN DESPERDICIO) ---
         let planoCorteId = 1;
         for (const item of itemsCortados) {
             const itemDataSnap = await db.collection('items').doc(item.itemId).get();
@@ -556,22 +492,17 @@ async function generarPDF(remision, isForPlanta = false) {
     return Buffer.from(finalPdfBytes);
 }
 
-// AGREGA ESTA NUEVA FUNCIÓN
 exports.getSignedUrlForPath = functions.https.onCall(async (data, context) => {
-    if (!context.auth) {
-        throw new functions.https.HttpsError("unauthenticated", "El usuario no está autenticado.");
-    }
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "El usuario no está autenticado.");
     const filePath = data.path;
-    if (!filePath) {
-        throw new functions.https.HttpsError("invalid-argument", "La ruta del archivo es requerida.");
-    }
+    if (!filePath) throw new functions.https.HttpsError("invalid-argument", "La ruta del archivo es requerida.");
 
     try {
         const bucket = getStorage().bucket(BUCKET_NAME);
         const file = bucket.file(filePath);
         const [url] = await file.getSignedUrl({
             action: "read",
-            expires: Date.now() + 15 * 60 * 1000, // La URL expira en 15 minutos
+            expires: Date.now() + 15 * 60 * 1000, 
         });
         return { url: url };
     } catch (error) {
@@ -591,60 +522,69 @@ exports.onRemisionCreate = functions.region("us-central1").firestore
         let emailStatus = "pending", whatsappStatus = "pending";
 
         try {
-            // 1. Generar los diferentes PDFs en memoria
             const pdfBufferCliente = await generarPDFCliente(remisionData);
             const pdfBufferAdmin = await generarPDF(remisionData, false);
             const pdfBufferPlanta = await generarPDF(remisionData, true);
 
-            // 2. Guardar los PDFs en Storage y obtener sus referencias
             const bucket = admin.storage().bucket();
             const filePathAdmin = `remisiones/${remisionData.numeroRemision}.pdf`;
-            const fileAdmin = bucket.file(filePathAdmin); // Referencia al archivo principal
+            const fileAdmin = bucket.file(filePathAdmin); 
             await fileAdmin.save(pdfBufferAdmin);
 
             const filePathPlanta = `remisiones/planta-${remisionData.numeroRemision}.pdf`;
             await bucket.file(filePathPlanta).save(pdfBufferPlanta);
 
-            // 3. Actualizar el documento de la remisión solo con las RUTAS
             await snap.ref.update({
                 pdfPath: filePathAdmin,
                 pdfPlantaPath: filePathPlanta
             });
             log("PDFs guardados y rutas almacenadas correctamente.");
 
-            // 4. Intentar enviar notificaciones por correo (puede fallar por créditos)
+// 4. Enviar notificación por correo con Nodemailer (cPanel)
             try {
                 const msg = {
-                    to: remisionData.clienteEmail,
-                    from: FROM_EMAIL,
+                    from: `"Vidrio Express" <${FROM_EMAIL}>`, // Remitente
+                    to: remisionData.clienteEmail,            // Destinatario
                     subject: `Confirmación de Remisión N° ${remisionData.numeroRemision}`,
                     html: `<p>Hola ${remisionData.clienteNombre}, adjuntamos tu remisión. El estado es: <strong>${remisionData.estado}</strong>.</p>`,
                     attachments: [{
-                        content: pdfBufferCliente.toString("base64"),
                         filename: `Remision-${remisionData.numeroRemision}.pdf`,
-                        type: "application/pdf",
-                        disposition: "attachment",
+                        content: pdfBufferCliente,
+                        contentType: "application/pdf",
                     }],
                 };
-                await sgMail.send(msg);
+                await transporter.sendMail(msg);
                 emailStatus = "sent";
+                log("Correo enviado al cliente exitosamente por SMTP.");
             } catch (emailError) {
-                log("Error al enviar correo (SendGrid):", emailError.message);
+                log(`Error al enviar correo (Nodemailer): ${emailError.message}`);
                 emailStatus = "error";
             }
+            
+            // 4.1 Enviar a la impresora con Nodemailer (cPanel)
             try {
-                const printerMsg = { to: "oficinavidriosexito@print.brother.com", from: FROM_EMAIL, /* ... */ };
-                await sgMail.send(printerMsg);
-            } catch (printerError) {
-                log("Error al enviar a impresora (SendGrid):", printerError.message);
+                const printerMsg = { 
+                    from: `"Vidrio Express" <${FROM_EMAIL}>`, 
+                    to: "oficinavidriosexito@print.brother.com", // Correo de tu impresora
+                    subject: `Impresión Orden ${remisionData.numeroRemision}`,
+                    text: "Imprimir archivo adjunto",
+                    attachments: [{ 
+                        filename: `Remision-${remisionData.numeroRemision}.pdf`, 
+                        content: pdfBufferAdmin, 
+                        contentType: "application/pdf" 
+                    }]
+                };
+                await transporter.sendMail(printerMsg);
+                log("Correo enviado a la impresora exitosamente.");
+            } catch (printerError) { 
+                log(`Error al enviar a impresora (Nodemailer): ${printerError.message}`); 
             }
             
             // 5. Enviar notificación por WhatsApp con un enlace temporal
             try {
-                // Generamos un enlace temporal SOLO para este envío
                 const [whatsappUrl] = await fileAdmin.getSignedUrl({
                     action: 'read',
-                    expires: Date.now() + 15 * 60 * 1000, // Válido por 15 minutos
+                    expires: Date.now() + 15 * 60 * 1000, 
                 });
 
                 const clienteDoc = await admin.firestore().collection("clientes").doc(remisionData.idCliente).get();
@@ -653,7 +593,6 @@ exports.onRemisionCreate = functions.region("us-central1").firestore
                     const telefonos = [clienteData.telefono1, clienteData.telefono2].filter(Boolean);
                     if (telefonos.length > 0) {
                         for (const telefono of telefonos) {
-                            // Pasamos el enlace temporal a la función de envío
                             await sendWhatsAppRemision(telefono, remisionData.clienteNombre, remisionData.numeroRemision.toString(), remisionData.estado, whatsappUrl);
                         }
                         whatsappStatus = "sent";
@@ -664,7 +603,6 @@ exports.onRemisionCreate = functions.region("us-central1").firestore
                 whatsappStatus = "error";
             }
 
-            // 6. Actualizar el estado final de las notificaciones
             return snap.ref.update({ emailStatus, whatsappStatus });
 
         } catch (error) {
@@ -673,14 +611,6 @@ exports.onRemisionCreate = functions.region("us-central1").firestore
         }
     });
 
-/**
- * --- VERSIÓN FINAL CON RESTAURACIÓN DE INVENTARIO ---
- * 1.  Detecta cuando una remisión cambia su estado a "Anulada" y devuelve
- * las láminas al inventario de forma automática y segura.
- * 2.  Regenera todos los PDFs (simple para cliente, completos para la app)
- * cuando hay un cambio de estado relevante.
- * 3.  Envía las notificaciones actualizadas al cliente por correo y WhatsApp.
- */
 exports.onRemisionUpdate = functions.region("us-central1").firestore
     .document("remisiones/{remisionId}")
     .onUpdate(async (change, context) => {
@@ -689,15 +619,13 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
         const remisionId = context.params.remisionId;
         const log = (message) => functions.logger.log(`[Actualización ${remisionId}] ${message}`);
 
-        // Función interna para enviar notificaciones de forma segura
         const sendNotifications = async (motivo) => {
             try {
-                // Genera un enlace temporal para el PDF actualizado
                 const bucket = admin.storage().bucket();
-                const file = bucket.file(afterData.pdfPath); // Usa la ruta del archivo ya guardada
+                const file = bucket.file(afterData.pdfPath); 
                 const [whatsappUrl] = await file.getSignedUrl({
                     action: 'read',
-                    expires: Date.now() + 15 * 60 * 1000, // Válido por 15 minutos
+                    expires: Date.now() + 15 * 60 * 1000, 
                 });
 
                 const clienteDoc = await admin.firestore().collection("clientes").doc(afterData.idCliente).get();
@@ -713,28 +641,23 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
             }
         };
 
-        const estadoCambio = beforeData.estado !== afterData.estado;
-        const pagoFinalizado = false; // Asume tu lógica de pagos aquí si es necesario
-
         // --- Caso 1: La remisión es ANULADA ---
         if (beforeData.estado !== "Anulada" && afterData.estado === "Anulada") {
             log("Detectada anulación. Regenerando PDFs, restaurando stock y notificando...");
             try {
-                // 1. Restaurar inventario
                 const batch = admin.firestore().batch();
                 (afterData.items || []).forEach(item => {
                     if (item.itemId && item.cantidad > 0) {
                         const itemRef = db.collection("items").doc(item.itemId);
                         batch.update(itemRef, { 
                             stock: admin.firestore.FieldValue.increment(item.cantidad),
-                            _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
+                            _lastUpdated: admin.firestore.FieldValue.serverTimestamp() 
                         });
                     }
                 });
                 await batch.commit();
                 log("Inventario restaurado.");
 
-                // 2. Regenerar y guardar PDFs
                 const pdfBufferCliente = await generarPDFCliente(afterData);
                 const pdfBufferAdmin = await generarPDF(afterData, false);
                 const pdfBufferPlanta = await generarPDF(afterData, true);
@@ -745,35 +668,32 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 const filePathPlanta = `remisiones/planta-${afterData.numeroRemision}.pdf`;
                 await bucket.file(filePathPlanta).save(pdfBufferPlanta);
 
-                // 3. Actualizar Firestore solo con las rutas
                 await change.after.ref.update({
                     pdfPath: filePathAdmin,
                     pdfPlantaPath: filePathPlanta,
-                    _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
+                    _lastUpdated: admin.firestore.FieldValue.serverTimestamp() 
                 });
                 log("Rutas de PDFs actualizadas para anulación.");
 
-                // 4. Enviar notificaciones (correo y WhatsApp)
                 try {
                     const msg = {
-                         to: afterData.clienteEmail, from: FROM_EMAIL, subject: `Anulación de Remisión N° ${afterData.numeroRemision}`,
-                         html: `<p>Hola ${afterData.clienteNombre},</p><p>Te informamos que la remisión N° <strong>${afterData.numeroRemision}</strong> ha sido <strong>ANULADA</strong>.</p>`,
-                         attachments: [{ content: pdfBufferCliente.toString("base64"), filename: `Remision-ANULADA-${afterData.numeroRemision}.pdf` }],
+                        from: `"Vidrio Express" <${FROM_EMAIL}>`,
+                        to: afterData.clienteEmail,
+                        subject: `Anulación de Remisión N° ${afterData.numeroRemision}`,
+                        html: `<p>Hola ${afterData.clienteNombre},</p><p>Te informamos que la remisión N° <strong>${afterData.numeroRemision}</strong> ha sido <strong>ANULADA</strong>.</p>`,
+                        attachments: [{ filename: `Remision-ANULADA-${afterData.numeroRemision}.pdf`, content: pdfBufferCliente, contentType: "application/pdf" }],
                     };
-                    await sgMail.send(msg);
-                } catch (e) { log("Error de SendGrid:", e.message); }
+                    await transporter.sendMail(msg);
+                } catch (e) { log("Error de Nodemailer:", e.message); }
                 
                 await sendNotifications("Anulación");
 
-            } catch (error) {
-                log("Error al procesar anulación:", error);
-            }
+            } catch (error) { log("Error al procesar anulación:", error); }
         }
-// --- Caso 2: La remisión es ENTREGADA (ignorando otros estados) ---
+        // --- Caso 2: La remisión es ENTREGADA ---
         else if (beforeData.estado !== "Entregado" && afterData.estado === "Entregado") {
             log("Detectada entrega. Regenerando PDFs y notificando.");
             try {
-                // Regenerar PDFs
                 const pdfBufferCliente = await generarPDFCliente(afterData);
                 const pdfBufferAdmin = await generarPDF(afterData, false);
                 const pdfBufferPlanta = await generarPDF(afterData, true);
@@ -791,74 +711,30 @@ exports.onRemisionUpdate = functions.region("us-central1").firestore
                 });
                 log("Rutas de PDFs actualizadas por entrega.");
 
-                // Enviar notificaciones
                 try {
                     const msg = {
-                         to: afterData.clienteEmail, from: FROM_EMAIL, subject: `Tu orden N° ${afterData.numeroRemision} ha sido entregada`,
+                         from: `"Vidrio Express" <${FROM_EMAIL}>`,
+                         to: afterData.clienteEmail,
+                         subject: `Tu orden N° ${afterData.numeroRemision} ha sido entregada`,
                          html: `<p>Hola ${afterData.clienteNombre},</p><p>Te informamos que tu orden N° <strong>${afterData.numeroRemision}</strong> ha sido completada y marcada como <strong>ENTREGADA</strong>.</p>`,
-                         attachments: [{ content: pdfBufferCliente.toString("base64"), filename: `Remision-ENTREGADA-${afterData.numeroRemision}.pdf` }],
+                         attachments: [{ filename: `Remision-ENTREGADA-${afterData.numeroRemision}.pdf`, content: pdfBufferCliente, contentType: "application/pdf" }],
                     };
-                    await sgMail.send(msg);
-                } catch (e) { log("Error de SendGrid:", e.message); }
+                    await transporter.sendMail(msg);
+                } catch (e) { log("Error de Nodemailer:", e.message); }
                 
                 await sendNotifications("Entrega");
 
-            } catch (error) {
-                log("Error al procesar entrega:", error);
-            }
+            } catch (error) { log("Error al procesar entrega:", error); }
         }
-        // --- Caso 3: Se añadió el IVA manualmente desde el botón "Enviar a Facturar" ---
-        else if (!beforeData.incluyeIVA && afterData.incluyeIVA) {
-            log("Detectado cambio: Se añadió IVA. Regenerando PDFs silenciosamente...");
-            try {
-                // 1. Regenerar PDFs con los nuevos valores de IVA
-                const pdfBufferCliente = await generarPDFCliente(afterData);
-                const pdfBufferAdmin = await generarPDF(afterData, false);
-                const pdfBufferPlanta = await generarPDF(afterData, true);
-
-                // 2. Guardarlos en Storage (sobreescribe los anteriores)
-                const bucket = admin.storage().bucket();
-                const filePathAdmin = `remisiones/${afterData.numeroRemision}.pdf`;
-                await bucket.file(filePathAdmin).save(pdfBufferAdmin);
-                
-                const filePathPlanta = `remisiones/planta-${afterData.numeroRemision}.pdf`;
-                await bucket.file(filePathPlanta).save(pdfBufferPlanta);
-
-                // 3. Actualizamos las rutas y forzamos el caché, pero SIN LLAMAR a sendNotifications()
-                await change.after.ref.update({
-                    pdfPath: filePathAdmin,
-                    pdfPlantaPath: filePathPlanta,
-                    pdfUrl: admin.firestore.FieldValue.delete(), // Limpieza de URLs viejas por seguridad
-                    pdfPlantaUrl: admin.firestore.FieldValue.delete(),
-                    _lastUpdated: admin.firestore.FieldValue.serverTimestamp()
-                });
-                
-                log("PDFs regenerados y guardados con IVA. No se envió notificación al cliente.");
-
-            } catch (error) {
-                log("Error al regenerar PDFs tras añadir IVA:", error);
-            }
-        }
-
         return null;
     });
 
-// Función HTTP invocable que devuelve la configuración de Firebase del lado del cliente.
 exports.getFirebaseConfig = functions.https.onCall((data, context) => {
-    // Asegurarse de que el usuario esté autenticado para solicitar la configuración es una buena práctica.
-    if (!context.auth) {
-        throw new functions.https.HttpsError(
-            "unauthenticated",
-            "El usuario debe estar autenticado para solicitar la configuración."
-        );
-    }
-
-    // Devuelve la configuración guardada en el entorno.
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado para solicitar la configuración.");
     return functions.config().prisma;
 });
 
 exports.applyDiscount = functions.https.onCall(async (data, context) => {
-    // 1. Verificación de permisos de administrador
     if (!context.auth || context.auth.token.role !== 'admin') {
         throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden aplicar descuentos.");
     }
@@ -873,13 +749,10 @@ exports.applyDiscount = functions.https.onCall(async (data, context) => {
 
     try {
         const remisionDoc = await remisionRef.get();
-        if (!remisionDoc.exists) {
-            throw new functions.https.HttpsError("not-found", "La remisión no existe.");
-        }
+        if (!remisionDoc.exists) throw new functions.https.HttpsError("not-found", "La remisión no existe.");
 
         const remisionData = remisionDoc.data();
         
-        // 2. Calcular el nuevo total con el descuento
         const subtotal = remisionData.subtotal;
         const discountAmount = subtotal * (discountPercentage / 100);
         const subtotalWithDiscount = subtotal - discountAmount;
@@ -897,7 +770,6 @@ exports.applyDiscount = functions.https.onCall(async (data, context) => {
             },
         };
 
-        // 3. Regenerar y guardar los PDFs actualizados
         const finalRemisionData = { ...remisionData, ...updatedDataForFirestore };
         const pdfBufferCliente = await generarPDFCliente(finalRemisionData);
         const pdfBufferAdmin = await generarPDF(finalRemisionData, false);
@@ -911,43 +783,33 @@ exports.applyDiscount = functions.https.onCall(async (data, context) => {
         const filePathPlanta = `remisiones/planta-${finalRemisionData.numeroRemision}.pdf`;
         await bucket.file(filePathPlanta).save(pdfBufferPlanta);
 
-        // 4. Actualizar el documento en Firestore con las rutas y borrando las URLs antiguas
         await remisionRef.update({
             ...updatedDataForFirestore,
             pdfPath: filePathAdmin,
             pdfPlantaPath: filePathPlanta,
             pdfUrl: admin.firestore.FieldValue.delete(),
             pdfPlantaUrl: admin.firestore.FieldValue.delete(),
-            _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
+            _lastUpdated: admin.firestore.FieldValue.serverTimestamp() 
         });
         log(`Descuento aplicado y PDFs regenerados para la remisión ${remisionId}.`);
         
-        // 5. Enviar notificaciones (Correo y WhatsApp)
         try {
             const msg = {
+                from: `"Vidrio Express" <${FROM_EMAIL}>`,
                 to: finalRemisionData.clienteEmail,
-                from: FROM_EMAIL,
                 subject: `Descuento aplicado a tu Remisión N° ${finalRemisionData.numeroRemision}`,
                 html: `<p>Hola ${finalRemisionData.clienteNombre}, se ha aplicado un descuento. El nuevo total es: <strong>${formatCurrency(newTotal)}</strong>.</p>`,
                 attachments: [{
-                    content: pdfBufferCliente.toString("base64"),
                     filename: `Remision-Actualizada-${finalRemisionData.numeroRemision}.pdf`,
-                    type: "application/pdf",
-                    disposition: "attachment",
+                    content: pdfBufferCliente,
+                    contentType: "application/pdf",
                 }],
             };
-            await sgMail.send(msg);
-        } catch (e) {
-            log("Error de SendGrid al notificar descuento:", e.message);
-        }
+            await transporter.sendMail(msg);
+        } catch (e) { log("Error al notificar descuento por correo:", e.message); }
 
         try {
-            // Generar enlace temporal para WhatsApp
-            const [whatsappUrl] = await fileAdmin.getSignedUrl({
-                action: 'read',
-                expires: Date.now() + 15 * 60 * 1000, // Válido por 15 minutos
-            });
-
+            const [whatsappUrl] = await fileAdmin.getSignedUrl({ action: 'read', expires: Date.now() + 15 * 60 * 1000 });
             const clienteDoc = await admin.firestore().collection("clientes").doc(remisionData.idCliente).get();
             if (clienteDoc.exists) {
                 const clienteData = clienteDoc.data();
@@ -956,9 +818,7 @@ exports.applyDiscount = functions.https.onCall(async (data, context) => {
                     await sendWhatsAppRemision(telefono, remisionData.clienteNombre, remisionData.numeroRemision.toString(), "Descuento Aplicado", whatsappUrl);
                 }
             }
-        } catch (e) {
-            log("Error al enviar notificación de descuento por WhatsApp:", e);
-        }
+        } catch (e) { log("Error al enviar notificación de descuento por WhatsApp:", e); }
 
         return { success: true, message: "Descuento aplicado y notificaciones enviadas." };
 
@@ -973,41 +833,35 @@ exports.onResendEmailRequest = functions.region("us-central1").firestore
     .onCreate(async (snap, context) => {
         const request = snap.data();
         const remisionId = request.remisionId;
-        const log = (message) => {
-            functions.logger.log(`[Reenvío ${remisionId}] ${message}`);
-        };
+        const log = (message) => functions.logger.log(`[Reenvío ${remisionId}] ${message}`);
+
         log("Iniciando reenvío de correo.");
 
         try {
-            const remisionDoc = await admin.firestore()
-                .collection("remisiones").doc(remisionId).get();
-            const docExists = remisionDoc && (typeof remisionDoc.exists === "function" ? remisionDoc.exists() : remisionDoc.exists);
-            if (!docExists) {
+            const remisionDoc = await admin.firestore().collection("remisiones").doc(remisionId).get();
+            if (!remisionDoc.exists) {
                 log("La remisión no existe.");
                 return snap.ref.delete();
             }
             const remisionData = remisionDoc.data();
 
             const bucket = admin.storage().bucket();
-
             const filePath = `remisiones/${remisionData.numeroRemision}.pdf`;
             const [pdfBuffer] = await bucket.file(filePath).download();
             log("PDF descargado desde Storage.");
 
             const msg = {
+                from: `"Vidrio Express" <${FROM_EMAIL}>`,
                 to: remisionData.clienteEmail,
-                from: FROM_EMAIL,
                 subject: `[Reenvío] Remisión N° ${remisionData.numeroRemision}`,
-                html: `<p>Hola ${remisionData.clienteNombre},</p>
-          <p>Como solicitaste, aquí tienes una copia de tu remisión.</p>`,
+                html: `<p>Hola ${remisionData.clienteNombre},</p><p>Como solicitaste, aquí tienes una copia de tu remisión.</p>`,
                 attachments: [{
-                    content: pdfBuffer.toString("base64"),
                     filename: `Remision-${remisionData.numeroRemision}.pdf`,
-                    type: "application/pdf",
-                    disposition: "attachment",
+                    content: pdfBuffer,
+                    contentType: "application/pdf",
                 }],
             };
-            await sgMail.send(msg);
+            await transporter.sendMail(msg);
             log(`Correo reenviado a ${remisionData.clienteEmail}.`);
 
             return snap.ref.delete();
@@ -1017,42 +871,22 @@ exports.onResendEmailRequest = functions.region("us-central1").firestore
         }
     });
 
-/**
- * NUEVA FUNCIÓN: Actualiza el documento de un empleado con la URL de un archivo.
- * Se invoca desde el cliente después de subir un archivo a Firebase Storage.
- */
 exports.updateEmployeeDocument = functions.https.onCall(async (data, context) => {
-    // 1. Autenticación y Verificación de Permisos
-    if (!context.auth) {
-        throw new functions.https.HttpsError("unauthenticated", "El usuario no está autenticado.");
-    }
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "El usuario no está autenticado.");
 
     const uid = context.auth.uid;
     const userDoc = await admin.firestore().collection("users").doc(uid).get();
     const userData = userDoc.data();
 
-    if (userData.role !== "admin") {
-        throw new functions.https.HttpsError("permission-denied", "El usuario no tiene permisos de administrador.");
-    }
+    if (userData.role !== "admin") throw new functions.https.HttpsError("permission-denied", "El usuario no tiene permisos de administrador.");
 
-    // 2. Validación de Datos de Entrada
     const { employeeId, docType, fileUrl } = data;
-    if (!employeeId || !docType || !fileUrl) {
-        throw new functions.https.HttpsError("invalid-argument", "Faltan datos (employeeId, docType, fileUrl).");
-    }
+    if (!employeeId || !docType || !fileUrl) throw new functions.https.HttpsError("invalid-argument", "Faltan datos (employeeId, docType, fileUrl).");
 
-    // 3. Lógica de Actualización
     try {
         const employeeDocRef = admin.firestore().collection("users").doc(employeeId);
-
-        // Usamos notación de punto para actualizar un campo dentro de un mapa.
-        // Esto crea el mapa 'documentos' si no existe.
-        const updatePayload = {
-            [`documentos.${docType}`]: fileUrl
-        };
-
+        const updatePayload = { [`documentos.${docType}`]: fileUrl };
         await employeeDocRef.update(updatePayload);
-
         return { success: true, message: `Documento '${docType}' actualizado para el empleado ${employeeId}.` };
     } catch (error) {
         functions.logger.error(`Error al actualizar documento para ${employeeId}:`, error);
@@ -1060,10 +894,6 @@ exports.updateEmployeeDocument = functions.https.onCall(async (data, context) =>
     }
 });
 
-/**
- * Se activa cuando se actualiza una importación (ej. al añadir un abono).
- * Registra el abono como un gasto en COP.
- */
 exports.onImportacionUpdate = functions.firestore
     .document("importaciones/{importacionId}")
     .onUpdate(async (change, context) => {
@@ -1075,18 +905,15 @@ exports.onImportacionUpdate = functions.firestore
         const gastosAntes = beforeData.gastosNacionalizacion || {};
         const gastosDespues = afterData.gastosNacionalizacion || {};
 
-        // Iterar sobre cada tipo de gasto (naviera, puerto, etc.)
         for (const tipoGasto of Object.keys(gastosDespues)) {
             const facturasAntes = gastosAntes[tipoGasto]?.facturas || [];
             const facturasDespues = gastosDespues[tipoGasto].facturas || [];
 
-            // Iterar sobre cada factura de ese tipo de gasto
-            facturasDespues.forEach((factura, index) => {
+            facturasDespues.forEach((factura) => {
                 const facturaAnterior = facturasAntes.find(f => f.id === factura.id);
                 const abonosAntes = facturaAnterior?.abonos || [];
                 const abonosDespues = factura.abonos || [];
 
-                // Si se añadió un nuevo abono a esta factura
                 if (abonosDespues.length > abonosAntes.length) {
                     const nuevoAbono = abonosDespues[abonosDespues.length - 1];
                     log(`Nuevo abono de ${nuevoAbono.valor} para factura ${factura.numeroFactura} de ${tipoGasto}`);
@@ -1105,10 +932,9 @@ exports.onImportacionUpdate = functions.firestore
                         importacionId: importacionId,
                         gastoTipo: tipoGasto,
                         facturaId: factura.id,
-                        _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
+                        _lastUpdated: admin.firestore.FieldValue.serverTimestamp()
                     };
 
-                    // Crear el documento en la colección de gastos
                     admin.firestore().collection("gastos").add(nuevoGastoDoc)
                         .then(() => log("Gasto por abono registrado con éxito."))
                         .catch(err => functions.logger.error("Error al registrar gasto por abono:", err));
@@ -1118,49 +944,30 @@ exports.onImportacionUpdate = functions.firestore
         return null;
     });
 
-
-// Reemplaza la función setMyUserAsAdmin con esta versión más explícita
 exports.setMyUserAsAdmin = functions.https.onRequest(async (req, res) => {
-    // --- INICIO DE LA LÓGICA MANUAL DE PERMISOS (CORS) ---
-    // Le decimos al navegador que confiamos en cualquier origen (para desarrollo)
     res.set('Access-Control-Allow-Origin', '*');
-
-    // Manejar la solicitud de "inspección" (preflight) que hace el navegador
     if (req.method === 'OPTIONS') {
         res.set('Access-Control-Allow-Methods', 'POST');
         res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
         res.status(204).send('');
         return;
     }
-    // --- FIN DE LA LÓGICA MANUAL DE PERMISOS (CORS) ---
 
-    // El resto de la lógica para verificar y asignar el permiso de admin
     const idToken = req.headers.authorization?.split('Bearer ')[1];
-    if (!idToken) {
-        return res.status(401).send({ error: 'Unauthorized: No se proporcionó token.' });
-    }
+    if (!idToken) return res.status(401).send({ error: 'Unauthorized: No se proporcionó token.' });
 
     try {
         const decodedToken = await admin.auth().verifyIdToken(idToken);
         const userId = decodedToken.uid;
         await admin.auth().setCustomUserClaims(userId, { admin: true });
-
         console.log(`Permiso de 'admin' OTORGADO al usuario ${userId}.`);
         return res.status(200).send({ data: { message: `¡Éxito! El usuario ${userId} ahora tiene permisos de admin.` } });
-
     } catch (error) {
         console.error("Error al establecer permisos de administrador:", error);
         return res.status(500).send({ error: 'Error interno del servidor.' });
     }
 });
 
-
-/**
- * --- VERSIÓN MEJORADA ---
- * Se activa cuando se escribe en un documento de usuario.
- * Sincroniza el rol de Firestore con un "custom claim" en Firebase Auth,
- * guardando el rol exacto para mayor flexibilidad.
- */
 exports.onUserRoleChange = functions.firestore
     .document('users/{userId}')
     .onWrite(async (change, context) => {
@@ -1171,59 +978,30 @@ exports.onUserRoleChange = functions.firestore
         const newRole = afterData ? afterData.role : null;
         const oldRole = beforeData ? beforeData.role : null;
 
-        // Si el rol no cambió o el usuario fue eliminado, no hacer nada.
-        if (newRole === oldRole) {
-            return null;
-        }
+        if (newRole === oldRole) return null;
 
         try {
-            // --- INICIO DE LA MODIFICACIÓN ---
-            // Definimos los roles válidos para el sistema
             const validRoles = ['admin', 'planta', 'contabilidad'];
-
             if (newRole && validRoles.includes(newRole)) {
-                // Si el nuevo rol es válido, lo estampamos en los permisos del usuario.
-                // Esto es más potente que solo tener "admin: true".
                 await admin.auth().setCustomUserClaims(userId, { role: newRole });
                 console.log(`Permiso de '${newRole}' asignado al usuario ${userId}.`);
             } else {
-                // Si el rol no es válido o es nulo, le quitamos cualquier permiso especial.
                 await admin.auth().setCustomUserClaims(userId, null);
                 console.log(`Permisos personalizados eliminados para el usuario ${userId}.`);
             }
-            // --- FIN DE LA MODIFICACIÓN ---
         } catch (error) {
             console.error(`Error al establecer permisos para ${userId}:`, error);
         }
         return null;
     });
 
-
-/**
-* --- FUNCIÓN DE DEPURACIÓN ---
-* Permite a un usuario autenticado verificar los permisos (custom claims)
-* que están presentes en su token de sesión actual.
-*/
 exports.checkMyClaims = functions.https.onRequest((req, res) => {
-    // Usa el middleware de CORS para manejar los permisos del navegador.
     cors(req, res, async () => {
         try {
-            // Obtener el token del encabezado de la solicitud
             const idToken = req.headers.authorization?.split("Bearer ")[1];
-            if (!idToken) {
-                console.log("No se proporcionó token de autorización.");
-                return res.status(401).send({ error: "No autenticado." });
-            }
-
-            // Verificar el token usando el Admin SDK
+            if (!idToken) return res.status(401).send({ error: "No autenticado." });
             const decodedToken = await admin.auth().verifyIdToken(idToken);
-
-            console.log(`Revisando claims para el UID: ${decodedToken.uid}`);
-            console.log("Claims completos en el token del servidor:", decodedToken);
-
-            // Devolver los claims al cliente
             return res.status(200).send({ data: { claims: decodedToken } });
-
         } catch (error) {
             console.error("Error al verificar el token:", error);
             return res.status(500).send({ error: "Error interno al procesar la solicitud." });
@@ -1231,56 +1009,27 @@ exports.checkMyClaims = functions.https.onRequest((req, res) => {
     });
 });
 
-/**
- * --- NUEVA FUNCIÓN ---
- * Guarda o actualiza los saldos iniciales de las cuentas.
- * Solo puede ser llamada por un administrador.
- */
 exports.setInitialBalances = functions.https.onCall(async (data, context) => {
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Se ajusta la verificación para que coincida con el rol del usuario.
     if (!context.auth || context.auth.token.role !== 'admin') {
-        throw new functions.https.HttpsError(
-            "permission-denied",
-            "Solo los administradores pueden establecer los saldos iniciales."
-        );
+        throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden establecer los saldos iniciales.");
     }
-    // --- FIN DE LA CORRECCIÓN ---
-
     const balances = data;
     for (const key in balances) {
-        if (typeof balances[key] !== 'number') {
-            throw new functions.https.HttpsError(
-                "invalid-argument",
-                `El valor para "${key}" no es un número.`
-            );
-        }
+        if (typeof balances[key] !== 'number') throw new functions.https.HttpsError("invalid-argument", `El valor para "${key}" no es un número.`);
     }
 
     try {
         const balanceDocRef = admin.firestore().collection("saldosIniciales").doc("current");
         await balanceDocRef.set(balances, { merge: true });
-
         return { success: true, message: "Saldos iniciales guardados correctamente." };
     } catch (error) {
         functions.logger.error("Error al guardar saldos iniciales:", error);
-        throw new functions.https.HttpsError(
-            "internal",
-            "No se pudo guardar la información en la base de datos."
-        );
+        throw new functions.https.HttpsError("internal", "No se pudo guardar la información en la base de datos.");
     }
 });
 
-/**
- * --- NUEVA FUNCIÓN DE MANTENIMIENTO ---
- * Recorre todas las remisiones y regenera sus URLs de PDF para que sean permanentes.
- * Se activa manualmente desde la aplicación.
- */
 exports.regenerateAllRemisionUrls = functions.https.onCall(async (data, context) => {
-    // Verificación de permisos (sin cambios)
-    if (!context.auth || context.auth.token.role !== 'admin') {
-        throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden ejecutar esta operación.");
-    }
+    if (!context.auth || context.auth.token.role !== 'admin') throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden ejecutar esta operación.");
 
     const log = functions.logger;
     log.info("Iniciando la REGENERACIÓN Y REPARACIÓN de todas las remisiones...");
@@ -1288,15 +1037,10 @@ exports.regenerateAllRemisionUrls = functions.https.onCall(async (data, context)
     const remisionesRef = db.collection("remisiones");
     const snapshot = await remisionesRef.get();
 
-    if (snapshot.empty) {
-        log.info("No se encontraron remisiones para procesar.");
-        return { success: true, message: "No hay remisiones para actualizar." };
-    }
+    if (snapshot.empty) return { success: true, message: "No hay remisiones para actualizar." };
 
     const bucket = admin.storage().bucket();
-
-    let updatedCount = 0;
-    let repairedCount = 0;
+    let updatedCount = 0; let repairedCount = 0;
     const batchSize = 100;
     let batch = db.batch();
 
@@ -1305,104 +1049,63 @@ exports.regenerateAllRemisionUrls = functions.https.onCall(async (data, context)
         const remision = doc.data();
         let updates = {};
 
-        // --- INICIO DE LA LÓGICA DE REPARACIÓN MEJORADA ---
         const adminPath = `remisiones/${remision.numeroRemision}.pdf`;
         const plantaPath = `remisiones/planta-${remision.numeroRemision}.pdf`;
-
         const fileAdmin = bucket.file(adminPath);
         const filePlanta = bucket.file(plantaPath);
 
         const [existsAdmin] = await fileAdmin.exists();
         
-        // Si el archivo NO existe, lo creamos desde cero.
         if (!existsAdmin) {
             log.warn(`PDF no encontrado para remisión N° ${remision.numeroRemision}. REGENERANDO...`);
             try {
                 const pdfBufferAdmin = await generarPDF(remision, false);
                 await fileAdmin.save(pdfBufferAdmin);
-                
                 const pdfBufferPlanta = await generarPDF(remision, true);
                 await filePlanta.save(pdfBufferPlanta);
 
                 updates.pdfPath = adminPath;
                 updates.pdfPlantaPath = plantaPath;
-                repairedCount++; // Contamos como una reparación
+                repairedCount++; 
                 log.info(`PDF para N° ${remision.numeroRemision} REPARADO.`);
-
-            } catch (creationError) {
-                log.error(`FALLO al regenerar PDF para N° ${remision.numeroRemision}:`, creationError);
-                continue; // Saltamos a la siguiente remisión si la creación falla
-            }
+            } catch (creationError) { continue; }
         } else {
-            // Si el archivo SÍ existe, solo nos aseguramos de que la ruta esté guardada.
             if (!remision.pdfPath) {
                  updates.pdfPath = adminPath;
                  updates.pdfPlantaPath = plantaPath;
                  updatedCount++;
             }
         }
-        // --- FIN DE LA LÓGICA DE REPARACIÓN ---
 
-        if (Object.keys(updates).length > 0) {
-            batch.update(doc.ref, updates);
-        }
+        if (Object.keys(updates).length > 0) batch.update(doc.ref, updates);
 
         if ((i + 1) % batchSize === 0) {
             await batch.commit();
             batch = db.batch();
-            log.info(`Lote de ${batchSize} remisiones procesado...`);
         }
     }
-
-    // Commitear el último lote si queda algo
-    if ((repairedCount + updatedCount) > 0 && (repairedCount + updatedCount) % batchSize !== 0) {
-        await batch.commit();
-    }
-
-    const resultMessage = `Proceso completado. Se actualizaron ${updatedCount} enlaces y se repararon ${repairedCount} remisiones con PDFs faltantes.`;
-    log.info(resultMessage);
-    return { success: true, message: resultMessage };
+    if ((repairedCount + updatedCount) > 0 && (repairedCount + updatedCount) % batchSize !== 0) await batch.commit();
+    return { success: true, message: `Proceso completado. Se actualizaron ${updatedCount} enlaces y se repararon ${repairedCount} remisiones con PDFs faltantes.` };
 });
 
-const ExcelJS = require('exceljs');
-
-
-/**
- * --- VERSIÓN CORREGIDA ---
- * Exporta los gastos a un archivo Excel.
- * Ahora permite el acceso a los roles 'admin' y 'contabilidad'.
- */
 exports.exportGastosToExcel = functions.https.onCall(async (data, context) => {
-    // --- INICIO DE LA CORRECCIÓN DE PERMISOS ---
     const userRole = context.auth.token.role;
     const allowedRoles = ['admin', 'contabilidad'];
 
-    if (!context.auth || !allowedRoles.includes(userRole)) {
-        throw new functions.https.HttpsError(
-            'permission-denied',
-            'Solo los administradores o contabilidad pueden exportar datos.'
-        );
-    }
-    // --- FIN DE LA CORRECCIÓN DE PERMISOS ---
+    if (!context.auth || !allowedRoles.includes(userRole)) throw new functions.https.HttpsError('permission-denied', 'Solo los administradores o contabilidad pueden exportar datos.');
 
     const { startDate, endDate } = data;
-    if (!startDate || !endDate) {
-        throw new functions.https.HttpsError('invalid-argument', 'Se requieren fechas de inicio y fin.');
-    }
+    if (!startDate || !endDate) throw new functions.https.HttpsError('invalid-argument', 'Se requieren fechas de inicio y fin.');
 
     try {
         const gastosRef = db.collection('gastos');
         const snapshot = await gastosRef.where('fecha', '>=', startDate).where('fecha', '<=', endDate).get();
 
-        if (snapshot.empty) {
-            return { success: false, message: 'No se encontraron gastos en el rango de fechas seleccionado.' };
-        }
+        if (snapshot.empty) return { success: false, message: 'No se encontraron gastos en el rango de fechas seleccionado.' };
 
-        const ExcelJS = require('exceljs');
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Gastos');
 
-        // Definir las columnas
         worksheet.columns = [
             { header: 'Fecha', key: 'fecha', width: 15 },
             { header: 'Proveedor', key: 'proveedorNombre', width: 30 },
@@ -1411,204 +1114,106 @@ exports.exportGastosToExcel = functions.https.onCall(async (data, context) => {
             { header: 'Valor Total', key: 'valorTotal', width: 20, style: { numFmt: '"$"#,##0' } }
         ];
 
-        // Añadir las filas
-        snapshot.forEach(doc => {
-            worksheet.addRow(doc.data());
-        });
+        snapshot.forEach(doc => worksheet.addRow(doc.data()));
 
-        // Generar el archivo en memoria
         const buffer = await workbook.xlsx.writeBuffer();
         const fileContent = Buffer.from(buffer).toString('base64');
-
         return { success: true, fileContent: fileContent };
 
-    } catch (error) {
-        console.error("Error al generar el reporte de gastos:", error);
-        throw new functions.https.HttpsError('internal', 'No se pudo generar el archivo Excel.');
-    }
+    } catch (error) { throw new functions.https.HttpsError('internal', 'No se pudo generar el archivo Excel.'); }
 });
-/**
- * Elimina una factura de gasto de nacionalización de una importación.
- * Verifica que la factura no tenga abonos antes de borrarla.
- * Solo puede ser llamada por un administrador.
- */
+
 exports.deleteGastoNacionalizacion = functions.region("us-central1").https.onCall(async (data, context) => {
-    if (!context.auth || context.auth.token.role !== 'admin') {
-        throw new functions.https.HttpsError('permission-denied', 'Solo los administradores pueden realizar esta acción.');
-    }
+    if (!context.auth || context.auth.token.role !== 'admin') throw new functions.https.HttpsError('permission-denied', 'Solo los administradores pueden realizar esta acción.');
 
     const { importacionId, gastoTipo, facturaId } = data;
-    if (!importacionId || !gastoTipo || !facturaId) {
-        throw new functions.https.HttpsError('invalid-argument', 'Faltan datos para eliminar el gasto.');
-    }
+    if (!importacionId || !gastoTipo || !facturaId) throw new functions.https.HttpsError('invalid-argument', 'Faltan datos para eliminar el gasto.');
 
     const importacionRef = db.collection("importaciones").doc(importacionId);
 
     try {
         await db.runTransaction(async (transaction) => {
             const importacionDoc = await transaction.get(importacionRef);
-
-            // --- INICIO DE LA CORRECCIÓN ---
-            // Se usa '.exists' como una propiedad, sin paréntesis ().
-            if (!importacionDoc.exists) {
-            // --- FIN DE LA CORRECCIÓN ---
-                throw new Error("La importación no fue encontrada.");
-            }
+            if (!importacionDoc.exists) throw new Error("La importación no fue encontrada.");
 
             const importacionData = importacionDoc.data();
             const gastosNacionalizacion = importacionData.gastosNacionalizacion || {};
             const gastoActual = gastosNacionalizacion[gastoTipo];
 
-            if (!gastoActual || !gastoActual.facturas) {
-                throw new Error("El grupo de gasto no fue encontrado.");
-            }
+            if (!gastoActual || !gastoActual.facturas) throw new Error("El grupo de gasto no fue encontrado.");
 
             const facturaIndex = gastoActual.facturas.findIndex(f => f.id === facturaId);
-            if (facturaIndex === -1) {
-                console.log(`Factura ${facturaId} no encontrada, probablemente ya fue eliminada.`);
-                return;
-            }
+            if (facturaIndex === -1) return;
 
             const facturaAEliminar = gastoActual.facturas[facturaIndex];
-            if (facturaAEliminar.abonos && facturaAEliminar.abonos.length > 0) {
-                throw new functions.https.HttpsError('permission-denied', 'No se puede eliminar un gasto que ya tiene abonos registrados.');
-            }
+            if (facturaAEliminar.abonos && facturaAEliminar.abonos.length > 0) throw new functions.https.HttpsError('permission-denied', 'No se puede eliminar un gasto que ya tiene abonos registrados.');
 
             gastoActual.facturas.splice(facturaIndex, 1);
 
             let nuevoTotalNacionalizacionCOP = 0;
             Object.values(gastosNacionalizacion).forEach(gasto => {
-                (gasto.facturas || []).forEach(factura => {
-                    nuevoTotalNacionalizacionCOP += factura.valorTotal || 0;
-                });
+                (gasto.facturas || []).forEach(factura => { nuevoTotalNacionalizacionCOP += factura.valorTotal || 0; });
             });
 
             transaction.update(importacionRef, {
                 gastosNacionalizacion,
                 totalNacionalizacionCOP: nuevoTotalNacionalizacionCOP,
-                lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
+                lastUpdated: admin.firestore.FieldValue.serverTimestamp()
             });
         });
 
         return { success: true, message: "Gasto eliminado con éxito." };
-
     } catch (error) {
-        console.error("Error al eliminar gasto:", error);
-        if (error instanceof functions.https.HttpsError) {
-            throw error;
-        }
+        if (error instanceof functions.https.HttpsError) throw error;
         throw new functions.https.HttpsError('internal', 'Ocurrió un error al intentar eliminar el gasto.');
     }
 });
 
-/**
- * Función Callable: Genera una URL firmada y temporal para un archivo en Storage.
- * @param {object} data - Objeto con la propiedad `filePath`.
- * @param {object} context - Información de autenticación del usuario.
- * @returns {Promise<{url: string}>} - La URL firmada y temporal.
- */
 exports.getSignedUrl = functions.https.onCall(async (data, context) => {
-    // 1. Verificar que el usuario está autenticado
-    if (!context.auth) {
-        throw new functions.https.HttpsError(
-            'unauthenticated',
-            'El usuario debe estar autenticado para ver archivos.'
-        );
-    }
-
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'El usuario debe estar autenticado para ver archivos.');
     const filePath = data.filePath;
-    if (!filePath) {
-        throw new functions.https.HttpsError(
-            'invalid-argument',
-            'Se debe proporcionar la ruta del archivo (filePath).'
-        );
-    }
-
-    // 2. Configurar la duración del enlace (15 minutos)
-    const options = {
-        version: 'v4',
-        action: 'read',
-        expires: Date.now() + 15 * 60 * 1000, // 15 minutos
-    };
+    if (!filePath) throw new functions.https.HttpsError('invalid-argument', 'Se debe proporcionar la ruta del archivo (filePath).');
 
     try {
-        // 3. Generar y devolver la URL firmada
-        const [url] = await admin.storage().bucket().file(filePath).getSignedUrl(options);
+        const [url] = await admin.storage().bucket().file(filePath).getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 15 * 60 * 1000 });
         return { url: url };
-    } catch (error) {
-        console.error("Error al generar la URL firmada:", error);
-        throw new functions.https.HttpsError(
-            'internal',
-            'No se pudo generar el enlace para el archivo.'
-        );
-    }
+    } catch (error) { throw new functions.https.HttpsError('internal', 'No se pudo generar el enlace para el archivo.'); }
 });
 
 exports.repairRutUrls = functions.runWith({ timeoutSeconds: 540, memory: '1GB' }).https.onCall(async (data, context) => {
-    if (!context.auth || context.auth.token.role !== 'admin') {
-        throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden ejecutar esta operación.");
-    }
+    if (!context.auth || context.auth.token.role !== 'admin') throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden ejecutar esta operación.");
 
     const log = functions.logger;
-    log.info("--- INICIANDO DIAGNÓSTICO DE URLs DE RUTs ---");
-
     const bucket = admin.storage().bucket();
     let updatedCount = 0;
     const NEW_PROJECT_ID = "vidrioexpres1";
 
-    // --- DIAGNÓSTICO PARA CLIENTES ---
-    log.info("--- Revisando Clientes ---");
     const clientesSnapshot = await db.collection("clientes").get();
-    log.info(`Encontrados ${clientesSnapshot.docs.length} clientes.`);
-
     for (const doc of clientesSnapshot.docs) {
         const data = doc.data();
-        log.info(`[Cliente: ${doc.id}] Revisando...`);
-
         if (data.rutUrl && data.rutUrl.trim() !== '') {
-            log.info(` -> URL encontrada: ${data.rutUrl}`);
-            const isIncorrect = !data.rutUrl.includes(NEW_PROJECT_ID);
-            log.info(` -> ¿La URL es incorrecta? (No incluye '${NEW_PROJECT_ID}'): ${isIncorrect}`);
-
-            if (isIncorrect) {
-                log.warn(` -> ¡URL INCORRECTA DETECTADA! Intentando actualizar...`);
+            if (!data.rutUrl.includes(NEW_PROJECT_ID)) {
                 try {
                     const oldUrl = new URL(data.rutUrl);
                     const decodedPath = decodeURIComponent(oldUrl.pathname);
                     const fileName = decodedPath.substring(decodedPath.lastIndexOf('/') + 1);
                     const file = bucket.file(`ruts_clientes/${fileName}`);
                     const [exists] = await file.exists();
-
                     if(exists) {
                         const [newUrl] = await file.getSignedUrl({ action: 'read', expires: '03-09-2491' });
                         await doc.ref.update({ rutUrl: newUrl });
                         updatedCount++;
-                        log.info(` -> ÉXITO: URL del cliente ${doc.id} actualizada.`);
-                    } else {
-                        log.error(` -> ERROR DE REPARACIÓN: El archivo 'ruts_clientes/${fileName}' no existe en el nuevo Storage.`);
                     }
-                } catch (error) {
-                    log.error(` -> ERROR DE REPARACIÓN: Falló la actualización para el cliente ${doc.id}:`, error.message);
-                }
+                } catch (error) {}
             }
-        } else {
-            log.info(` -> No tiene 'rutUrl' o está vacía. Saltando.`);
         }
     }
 
-    // --- DIAGNÓSTICO PARA PROVEEDORES (lógica idéntica) ---
-    log.info("--- Revisando Proveedores ---");
     const proveedoresSnapshot = await db.collection("proveedores").get();
-    log.info(`Encontrados ${proveedoresSnapshot.docs.length} proveedores.`);
     for (const doc of proveedoresSnapshot.docs) {
         const data = doc.data();
-        log.info(`[Proveedor: ${doc.id}] Revisando...`);
         if (data.rutUrl && data.rutUrl.trim() !== '') {
-            log.info(` -> URL encontrada: ${data.rutUrl}`);
-            const isIncorrect = !data.rutUrl.includes(NEW_PROJECT_ID);
-            log.info(` -> ¿La URL es incorrecta? (No incluye '${NEW_PROJECT_ID}'): ${isIncorrect}`);
-            if (isIncorrect) {
-                log.warn(` -> ¡URL INCORRECTA DETECTADA! Intentando actualizar...`);
+            if (!data.rutUrl.includes(NEW_PROJECT_ID)) {
                  try {
                     const oldUrl = new URL(data.rutUrl);
                     const decodedPath = decodeURIComponent(oldUrl.pathname);
@@ -1619,62 +1224,40 @@ exports.repairRutUrls = functions.runWith({ timeoutSeconds: 540, memory: '1GB' }
                         const [newUrl] = await file.getSignedUrl({ action: 'read', expires: '03-09-2491' });
                         await doc.ref.update({ rutUrl: newUrl });
                         updatedCount++;
-                        log.info(` -> ÉXITO: URL del proveedor ${doc.id} actualizada.`);
-                     } else {
-                         log.error(` -> ERROR DE REPARACIÓN: El archivo 'ruts_proveedores/${fileName}' no existe en el nuevo Storage.`);
                      }
-                } catch (error) {
-                    log.error(` -> ERROR DE REPARACIÓN: Falló la actualización para el proveedor ${doc.id}:`, error.message);
-                }
+                } catch (error) {}
             }
-        } else {
-             log.info(` -> No tiene 'rutUrl' o está vacía. Saltando.`);
         }
     }
-
-    const resultMessage = `Diagnóstico completado. Se intentaron actualizar ${updatedCount} enlaces de RUTs.`;
-    log.info(resultMessage);
-    return { success: true, message: resultMessage };
+    return { success: true, message: `Diagnóstico completado. Se intentaron actualizar ${updatedCount} enlaces de RUTs.` };
 });
 
 exports.recordTransfer = functions.https.onCall(async (data, context) => {
-    if (!context.auth || context.auth.token.role !== 'admin') {
-        throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden registrar transferencias.");
-    }
+    if (!context.auth || context.auth.token.role !== 'admin') throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden registrar transferencias.");
 
-const { cuentaOrigen, cuentaDestino, monto, referencia, fechaTransferencia } = data;
-    if (!cuentaOrigen || !cuentaDestino || !monto || monto <= 0 || cuentaOrigen === cuentaDestino || !fechaTransferencia) { // <-- Se añade validación de fecha
+    const { cuentaOrigen, cuentaDestino, monto, referencia, fechaTransferencia } = data;
+    if (!cuentaOrigen || !cuentaDestino || !monto || monto <= 0 || cuentaOrigen === cuentaDestino || !fechaTransferencia) { 
         throw new functions.https.HttpsError("invalid-argument", "Datos de transferencia inválidos o incompletos.");
     }
 
     try {
         await db.collection("transferencias").add({
-            fechaRegistro: admin.firestore.FieldValue.serverTimestamp(), // Se renombra el campo de timestamp
-            fechaTransferencia: fechaTransferencia, // <-- Se guarda la fecha proporcionada
-            cuentaOrigen,
-            cuentaDestino,
-            monto,
+            fechaRegistro: admin.firestore.FieldValue.serverTimestamp(),
+            fechaTransferencia: fechaTransferencia,
+            cuentaOrigen, cuentaDestino, monto,
             referencia: referencia || '',
             estado: 'pendiente',
             registradoPor: context.auth.uid
         });
         return { success: true };
-    } catch (error) {
-        functions.logger.error("Error al registrar transferencia:", error);
-        throw new functions.https.HttpsError("internal", "No se pudo guardar la transferencia.");
-    }
+    } catch (error) { throw new functions.https.HttpsError("internal", "No se pudo guardar la transferencia."); }
 });
 
-// NUEVA FUNCIÓN en index.js
 exports.confirmTransfer = functions.https.onCall(async (data, context) => {
-    if (!context.auth || context.auth.token.role !== 'admin') {
-        throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden confirmar transferencias.");
-    }
+    if (!context.auth || context.auth.token.role !== 'admin') throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden confirmar transferencias.");
 
     const { transferId } = data;
-    if (!transferId) {
-        throw new functions.https.HttpsError("invalid-argument", "Falta el ID de la transferencia.");
-    }
+    if (!transferId) throw new functions.https.HttpsError("invalid-argument", "Falta el ID de la transferencia.");
 
     const transferRef = db.collection("transferencias").doc(transferId);
     const gastosRef = db.collection("gastos");
@@ -1682,115 +1265,62 @@ exports.confirmTransfer = functions.https.onCall(async (data, context) => {
     try {
         await db.runTransaction(async (transaction) => {
             const transferDoc = await transaction.get(transferRef);
-            if (!transferDoc.exists) {
-                throw new Error("La transferencia no existe.");
-            }
+            if (!transferDoc.exists) throw new Error("La transferencia no existe.");
+            
             const transferData = transferDoc.data();
+            if (transferData.estado !== 'pendiente') throw new Error("Esta transferencia ya fue procesada o no está pendiente.");
+            if (transferData.registradoPor === context.auth.uid) throw new Error("No puedes confirmar una transferencia registrada por ti mismo.");
 
-            if (transferData.estado !== 'pendiente') {
-                throw new Error("Esta transferencia ya fue procesada o no está pendiente.");
-            }
-            if (transferData.registradoPor === context.auth.uid) {
-                throw new Error("No puedes confirmar una transferencia registrada por ti mismo.");
-            }
-
-            // Marcar la transferencia como confirmada
             transaction.update(transferRef, {
                 estado: 'confirmada',
                 confirmadoPor: context.auth.uid,
                 confirmadoEn: admin.firestore.FieldValue.serverTimestamp(),
-                _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
+                _lastUpdated: admin.firestore.FieldValue.serverTimestamp()
             });
 
             const fechaGasto = transferData.fechaTransferencia; 
             const timestamp = admin.firestore.FieldValue.serverTimestamp(); 
 
-            // Gasto de SALIDA
-            const gastoSalida = {
-                fecha: fechaGasto,
-                proveedorNombre: `Transferencia Salida -> ${transferData.cuentaDestino}`,
-                valorTotal: transferData.monto,
-                fuentePago: transferData.cuentaOrigen,
-                registradoPor: context.auth.uid,
-                timestamp: timestamp,
-                isTransfer: true,
-                transferId: transferId,
-                referencia: transferData.referencia || '',
-                _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
-            };
-            transaction.set(gastosRef.doc(), gastoSalida);
+            transaction.set(gastosRef.doc(), {
+                fecha: fechaGasto, proveedorNombre: `Transferencia Salida -> ${transferData.cuentaDestino}`,
+                valorTotal: transferData.monto, fuentePago: transferData.cuentaOrigen, registradoPor: context.auth.uid, timestamp: timestamp,
+                isTransfer: true, transferId: transferId, referencia: transferData.referencia || '', _lastUpdated: timestamp
+            });
 
-            // Gasto de ENTRADA (valor negativo)
-            const gastoEntrada = {
-                fecha: fechaGasto,
-                proveedorNombre: `Transferencia Entrada <- ${transferData.cuentaOrigen}`,
-                valorTotal: -transferData.monto, 
-                fuentePago: transferData.cuentaDestino, 
-                registradoPor: context.auth.uid,
-                timestamp: timestamp,
-                isTransfer: true,
-                transferId: transferId,
-                referencia: transferData.referencia || '',
-                _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
-            };
-            transaction.set(gastosRef.doc(), gastoEntrada);
+            transaction.set(gastosRef.doc(), {
+                fecha: fechaGasto, proveedorNombre: `Transferencia Entrada <- ${transferData.cuentaOrigen}`,
+                valorTotal: -transferData.monto, fuentePago: transferData.cuentaDestino, registradoPor: context.auth.uid, timestamp: timestamp,
+                isTransfer: true, transferId: transferId, referencia: transferData.referencia || '', _lastUpdated: timestamp
+            });
         });
-
         return { success: true };
-    } catch (error) {
-        functions.logger.error(`Error al confirmar transferencia ${transferId}:`, error);
-        throw new functions.https.HttpsError("internal", `No se pudo confirmar la transferencia: ${error.message}`);
-    }
+    } catch (error) { throw new functions.https.HttpsError("internal", `No se pudo confirmar la transferencia: ${error.message}`); }
 });
 
-
-/**
- * Exporta el historial de pagos de remisiones a Excel.
- * AHORA INCLUYE: Nombres reales de usuarios (no IDs) y columna "Confirmado Por".
- */
 exports.exportPagosRemisionesToExcel = functions.https.onCall(async (data, context) => {
-    // 1. Verificación de permisos
     const userRole = context.auth.token.role;
     const allowedRoles = ['admin', 'contabilidad'];
 
-    if (!context.auth || !allowedRoles.includes(userRole)) {
-        throw new functions.https.HttpsError(
-            'permission-denied',
-            'Solo los administradores o contabilidad pueden exportar estos datos.'
-        );
-    }
+    if (!context.auth || !allowedRoles.includes(userRole)) throw new functions.https.HttpsError('permission-denied', 'Solo los administradores o contabilidad pueden exportar estos datos.');
 
     const { startDate, endDate } = data;
-    if (!startDate || !endDate) {
-        throw new functions.https.HttpsError('invalid-argument', 'Se requieren fechas de inicio y fin.');
-    }
+    if (!startDate || !endDate) throw new functions.https.HttpsError('invalid-argument', 'Se requieren fechas de inicio y fin.');
 
     try {
-        // --- PASO NUEVO: Pre-cargar usuarios para obtener nombres ---
         const usersRef = db.collection('users');
         const usersSnapshot = await usersRef.get();
-        const userNames = {}; // Diccionario ID -> Nombre
+        const userNames = {}; 
         
-        usersSnapshot.forEach(doc => {
-            const userData = doc.data();
-            // Guardamos el nombre o 'Desconocido' si no tiene
-            userNames[doc.id] = userData.nombre || 'Usuario Desconocido';
-        });
-        // ----------------------------------------------------------
+        usersSnapshot.forEach(doc => { userNames[doc.id] = doc.data().nombre || 'Usuario Desconocido'; });
 
-        // 2. Obtener todas las remisiones
         const remisionesRef = db.collection('remisiones');
         const snapshot = await remisionesRef.get();
 
-        if (snapshot.empty) {
-            return { success: false, message: 'No se encontraron remisiones.' };
-        }
+        if (snapshot.empty) return { success: false, message: 'No se encontraron remisiones.' };
 
-        const ExcelJS = require('exceljs');
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Historial Pagos');
 
-        // 3. Definir Columnas (AÑADIDA: Confirmado Por)
         worksheet.columns = [
             { header: 'Fecha Pago', key: 'fecha', width: 15 },
             { header: 'N° Remisión', key: 'numeroRemision', width: 15 },
@@ -1798,8 +1328,8 @@ exports.exportPagosRemisionesToExcel = functions.https.onCall(async (data, conte
             { header: 'Método', key: 'metodo', width: 15 },
             { header: 'Estado', key: 'estado', width: 15 },
             { header: 'Valor', key: 'valor', width: 20, style: { numFmt: '"$"#,##0' } },
-            { header: 'Registrado Por', key: 'registradoPor', width: 25 }, // Mostrará nombre
-            { header: 'Confirmado Por', key: 'confirmadoPor', width: 25 }, // Nueva Columna
+            { header: 'Registrado Por', key: 'registradoPor', width: 25 },
+            { header: 'Confirmado Por', key: 'confirmadoPor', width: 25 },
             { header: 'Fecha Registro', key: 'fechaRegistro', width: 20 }
         ];
 
@@ -1809,36 +1339,23 @@ exports.exportPagosRemisionesToExcel = functions.https.onCall(async (data, conte
 
         let pagosEncontrados = 0;
 
-        // 4. Procesar cada remisión y sus pagos
         snapshot.forEach(doc => {
             const remision = doc.data();
             const pagos = Array.isArray(remision.payments) ? remision.payments : [];
 
             pagos.forEach(pago => {
                 const fechaPago = new Date(pago.date + 'T12:00:00');
-
                 if (fechaPago >= start && fechaPago <= end) {
-                    
-                    // --- LÓGICA DE NOMBRES ---
-                    // Buscamos el ID en nuestro diccionario 'userNames'
                     const nombreRegistrador = userNames[pago.registeredBy] || 'Sistema/Desconocido';
-                    
                     let nombreConfirmador = 'Pendiente';
                     if (pago.status === 'confirmado') {
-                        // Si está confirmado, buscamos quién lo hizo. Si no hay ID, mostramos 'N/A'
                         nombreConfirmador = pago.confirmedBy ? (userNames[pago.confirmedBy] || 'Usuario Borrado') : 'N/A';
                     }
-                    // -------------------------
 
                     worksheet.addRow({
-                        fecha: pago.date,
-                        numeroRemision: remision.numeroRemision,
-                        cliente: remision.clienteNombre || 'Sin Nombre',
-                        metodo: pago.method,
-                        estado: pago.status === 'confirmado' ? 'Confirmado' : 'Pendiente',
-                        valor: pago.amount,
-                        registradoPor: nombreRegistrador, // Nombre real
-                        confirmadoPor: nombreConfirmador, // Nombre real o 'Pendiente'
+                        fecha: pago.date, numeroRemision: remision.numeroRemision, cliente: remision.clienteNombre || 'Sin Nombre',
+                        metodo: pago.method, estado: pago.status === 'confirmado' ? 'Confirmado' : 'Pendiente', valor: pago.amount,
+                        registradoPor: nombreRegistrador, confirmadoPor: nombreConfirmador,
                         fechaRegistro: pago.registeredAt ? new Date(pago.registeredAt.seconds * 1000).toLocaleDateString() : 'N/A'
                     });
                     pagosEncontrados++;
@@ -1846,38 +1363,23 @@ exports.exportPagosRemisionesToExcel = functions.https.onCall(async (data, conte
             });
         });
 
-        if (pagosEncontrados === 0) {
-            return { success: false, message: 'No se encontraron pagos en el rango seleccionado.' };
-        }
+        if (pagosEncontrados === 0) return { success: false, message: 'No se encontraron pagos en el rango seleccionado.' };
 
-        // 5. Generar archivo
         const buffer = await workbook.xlsx.writeBuffer();
         const fileContent = Buffer.from(buffer).toString('base64');
-
         return { success: true, fileContent: fileContent };
 
-    } catch (error) {
-        console.error("Error al exportar pagos:", error);
-        throw new functions.https.HttpsError('internal', 'No se pudo generar el archivo Excel: ' + error.message);
-    }
+    } catch (error) { throw new functions.https.HttpsError('internal', 'No se pudo generar el archivo Excel: ' + error.message); }
 });
 
-/**
- * Aplica una retención a una remisión y recalcula el total.
- */
 exports.applyRetention = functions.https.onCall(async (data, context) => {
-    // 1. Verificación de permisos (Admin o Contabilidad)
     const userRole = context.auth.token.role;
     const allowedRoles = ['admin', 'contabilidad'];
     
-    if (!context.auth || !allowedRoles.includes(userRole)) {
-        throw new functions.https.HttpsError("permission-denied", "No tienes permisos para aplicar retenciones.");
-    }
+    if (!context.auth || !allowedRoles.includes(userRole)) throw new functions.https.HttpsError("permission-denied", "No tienes permisos para aplicar retenciones.");
 
     const { remisionId, retentionAmount } = data;
-    if (!remisionId || retentionAmount === undefined || retentionAmount < 0) {
-        throw new functions.https.HttpsError("invalid-argument", "Valor de retención inválido.");
-    }
+    if (!remisionId || retentionAmount === undefined || retentionAmount < 0) throw new functions.https.HttpsError("invalid-argument", "Valor de retención inválido.");
 
     const remisionRef = admin.firestore().collection("remisiones").doc(remisionId);
     const log = functions.logger;
@@ -1887,61 +1389,155 @@ exports.applyRetention = functions.https.onCall(async (data, context) => {
         if (!remisionDoc.exists) throw new functions.https.HttpsError("not-found", "Remisión no encontrada.");
 
         const remisionData = remisionDoc.data();
-
-        // 2. Recalcular Total
-        // Fórmula: Subtotal - Descuento + IVA - Retención = Total a Pagar
         const subtotal = remisionData.subtotal || 0;
         const discountAmount = remisionData.discount ? remisionData.discount.amount : 0;
-        const ivaAmount = remisionData.valorIVA || 0; // El IVA ya está calculado sobre el subtotal base
-
-        // Validar que la retención no sea mayor al total previo
+        const ivaAmount = remisionData.valorIVA || 0; 
         const totalAntesDeRetencion = subtotal - discountAmount + ivaAmount;
-        if (retentionAmount > totalAntesDeRetencion) {
-             throw new functions.https.HttpsError("failed-precondition", "La retención no puede ser mayor al total de la factura.");
-        }
+
+        if (retentionAmount > totalAntesDeRetencion) throw new functions.https.HttpsError("failed-precondition", "La retención no puede ser mayor al total de la factura.");
 
         const newTotal = totalAntesDeRetencion - retentionAmount;
-
         const updatedData = {
             valorTotal: newTotal,
-            retention: {
-                amount: retentionAmount,
-                appliedBy: context.auth.uid,
-                appliedAt: new Date()
-            }
+            retention: { amount: retentionAmount, appliedBy: context.auth.uid, appliedAt: new Date() }
         };
 
-        // 3. Regenerar PDFs
         const finalRemisionData = { ...remisionData, ...updatedData };
-        
-        // Reutilizamos tus funciones de generación de PDF existentes en el mismo archivo
-        // Nota: Asegúrate de que generarPDFCliente y generarPDF estén accesibles en este ámbito
         const pdfBufferCliente = await generarPDFCliente(finalRemisionData);
         const pdfBufferAdmin = await generarPDF(finalRemisionData, false);
         const pdfBufferPlanta = await generarPDF(finalRemisionData, true);
 
         const bucket = admin.storage().bucket();
         const filePathAdmin = `remisiones/${finalRemisionData.numeroRemision}.pdf`;
-        const fileAdmin = bucket.file(filePathAdmin);
-        await fileAdmin.save(pdfBufferAdmin);
+        await bucket.file(filePathAdmin).save(pdfBufferAdmin);
 
         const filePathPlanta = `remisiones/planta-${finalRemisionData.numeroRemision}.pdf`;
         await bucket.file(filePathPlanta).save(pdfBufferPlanta);
 
-        // 4. Guardar en Firestore
+        await remisionRef.update({
+            ...updatedData, pdfPath: filePathAdmin, pdfPlantaPath: filePathPlanta,
+            pdfUrl: admin.firestore.FieldValue.delete(), pdfPlantaUrl: admin.firestore.FieldValue.delete(),
+            _lastUpdated: admin.firestore.FieldValue.serverTimestamp() 
+        });
+
+        return { success: true, message: "Retención aplicada y total actualizado." };
+    } catch (error) { throw new functions.https.HttpsError("internal", error.message); }
+});
+
+/**
+ * Alterna el IVA de una remisión (Extraer o Revertir) y regenera sus PDFs sincrónicamente.
+ */
+exports.toggleFacturacionIVA = functions.https.onCall(async (data, context) => {
+    if (!context.auth || context.auth.token.role !== 'admin') {
+        throw new functions.https.HttpsError("permission-denied", "Solo los administradores pueden modificar el IVA.");
+    }
+
+    const { remisionId, action } = data; // action puede ser 'extract' o 'revert'
+    const remisionRef = admin.firestore().collection("remisiones").doc(remisionId);
+
+    try {
+        const remisionDoc = await remisionRef.get();
+        if (!remisionDoc.exists) throw new functions.https.HttpsError("not-found", "Remisión no encontrada.");
+        
+        const remisionData = remisionDoc.data();
+        let updatedData = {};
+
+        if (action === 'extract') {
+            if (remisionData.incluyeIVA) return { success: true, message: "Ya incluye IVA" };
+            
+            const divisor = 1.19;
+            const itemsActualizados = remisionData.items.map(item => ({
+                ...item, valorUnitario: item.valorUnitario / divisor, valorTotal: item.valorTotal / divisor
+            }));
+            const cargosActualizados = (remisionData.cargosAdicionales || []).map(cargo => ({
+                ...cargo, valorUnitario: cargo.valorUnitario / divisor, valorTotal: cargo.valorTotal / divisor
+            }));
+
+            const nuevoSubtotalBase = Math.round(remisionData.subtotal / divisor);
+            let nuevoDescuento = null, nuevaRetencion = null;
+
+            if (remisionData.discount && remisionData.discount.amount > 0) 
+                nuevoDescuento = { ...remisionData.discount, amount: Math.round(remisionData.discount.amount / divisor) };
+            if (remisionData.retention && remisionData.retention.amount > 0) 
+                nuevaRetencion = { ...remisionData.retention, amount: Math.round(remisionData.retention.amount / divisor) };
+
+            const subtotalConDescuento = nuevoSubtotalBase - (nuevoDescuento ? nuevoDescuento.amount : 0);
+            const nuevoValorIVA = Math.round(subtotalConDescuento * 0.19);
+            const totalRecalculado = subtotalConDescuento + nuevoValorIVA - (nuevaRetencion ? nuevaRetencion.amount : 0);
+            const diferencia = remisionData.valorTotal - totalRecalculado;
+
+            updatedData = {
+                incluyeIVA: true,
+                subtotal: nuevoSubtotalBase,
+                valorIVA: nuevoValorIVA + diferencia,
+                valorTotal: remisionData.valorTotal, // Total intacto
+                items: itemsActualizados,
+                cargosAdicionales: cargosActualizados
+            };
+            if (nuevoDescuento) updatedData.discount = nuevoDescuento;
+            if (nuevaRetencion) updatedData.retention = nuevaRetencion;
+
+        } else if (action === 'revert') {
+            if (!remisionData.incluyeIVA) return { success: true, message: "Ya no incluye IVA" };
+
+            const multiplier = 1.19;
+            const itemsRevertidos = remisionData.items.map(item => ({
+                ...item, valorUnitario: item.valorUnitario * multiplier, valorTotal: item.valorTotal * multiplier
+            }));
+            const cargosRevertidos = (remisionData.cargosAdicionales || []).map(cargo => ({
+                ...cargo, valorUnitario: cargo.valorUnitario * multiplier, valorTotal: cargo.valorTotal * multiplier
+            }));
+
+            const nuevoSubtotalBase = Math.round(remisionData.subtotal * multiplier);
+            let nuevoDescuento = null, nuevaRetencion = null;
+
+            if (remisionData.discount && remisionData.discount.amount > 0) 
+                nuevoDescuento = { ...remisionData.discount, amount: Math.round(remisionData.discount.amount * multiplier) };
+            if (remisionData.retention && remisionData.retention.amount > 0) 
+                nuevaRetencion = { ...remisionData.retention, amount: Math.round(remisionData.retention.amount * multiplier) };
+
+            const diff = remisionData.valorTotal - (nuevoSubtotalBase - (nuevoDescuento ? nuevoDescuento.amount : 0) - (nuevaRetencion ? nuevaRetencion.amount : 0));
+
+            updatedData = {
+                incluyeIVA: false,
+                subtotal: nuevoSubtotalBase + diff,
+                valorIVA: 0,
+                valorTotal: remisionData.valorTotal,
+                items: itemsRevertidos,
+                cargosAdicionales: cargosRevertidos
+            };
+            if (nuevoDescuento) updatedData.discount = nuevoDescuento;
+            if (nuevaRetencion) updatedData.retention = nuevaRetencion;
+        }
+
+        const finalRemisionData = { ...remisionData, ...updatedData };
+        
+        // --- 2. REGENERAR PDFS SÍNCRONAMENTE ---
+        const pdfBufferCliente = await generarPDFCliente(finalRemisionData);
+        const pdfBufferAdmin = await generarPDF(finalRemisionData, false);
+        const pdfBufferPlanta = await generarPDF(finalRemisionData, true);
+
+        const bucket = admin.storage().bucket();
+        const filePathAdmin = `remisiones/${finalRemisionData.numeroRemision}.pdf`;
+        await bucket.file(filePathAdmin).save(pdfBufferAdmin);
+
+        const filePathPlanta = `remisiones/planta-${finalRemisionData.numeroRemision}.pdf`;
+        await bucket.file(filePathPlanta).save(pdfBufferPlanta);
+
+        // --- 3. GUARDAR EN BASE DE DATOS ---
         await remisionRef.update({
             ...updatedData,
             pdfPath: filePathAdmin,
             pdfPlantaPath: filePathPlanta,
-            pdfUrl: admin.firestore.FieldValue.delete(),
+            pdfUrl: admin.firestore.FieldValue.delete(), 
             pdfPlantaUrl: admin.firestore.FieldValue.delete(),
-            _lastUpdated: admin.firestore.FieldValue.serverTimestamp() // <--- AÑADIDO PARA EL CACHÉ
+            _lastUpdated: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        return { success: true, message: "Retención aplicada y total actualizado." };
+        return { success: true, message: "IVA actualizado y PDFs regenerados." };
 
     } catch (error) {
-        log.error("Error aplicando retención:", error);
+        functions.logger.error(`Error en toggleFacturacionIVA para ${remisionId}:`, error);
         throw new functions.https.HttpsError("internal", error.message);
     }
 });
