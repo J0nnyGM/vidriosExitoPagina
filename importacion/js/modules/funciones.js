@@ -27,8 +27,8 @@ async function canUserExport(uid) {
     if (userExportPermissionCache) {
         const now = Date.now();
         const daysSinceLastExport = (now - userExportPermissionCache.lastExport) / (1000 * 60 * 60 * 24);
-        if (daysSinceLastExport < 15) {
-            const daysLeft = Math.ceil(15 - daysSinceLastExport);
+        if (daysSinceLastExport < 0) {
+            const daysLeft = Math.ceil(0 - daysSinceLastExport);
             return { allowed: false, message: `Has alcanzado el límite de exportaciones. Podrás volver a exportar en ${daysLeft} días.` };
         }
     }
@@ -47,8 +47,8 @@ async function canUserExport(uid) {
                 const now = Date.now();
                 const daysSinceLastExport = (now - lastExportTime) / (1000 * 60 * 60 * 24);
                 
-                if (daysSinceLastExport < 15) {
-                    const daysLeft = Math.ceil(15 - daysSinceLastExport);
+                if (daysSinceLastExport < 0) {
+                    const daysLeft = Math.ceil(0 - daysSinceLastExport);
                     return { allowed: false, message: `Has alcanzado el límite de exportaciones. Podrás volver a exportar en ${daysLeft} días.` };
                 }
             }
@@ -91,7 +91,7 @@ function showExportModal(type) {
                 <p><strong>Nota:</strong> Para proteger el rendimiento del sistema:</p>
                 <ul class="list-disc pl-5 mt-1">
                     <li>El rango máximo de fechas es de <strong>3 meses</strong>.</li>
-                    <li>Solo puedes realizar una exportación cada <strong>15 días</strong>.</li>
+                    <li>Solo puedes realizar una exportación cada <strong>0 días</strong>.</li>
                 </ul>
             </div>
             <form id="export-form" data-type="${type}" class="space-y-4">
@@ -141,7 +141,7 @@ function showExportModal(type) {
         submitBtn.disabled = true;
         submitBtn.textContent = 'Verificando permisos...';
 
-        // 2. Validar límite de 15 días (Usa el caché ligero)
+        // 2. Validar límite de 0 días (Usa el caché ligero)
         const permission = await canUserExport(currentUser.uid);
         if (!permission.allowed) {
             submitBtn.disabled = false;
