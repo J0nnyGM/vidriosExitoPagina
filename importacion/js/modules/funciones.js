@@ -5,6 +5,10 @@ import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebas
 import { doc, getDoc, updateDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { showModalMessage, hideModal, showTemporaryMessage, currentUser } from '../app.js';
 
+// --- CACHÉ LIGERO EN RAM ---
+// Este caché se borra al cerrar la pestaña. Es perfecto para permisos temporales.
+let userExportPermissionCache = null;
+
 export function setupFuncionesEvents() {
     const exportGastosBtn = document.getElementById('btn-func-export-gastos');
     const exportPagosBtn = document.getElementById('btn-func-export-pagos');
@@ -19,26 +23,58 @@ export function setupFuncionesEvents() {
 }
 
 async function canUserExport(uid) {
-    const trackerRef = doc(db, 'exportTrackers', uid);
-    const trackerDoc = await getDoc(trackerRef);
-
-    if (trackerDoc.exists()) {
-        const lastExportTime = trackerDoc.data().lastExport;
-        if (lastExportTime) {
-            const now = Date.now();
-            const daysSinceLastExport = (now - lastExportTime) / (1000 * 60 * 60 * 24);
-            if (daysSinceLastExport < 15) {
-                const daysLeft = Math.ceil(15 - daysSinceLastExport);
-                return { allowed: false, message: `Has alcanzado el límite de exportaciones. Podrás volver a exportar en ${daysLeft} días.` };
-            }
+    // 1. Revisar Caché en RAM primero (0 lecturas a Firebase si ya lo consultó hoy)
+    if (userExportPermissionCache) {
+        const now = Date.now();
+        const daysSinceLastExport = (now - userExportPermissionCache.lastExport) / (1000 * 60 * 60 * 24);
+        if (daysSinceLastExport < 15) {
+            const daysLeft = Math.ceil(15 - daysSinceLastExport);
+            return { allowed: false, message: `Has alcanzado el límite de exportaciones. Podrás volver a exportar en ${daysLeft} días.` };
         }
     }
-    return { allowed: true };
+
+    // 2. Si no hay caché, vamos a Firebase (Costo: 1 lectura)
+    try {
+        const trackerRef = doc(db, 'exportTrackers', uid);
+        const trackerDoc = await getDoc(trackerRef);
+
+        if (trackerDoc.exists()) {
+            const lastExportTime = trackerDoc.data().lastExport;
+            if (lastExportTime) {
+                // Guardar en RAM para futuras consultas en esta sesión
+                userExportPermissionCache = { lastExport: lastExportTime };
+                
+                const now = Date.now();
+                const daysSinceLastExport = (now - lastExportTime) / (1000 * 60 * 60 * 24);
+                
+                if (daysSinceLastExport < 15) {
+                    const daysLeft = Math.ceil(15 - daysSinceLastExport);
+                    return { allowed: false, message: `Has alcanzado el límite de exportaciones. Podrás volver a exportar en ${daysLeft} días.` };
+                }
+            }
+        }
+        return { allowed: true };
+    } catch (error) {
+        console.error("Error verificando permisos de exportación:", error);
+        // En caso de fallo de red, por seguridad, denegamos o permitimos según tu política. 
+        // Aquí permitimos para no bloquear al usuario por un fallo de Firebase.
+        return { allowed: true }; 
+    }
 }
 
 async function logExportAction(uid) {
-    const trackerRef = doc(db, 'exportTrackers', uid);
-    await setDoc(trackerRef, { lastExport: Date.now() }, { merge: true });
+    try {
+        const timestamp = Date.now();
+        const trackerRef = doc(db, 'exportTrackers', uid);
+        
+        // Costo: 1 escritura
+        await setDoc(trackerRef, { lastExport: timestamp }, { merge: true });
+        
+        // Actualizamos la RAM al instante
+        userExportPermissionCache = { lastExport: timestamp };
+    } catch (error) {
+        console.error("Error al registrar la acción de exportación:", error);
+    }
 }
 
 function showExportModal(type) {
@@ -87,13 +123,13 @@ function showExportModal(type) {
 
         if (!startDate || !endDate) return showModalMessage("Selecciona ambas fechas.");
 
-        // 1. Validar Rango de 3 meses
+        // 1. Validar Rango de 3 meses localmente
         const start = new Date(startDate);
         const end = new Date(endDate);
         const diffTime = Math.abs(end - start);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         
-        if (diffDays > 92) { // Aprox 3 meses
+        if (diffDays > 92) { 
             return showModalMessage("El rango de fechas no puede superar los 3 meses.");
         }
 
@@ -101,21 +137,26 @@ function showExportModal(type) {
             return showModalMessage("La fecha de inicio debe ser anterior a la de fin.");
         }
 
-        // 2. Validar límite de 15 días por usuario
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Verificando permisos...';
+
+        // 2. Validar límite de 15 días (Usa el caché ligero)
         const permission = await canUserExport(currentUser.uid);
         if (!permission.allowed) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Generar Excel';
             return showModalMessage(permission.message);
         }
 
-        const submitBtn = e.target.querySelector('button[type="submit"]');
-        submitBtn.disabled = true;
         submitBtn.textContent = 'Generando Reporte...';
-
         showModalMessage("Generando Excel, por favor no cierres la ventana...", true);
 
         try {
             const functionName = exportType === 'gastos' ? 'exportGastosToExcel' : 'exportPagosRemisionesToExcel';
             const exportFunction = httpsCallable(functions, functionName);
+            
+            // Llamada a la Cloud Function (Aquí ocurre la magia pesada en la nube)
             const result = await exportFunction({ startDate, endDate });
 
             if (result.data.success) {
@@ -130,13 +171,13 @@ function showExportModal(type) {
                 link.download = `Reporte_${exportType.toUpperCase()}_${startDate}_a_${endDate}.xlsx`;
                 document.body.appendChild(link); link.click(); document.body.removeChild(link);
 
-                // Registrar que el usuario usó su cuota
+                // 3. Registrar que el usuario usó su cuota y actualizar caché
                 await logExportAction(currentUser.uid);
 
                 hideModal(); 
                 showTemporaryMessage("¡Reporte descargado con éxito!", "success");
             } else {
-                throw new Error(result.data.message || "No se encontraron datos.");
+                throw new Error(result.data.message || "No se encontraron datos en ese rango de fechas.");
             }
         } catch (error) {
             showModalMessage(`Error al generar el reporte: ${error.message}`);

@@ -29,7 +29,6 @@ async function ensureInitialBalances() {
     if (cachedData) {
         try {
             Object.assign(initialBalances, JSON.parse(cachedData));
-            // Carga instantánea desde LocalStorage, luego verificamos si hay cambios en el servidor
         } catch (e) {
             localStorage.removeItem(BALANCES_CACHE_KEY);
         }
@@ -53,7 +52,6 @@ export async function showDashboardModal() {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
 
     await ensureInitialBalances();
-    // Validamos si hay saldos guardados (ignoramos campos de configuración interna como _lastUpdated)
     const hasRealBalances = Object.keys(initialBalances).some(key => METODOS_DE_PAGO.includes(key));
     let initialBalanceButtonHTML = !hasRealBalances ? `<button id="set-initial-balance-btn" class="bg-gray-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700">Saldos Iniciales</button>` : '';
 
@@ -307,17 +305,22 @@ function populateDateFilters(prefix) {
 async function updateDashboard(year, month) {
     await ensureInitialBalances();
     
+    // VENTAS DEL MES (SOLO PAGOS CONFIRMADOS)
     const salesThisMonth = allRemisiones
         .flatMap(r => Array.isArray(r.payments) ? r.payments : [])
-        .filter(p => { const d = new Date(p.date + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year; })
+        .filter(p => { 
+            const d = new Date(p.date + 'T00:00:00'); 
+            return d.getMonth() === month && d.getFullYear() === year && p.status === 'confirmado'; 
+        })
         .reduce((sum, p) => sum + p.amount, 0);
 
     const expensesThisMonth = allGastos.filter(g => { const d = new Date(g.fecha + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year; }).reduce((sum, g) => sum + g.valorTotal, 0);
 
+    // CARTERA DEL MES (SOLO RESTAR PAGOS CONFIRMADOS)
     const carteraThisMonth = allRemisiones.filter(r => { const d = new Date(r.fechaRecibido + 'T00:00:00'); return d.getMonth() === month && d.getFullYear() === year && r.estado !== 'Anulada'; })
         .reduce((sum, r) => {
             const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
-            const totalPagado = paymentsArray.reduce((s, p) => s + p.amount, 0);
+            const totalPagado = paymentsArray.filter(p => p.status === 'confirmado').reduce((s, p) => s + p.amount, 0);
             const saldo = r.valorTotal - totalPagado;
             return sum + (saldo > 0 ? saldo : 0);
         }, 0);
@@ -327,22 +330,26 @@ async function updateDashboard(year, month) {
     document.getElementById('summary-profit').textContent = formatCurrency(salesThisMonth - expensesThisMonth);
     document.getElementById('summary-cartera').textContent = formatCurrency(carteraThisMonth);
 
+    // CARTERA TOTAL HISTÓRICA (SOLO RESTAR PAGOS CONFIRMADOS)
     const totalCartera = allRemisiones.filter(r => r.estado !== 'Anulada')
         .reduce((sum, r) => {
             const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
-            const totalPagado = paymentsArray.reduce((s, p) => s + p.amount, 0);
+            const totalPagado = paymentsArray.filter(p => p.status === 'confirmado').reduce((s, p) => s + p.amount, 0);
             const saldo = r.valorTotal - totalPagado;
             return sum + (saldo > 0 ? saldo : 0);
         }, 0);
     document.getElementById('summary-cartera-total').textContent = formatCurrency(totalCartera);
 
+    // SALDOS DE CUENTAS (SOLO SUMAR PAGOS CONFIRMADOS)
     const accountBalances = {};
     METODOS_DE_PAGO.forEach(metodo => { accountBalances[metodo] = initialBalances[metodo] || 0; });
 
     allRemisiones.forEach(r => {
         const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
         paymentsArray.forEach(p => {
-            if (accountBalances[p.method] !== undefined) accountBalances[p.method] += p.amount;
+            if (p.status === 'confirmado' && accountBalances[p.method] !== undefined) {
+                accountBalances[p.method] += p.amount;
+            }
         });
     });
 
@@ -409,6 +416,7 @@ async function updateDashboard(year, month) {
         breakdownContainer.innerHTML = cardsHTML;
     }
 
+    // GRAFICO: SOLO PAGOS CONFIRMADOS
     const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
     const labels = []; const salesData = []; const expensesData = [];
     for (let i = 5; i >= 0; i--) {
@@ -416,7 +424,13 @@ async function updateDashboard(year, month) {
         const m = d.getMonth(); const y = d.getFullYear();
         labels.push(monthNames[m]);
 
-        salesData.push(allRemisiones.flatMap(r => Array.isArray(r.payments) ? r.payments : []).filter(p => { const pDate = new Date(p.date + 'T00:00:00'); return pDate.getMonth() === m && pDate.getFullYear() === y; }).reduce((sum, p) => sum + p.amount, 0));
+        salesData.push(allRemisiones.flatMap(r => Array.isArray(r.payments) ? r.payments : [])
+            .filter(p => { 
+                const pDate = new Date(p.date + 'T00:00:00'); 
+                return pDate.getMonth() === m && pDate.getFullYear() === y && p.status === 'confirmado'; 
+            })
+            .reduce((sum, p) => sum + p.amount, 0));
+            
         expensesData.push(allGastos.filter(g => { const gDate = new Date(g.fecha + 'T00:00:00'); return gDate.getMonth() === m && gDate.getFullYear() === y; }).reduce((sum, g) => sum + g.valorTotal, 0));
     }
     
@@ -441,6 +455,7 @@ function calculateOverdueDays(dateString) {
     return diffDays > 0 ? diffDays : 0;
 }
 
+// CARTERA DETALLE: SOLO RESTAR PAGOS CONFIRMADOS
 function renderCartera() {
     const carteraListEl = document.getElementById('cartera-list');
     const carteraTotalEl = document.getElementById('cartera-total');
@@ -448,7 +463,7 @@ function renderCartera() {
     const pendingRemisiones = allRemisiones.filter(r => {
         if (r.estado === 'Anulada') return false;
         const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
-        return r.valorTotal - paymentsArray.reduce((sum, p) => sum + p.amount, 0) > 0.01;
+        return r.valorTotal - paymentsArray.filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0) > 0.01;
     }).sort((a, b) => new Date(a.fechaRecibido) - new Date(b.fechaRecibido));
 
     carteraListEl.innerHTML = '';
@@ -461,7 +476,8 @@ function renderCartera() {
     let totalCartera = 0;
     pendingRemisiones.forEach(r => {
         const paymentsArray = Array.isArray(r.payments) ? r.payments : [];
-        const saldoPendiente = r.valorTotal - paymentsArray.reduce((sum, p) => sum + p.amount, 0);
+        const totalPagado = paymentsArray.filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
+        const saldoPendiente = r.valorTotal - totalPagado;
         totalCartera += saldoPendiente;
         
         const overdueDays = calculateOverdueDays(r.fechaRecibido);
@@ -512,6 +528,7 @@ function renderCartera() {
     carteraListEl._paymentClickListener = newListener;
 }
 
+// CARTERA CLIENTES: SOLO RESTAR PAGOS CONFIRMADOS
 function renderCarteraClientes() {
     const container = document.getElementById('cartera-clientes-list');
     const totalEl = document.getElementById('cartera-clientes-total');
@@ -519,7 +536,8 @@ function renderCarteraClientes() {
 
     const pendingRemisiones = allRemisiones.filter(r => {
         if (r.estado === 'Anulada') return false;
-        return r.valorTotal - (Array.isArray(r.payments) ? r.payments : []).reduce((sum, p) => sum + p.amount, 0) > 0.01;
+        const totalPagado = (Array.isArray(r.payments) ? r.payments : []).filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
+        return r.valorTotal - totalPagado > 0.01;
     });
 
     if (pendingRemisiones.length === 0) {
@@ -531,7 +549,8 @@ function renderCarteraClientes() {
     let granTotal = 0;
 
     pendingRemisiones.forEach(r => {
-        const saldo = r.valorTotal - (Array.isArray(r.payments) ? r.payments : []).reduce((sum, p) => sum + p.amount, 0);
+        const totalPagado = (Array.isArray(r.payments) ? r.payments : []).filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
+        const saldo = r.valorTotal - totalPagado;
         const clienteId = r.idCliente || 'DESCONOCIDO';
         if (!carteraPorCliente[clienteId]) {
             carteraPorCliente[clienteId] = { nombre: r.clienteNombre || 'Cliente Desconocido', telefono: r.clienteTelefono || '', remisionesCount: 0, totalDeuda: 0 };
@@ -1028,7 +1047,14 @@ function generateSummaryPDF(startYear, startMonth, endYear, endMonth) {
     const accountBalances = {};
     METODOS_DE_PAGO.forEach(metodo => { accountBalances[metodo] = initialBalances[metodo] || 0; });
 
-    const salesInRange = allRemisiones.flatMap(r => r.payments || []).filter(p => { const d = new Date(p.date); return d >= startDate && d <= endDate; }).reduce((sum, p) => sum + p.amount, 0);
+    // REPORTE PDF: SOLO PAGOS CONFIRMADOS
+    const salesInRange = allRemisiones.flatMap(r => r.payments || [])
+        .filter(p => { 
+            const d = new Date(p.date); 
+            return d >= startDate && d <= endDate && p.status === 'confirmado'; 
+        })
+        .reduce((sum, p) => sum + p.amount, 0);
+        
     const expensesInRange = allGastos.filter(g => { const d = new Date(g.fecha); return d >= startDate && d <= endDate; }).reduce((sum, g) => sum + g.valorTotal, 0);
     const profitInRange = salesInRange - expensesInRange;
 
@@ -1048,11 +1074,25 @@ function generateSummaryPDF(startYear, startMonth, endYear, endMonth) {
         const year = currentDate.getFullYear();
         const month = currentDate.getMonth();
         
-        const monthlySales = allRemisiones.flatMap(r => r.payments || []).filter(p => { const d = new Date(p.date); return d.getMonth() === month && d.getFullYear() === year; }).reduce((sum, p) => sum + p.amount, 0);
+        const monthlySales = allRemisiones.flatMap(r => r.payments || [])
+            .filter(p => { 
+                const d = new Date(p.date); 
+                return d.getMonth() === month && d.getFullYear() === year && p.status === 'confirmado'; 
+            })
+            .reduce((sum, p) => sum + p.amount, 0);
+            
         const monthlyExpenses = allGastos.filter(g => { const d = new Date(g.fecha); return d.getMonth() === month && d.getFullYear() === year; }).reduce((sum, g) => sum + g.valorTotal, 0);
         const monthlyProfit = monthlySales - monthlyExpenses;
+        
         const endOfMonth = new Date(year, month + 1, 0);
-        const carteraAtEndOfMonth = allRemisiones.filter(r => new Date(r.fechaRecibido) <= endOfMonth && r.estado !== 'Anulada').reduce((sum, r) => { const totalPagado = (r.payments || []).filter(p => new Date(p.date) <= endOfMonth).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
+        const carteraAtEndOfMonth = allRemisiones.filter(r => new Date(r.fechaRecibido) <= endOfMonth && r.estado !== 'Anulada')
+            .reduce((sum, r) => { 
+                const totalPagado = (r.payments || [])
+                    .filter(p => new Date(p.date) <= endOfMonth && p.status === 'confirmado')
+                    .reduce((s, p) => s + p.amount, 0); 
+                const saldo = r.valorTotal - totalPagado; 
+                return sum + (saldo > 0 ? saldo : 0); 
+            }, 0);
 
         monthlyData.push([`${monthNames[month]} ${year}`, formatCurrency(monthlySales), formatCurrency(monthlyExpenses), formatCurrency(monthlyProfit), formatCurrency(carteraAtEndOfMonth)]);
         currentDate.setMonth(currentDate.getMonth() + 1);
@@ -1062,10 +1102,22 @@ function generateSummaryPDF(startYear, startMonth, endYear, endMonth) {
         doc.autoTable({ startY: doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : 70, head: [['Mes', 'Ventas', 'Gastos', 'Utilidad/Pérdida', 'Cartera al Cierre']], body: monthlyData, theme: 'striped', headStyles: { fillColor: [22, 160, 133] } });
     }
 
-    allRemisiones.forEach(r => (r.payments || []).forEach(p => { if (accountBalances[p.method] !== undefined) accountBalances[p.method] += p.amount; }));
+    // PDF SALDOS FINALES
+    allRemisiones.forEach(r => (r.payments || []).forEach(p => { 
+        if (p.status === 'confirmado' && accountBalances[p.method] !== undefined) {
+            accountBalances[p.method] += p.amount; 
+        }
+    }));
+    
     allGastos.forEach(g => { if (accountBalances[g.fuentePago] !== undefined) accountBalances[g.fuentePago] -= g.valorTotal; });
 
-    const totalCartera = allRemisiones.filter(r => r.estado !== 'Anulada').reduce((sum, r) => { const totalPagado = (r.payments || []).reduce((s, p) => s + p.amount, 0); const saldo = r.valorTotal - totalPagado; return sum + (saldo > 0 ? saldo : 0); }, 0);
+    const totalCartera = allRemisiones.filter(r => r.estado !== 'Anulada').reduce((sum, r) => { 
+        const totalPagado = (r.payments || [])
+            .filter(p => p.status === 'confirmado')
+            .reduce((s, p) => s + p.amount, 0); 
+        const saldo = r.valorTotal - totalPagado; 
+        return sum + (saldo > 0 ? saldo : 0); 
+    }, 0);
 
     const accountData = METODOS_DE_PAGO.map(metodo => [metodo, formatCurrency(accountBalances[metodo])]);
     accountData.push(['Cartera Total Pendiente', formatCurrency(totalCartera)]);

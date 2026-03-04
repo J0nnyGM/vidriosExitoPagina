@@ -8,14 +8,14 @@ import { loadClientes, setupClientesEvents } from './modules/clientes.js';
 import { loadProveedores, setupProveedoresEvents } from './modules/proveedores.js';
 import { loadItems, setupItemsEvents } from './modules/items.js';
 import { loadGastos, setupGastosEvents } from './modules/gastos.js?v=1.1';
-import { loadEmpleados, loadAllLoanRequests, setupEmpleadosEvents } from './modules/empleados.js?v=1.1';
+import { loadEmpleados, loadAllLoanRequests, setupEmpleadosEvents } from './modules/empleados.js?v=1.2';
 import { loadImportaciones, loadComprasNacionales, setupInventarioEvents } from './modules/inventario.js';
-import { loadRemisiones, setupRemisionesEvents } from './modules/remisiones.js';
-import { showDashboardModal, cleanupDashboardListeners } from './modules/dashboard.js';
+import { loadRemisiones, setupRemisionesEvents } from './modules/remisiones.js?v=1.1';
+import { showDashboardModal, cleanupDashboardListeners } from './modules/dashboard.js?v=1.1';
 import { setupFacturacionEvents } from './modules/facturacion.js';
-import { setupFuncionesEvents } from './modules/funciones.js'; 
+import { setupFuncionesEvents } from './modules/funciones.js?v=1.1'; 
 
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged, updateEmail, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged, updateEmail, createUserWithEmailAndPassword, fetchSignInMethodsForEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
 import { doc, getDoc, updateDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { logEvent } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js";
@@ -611,10 +611,12 @@ async function handleRegisterSubmit(e) {
     e.preventDefault();
     if (isRegistering) return;
     isRegistering = true;
+    
     const submitButton = e.target.querySelector('button[type="submit"]');
     submitButton.disabled = true;
-    submitButton.textContent = 'Registrando...';
+    submitButton.textContent = 'Verificando datos...';
     submitButton.classList.add('opacity-50', 'cursor-not-allowed');
+    
     const politicaCheckbox = document.getElementById('register-politica');
     if (!politicaCheckbox.checked) {
         showModalMessage("Debes aceptar la Política de Tratamiento de Datos.");
@@ -624,15 +626,31 @@ async function handleRegisterSubmit(e) {
         submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
         return;
     }
-    const nombre = document.getElementById('register-name').value;
-    const cedula = document.getElementById('register-cedula').value;
-    const telefono = document.getElementById('register-phone').value;
-    const direccion = document.getElementById('register-address').value;
-    const email = document.getElementById('register-email').value;
-    const password = document.getElementById('register-password').value;
-    const dob = document.getElementById('register-dob').value;
-    showModalMessage("Registrando...", true);
+
+    const email = document.getElementById('register-email').value.trim().toLowerCase();
+    
+    showModalMessage("Verificando disponibilidad del correo...", true);
+
     try {
+        // --- NUEVO: VALIDACIÓN DE CORREO EXISTENTE ---
+        // Preguntamos a Firebase Auth si este correo ya tiene algún método de inicio de sesión registrado.
+        const signInMethods = await fetchSignInMethodsForEmail(auth, email);
+        
+        if (signInMethods.length > 0) {
+            // Si el arreglo tiene elementos, el correo ya está registrado.
+            throw new Error("Este correo electrónico ya se encuentra registrado en el sistema. Por favor, inicia sesión o utiliza un correo diferente.");
+        }
+        // ---------------------------------------------
+
+        const nombre = document.getElementById('register-name').value;
+        const cedula = document.getElementById('register-cedula').value;
+        const telefono = document.getElementById('register-phone').value;
+        const direccion = document.getElementById('register-address').value;
+        const password = document.getElementById('register-password').value;
+        const dob = document.getElementById('register-dob').value;
+        
+        showModalMessage("Creando tu cuenta...", true);
+        
         const role = 'planta';
         const status = 'pending';
         const permissions = {
@@ -640,22 +658,32 @@ async function handleRegisterSubmit(e) {
             facturacion: false, clientes: false,
             gastos: false, proveedores: false, empleados: false
         };
+        
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
+        
         await setDoc(doc(db, "users", user.uid), {
             nombre: nombre, cedula: cedula, telefono: telefono, direccion: direccion, email: email, dob: dob,
             role: role, status: status, permissions: permissions, creadoEn: new Date()
         });
+        
         hideModal();
         showModalMessage("¡Registro exitoso! Tu cuenta está pendiente de aprobación.", false, 5000);
         registerForm.reset();
         registerForm.classList.add('hidden');
         loginForm.classList.remove('hidden');
         await signOut(auth);
+        
     } catch (error) {
         hideModal();
         console.error("Error de registro:", error);
-        showModalMessage("Error de registro: " + error.message);
+        
+        // Mostrar un mensaje más amigable dependiendo del error
+        let errorMsg = error.message;
+        if (error.code === 'auth/invalid-email') errorMsg = "El formato del correo electrónico no es válido.";
+        if (error.code === 'auth/weak-password') errorMsg = "La contraseña debe tener al menos 6 caracteres.";
+        
+        showModalMessage(errorMsg);
     } finally {
         isRegistering = false;
         submitButton.disabled = false;
@@ -663,6 +691,7 @@ async function handleRegisterSubmit(e) {
         submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
     }
 }
+
 
 document.getElementById('logout-btn')?.addEventListener('click', () => {
     unsubscribeAllListeners();

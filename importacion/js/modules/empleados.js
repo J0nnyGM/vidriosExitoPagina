@@ -12,6 +12,8 @@ import {
 import { formatCurrency, unformatCurrency, unformatCurrencyInput, formatCurrencyInput } from '../utils.js';
 import { METODOS_DE_PAGO, RRHH_DOCUMENT_TYPES, ALL_MODULES } from '../constants.js';
 
+let showInactiveEmployees = false;
+
 // --- CONFIGURACIÓN DE CACHÉ ---
 const EMPLEADOS_CACHE_KEY = 'empleados_cache';
 const EMPLEADOS_SYNC_KEY = 'empleados_last_sync';
@@ -152,13 +154,38 @@ function renderAndAttachEmployeeListeners(users) {
     const empleadosListEl = document.getElementById('empleados-list');
     if (!empleadosListEl) return;
 
-    empleadosListEl.innerHTML = '';
+    // 1. Filtrar los usuarios según el estado del botón
+    const filteredUsers = users.filter(u => {
+        if (showInactiveEmployees) return true; // Mostrar todos
+        return u.status !== 'inactive'; // Ocultar inactivos
+    });
 
-    // AQUI ESTÁ EL CAMBIO: Ya no usamos .filter(u => u.id !== currentUser.uid)
-    users.forEach(empleado => {
-        const el = document.createElement('div');
-        el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-center gap-4';
+    // 2. Construir la cabecera con el botón de filtro
+    const activeCount = users.filter(u => u.status === 'active').length;
+    const inactiveCount = users.filter(u => u.status === 'inactive').length;
+    const pendingCount = users.filter(u => u.status === 'pending').length;
 
+    let htmlContent = `
+        <div class="flex justify-between items-center mb-4 bg-gray-50 p-3 rounded-lg border border-gray-200">
+            <div class="text-sm text-gray-600">
+                <span class="font-bold text-gray-800">Total:</span> ${users.length} 
+                (<span class="text-green-600">${activeCount} Activos</span>, 
+                 <span class="text-yellow-600">${pendingCount} Pendientes</span>, 
+                 <span class="text-gray-500">${inactiveCount} Inactivos</span>)
+            </div>
+            <button id="toggle-inactive-btn" class="text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors ${showInactiveEmployees ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}">
+                ${showInactiveEmployees ? 'Ocultar Inactivos' : 'Mostrar Inactivos'}
+            </button>
+        </div>
+        <div class="space-y-4">
+    `;
+
+    if (filteredUsers.length === 0) {
+        htmlContent += `<p class="text-center text-gray-500 py-6">No hay empleados para mostrar con los filtros actuales.</p>`;
+    }
+
+    // 3. Generar las tarjetas de los empleados
+    filteredUsers.forEach(empleado => {
         const isMe = (empleado.id === currentUser.uid); // Comprobamos si es el propio admin
 
         let statusBadge = '';
@@ -167,51 +194,68 @@ function renderAndAttachEmployeeListeners(users) {
         switch (empleado.status) {
             case 'active':
                 statusBadge = `<span class="text-xs font-semibold bg-green-200 text-green-800 px-2 py-1 rounded-full">Activo</span>`;
-                toggleButtonHTML = `<button data-uid="${empleado.id}" data-status="inactive" class="user-status-btn bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-600 transition w-full">Desactivar</button>`;
+                toggleButtonHTML = `<button data-uid="${empleado.id}" data-status="inactive" class="user-status-btn bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-600 transition w-full shadow-sm">Desactivar</button>`;
                 break;
             case 'inactive':
                 statusBadge = `<span class="text-xs font-semibold bg-gray-200 text-gray-800 px-2 py-1 rounded-full">Inactivo</span>`;
-                toggleButtonHTML = `<button data-uid="${empleado.id}" data-status="active" class="user-status-btn bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-600 transition w-full">Activar</button>`;
+                toggleButtonHTML = `<button data-uid="${empleado.id}" data-status="active" class="user-status-btn bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-600 transition w-full shadow-sm">Activar</button>`;
                 break;
             default:
                 statusBadge = `<span class="text-xs font-semibold bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">Pendiente</span>`;
-                toggleButtonHTML = `<button data-uid="${empleado.id}" data-status="active" class="user-status-btn bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-600 transition w-full">Activar</button>`;
+                toggleButtonHTML = `<button data-uid="${empleado.id}" data-status="active" class="user-status-btn bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-600 transition w-full shadow-sm">Activar</button>`;
                 break;
         }
 
         // Medida de seguridad: Si es el propio Admin, no puede desactivarse ni eliminarse
         if (isMe) {
-            toggleButtonHTML = `<button disabled class="bg-gray-200 text-gray-500 px-4 py-2 rounded-lg text-sm font-semibold cursor-not-allowed w-full">Tu Cuenta</button>`;
+            toggleButtonHTML = `<button disabled class="bg-gray-200 text-gray-500 px-4 py-2 rounded-lg text-sm font-semibold cursor-not-allowed w-full shadow-sm">Tu Cuenta</button>`;
         }
 
         const deleteBtnHTML = isMe 
             ? '' 
-            : `<button data-uid="${empleado.id}" class="delete-user-btn bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-600 transition w-full">Eliminar</button>`;
+            : `<button data-uid="${empleado.id}" class="delete-user-btn bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-600 transition w-full shadow-sm">Eliminar</button>`;
 
-        el.innerHTML = `
-            <div class="flex-grow">
-                <div class="flex items-center gap-2 mb-1">
-                     <p class="font-semibold">${empleado.nombre} ${isMe ? '<span class="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded ml-2">Tú</span>' : ''}</p>
-                     ${statusBadge}
+        // Si el usuario está inactivo, le ponemos un fondo gris claro a su tarjeta para distinguirlo rápidamente
+        const cardBgClass = empleado.status === 'inactive' ? 'bg-gray-50 opacity-75' : 'bg-white';
+
+        htmlContent += `
+            <div class="border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-center gap-4 ${cardBgClass} shadow-sm">
+                <div class="flex-grow w-full text-left">
+                    <div class="flex items-center gap-2 mb-1">
+                         <p class="font-bold text-lg text-gray-800">${empleado.nombre} ${isMe ? '<span class="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded ml-2">Tú</span>' : ''}</p>
+                         ${statusBadge}
+                    </div>
+                    <p class="text-sm text-gray-600 font-medium">${empleado.email} <span class="text-sm font-normal text-gray-400">(${empleado.role})</span></p>
                 </div>
-                <p class="text-sm text-gray-600">${empleado.email} <span class="text-sm font-normal text-gray-500">(${empleado.role})</span></p>
-            </div>
-            <div class="flex-shrink-0 grid grid-cols-2 sm:grid-cols-4 gap-2 w-full sm:w-auto">
-                <button data-user-json='${JSON.stringify(empleado)}' class="manage-rrhh-docs-btn bg-teal-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-teal-600 transition w-full">RR.HH.</button>
-                <button data-user-json='${JSON.stringify(empleado)}' class="manage-user-btn bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-600 transition w-full">Gestionar</button>
-                ${toggleButtonHTML}
-                ${deleteBtnHTML}
+                <div class="flex-shrink-0 grid grid-cols-2 sm:grid-cols-4 gap-2 w-full sm:w-auto">
+                    <button data-user-json='${JSON.stringify(empleado)}' class="manage-rrhh-docs-btn bg-teal-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-teal-600 transition w-full shadow-sm">RR.HH.</button>
+                    <button data-user-json='${JSON.stringify(empleado)}' class="manage-user-btn bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-600 transition w-full shadow-sm">Gestionar</button>
+                    ${toggleButtonHTML}
+                    ${deleteBtnHTML}
+                </div>
             </div>`;
-        empleadosListEl.appendChild(el);
     });
 
-    // Listeners de los botones (Actualizado para usar Firestore Directo)
+    htmlContent += `</div>`; // Cerramos el contenedor de las tarjetas
+    empleadosListEl.innerHTML = htmlContent;
+
+    // 4. Asignar Eventos a los Botones
+    
+    // Botón de Filtro
+    const toggleBtn = document.getElementById('toggle-inactive-btn');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+            showInactiveEmployees = !showInactiveEmployees;
+            renderAndAttachEmployeeListeners(users); // Volvemos a dibujar la lista
+        });
+    }
+
+    // Botones de Estado (Activar/Desactivar)
     document.querySelectorAll('.user-status-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const userId = e.currentTarget.dataset.uid;
             const newStatus = e.currentTarget.dataset.status;
             
-            // Verificación extra en frontend por si acaso
             if (currentUserData.role !== 'admin') {
                 return showModalMessage("Solo los administradores pueden hacer esto.");
             }
@@ -219,13 +263,11 @@ function renderAndAttachEmployeeListeners(users) {
             if (confirm(`¿Estás seguro de que quieres cambiar el estado de este usuario a "${newStatus}"?`)) {
                 showModalMessage("Actualizando estado...", true);
                 try {
-                    // Actualizamos directamente en Firestore sin pasar por Functions
                     await updateDoc(doc(db, "users", userId), {
                         status: newStatus,
                         _lastUpdated: serverTimestamp()
                     });
                     
-                    // Actualizar caché local
                     const userActual = allUsers.find(u => u.id === userId);
                     if (userActual) {
                         updateLocalCache({ ...userActual, status: newStatus, _lastUpdated: Date.now() });
@@ -235,16 +277,17 @@ function renderAndAttachEmployeeListeners(users) {
                     showTemporaryMessage("Estado del usuario actualizado.", "success");
                 } catch (error) {
                     console.error("Error al cambiar estado en Firestore:", error);
-                    // Si falla aquí, es por tus Reglas de Seguridad (firestore.rules)
                     showModalMessage(`Error de permisos: Asegúrate de ser Administrador.`);
                 }
             }
         });
     });
 
+    // Botones de RRHH y Gestionar
     document.querySelectorAll('.manage-rrhh-docs-btn').forEach(btn => btn.addEventListener('click', (e) => showRRHHModal(JSON.parse(e.currentTarget.dataset.userJson))));
     document.querySelectorAll('.manage-user-btn').forEach(btn => btn.addEventListener('click', (e) => showAdminEditUserModal(JSON.parse(e.currentTarget.dataset.userJson))));
     
+    // Botón de Eliminar
     document.querySelectorAll('.delete-user-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const uid = e.currentTarget.dataset.uid;
@@ -255,10 +298,10 @@ function renderAndAttachEmployeeListeners(users) {
                     
                     const cachedData = localStorage.getItem(EMPLEADOS_CACHE_KEY);
                     if (cachedData) {
-                        const users = JSON.parse(cachedData).filter(u => u.id !== uid);
-                        localStorage.setItem(EMPLEADOS_CACHE_KEY, JSON.stringify(users));
-                        setAllUsers(users);
-                        renderAndAttachEmployeeListeners(users);
+                        const updatedUsers = JSON.parse(cachedData).filter(u => u.id !== uid);
+                        localStorage.setItem(EMPLEADOS_CACHE_KEY, JSON.stringify(updatedUsers));
+                        setAllUsers(updatedUsers);
+                        renderAndAttachEmployeeListeners(updatedUsers);
                     }
                     hideModal();
                     showTemporaryMessage("Usuario eliminado.", "success");
