@@ -8,7 +8,7 @@ import { loadClientes, setupClientesEvents } from './modules/clientes.js';
 import { loadProveedores, setupProveedoresEvents } from './modules/proveedores.js';
 import { loadItems, setupItemsEvents } from './modules/items.js';
 import { loadGastos, setupGastosEvents } from './modules/gastos.js?v=1.1';
-import { loadEmpleados, loadAllLoanRequests, setupEmpleadosEvents } from './modules/empleados.js';
+import { loadEmpleados, loadAllLoanRequests, setupEmpleadosEvents } from './modules/empleados.js?v=1.1';
 import { loadImportaciones, loadComprasNacionales, setupInventarioEvents } from './modules/inventario.js';
 import { loadRemisiones, setupRemisionesEvents } from './modules/remisiones.js';
 import { showDashboardModal, cleanupDashboardListeners } from './modules/dashboard.js';

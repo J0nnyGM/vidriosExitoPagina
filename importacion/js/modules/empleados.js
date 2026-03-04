@@ -16,22 +16,28 @@ import { METODOS_DE_PAGO, RRHH_DOCUMENT_TYPES, ALL_MODULES } from '../constants.
 const EMPLEADOS_CACHE_KEY = 'empleados_cache';
 const EMPLEADOS_SYNC_KEY = 'empleados_last_sync';
 
-// --- CARGA DE DATOS ---
-export async function loadEmpleados() {
+// --- CARGA DE DATOS (INTELIGENTE + TIEMPO REAL INFALIBLE) ---
+export function loadEmpleados() {
     if (!currentUserData || currentUserData.role !== 'admin') {
         return () => { }; 
     }
 
     const cachedData = localStorage.getItem(EMPLEADOS_CACHE_KEY);
-    const lastSyncStr = localStorage.getItem(EMPLEADOS_SYNC_KEY);
     
-    let lastSync = null;
     let mapUsers = new Map();
+    let maxLastUpdated = 0; // Guardará la fecha exacta del documento más reciente
 
+    // 1. Cargar desde el caché local (Velocidad instantánea)
     if (cachedData) {
         try {
             const parsedData = JSON.parse(cachedData);
-            parsedData.forEach(u => mapUsers.set(u.id, u));
+            parsedData.forEach(u => {
+                mapUsers.set(u.id, u);
+                // Buscamos cuál es el timestamp más reciente que tenemos guardado
+                if (u._lastUpdated && u._lastUpdated > maxLastUpdated) {
+                    maxLastUpdated = u._lastUpdated;
+                }
+            });
             setAllUsers(Array.from(mapUsers.values()));
             renderAndAttachEmployeeListeners(Array.from(mapUsers.values()));
         } catch (e) {
@@ -41,32 +47,43 @@ export async function loadEmpleados() {
         }
     }
 
-    if (lastSyncStr) lastSync = new Date(parseInt(lastSyncStr));
+    // 2. onSnapshot Diferencial basado en la información real del servidor
+    const colRef = collection(db, "users");
+    let q;
 
-    try {
-        const colRef = collection(db, "users");
-        let q;
+    if (maxLastUpdated > 0) {
+        // Restamos 2 minutos de margen de seguridad a la fecha del último documento
+        const syncTime = new Date(maxLastUpdated - 120000); 
+        q = query(colRef, where("_lastUpdated", ">=", syncTime));
+    } else {
+        // Si no hay caché, descarga todo
+        q = query(colRef);
+    }
 
-        if (lastSync) {
-            const syncTime = new Date(lastSync.getTime() - 60000); 
-            q = query(colRef, where("_lastUpdated", ">=", syncTime));
-        } else {
-            q = query(colRef);
-        }
-
-        const snapshot = await getDocs(q);
+    // 3. Quedarse escuchando los cambios en vivo
+    const unsubscribe = onSnapshot(q, (snapshot) => {
         let huboCambios = false;
 
-        snapshot.forEach(doc => {
+        snapshot.docChanges().forEach((change) => {
+            const doc = change.doc;
             const data = doc.data();
+
+            // Limpieza de Timestamps para poder serializar en JSON local
             if (data._lastUpdated && typeof data._lastUpdated.toMillis === 'function') data._lastUpdated = data._lastUpdated.toMillis();
             if (data.creadoEn && typeof data.creadoEn.toMillis === 'function') data.creadoEn = data.creadoEn.toMillis();
             
-            mapUsers.set(doc.id, { id: doc.id, ...data });
-            huboCambios = true;
+            if (change.type === "added" || change.type === "modified") {
+                mapUsers.set(doc.id, { id: doc.id, ...data });
+                huboCambios = true;
+            }
+            if (change.type === "removed") {
+                mapUsers.delete(doc.id);
+                huboCambios = true;
+            }
         });
 
-        if (huboCambios || !lastSync) {
+        // 4. Si hubo un cambio, actualizamos la memoria, el caché local y la pantalla
+        if (huboCambios) {
             const finalArray = Array.from(mapUsers.values());
             
             finalArray.sort((a, b) => {
@@ -78,16 +95,17 @@ export async function loadEmpleados() {
             });
 
             localStorage.setItem(EMPLEADOS_CACHE_KEY, JSON.stringify(finalArray));
-            localStorage.setItem(EMPLEADOS_SYNC_KEY, Date.now().toString());
-
+            
             setAllUsers(finalArray);
             renderAndAttachEmployeeListeners(finalArray);
-            console.log(`[Caché] Empleados sincronizados. ${snapshot.size} lecturas de Firebase.`);
+            
+            console.log(`[Empleados] ${snapshot.docChanges().length} cambios detectados en tiempo real.`);
         }
+    }, (error) => {
+        console.error("Error en onSnapshot diferencial de empleados:", error);
+    });
 
-    } catch (error) {
-        console.error("Error sincronizando empleados:", error);
-    }
+    return unsubscribe;
 }
 
 function updateLocalCache(newOrUpdatedUser) {
