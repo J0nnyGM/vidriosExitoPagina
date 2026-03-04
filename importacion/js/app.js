@@ -13,7 +13,7 @@ import { loadImportaciones, loadComprasNacionales, setupInventarioEvents } from 
 import { loadRemisiones, setupRemisionesEvents } from './modules/remisiones.js?v=1.1';
 import { showDashboardModal, cleanupDashboardListeners } from './modules/dashboard.js?v=1.1';
 import { setupFacturacionEvents } from './modules/facturacion.js';
-import { setupFuncionesEvents } from './modules/funciones.js?v=1.1'; 
+import { setupFuncionesEvents } from './modules/funciones.js?v=1.2'; 
 
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, updateEmail, createUserWithEmailAndPassword, fetchSignInMethodsForEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
 import { doc, getDoc, updateDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
