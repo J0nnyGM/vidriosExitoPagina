@@ -328,19 +328,20 @@ export function setupGastosEvents() {
             };
             
             try {
-                const docRef = await addDoc(collection(db, "gastos"), nuevoGasto);
+                await addDoc(collection(db, "gastos"), nuevoGasto);
                 
-                // Actualizar Caché Local de forma instantánea
-                nuevoGasto.id = docRef.id;
-                nuevoGasto._lastUpdated = Date.now();
-                updateLocalCache(nuevoGasto);
+                // ELIMINAMOS EL updateLocalCache Y EL renderGastos MANUAL.
+                // Nuestro poderoso onSnapshot se encargará de detectarlo y pintarlo solo.
 
                 e.target.reset();
+                // Limpiamos el buscador para que quede listo para otro gasto
+                const searchInput = document.getElementById('proveedor-search-input');
+                const hiddenInput = document.getElementById('proveedor-id-hidden');
+                if (searchInput) searchInput.value = '';
+                if (hiddenInput) hiddenInput.value = '';
+
                 if(window.Swal) Swal.fire('¡Éxito!', 'Gasto registrado correctamente.', 'success');
                 else showTemporaryMessage('Gasto registrado', 'success');
-
-                currentPage = 1;
-                renderGastos();
 
             } catch (error) {
                 console.error("Error al registrar gasto:", error);
