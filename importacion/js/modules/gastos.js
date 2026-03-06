@@ -1,12 +1,12 @@
 // js/modules/gastos.js
 
 import { db, functions } from '../firebase-config.js';
-import { collection, addDoc, query, getDocs, where, serverTimestamp, onSnapshot } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+import { collection, addDoc, updateDoc, doc, query, getDocs, where, serverTimestamp, onSnapshot } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { 
-    allGastos, setAllGastos, currentUser, 
+    allGastos, setAllGastos, currentUser, currentUserData, allUsers,
     showModalMessage, hideModal, showTemporaryMessage,
-    populateDateFilters, initSearchableInput, allProveedores // <--- Asegúrate de tener estos dos al final
+    populateDateFilters, initSearchableInput, allProveedores 
 } from '../app.js';
 import { formatCurrency, unformatCurrency } from '../utils.js';
 
@@ -14,24 +14,21 @@ import { formatCurrency, unformatCurrency } from '../utils.js';
 const CACHE_KEY = 'gastos_cache';
 const SYNC_KEY = 'gastos_last_sync';
 
-// Variables de Paginación
 let currentPage = 1;
 const itemsPerPage = 20;
 
-// --- CARGA DE DATOS (INTELIGENTE + TIEMPO REAL INFALIBLE) ---
+// --- CARGA DE DATOS (TIEMPO REAL + BORRADO LÓGICO) ---
 export function loadGastos() {
     const cachedData = localStorage.getItem(CACHE_KEY);
     
     let mapGastos = new Map();
-    let maxLastUpdated = 0; // Guardará la fecha exacta del documento más reciente
+    let maxLastUpdated = 0; 
 
-    // 1. Cargar desde el caché local (Velocidad instantánea)
     if (cachedData) {
         try {
             const parsedData = JSON.parse(cachedData);
             parsedData.forEach(g => {
                 mapGastos.set(g.id, g);
-                // Buscamos cuál es el timestamp más reciente que tenemos guardado
                 if (g._lastUpdated && g._lastUpdated > maxLastUpdated) {
                     maxLastUpdated = g._lastUpdated;
                 }
@@ -39,52 +36,50 @@ export function loadGastos() {
             setAllGastos(Array.from(mapGastos.values()));
             renderGastos();
         } catch (e) {
-            console.warn("Caché de gastos corrupto. Se limpiará.", e);
+            console.warn("Caché de gastos corrupto. Se limpiará.");
             localStorage.removeItem(CACHE_KEY);
             localStorage.removeItem(SYNC_KEY);
         }
     }
 
-    // 2. onSnapshot Diferencial basado en la información real del servidor
     const colRef = collection(db, "gastos");
     let q;
 
     if (maxLastUpdated > 0) {
-        // Restamos 2 minutos de margen de seguridad a la fecha del último documento
         const syncTime = new Date(maxLastUpdated - 120000); 
         q = query(colRef, where("_lastUpdated", ">=", syncTime));
     } else {
-        // Si no hay caché, descarga todo
         q = query(colRef);
     }
 
-    // 3. Quedarse escuchando los cambios en vivo
     const unsubscribe = onSnapshot(q, (snapshot) => {
         let huboCambios = false;
 
         snapshot.docChanges().forEach((change) => {
-            const doc = change.doc;
-            const data = doc.data();
+            const document = change.doc;
+            const data = document.data();
 
-            // Limpieza de Timestamps para poder serializar en JSON local
             if (data._lastUpdated && typeof data._lastUpdated.toMillis === 'function') data._lastUpdated = data._lastUpdated.toMillis();
             if (data.timestamp && typeof data.timestamp.toMillis === 'function') data.timestamp = data.timestamp.toMillis();
             
             if (change.type === "added" || change.type === "modified") {
-                mapGastos.set(doc.id, { id: doc.id, ...data });
+                // LA MAGIA DEL BORRADO LÓGICO: Si dice eliminado, lo sacamos del caché
+                if (data.estado === 'eliminado') {
+                    mapGastos.delete(document.id);
+                } else {
+                    mapGastos.set(document.id, { id: document.id, ...data });
+                }
                 huboCambios = true;
             }
             if (change.type === "removed") {
-                mapGastos.delete(doc.id);
+                mapGastos.delete(document.id);
                 huboCambios = true;
             }
         });
 
-        // 4. Si hubo un cambio, actualizamos la memoria, el caché local y la pantalla
         if (huboCambios) {
             const finalArray = Array.from(mapGastos.values());
             
-            // Ordenar por fecha de forma descendente (los más recientes primero)
             finalArray.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
             
             localStorage.setItem(CACHE_KEY, JSON.stringify(finalArray));
@@ -92,9 +87,7 @@ export function loadGastos() {
             
             renderGastos();
             
-            // Si el dashboard está abierto, podríamos querer actualizar los saldos en vivo (opcional pero elegante)
             if (document.getElementById('modal') && !document.getElementById('modal').classList.contains('hidden') && document.getElementById('dashboard-summary-view')) {
-                // Aquí podrías disparar una recarga del dashboard si fuera necesario
                 console.log("[Gastos] Dashboard detectado en vivo.");
             }
         }
@@ -103,22 +96,6 @@ export function loadGastos() {
     });
 
     return unsubscribe;
-}
-
-// Función auxiliar para actualizar el caché localmente
-function updateLocalCache(newOrUpdatedGasto) {
-    const cachedData = localStorage.getItem(CACHE_KEY);
-    let gastos = cachedData ? JSON.parse(cachedData) : [];
-    
-    const index = gastos.findIndex(g => g.id === newOrUpdatedGasto.id);
-    if (index !== -1) gastos[index] = newOrUpdatedGasto;
-    else gastos.push(newOrUpdatedGasto);
-    
-    gastos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-    
-    localStorage.setItem(CACHE_KEY, JSON.stringify(gastos));
-    setAllGastos(gastos);
-    renderGastos();
 }
 
 // --- RENDERIZADO CON PAGINACIÓN Y FILTROS ---
@@ -131,7 +108,6 @@ export function renderGastos() {
     const searchInput = document.getElementById('search-gastos');
     const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
 
-    // 1. Aplicar todos los filtros
     let filtered = allGastos;
 
     if (year !== 'all') {
@@ -147,7 +123,6 @@ export function renderGastos() {
         );
     }
 
-    // 2. Lógica de Paginación
     const totalItems = filtered.length;
     const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
 
@@ -164,24 +139,34 @@ export function renderGastos() {
         return;
     }
 
-    // 3. Dibujar Tarjetas
+    const isAdmin = currentUserData && currentUserData.role === 'admin';
+
     paginatedGastos.forEach((gasto) => {
         const el = document.createElement('div');
-        el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2';
+        el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-white shadow-sm';
+        
+        // Botón de eliminar solo para administradores y si no es un pago automático de RRHH o Transferencia
+        let deleteBtnHTML = '';
+        if (isAdmin && !gasto.isEmployeePayment && !gasto.isTransfer && !gasto.isImportacionGasto) {
+            deleteBtnHTML = `<button data-gasto-id="${gasto.id}" class="delete-gasto-btn mt-2 sm:mt-0 sm:ml-4 bg-red-100 text-red-700 px-3 py-1 rounded-lg text-xs font-semibold hover:bg-red-200 transition">Eliminar</button>`;
+        }
+
         el.innerHTML = `
-            <div class="w-full sm:w-auto">
-                <p class="font-semibold">${gasto.proveedorNombre}</p>
-                <p class="text-sm text-gray-600">${gasto.fecha} ${gasto.numeroFactura ? `| Factura: ${gasto.numeroFactura}` : ''}</p>
+            <div class="w-full sm:w-auto flex-grow">
+                <p class="font-semibold text-gray-800">${gasto.proveedorNombre}</p>
+                <p class="text-sm text-gray-600">${gasto.fecha} ${gasto.numeroFactura ? `| Factura: <span class="font-mono">${gasto.numeroFactura}</span>` : ''}</p>
             </div>
-            <div class="text-left sm:text-right w-full sm:w-auto mt-2 sm:mt-0">
-                <p class="font-bold text-lg text-red-600">${formatCurrency(gasto.valorTotal)}</p>
-                <p class="text-sm text-gray-500">Pagado con: ${gasto.fuentePago}</p>
+            <div class="flex flex-col sm:flex-row items-start sm:items-center w-full sm:w-auto mt-2 sm:mt-0">
+                <div class="text-left sm:text-right">
+                    <p class="font-bold text-lg text-red-600">-${formatCurrency(gasto.valorTotal)}</p>
+                    <p class="text-xs text-gray-500 uppercase tracking-wider">${gasto.fuentePago}</p>
+                </div>
+                ${deleteBtnHTML}
             </div>
         `;
         gastosListEl.appendChild(el);
     });
 
-    // 4. Dibujar Controles de Paginación
     const paginationEl = document.createElement('div');
     paginationEl.className = 'flex justify-between items-center mt-4 pt-4 border-t border-gray-200';
     paginationEl.innerHTML = `
@@ -194,7 +179,6 @@ export function renderGastos() {
     `;
     gastosListEl.appendChild(paginationEl);
 
-    // Eventos de Paginación
     const prevBtn = document.getElementById('prev-page-gastos-btn');
     const nextBtn = document.getElementById('next-page-gastos-btn');
     
@@ -204,6 +188,32 @@ export function renderGastos() {
     if (nextBtn && currentPage < totalPages) {
         nextBtn.addEventListener('click', () => { currentPage++; renderGastos(); });
     }
+
+    // --- EVENTO DE BORRADO LÓGICO ---
+    document.querySelectorAll('.delete-gasto-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            if (!confirm("¿Seguro que deseas eliminar este gasto de forma permanente? El dinero se devolverá al saldo de la cuenta.")) return;
+            
+            const gastoId = e.currentTarget.dataset.gastoId;
+            showModalMessage("Eliminando gasto...", true);
+            
+            try {
+                // Borrado Lógico: Marcamos como eliminado y GUARDAMOS EL LOG (Quién y Cuándo)
+                await updateDoc(doc(db, "gastos", gastoId), {
+                    estado: 'eliminado',
+                    deletedAt: Date.now(), // Guardamos el timestamp en milisegundos para ordenarlo fácil
+                    deletedBy: currentUser.uid,
+                    _lastUpdated: serverTimestamp()
+                });
+                hideModal();
+                showTemporaryMessage("Gasto eliminado con éxito", "success");
+            } catch (error) {
+                console.error("Error al eliminar gasto:", error);
+                hideModal();
+                showModalMessage("Error al eliminar el gasto.");
+            }
+        });
+    });
 }
 
 // --- EXPORTACIÓN A EXCEL ---
@@ -257,7 +267,6 @@ async function handleExportGastos(e) {
 export function setupGastosEvents() {
     populateDateFilters('filter-gastos');
 
-    // Manejo de filtros con reseteo de página a la 1
     const resetAndRender = () => {
         currentPage = 1;
         renderGastos();
@@ -268,7 +277,6 @@ export function setupGastosEvents() {
     if (filterGastosMonth) filterGastosMonth.addEventListener('change', resetAndRender);
     if (filterGastosYear) filterGastosYear.addEventListener('change', resetAndRender);
 
-    // Buscador con Debounce
     const searchGastos = document.getElementById('search-gastos');
     let debounceTimer;
     if (searchGastos) {
@@ -278,7 +286,6 @@ export function setupGastosEvents() {
         });
     }
 
-    // --- INICIO: RESTAURACIÓN DEL BUSCADOR DE PROVEEDORES ---
     const proveedorSearchInput = document.getElementById('proveedor-search-input');
     const proveedorSearchResults = document.getElementById('proveedor-search-results');
     if (proveedorSearchInput && proveedorSearchResults) {
@@ -292,14 +299,25 @@ export function setupGastosEvents() {
             }
         );
     }
-    // --- FIN: RESTAURACIÓN DEL BUSCADOR DE PROVEEDORES ---
+
+    // BOTÓN DE SINCRONIZACIÓN MANUAL (Por si alguien borra datos directo de la consola)
+    const syncGastosBtn = document.getElementById('sync-gastos-btn');
+    if (syncGastosBtn) {
+        syncGastosBtn.addEventListener('click', () => {
+            localStorage.removeItem(CACHE_KEY);
+            localStorage.removeItem(SYNC_KEY);
+            showModalMessage("Sincronizando base de datos completa...", true);
+            setTimeout(() => window.location.reload(), 1000);
+        });
+    }
 
     document.body.addEventListener('click', (e) => {
         if (e.target && e.target.id === 'export-gastos-btn') showExportGastosModal();
+        // AÑADE ESTA LÍNEA NUEVA:
+        if (e.target && e.target.closest('#view-deleted-gastos-btn')) showDeletedGastosModal();
     });
 
     document.body.addEventListener('submit', async (e) => {
-        // --- 1. NUEVO GASTO ---
         if (e.target && e.target.id === 'add-gasto-form') {
             e.preventDefault();
             const valorTotal = unformatCurrency(document.getElementById('gasto-valor-total').value);
@@ -322,6 +340,7 @@ export function setupGastosEvents() {
                 ivaIncluido: ivaIncluido,
                 valorTotal: valorTotal,
                 fuentePago: document.getElementById('gasto-fuente').value,
+                estado: 'activo', // Marcamos los nuevos gastos como activos
                 registradoPor: currentUser.uid,
                 timestamp: Date.now(),
                 _lastUpdated: serverTimestamp() 
@@ -330,11 +349,7 @@ export function setupGastosEvents() {
             try {
                 await addDoc(collection(db, "gastos"), nuevoGasto);
                 
-                // ELIMINAMOS EL updateLocalCache Y EL renderGastos MANUAL.
-                // Nuestro poderoso onSnapshot se encargará de detectarlo y pintarlo solo.
-
                 e.target.reset();
-                // Limpiamos el buscador para que quede listo para otro gasto
                 const searchInput = document.getElementById('proveedor-search-input');
                 const hiddenInput = document.getElementById('proveedor-id-hidden');
                 if (searchInput) searchInput.value = '';
@@ -342,6 +357,8 @@ export function setupGastosEvents() {
 
                 if(window.Swal) Swal.fire('¡Éxito!', 'Gasto registrado correctamente.', 'success');
                 else showTemporaryMessage('Gasto registrado', 'success');
+
+                currentPage = 1; 
 
             } catch (error) {
                 console.error("Error al registrar gasto:", error);
@@ -351,9 +368,87 @@ export function setupGastosEvents() {
             }
         }
 
-        // --- 2. EXPORTAR GASTOS ---
         if (e.target && e.target.id === 'export-gastos-form') {
             handleExportGastos(e);
         }
     });
+}
+
+// --- FUNCIONALIDAD: PAPELERA DE GASTOS ---
+async function showDeletedGastosModal() {
+    const modalContentWrapper = document.getElementById('modal-content-wrapper');
+    
+    modalContentWrapper.innerHTML = `
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-auto flex flex-col" style="max-height: 85vh;">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h2 class="text-xl font-semibold text-red-600 flex items-center gap-2">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    Historial de Gastos Eliminados
+                </h2>
+                <button id="close-deleted-gastos-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            </div>
+            <div class="bg-yellow-50 text-yellow-800 p-3 text-sm text-center border-b">
+                Estos gastos han sido eliminados del sistema y sus montos fueron devueltos a los saldos principales.
+            </div>
+            <div class="p-4 overflow-y-auto bg-gray-50 flex-grow" id="deleted-gastos-list">
+                <p class="text-center text-gray-500 py-8">Cargando papelera...</p>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('modal').classList.remove('hidden');
+    document.getElementById('close-deleted-gastos-modal').addEventListener('click', hideModal);
+
+    try {
+        // Vamos directo a la base de datos a buscar solo los eliminados (Ahorro máximo de lecturas)
+        const q = query(collection(db, "gastos"), where("estado", "==", "eliminado"));
+        const snapshot = await getDocs(q);
+        
+        let deletedGastos = [];
+        snapshot.forEach(doc => {
+            deletedGastos.push({ id: doc.id, ...doc.data() });
+        });
+
+        // Ordenamos por fecha de eliminación (los más recientes arriba)
+        deletedGastos.sort((a, b) => {
+            const dateA = a.deletedAt || 0;
+            const dateB = b.deletedAt || 0;
+            return dateB - dateA;
+        });
+
+        const listContainer = document.getElementById('deleted-gastos-list');
+        
+        if (deletedGastos.length === 0) {
+            listContainer.innerHTML = '<p class="text-center text-gray-500 py-8">La papelera está vacía.</p>';
+            return;
+        }
+
+        let html = '';
+        deletedGastos.forEach(gasto => {
+            const deletedByName = allUsers.find(u => u.id === gasto.deletedBy)?.nombre || 'Usuario Desconocido';
+            const deletedDateStr = gasto.deletedAt ? new Date(gasto.deletedAt).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }) : 'Fecha desconocida';
+
+            html += `
+                <div class="bg-white p-4 rounded-lg shadow-sm border border-red-200 mb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 opacity-80 hover:opacity-100 transition">
+                    <div>
+                        <p class="font-bold text-gray-800 line-through decoration-red-500">${gasto.proveedorNombre}</p>
+                        <p class="text-sm text-gray-600">Fecha Original: ${gasto.fecha} ${gasto.numeroFactura ? `| Factura: ${gasto.numeroFactura}` : ''}</p>
+                        <div class="mt-2 text-xs bg-red-50 text-red-700 p-2 rounded-md border border-red-100 inline-block">
+                            <span class="font-bold">Eliminado por:</span> ${deletedByName}<br>
+                            <span class="font-bold">El:</span> ${deletedDateStr}
+                        </div>
+                    </div>
+                    <div class="text-left sm:text-right">
+                        <p class="font-bold text-xl text-gray-500 line-through decoration-red-500">${formatCurrency(gasto.valorTotal)}</p>
+                        <p class="text-xs text-gray-400 uppercase tracking-wider">${gasto.fuentePago}</p>
+                    </div>
+                </div>
+            `;
+        });
+        listContainer.innerHTML = html;
+
+    } catch (error) {
+        console.error("Error cargando la papelera:", error);
+        document.getElementById('deleted-gastos-list').innerHTML = '<p class="text-center text-red-500 py-8">Error al cargar la papelera. Revisa tu conexión.</p>';
+    }
 }
