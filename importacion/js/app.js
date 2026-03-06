@@ -442,7 +442,7 @@ function loadViewTemplates() {
         </div>`;
     }
 
-    const viewGastos = document.getElementById('view-gastos');
+const viewGastos = document.getElementById('view-gastos');
     if (viewGastos) {
         viewGastos.innerHTML = `
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
@@ -471,21 +471,18 @@ function loadViewTemplates() {
                             ${metodosDePagoHTML}
                         </select>
                     </div>
-                    <button type="submit" class="w-full bg-orange-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-orange-700">Registrar</button>
+                    <button type="submit" class="w-full bg-orange-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-orange-700 shadow">Registrar</button>
                 </form>
             </div>
             <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b gap-3">
+                <div class="flex justify-between items-center pb-4 border-b">
                     <h2 class="text-xl font-semibold">Historial de Gastos</h2>
-                    <div class="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
-                        <button id="view-deleted-gastos-btn" class="bg-red-50 text-red-600 font-bold py-2 px-3 rounded-lg hover:bg-red-100 border border-red-200 flex-shrink-0 shadow-sm" title="Ver Papelera de Gastos">
-                            Papelera
+                    <div class="flex gap-3">
+                        <button id="view-deleted-gastos-btn" class="bg-red-50 text-red-600 text-xl py-2 px-3 rounded-lg hover:bg-red-100 border border-red-200 flex-shrink-0 shadow-sm" title="Ver Papelera de Gastos">
+                            🗑️
                         </button>
-                        <button id="sync-gastos-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-3 rounded-lg hover:bg-gray-300 flex-shrink-0 shadow-sm" title="Forzar Sincronización">
-                            ↻ Sync
-                        </button>
-                        <button id="export-gastos-btn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 flex-shrink-0 shadow-sm">
-                            Exportar a Excel
+                        <button id="sync-gastos-btn" class="bg-gray-200 text-gray-700 text-xl font-bold py-2 px-3 rounded-lg hover:bg-gray-300 flex-shrink-0 shadow-sm" title="Forzar Sincronización">
+                            ↻
                         </button>
                     </div>
                 </div>

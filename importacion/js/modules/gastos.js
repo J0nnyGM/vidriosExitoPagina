@@ -2,7 +2,6 @@
 
 import { db, functions } from '../firebase-config.js';
 import { collection, addDoc, updateDoc, doc, query, getDocs, where, serverTimestamp, onSnapshot } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { 
     allGastos, setAllGastos, currentUser, currentUserData, allUsers,
     showModalMessage, hideModal, showTemporaryMessage,
@@ -63,7 +62,6 @@ export function loadGastos() {
             if (data.timestamp && typeof data.timestamp.toMillis === 'function') data.timestamp = data.timestamp.toMillis();
             
             if (change.type === "added" || change.type === "modified") {
-                // LA MAGIA DEL BORRADO LÓGICO: Si dice eliminado, lo sacamos del caché
                 if (data.estado === 'eliminado') {
                     mapGastos.delete(document.id);
                 } else {
@@ -79,7 +77,6 @@ export function loadGastos() {
 
         if (huboCambios) {
             const finalArray = Array.from(mapGastos.values());
-            
             finalArray.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
             
             localStorage.setItem(CACHE_KEY, JSON.stringify(finalArray));
@@ -145,10 +142,10 @@ export function renderGastos() {
         const el = document.createElement('div');
         el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-white shadow-sm';
         
-        // Botón de eliminar solo para administradores y si no es un pago automático de RRHH o Transferencia
+        // ELIMINAR AHORA ES UNA "X"
         let deleteBtnHTML = '';
         if (isAdmin && !gasto.isEmployeePayment && !gasto.isTransfer && !gasto.isImportacionGasto) {
-            deleteBtnHTML = `<button data-gasto-id="${gasto.id}" class="delete-gasto-btn mt-2 sm:mt-0 sm:ml-4 bg-red-100 text-red-700 px-3 py-1 rounded-lg text-xs font-semibold hover:bg-red-200 transition">Eliminar</button>`;
+            deleteBtnHTML = `<button data-gasto-id="${gasto.id}" class="delete-gasto-btn mt-2 sm:mt-0 sm:ml-4 bg-red-100 text-red-700 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold hover:bg-red-200 transition shadow-sm" title="Eliminar Gasto">✕</button>`;
         }
 
         el.innerHTML = `
@@ -179,29 +176,24 @@ export function renderGastos() {
     `;
     gastosListEl.appendChild(paginationEl);
 
+    // Eventos Paginación
     const prevBtn = document.getElementById('prev-page-gastos-btn');
     const nextBtn = document.getElementById('next-page-gastos-btn');
-    
-    if (prevBtn && currentPage > 1) {
-        prevBtn.addEventListener('click', () => { currentPage--; renderGastos(); });
-    }
-    if (nextBtn && currentPage < totalPages) {
-        nextBtn.addEventListener('click', () => { currentPage++; renderGastos(); });
-    }
+    if (prevBtn && currentPage > 1) prevBtn.onclick = () => { currentPage--; renderGastos(); };
+    if (nextBtn && currentPage < totalPages) nextBtn.onclick = () => { currentPage++; renderGastos(); };
 
     // --- EVENTO DE BORRADO LÓGICO ---
     document.querySelectorAll('.delete-gasto-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
+        btn.onclick = async (e) => {
             if (!confirm("¿Seguro que deseas eliminar este gasto de forma permanente? El dinero se devolverá al saldo de la cuenta.")) return;
             
             const gastoId = e.currentTarget.dataset.gastoId;
             showModalMessage("Eliminando gasto...", true);
             
             try {
-                // Borrado Lógico: Marcamos como eliminado y GUARDAMOS EL LOG (Quién y Cuándo)
                 await updateDoc(doc(db, "gastos", gastoId), {
                     estado: 'eliminado',
-                    deletedAt: Date.now(), // Guardamos el timestamp en milisegundos para ordenarlo fácil
+                    deletedAt: Date.now(), 
                     deletedBy: currentUser.uid,
                     _lastUpdated: serverTimestamp()
                 });
@@ -212,165 +204,7 @@ export function renderGastos() {
                 hideModal();
                 showModalMessage("Error al eliminar el gasto.");
             }
-        });
-    });
-}
-
-// --- EXPORTACIÓN A EXCEL ---
-function showExportGastosModal() {
-    const modal = document.getElementById('export-gastos-modal');
-    if (modal) {
-        const endDateInput = document.getElementById('export-end-date');
-        if (endDateInput) endDateInput.valueAsDate = new Date();
-        modal.classList.remove('hidden');
-    }
-}
-
-async function handleExportGastos(e) {
-    e.preventDefault();
-    const startDate = document.getElementById('export-start-date').value;
-    const endDate = document.getElementById('export-end-date').value;
-
-    if (!startDate || !endDate) return showModalMessage("Por favor, selecciona ambas fechas.");
-
-    showModalMessage("Generando reporte de gastos, por favor espera...", true);
-
-    try {
-        const exportFunction = httpsCallable(functions, 'exportGastosToExcel');
-        const result = await exportFunction({ startDate, endDate });
-
-        if (result.data.success) {
-            const byteCharacters = atob(result.data.fileContent);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `Reporte_Gastos_${startDate}_a_${endDate}.xlsx`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            hideModal();
-            showTemporaryMessage("¡Reporte generado con éxito!", "success");
-        } else {
-            throw new Error(result.data.message || "No se encontraron datos para exportar.");
-        }
-    } catch (error) {
-        console.error("Error al exportar gastos:", error);
-        showModalMessage(`Error al generar el reporte: ${error.message}`);
-    }
-}
-
-export function setupGastosEvents() {
-    populateDateFilters('filter-gastos');
-
-    const resetAndRender = () => {
-        currentPage = 1;
-        renderGastos();
-    };
-
-    const filterGastosMonth = document.getElementById('filter-gastos-month');
-    const filterGastosYear = document.getElementById('filter-gastos-year');
-    if (filterGastosMonth) filterGastosMonth.addEventListener('change', resetAndRender);
-    if (filterGastosYear) filterGastosYear.addEventListener('change', resetAndRender);
-
-    const searchGastos = document.getElementById('search-gastos');
-    let debounceTimer;
-    if (searchGastos) {
-        searchGastos.addEventListener('input', () => {
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(resetAndRender, 300);
-        });
-    }
-
-    const proveedorSearchInput = document.getElementById('proveedor-search-input');
-    const proveedorSearchResults = document.getElementById('proveedor-search-results');
-    if (proveedorSearchInput && proveedorSearchResults) {
-        initSearchableInput(
-            proveedorSearchInput,
-            proveedorSearchResults,
-            () => allProveedores,
-            (proveedor) => proveedor.nombre,
-            (selectedItem) => {
-                document.getElementById('proveedor-id-hidden').value = selectedItem ? selectedItem.id : '';
-            }
-        );
-    }
-
-    // BOTÓN DE SINCRONIZACIÓN MANUAL (Por si alguien borra datos directo de la consola)
-    const syncGastosBtn = document.getElementById('sync-gastos-btn');
-    if (syncGastosBtn) {
-        syncGastosBtn.addEventListener('click', () => {
-            localStorage.removeItem(CACHE_KEY);
-            localStorage.removeItem(SYNC_KEY);
-            showModalMessage("Sincronizando base de datos completa...", true);
-            setTimeout(() => window.location.reload(), 1000);
-        });
-    }
-
-    document.body.addEventListener('click', (e) => {
-        if (e.target && e.target.id === 'export-gastos-btn') showExportGastosModal();
-        // AÑADE ESTA LÍNEA NUEVA:
-        if (e.target && e.target.closest('#view-deleted-gastos-btn')) showDeletedGastosModal();
-    });
-
-    document.body.addEventListener('submit', async (e) => {
-        if (e.target && e.target.id === 'add-gasto-form') {
-            e.preventDefault();
-            const valorTotal = unformatCurrency(document.getElementById('gasto-valor-total').value);
-            const ivaIncluido = document.getElementById('gasto-iva').checked;
-            const valorBase = ivaIncluido ? valorTotal / 1.19 : valorTotal;
-            const proveedorId = document.getElementById('proveedor-id-hidden').value;
-            const proveedorNombre = document.getElementById('proveedor-search-input').value;
-
-            if (!proveedorId) return showModalMessage("Por favor, selecciona un proveedor de la lista.");
-
-            const submitBtn = e.target.querySelector('button[type="submit"]');
-            if(submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Registrando...'; }
-
-            const nuevoGasto = {
-                fecha: document.getElementById('gasto-fecha').value,
-                proveedorId: proveedorId,
-                proveedorNombre: proveedorNombre,
-                numeroFactura: document.getElementById('gasto-factura').value,
-                valorBase: valorBase,
-                ivaIncluido: ivaIncluido,
-                valorTotal: valorTotal,
-                fuentePago: document.getElementById('gasto-fuente').value,
-                estado: 'activo', // Marcamos los nuevos gastos como activos
-                registradoPor: currentUser.uid,
-                timestamp: Date.now(),
-                _lastUpdated: serverTimestamp() 
-            };
-            
-            try {
-                await addDoc(collection(db, "gastos"), nuevoGasto);
-                
-                e.target.reset();
-                const searchInput = document.getElementById('proveedor-search-input');
-                const hiddenInput = document.getElementById('proveedor-id-hidden');
-                if (searchInput) searchInput.value = '';
-                if (hiddenInput) hiddenInput.value = '';
-
-                if(window.Swal) Swal.fire('¡Éxito!', 'Gasto registrado correctamente.', 'success');
-                else showTemporaryMessage('Gasto registrado', 'success');
-
-                currentPage = 1; 
-
-            } catch (error) {
-                console.error("Error al registrar gasto:", error);
-                showModalMessage("Error al registrar el gasto.");
-            } finally {
-                if(submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Registrar'; }
-            }
-        }
-
-        if (e.target && e.target.id === 'export-gastos-form') {
-            handleExportGastos(e);
-        }
+        };
     });
 }
 
@@ -388,7 +222,7 @@ async function showDeletedGastosModal() {
                 <button id="close-deleted-gastos-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
             </div>
             <div class="bg-yellow-50 text-yellow-800 p-3 text-sm text-center border-b">
-                Estos gastos han sido eliminados del sistema y sus montos fueron devueltos a los saldos principales.
+                Estos gastos han sido eliminados del sistema y sus montos devueltos a los saldos principales.
             </div>
             <div class="p-4 overflow-y-auto bg-gray-50 flex-grow" id="deleted-gastos-list">
                 <p class="text-center text-gray-500 py-8">Cargando papelera...</p>
@@ -397,10 +231,9 @@ async function showDeletedGastosModal() {
     `;
     
     document.getElementById('modal').classList.remove('hidden');
-    document.getElementById('close-deleted-gastos-modal').addEventListener('click', hideModal);
+    document.getElementById('close-deleted-gastos-modal').onclick = hideModal;
 
     try {
-        // Vamos directo a la base de datos a buscar solo los eliminados (Ahorro máximo de lecturas)
         const q = query(collection(db, "gastos"), where("estado", "==", "eliminado"));
         const snapshot = await getDocs(q);
         
@@ -409,7 +242,6 @@ async function showDeletedGastosModal() {
             deletedGastos.push({ id: doc.id, ...doc.data() });
         });
 
-        // Ordenamos por fecha de eliminación (los más recientes arriba)
         deletedGastos.sort((a, b) => {
             const dateA = a.deletedAt || 0;
             const dateB = b.deletedAt || 0;
@@ -450,5 +282,162 @@ async function showDeletedGastosModal() {
     } catch (error) {
         console.error("Error cargando la papelera:", error);
         document.getElementById('deleted-gastos-list').innerHTML = '<p class="text-center text-red-500 py-8">Error al cargar la papelera. Revisa tu conexión.</p>';
+    }
+}
+
+// --- SETUP EVENTOS PRINCIPALES (PROTEGIDO CONTRA DUPLICADOS) ---
+export function setupGastosEvents() {
+    populateDateFilters('filter-gastos');
+
+    const resetAndRender = () => {
+        currentPage = 1;
+        renderGastos();
+    };
+
+    // Usamos .onchange en vez de addEventListener para evitar apilamiento
+    const filterGastosMonth = document.getElementById('filter-gastos-month');
+    const filterGastosYear = document.getElementById('filter-gastos-year');
+    if (filterGastosMonth) filterGastosMonth.onchange = resetAndRender;
+    if (filterGastosYear) filterGastosYear.onchange = resetAndRender;
+
+    const searchGastos = document.getElementById('search-gastos');
+    let debounceTimer;
+    if (searchGastos) {
+        searchGastos.oninput = () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(resetAndRender, 300);
+        };
+    }
+
+    const proveedorSearchInput = document.getElementById('proveedor-search-input');
+    const proveedorSearchResults = document.getElementById('proveedor-search-results');
+    if (proveedorSearchInput && proveedorSearchResults) {
+        initSearchableInput(
+            proveedorSearchInput,
+            proveedorSearchResults,
+            () => allProveedores,
+            (proveedor) => proveedor.nombre,
+            (selectedItem) => {
+                document.getElementById('proveedor-id-hidden').value = selectedItem ? selectedItem.id : '';
+            }
+        );
+    }
+
+    // BOTÓN SYNC
+    const syncGastosBtn = document.getElementById('sync-gastos-btn');
+    if (syncGastosBtn) {
+        syncGastosBtn.onclick = () => {
+            const modalContentWrapper = document.getElementById('modal-content-wrapper');
+            modalContentWrapper.innerHTML = `
+                <div class="bg-white rounded-lg p-6 shadow-xl max-w-md w-full mx-auto text-left">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold text-orange-600 flex items-center gap-2">
+                            ⚠️ Sincronización Forzada
+                        </h2>
+                        <button id="close-sync-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+                    </div>
+                    <div class="bg-orange-50 text-orange-800 p-3 rounded-md text-sm mb-4">
+                        <strong>Atención:</strong> Esta acción borrará el caché y descargará todos los gastos nuevamente desde el servidor. Solo debe usarse si los datos en pantalla presentan errores.
+                    </div>
+                    <form id="sync-reason-form" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium">Motivo de la sincronización:</label>
+                            <textarea id="sync-reason" class="w-full p-2 border rounded-lg mt-1" rows="3" placeholder="Ej: No veo un gasto que acaban de registrar en otro computador..." required minlength="10"></textarea>
+                        </div>
+                        <button type="submit" class="w-full bg-orange-600 text-white font-bold py-2 rounded-lg hover:bg-orange-700 shadow">Confirmar Sincronización</button>
+                    </form>
+                </div>
+            `;
+            document.getElementById('modal').classList.remove('hidden');
+            document.getElementById('close-sync-modal').onclick = hideModal;
+
+            document.getElementById('sync-reason-form').onsubmit = async (e) => {
+                e.preventDefault();
+                const reason = document.getElementById('sync-reason').value;
+                const submitBtn = e.target.querySelector('button[type="submit"]');
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Procesando...';
+
+                try {
+                    await addDoc(collection(db, "syncLogs"), {
+                        module: 'gastos',
+                        reason: reason,
+                        userId: currentUser.uid,
+                        userName: currentUserData.nombre || 'Desconocido',
+                        timestamp: serverTimestamp()
+                    });
+
+                    localStorage.removeItem(CACHE_KEY);
+                    localStorage.removeItem(SYNC_KEY);
+                    showModalMessage("Sincronizando base de datos completa...", true);
+                    setTimeout(() => window.location.reload(), 1000);
+                } catch (error) {
+                    console.error("Error al guardar log de sync:", error);
+                    showModalMessage("Error de conexión. Intenta de nuevo.");
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Confirmar Sincronización';
+                }
+            };
+        };
+    }
+
+    // BOTÓN PAPELERA
+    const viewDeletedBtn = document.getElementById('view-deleted-gastos-btn');
+    if (viewDeletedBtn) {
+        viewDeletedBtn.onclick = showDeletedGastosModal;
+    }
+
+    // FORMULARIO: CREAR NUEVO GASTO (Usamos onsubmit para evitar duplicados)
+    const addGastoForm = document.getElementById('add-gasto-form');
+    if (addGastoForm) {
+        addGastoForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const valorTotal = unformatCurrency(document.getElementById('gasto-valor-total').value);
+            const ivaIncluido = document.getElementById('gasto-iva').checked;
+            const valorBase = ivaIncluido ? valorTotal / 1.19 : valorTotal;
+            const proveedorId = document.getElementById('proveedor-id-hidden').value;
+            const proveedorNombre = document.getElementById('proveedor-search-input').value;
+
+            if (!proveedorId) return showModalMessage("Por favor, selecciona un proveedor de la lista.");
+
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if(submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Registrando...'; }
+
+            const nuevoGasto = {
+                fecha: document.getElementById('gasto-fecha').value,
+                proveedorId: proveedorId,
+                proveedorNombre: proveedorNombre,
+                numeroFactura: document.getElementById('gasto-factura').value,
+                valorBase: valorBase,
+                ivaIncluido: ivaIncluido,
+                valorTotal: valorTotal,
+                fuentePago: document.getElementById('gasto-fuente').value,
+                estado: 'activo', 
+                registradoPor: currentUser.uid,
+                timestamp: Date.now(),
+                _lastUpdated: serverTimestamp() 
+            };
+            
+            try {
+                await addDoc(collection(db, "gastos"), nuevoGasto);
+                
+                e.target.reset();
+                const searchInput = document.getElementById('proveedor-search-input');
+                const hiddenInput = document.getElementById('proveedor-id-hidden');
+                if (searchInput) searchInput.value = '';
+                if (hiddenInput) hiddenInput.value = '';
+
+                if(window.Swal) Swal.fire('¡Éxito!', 'Gasto registrado correctamente.', 'success');
+                else showTemporaryMessage('Gasto registrado', 'success');
+
+                currentPage = 1; 
+
+            } catch (error) {
+                console.error("Error al registrar gasto:", error);
+                showModalMessage("Error al registrar el gasto.");
+            } finally {
+                if(submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Registrar'; }
+            }
+        };
     }
 }
