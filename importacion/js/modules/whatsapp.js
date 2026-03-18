@@ -20,6 +20,25 @@ let chatTimerInterval = null;
 // ESTADO DE LA BANDEJA (Por defecto mostramos los 'activos')
 let currentInboxFilter = 'activo'; 
 
+// --- NUEVO: ACTUALIZAR NOTIFICACIONES GLOBALES ---
+function updateWhatsAppBadges() {
+    // Sumamos todos los 'mensajesNoLeidos' de la lista de chats activos
+    const totalUnread = allChats.reduce((sum, chat) => sum + (chat.mensajesNoLeidos || 0), 0);
+    
+    const desktopBadge = document.getElementById('badge-desktop-wa');
+    const mobileBadge = document.getElementById('badge-mobile-wa');
+
+    if (totalUnread > 0) {
+        // Mostramos los globos rojos
+        if (desktopBadge) { desktopBadge.textContent = totalUnread; desktopBadge.classList.remove('hidden'); }
+        if (mobileBadge) { mobileBadge.textContent = totalUnread; mobileBadge.classList.remove('hidden'); }
+    } else {
+        // Ocultamos los globos si no hay mensajes
+        if (desktopBadge) desktopBadge.classList.add('hidden');
+        if (mobileBadge) mobileBadge.classList.add('hidden');
+    }
+}
+
 window.viewWaImage = function(url) {
     const modal = document.getElementById('modal-secondary');
     const wrapper = document.getElementById('modal-secondary-content-wrapper');
@@ -182,6 +201,7 @@ export function loadChats() {
     unsubscribeChats = onSnapshot(q, (snapshot) => {
         allChats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         renderChatList();
+        updateWhatsAppBadges(); // <--- ¡ESTA ES LA MAGIA QUE AÑADIMOS!
     });
 }
 

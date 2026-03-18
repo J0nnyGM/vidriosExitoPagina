@@ -74,7 +74,10 @@
             <div id="desktop-nav-container" class="border-b border-gray-200 mb-6 hidden sm:block">
                 <nav id="main-nav" class="-mb-px flex space-x-6 overflow-x-auto">
                     <button id="tab-remisiones" class="tab-btn py-4 px-1 text-lg font-semibold text-gray-500 hover:text-gray-800 whitespace-nowrap">Remisiones</button>
-                    <button id="tab-whatsapp" class="tab-btn py-4 px-1 text-lg font-semibold text-gray-500 hover:text-gray-800 whitespace-nowrap">WhatsApp</button>
+                    <button id="tab-whatsapp" class="tab-btn py-4 px-1 text-lg font-semibold text-gray-500 hover:text-gray-800 whitespace-nowrap flex items-center gap-2">
+                        WhatsApp 
+                        <span id="badge-desktop-wa" class="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-sm hidden">0</span>
+                    </button>
                     <button id="tab-facturacion" class="tab-btn py-4 px-1 text-lg font-semibold text-gray-500 hover:text-gray-800 whitespace-nowrap">Facturación</button>
                     <button id="tab-inventario" class="tab-btn py-4 px-1 text-lg font-semibold text-gray-500 hover:text-gray-800 whitespace-nowrap">Inventario</button>
                     <button id="tab-items" class="tab-btn py-4 px-1 text-lg font-semibold text-gray-500 hover:text-gray-800 whitespace-nowrap">Ítems</button>
@@ -106,9 +109,10 @@
             <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
             <span class="text-[10px] font-semibold">Remisiones</span>
         </button>
-        <button id="mobile-tab-whatsapp" class="flex flex-col items-center py-2 w-1/4 text-gray-500 hover:text-indigo-600 transition hidden">
+        <button id="mobile-tab-whatsapp" class="flex flex-col items-center py-2 w-1/4 text-gray-500 hover:text-indigo-600 transition hidden relative">
             <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
             <span class="text-[10px] font-semibold">WhatsApp</span>
+            <span id="badge-mobile-wa" class="absolute top-1 right-3 sm:right-6 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full shadow-sm hidden">0</span>
         </button>
         <button id="mobile-tab-gastos" class="flex flex-col items-center py-2 w-1/4 text-gray-500 hover:text-indigo-600 transition hidden">
             <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1m-4.5 9h11a2 2 0 002-2v-1a2 2 0 00-2-2h-1.5M7.5 17H4a2 2 0 01-2-2v-1a2 2 0 012-2h1.5"></path></svg>
