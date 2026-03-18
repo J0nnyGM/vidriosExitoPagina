@@ -440,4 +440,4 @@ export function setupGastosEvents() {
             }
         };
     }
-}
+}   

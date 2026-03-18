@@ -1640,3 +1640,9 @@ export function setupRemisionesEvents() {
         });
     }
 }
+
+// --- PUENTE PARA WHATSAPP CRM ---
+// Escucha cuando el panel de WhatsApp pide abrir el modal de pagos
+document.addEventListener('openWaPaymentModal', (e) => {
+    if (e.detail) showPaymentModal(e.detail);
+});

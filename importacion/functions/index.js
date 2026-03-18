@@ -1541,3 +1541,10 @@ exports.toggleFacturacionIVA = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError("internal", error.message);
     }
 });
+
+
+// Importar y exportar las funciones de WhatsApp
+const waFns = require('./whatsapp');
+exports.whatsappWebhook = waFns.whatsappWebhook;
+exports.enviarMensajeWhatsApp = waFns.enviarMensajeWhatsApp;
+exports.marcarChatComoLeido = waFns.marcarChatComoLeido;

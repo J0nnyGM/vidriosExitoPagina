@@ -7,13 +7,14 @@ import { isMobileDevice } from './utils.js';
 import { loadClientes, setupClientesEvents } from './modules/clientes.js';
 import { loadProveedores, setupProveedoresEvents } from './modules/proveedores.js';
 import { loadItems, setupItemsEvents } from './modules/items.js';
-import { loadGastos, setupGastosEvents } from './modules/gastos.js?v=1.3';
-import { loadEmpleados, loadAllLoanRequests, setupEmpleadosEvents } from './modules/empleados.js?v=1.2';
+import { loadGastos, setupGastosEvents } from './modules/gastos.js';
+import { loadEmpleados, loadAllLoanRequests, setupEmpleadosEvents } from './modules/empleados.js';
 import { loadImportaciones, loadComprasNacionales, setupInventarioEvents } from './modules/inventario.js';
-import { loadRemisiones, setupRemisionesEvents } from './modules/remisiones.js?v=1.1';
-import { showDashboardModal, cleanupDashboardListeners } from './modules/dashboard.js?v=1.1';
+import { loadRemisiones, setupRemisionesEvents } from './modules/remisiones.js';
+import { showDashboardModal, cleanupDashboardListeners } from './modules/dashboard.js';
 import { setupFacturacionEvents } from './modules/facturacion.js';
-import { setupFuncionesEvents } from './modules/funciones.js?v=1.2'; 
+import { setupFuncionesEvents } from './modules/funciones.js';
+import { loadChats, setupWhatsAppEvents } from './modules/whatsapp.js'; // <--- IMPORTACIÓN DE WHATSAPP
 
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, updateEmail, createUserWithEmailAndPassword, fetchSignInMethodsForEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
 import { doc, getDoc, updateDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
@@ -134,16 +135,23 @@ function startApp() {
         inventario: document.getElementById('tab-inventario'), clientes: document.getElementById('tab-clientes'),
         gastos: document.getElementById('tab-gastos'), proveedores: document.getElementById('tab-proveedores'),
         empleados: document.getElementById('tab-empleados'), items: document.getElementById('tab-items'),
-        funciones: document.getElementById('tab-funciones') 
+        funciones: document.getElementById('tab-funciones'), whatsapp: document.getElementById('tab-whatsapp')
     };
     const views = {
         remisiones: document.getElementById('view-remisiones'), facturacion: document.getElementById('view-facturacion'),
         inventario: document.getElementById('view-inventario'), clientes: document.getElementById('view-clientes'),
         gastos: document.getElementById('view-gastos'), proveedores: document.getElementById('view-proveedores'),
         empleados: document.getElementById('view-empleados'), items: document.getElementById('view-items'),
-        funciones: document.getElementById('view-funciones') 
+        funciones: document.getElementById('view-funciones'), whatsapp: document.getElementById('view-whatsapp')
     };
-    switchView(initialView, tabs, views);
+        const mobileTabs = {
+        remisiones: document.getElementById('mobile-tab-remisiones'), facturacion: document.getElementById('mobile-tab-facturacion'),
+        inventario: document.getElementById('mobile-tab-inventario'), clientes: document.getElementById('mobile-tab-clientes'),
+        gastos: document.getElementById('mobile-tab-gastos'), proveedores: document.getElementById('mobile-tab-proveedores'),
+        empleados: document.getElementById('mobile-tab-empleados'), items: document.getElementById('mobile-tab-items'),
+        funciones: document.getElementById('mobile-tab-funciones'), whatsapp: document.getElementById('mobile-tab-whatsapp')
+    };
+    switchView(initialView, tabs, views, mobileTabs);
 
     loadAllData();
     isAppInitialized = true;
@@ -159,6 +167,11 @@ function loadAllData() {
     loadImportaciones();
     loadItems();
     loadComprasNacionales();
+
+    // CARGAR CHATS DE WHATSAPP
+    if (currentUserData && (currentUserData.role === 'admin' || currentUserData.permissions?.whatsapp)) {
+        loadChats();
+    }
 
     if (currentUserData && currentUserData.role === 'admin') {
         loadEmpleados();
@@ -351,28 +364,39 @@ function loadViewTemplates() {
         </div>`;
     }
 
-    const viewFacturacion = document.getElementById('view-facturacion');
+const viewFacturacion = document.getElementById('view-facturacion');
     if (viewFacturacion) {
         viewFacturacion.innerHTML = `
-        <div class="bg-white p-6 rounded-xl shadow-md max-w-7xl mx-auto">
+        <div class="bg-white p-4 sm:p-6 rounded-xl shadow-md max-w-7xl mx-auto">
             <h2 class="text-2xl font-semibold mb-4">Gestión de Facturación</h2>
-            <div class="border-b border-gray-200 mb-6 flex flex-col lg:flex-row justify-between items-end gap-4 pb-2">
-                <nav id="facturacion-nav" class="-mb-px flex space-x-6">
-                    <button id="tab-pendientes" class="dashboard-tab-btn active py-3 px-1 font-semibold text-gray-500 hover:text-gray-800 border-b-2 border-transparent hover:border-gray-300">Pendientes</button>
-                    <button id="tab-realizadas" class="dashboard-tab-btn py-3 px-1 font-semibold text-gray-500 hover:text-gray-800 border-b-2 border-transparent hover:border-gray-300">Realizadas</button>
+            
+            <div class="border-b border-gray-200 mb-6 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-4">
+                
+                <nav id="facturacion-nav" class="-mb-px flex space-x-6 overflow-x-auto w-full lg:w-auto">
+                    <button id="tab-pendientes" class="dashboard-tab-btn active py-3 px-1 font-semibold text-gray-500 hover:text-gray-800 border-b-2 border-transparent hover:border-gray-300 whitespace-nowrap">Pendientes</button>
+                    <button id="tab-realizadas" class="dashboard-tab-btn py-3 px-1 font-semibold text-gray-500 hover:text-gray-800 border-b-2 border-transparent hover:border-gray-300 whitespace-nowrap">Realizadas</button>
                 </nav>
-                <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-                    <div class="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
-                        <span class="text-xs font-semibold text-gray-500 pl-2">Desde:</span>
-                        <input type="month" id="factura-filter-start" class="p-1 bg-white border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500">
-                        <span class="text-xs font-semibold text-gray-500">Hasta:</span>
-                        <input type="month" id="factura-filter-end" class="p-1 bg-white border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500">
+
+                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+                    
+                    <div class="flex flex-wrap sm:flex-nowrap items-center justify-between sm:justify-start gap-2 bg-gray-50 p-2 rounded-lg border border-gray-200 w-full sm:w-auto">
+                        <div class="flex items-center gap-1">
+                            <span class="text-xs font-semibold text-gray-500">Desde:</span>
+                            <input type="month" id="factura-filter-start" class="p-1 bg-white border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500 w-[110px] sm:w-auto">
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="text-xs font-semibold text-gray-500">Hasta:</span>
+                            <input type="month" id="factura-filter-end" class="p-1 bg-white border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500 w-[110px] sm:w-auto">
+                        </div>
                     </div>
-                    <div class="relative flex-grow lg:flex-grow-0">
+
+                    <div class="relative w-full sm:w-auto flex-grow lg:flex-grow-0">
                         <input type="search" id="search-facturacion" placeholder="Buscar cliente, N° remisión..." class="w-full lg:w-64 p-2 pl-3 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500">
                     </div>
+
                 </div>
             </div>
+
             <div id="view-pendientes">
                 <h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Pendientes de Facturar</h3>
                 <div id="facturacion-pendientes-list" class="space-y-3"></div>
@@ -442,7 +466,7 @@ function loadViewTemplates() {
         </div>`;
     }
 
-const viewGastos = document.getElementById('view-gastos');
+    const viewGastos = document.getElementById('view-gastos');
     if (viewGastos) {
         viewGastos.innerHTML = `
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
@@ -542,6 +566,62 @@ const viewGastos = document.getElementById('view-gastos');
             </div>
         `;
     }
+
+// --- HTML DEL CHAT DE WHATSAPP (RESPONSIVE MEJORADO) ---
+    const viewWhatsapp = document.getElementById('view-whatsapp');
+    if (viewWhatsapp) {
+        viewWhatsapp.innerHTML = `
+        <div class="flex h-[calc(100vh-120px)] sm:h-[calc(100vh-180px)] max-w-6xl mx-auto bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden relative">
+            
+            <div class="w-full md:w-1/3 flex flex-col border-r border-gray-200" id="whatsapp-sidebar">
+                <div class="p-3 sm:p-4 border-b bg-gray-50 flex justify-between items-center">
+                    <h2 class="text-xl font-bold text-gray-800">Mensajes</h2>
+                </div>
+                <div class="flex bg-gray-50 border-b border-gray-200">
+                    <button id="wa-tab-activos" class="flex-1 py-2 text-sm font-bold text-indigo-600 border-b-2 border-indigo-600 transition">Activos</button>
+                    <button id="wa-tab-resueltos" class="flex-1 py-2 text-sm font-bold text-gray-500 border-b-2 border-transparent hover:text-gray-700 transition">Resueltos</button>
+                </div>
+                <div class="p-2 border-b">
+                    <input type="text" id="whatsapp-search" placeholder="Buscar chat..." class="w-full p-2 border rounded-lg text-sm bg-gray-100 focus:outline-none focus:border-indigo-300">
+                </div>
+                <div id="chats-list" class="flex-grow overflow-y-auto">
+                    <p class="text-center text-gray-500 mt-10 text-sm">Cargando chats...</p>
+                </div>
+            </div>
+
+            <div class="hidden md:flex flex-col w-full md:w-2/3 bg-[#efeae2] relative" id="whatsapp-chat-area">
+                <div class="p-2 sm:p-3 bg-white border-b flex items-center justify-between shadow-sm z-10 min-h-[60px] sm:min-h-[70px]">
+                    <div class="flex items-center gap-2 sm:gap-3 overflow-hidden flex-grow">
+                        <button id="wa-back-btn" class="md:hidden text-gray-600 font-bold text-2xl pr-1">&larr;</button>
+                        <div class="w-9 h-9 sm:w-10 sm:h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold text-lg sm:text-xl flex-shrink-0" id="wa-avatar">?</div>
+                        <div class="flex flex-col overflow-hidden w-full">
+                            <h3 class="font-bold text-gray-800 text-sm sm:text-base truncate" id="wa-contact-name">Selecciona un chat</h3>
+                            <p class="text-xs text-gray-500 flex items-center truncate" id="wa-contact-phone"></p>
+                        </div>
+                    </div>
+                    <div id="wa-chat-header-actions" class="flex items-center flex-shrink-0 ml-1 sm:ml-2"></div>
+                </div>
+
+                <div id="wa-messages-container" class="flex-grow overflow-y-auto p-3 sm:p-4 space-y-2 sm:space-y-3 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-opacity-50 relative"></div>
+
+                <div id="wa-24h-warning" class="hidden bg-yellow-100 text-yellow-800 text-[10px] sm:text-xs p-2 text-center border-t border-yellow-200">
+                    ⚠️ Han pasado más de 24h. Solo puedes enviar plantillas pre-aprobadas.
+                </div>
+
+                <form id="wa-send-form" class="p-2 sm:p-3 bg-gray-100 border-t flex items-end gap-1 sm:gap-2 hidden">
+                    <input type="hidden" id="wa-current-phone">
+                    <label class="cursor-pointer text-gray-500 hover:text-indigo-600 p-2 transition flex-shrink-0" title="Adjuntar archivo">
+                        <input type="file" id="wa-file-input" class="hidden" accept="image/*,application/pdf">
+                        <svg class="w-6 h-6 transform rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                    </label>
+                    <textarea id="wa-msg-input" rows="1" placeholder="Mensaje..." class="flex-grow p-2 sm:p-3 rounded-lg border border-gray-300 shadow-sm focus:outline-none focus:border-indigo-400 resize-none max-h-24 sm:max-h-32 bg-white text-sm sm:text-base" required></textarea>
+                    <button type="submit" id="wa-send-btn" class="bg-teal-500 text-white p-2 sm:p-3 rounded-full hover:bg-teal-600 transition shadow-sm h-10 w-10 sm:h-12 sm:w-12 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path></svg>
+                    </button>
+                </form>
+            </div>
+        </div>`;
+    }
 }
 
 function updateUIVisibility(userData) {
@@ -549,13 +629,15 @@ function updateUIVisibility(userData) {
     const isAdmin = userData.role?.toLowerCase() === 'admin';
 
     ALL_MODULES.forEach(module => {
-        const tab = document.getElementById(`tab-${module}`);
-        if (tab) {
-            let hasPermission = isAdmin || (userData.permissions && userData.permissions[module]);
-            tab.classList.toggle('hidden', !hasPermission);
-        }
+        const tabDesktop = document.getElementById(`tab-${module}`);
+        const tabMobile = document.getElementById(`mobile-tab-${module}`);
+        let hasPermission = isAdmin || (userData.permissions && userData.permissions[module]);
+        
+        if (tabDesktop) tabDesktop.classList.toggle('hidden', !hasPermission);
+        if (tabMobile) tabMobile.classList.toggle('hidden', !hasPermission);
     });
 
+    // Control de botones superiores Desktop
     const viewAllLoansBtn = document.getElementById('view-all-loans-btn');
     if(viewAllLoansBtn) viewAllLoansBtn.style.display = isAdmin ? 'block' : 'none';
     
@@ -565,6 +647,17 @@ function updateUIVisibility(userData) {
     const loanReqBtn = document.getElementById('loan-request-btn');
     if(loanReqBtn) loanReqBtn.style.display = isAdmin ? 'none' : 'block';
 
+    // Control de botones en el Menú Móvil (Mi Cuenta)
+    const mobileSummaryBtn = document.getElementById('mobile-summary-btn');
+    if(mobileSummaryBtn) mobileSummaryBtn.style.display = isAdmin ? 'flex' : 'none';
+
+    const mobileLoansBtn = document.getElementById('mobile-loans-btn');
+    if(mobileLoansBtn) mobileLoansBtn.style.display = isAdmin ? 'flex' : 'none';
+
+    const mobileLoanReqBtn = document.getElementById('mobile-loan-request-btn');
+    if(mobileLoanReqBtn) mobileLoanReqBtn.style.display = isAdmin ? 'none' : 'flex';
+
+    // Módulos específicos según rol
     const isPlanta = userData.role?.toLowerCase() === 'planta';
     const remisionFormContainer = document.getElementById('remision-form-container');
     const remisionListContainer = document.getElementById('remisiones-list-container');
@@ -588,13 +681,12 @@ function updateUIVisibility(userData) {
 
     const tabFunciones = document.getElementById('tab-funciones');
     if (tabFunciones) tabFunciones.classList.toggle('hidden', !isAdmin);
-    
 }
 
 function getInitialViewForUser(userData) {
     if (!userData) return 'remisiones';
     if (userData.role === 'admin') return 'remisiones';
-    const modulePriority = ['remisiones', 'facturacion', 'inventario', 'items', 'clientes', 'gastos', 'proveedores', 'empleados'];
+    const modulePriority = ['remisiones', 'whatsapp', 'facturacion', 'inventario', 'items', 'clientes', 'gastos', 'proveedores', 'empleados'];
     if (userData.permissions) {
         for (const module of modulePriority) {
             if (userData.permissions[module]) return module;
@@ -637,15 +729,11 @@ async function handleRegisterSubmit(e) {
     showModalMessage("Verificando disponibilidad del correo...", true);
 
     try {
-        // --- NUEVO: VALIDACIÓN DE CORREO EXISTENTE ---
-        // Preguntamos a Firebase Auth si este correo ya tiene algún método de inicio de sesión registrado.
         const signInMethods = await fetchSignInMethodsForEmail(auth, email);
         
         if (signInMethods.length > 0) {
-            // Si el arreglo tiene elementos, el correo ya está registrado.
             throw new Error("Este correo electrónico ya se encuentra registrado en el sistema. Por favor, inicia sesión o utiliza un correo diferente.");
         }
-        // ---------------------------------------------
 
         const nombre = document.getElementById('register-name').value;
         const cedula = document.getElementById('register-cedula').value;
@@ -661,7 +749,7 @@ async function handleRegisterSubmit(e) {
         const permissions = {
             remisiones: true, prestamos: true,
             facturacion: false, clientes: false,
-            gastos: false, proveedores: false, empleados: false
+            gastos: false, proveedores: false, empleados: false, whatsapp: false
         };
         
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -682,12 +770,9 @@ async function handleRegisterSubmit(e) {
     } catch (error) {
         hideModal();
         console.error("Error de registro:", error);
-        
-        // Mostrar un mensaje más amigable dependiendo del error
         let errorMsg = error.message;
         if (error.code === 'auth/invalid-email') errorMsg = "El formato del correo electrónico no es válido.";
         if (error.code === 'auth/weak-password') errorMsg = "La contraseña debe tener al menos 6 caracteres.";
-        
         showModalMessage(errorMsg);
     } finally {
         isRegistering = false;
@@ -696,7 +781,6 @@ async function handleRegisterSubmit(e) {
         submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
     }
 }
-
 
 document.getElementById('logout-btn')?.addEventListener('click', () => {
     unsubscribeAllListeners();
@@ -709,18 +793,78 @@ function setupEventListeners() {
         inventario: document.getElementById('tab-inventario'), clientes: document.getElementById('tab-clientes'),
         gastos: document.getElementById('tab-gastos'), proveedores: document.getElementById('tab-proveedores'),
         empleados: document.getElementById('tab-empleados'), items: document.getElementById('tab-items'),
-        funciones: document.getElementById('tab-funciones') // <--- AÑADIDO
+        funciones: document.getElementById('tab-funciones'), whatsapp: document.getElementById('tab-whatsapp')
     };
+
+    const mobileTabs = {
+        remisiones: document.getElementById('mobile-tab-remisiones'), facturacion: document.getElementById('mobile-tab-facturacion'),
+        inventario: document.getElementById('mobile-tab-inventario'), clientes: document.getElementById('mobile-tab-clientes'),
+        gastos: document.getElementById('mobile-tab-gastos'), proveedores: document.getElementById('mobile-tab-proveedores'),
+        empleados: document.getElementById('mobile-tab-empleados'), items: document.getElementById('mobile-tab-items'),
+        funciones: document.getElementById('mobile-tab-funciones'), whatsapp: document.getElementById('mobile-tab-whatsapp')
+    };
+
     const views = {
         remisiones: document.getElementById('view-remisiones'), facturacion: document.getElementById('view-facturacion'),
         inventario: document.getElementById('view-inventario'), clientes: document.getElementById('view-clientes'),
         gastos: document.getElementById('view-gastos'), proveedores: document.getElementById('view-proveedores'),
         empleados: document.getElementById('view-empleados'), items: document.getElementById('view-items'),
-        funciones: document.getElementById('view-funciones') // <--- AÑADIDO
+        funciones: document.getElementById('view-funciones'), whatsapp: document.getElementById('view-whatsapp')
     };
+
+    // Navegación Desktop
     Object.keys(tabs).forEach(key => {
-        if (tabs[key]) tabs[key].addEventListener('click', () => switchView(key, tabs, views));
+        if (tabs[key]) tabs[key].addEventListener('click', () => switchView(key, tabs, views, mobileTabs));
     });
+
+    // Lógica del Menú Móvil Animado (Bottom Sheet)
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    const mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
+    const mobileMenuBackdrop = document.getElementById('mobile-menu-backdrop');
+    const mobileMenuContent = document.getElementById('mobile-menu-content');
+
+    function openMobileMenu() {
+        mobileMenuOverlay.classList.remove('pointer-events-none');
+        mobileMenuBackdrop.classList.remove('opacity-0');
+        mobileMenuContent.classList.remove('translate-y-full');
+    }
+
+    function closeMobileMenu() {
+        mobileMenuBackdrop.classList.add('opacity-0');
+        mobileMenuContent.classList.add('translate-y-full');
+        setTimeout(() => mobileMenuOverlay.classList.add('pointer-events-none'), 300);
+    }
+
+    if (mobileMenuBtn) mobileMenuBtn.addEventListener('click', openMobileMenu);
+    if (mobileMenuBackdrop) mobileMenuBackdrop.addEventListener('click', closeMobileMenu);
+
+    // Navegación Móvil
+    Object.keys(mobileTabs).forEach(key => {
+        if (mobileTabs[key]) {
+            mobileTabs[key].addEventListener('click', () => {
+                switchView(key, tabs, views, mobileTabs);
+                closeMobileMenu();
+            });
+        }
+    });
+
+    // Conectar los botones del menú móvil a sus funciones principales
+    document.getElementById('mobile-summary-btn')?.addEventListener('click', () => { closeMobileMenu(); showDashboardModal(); });
+    document.getElementById('mobile-edit-profile-btn')?.addEventListener('click', () => { closeMobileMenu(); showEditProfileModal(); });
+    document.getElementById('mobile-logout-btn')?.addEventListener('click', () => { closeMobileMenu(); signOut(auth); });
+    document.getElementById('mobile-loans-btn')?.addEventListener('click', () => { closeMobileMenu(); document.getElementById('view-all-loans-btn').click(); });
+    document.getElementById('mobile-loan-request-btn')?.addEventListener('click', () => { closeMobileMenu(); document.getElementById('loan-request-btn').click(); });
+
+    // Sincronizar las notificaciones rojas (badges) de préstamos entre Desktop y Móvil
+    const desktopBadge = document.getElementById('header-loan-badge');
+    const mobileBadge = document.getElementById('mobile-loan-badge');
+    if (desktopBadge && mobileBadge) {
+        const observer = new MutationObserver(() => {
+            mobileBadge.textContent = desktopBadge.textContent;
+            mobileBadge.className = desktopBadge.className; // Copia el estado 'hidden' si aplica
+        });
+        observer.observe(desktopBadge, { attributes: true, childList: true, characterData: true });
+    }
 
     document.getElementById('summary-btn')?.addEventListener('click', showDashboardModal);
     document.getElementById('edit-profile-btn')?.addEventListener('click', showEditProfileModal);
@@ -729,7 +873,6 @@ function setupEventListeners() {
     document.getElementById('close-policy-modal')?.addEventListener('click', () => { document.getElementById('policy-modal').classList.add('hidden'); });
     document.getElementById('accept-policy-btn')?.addEventListener('click', () => { document.getElementById('policy-modal').classList.add('hidden'); });
 
-    // INICIALIZAR EVENTOS DE MÓDULOS DE FORMA LIMPIA
     setupClientesEvents();
     setupProveedoresEvents();
     setupItemsEvents();
@@ -738,13 +881,29 @@ function setupEventListeners() {
     setupInventarioEvents();
     setupRemisionesEvents();
     setupFacturacionEvents();
-    setupFuncionesEvents(); // <--- AÑADE ESTO AL FINAL
+    setupFuncionesEvents();
+    setupWhatsAppEvents();
 }
 
-function switchView(viewName, tabs, views) {
+function switchView(viewName, tabs, views, mobileTabs = null) {
     Object.values(tabs).forEach(tab => { if (tab) tab.classList.remove('active') });
-    Object.values(views).forEach(view => { if (view) view.classList.add('hidden') });
     if (tabs[viewName]) tabs[viewName].classList.add('active');
+
+    // Cambiar color del icono inferior seleccionado
+    if (mobileTabs) {
+        Object.values(mobileTabs).forEach(tab => { 
+            if (tab) {
+                tab.classList.remove('text-indigo-600');
+                tab.classList.add('text-gray-500');
+            }
+        });
+        if (mobileTabs[viewName]) {
+            mobileTabs[viewName].classList.remove('text-gray-500');
+            mobileTabs[viewName].classList.add('text-indigo-600');
+        }
+    }
+
+    Object.values(views).forEach(view => { if (view) view.classList.add('hidden') });
     if (views[viewName]) views[viewName].classList.remove('hidden');
 }
 

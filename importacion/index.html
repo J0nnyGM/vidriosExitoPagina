@@ -18,7 +18,7 @@
     <script>window.dataLayer = window.dataLayer || []; function gtag() { dataLayer.push(arguments); } gtag('js', new Date()); gtag('config', 'G-T2RKG90GC5');</script>
 </head>
 
-<body class="text-gray-800">
+<body class="text-gray-800 bg-gray-50">
 
     <div id="denied-view" class="hidden min-h-screen flex items-center justify-center bg-gray-100 p-4">
         <div class="w-full max-w-md text-center">
@@ -49,9 +49,9 @@
         </div>
     </div>
 
-    <div id="app-view" class="hidden min-h-screen p-4 sm:p-6 lg:p-8">
+    <div id="app-view" class="hidden min-h-screen p-4 pb-24 sm:pb-6 sm:p-6 lg:p-8">
         <div class="max-w-7xl mx-auto">
-            <header class="mb-4">
+<header class="mb-4">
                 <div class="flex justify-center py-4">
                     <img src="/importacion/recursos/LOGO PRISMA.png" alt="Logo Empresa Vidrio Express" class="h-16 w-auto">
                 </div>
@@ -60,7 +60,8 @@
                         <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Sistema de Gestión</h1>
                         <p id="user-info" class="text-gray-600 mt-1">Cargando usuario...</p>
                     </div>
-                    <div class="flex items-center gap-3 flex-wrap justify-end">
+                    
+                    <div class="hidden sm:flex items-center gap-3 flex-wrap justify-end">
                         <button id="view-all-loans-btn" class="header-btn bg-blue-600 text-white hover:bg-blue-700 relative hidden">Préstamos Pendientes<span id="header-loan-badge" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full h-6 w-6 flex items-center justify-center hidden"></span></button>
                         <button id="loan-request-btn" class="header-btn bg-yellow-500 text-white hover:bg-yellow-600 hidden">Solicitar Préstamo</button>
                         <button id="summary-btn" class="header-btn bg-green-600 text-white hover:bg-green-700 hidden">Resumen</button>
@@ -70,9 +71,10 @@
                 </div>
             </header>
 
-            <div class="border-b border-gray-200 mb-6">
+            <div id="desktop-nav-container" class="border-b border-gray-200 mb-6 hidden sm:block">
                 <nav id="main-nav" class="-mb-px flex space-x-6 overflow-x-auto">
                     <button id="tab-remisiones" class="tab-btn py-4 px-1 text-lg font-semibold text-gray-500 hover:text-gray-800 whitespace-nowrap">Remisiones</button>
+                    <button id="tab-whatsapp" class="tab-btn py-4 px-1 text-lg font-semibold text-gray-500 hover:text-gray-800 whitespace-nowrap">WhatsApp</button>
                     <button id="tab-facturacion" class="tab-btn py-4 px-1 text-lg font-semibold text-gray-500 hover:text-gray-800 whitespace-nowrap">Facturación</button>
                     <button id="tab-inventario" class="tab-btn py-4 px-1 text-lg font-semibold text-gray-500 hover:text-gray-800 whitespace-nowrap">Inventario</button>
                     <button id="tab-items" class="tab-btn py-4 px-1 text-lg font-semibold text-gray-500 hover:text-gray-800 whitespace-nowrap">Ítems</button>
@@ -86,6 +88,7 @@
 
             <main>
                 <div id="view-remisiones"></div>
+                <div id="view-whatsapp" class="hidden"></div>
                 <div id="view-facturacion" class="hidden"></div>
                 <div id="view-inventario" class="hidden"></div>
                 <div id="view-items" class="hidden"></div>
@@ -98,6 +101,66 @@
         </div>
     </div>
 
+    <nav class="sm:hidden fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 flex justify-around items-center z-40 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] pb-safe" id="mobile-bottom-nav">
+        <button id="mobile-tab-remisiones" class="flex flex-col items-center py-2 w-1/4 text-gray-500 hover:text-indigo-600 transition hidden">
+            <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+            <span class="text-[10px] font-semibold">Remisiones</span>
+        </button>
+        <button id="mobile-tab-whatsapp" class="flex flex-col items-center py-2 w-1/4 text-gray-500 hover:text-indigo-600 transition hidden">
+            <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+            <span class="text-[10px] font-semibold">WhatsApp</span>
+        </button>
+        <button id="mobile-tab-gastos" class="flex flex-col items-center py-2 w-1/4 text-gray-500 hover:text-indigo-600 transition hidden">
+            <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1m-4.5 9h11a2 2 0 002-2v-1a2 2 0 00-2-2h-1.5M7.5 17H4a2 2 0 01-2-2v-1a2 2 0 012-2h1.5"></path></svg>
+            <span class="text-[10px] font-semibold">Gastos</span>
+        </button>
+        <button id="mobile-menu-btn" class="flex flex-col items-center py-2 w-1/4 text-gray-500 hover:text-indigo-600 transition">
+            <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+            <span class="text-[10px] font-semibold">Menú</span>
+        </button>
+    </nav>
+
+    <div id="mobile-menu-overlay" class="sm:hidden fixed inset-0 z-50 pointer-events-none">
+        <div id="mobile-menu-backdrop" class="absolute inset-0 bg-black bg-opacity-50 opacity-0 transition-opacity duration-300"></div>
+        
+        <div id="mobile-menu-content" class="absolute bottom-0 left-0 w-full bg-white rounded-t-3xl p-6 pb-8 shadow-[0_-10px_40px_rgba(0,0,0,0.2)] transform translate-y-full transition-transform duration-300 ease-out flex flex-col max-h-[85vh] overflow-y-auto">
+            
+            <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-6"></div>
+
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Mi Cuenta</h3>
+            <div class="grid grid-cols-4 gap-3 mb-6 border-b border-gray-100 pb-6">
+                <button id="mobile-summary-btn" class="flex flex-col items-center p-3 text-gray-700 bg-gray-50 rounded-2xl hover:bg-gray-100 hidden">
+                    <span class="text-2xl mb-1">📊</span><span class="text-[10px] font-semibold text-center leading-tight">Resumen</span>
+                </button>
+                <button id="mobile-loans-btn" class="flex flex-col items-center p-3 text-gray-700 bg-gray-50 rounded-2xl hover:bg-gray-100 relative hidden">
+                    <span class="text-2xl mb-1">💸</span><span class="text-[10px] font-semibold text-center leading-tight">Préstamos</span>
+                    <span id="mobile-loan-badge" class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full h-5 w-5 flex items-center justify-center hidden"></span>
+                </button>
+                <button id="mobile-loan-request-btn" class="flex flex-col items-center p-3 text-gray-700 bg-gray-50 rounded-2xl hover:bg-gray-100 hidden">
+                    <span class="text-2xl mb-1">💳</span><span class="text-[10px] font-semibold text-center leading-tight">Pedir<br>Préstamo</span>
+                </button>
+                <button id="mobile-edit-profile-btn" class="flex flex-col items-center p-3 text-gray-700 bg-gray-50 rounded-2xl hover:bg-gray-100">
+                    <span class="text-2xl mb-1">👤</span><span class="text-[10px] font-semibold text-center leading-tight">Perfil</span>
+                </button>
+                <button id="mobile-logout-btn" class="flex flex-col items-center p-3 text-red-600 bg-red-50 rounded-2xl hover:bg-red-100">
+                    <span class="text-2xl mb-1">🚪</span><span class="text-[10px] font-semibold text-center leading-tight">Salir</span>
+                </button>
+            </div>
+
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Más Módulos</h3>
+            <div class="grid grid-cols-4 gap-3 text-center">
+                <button id="mobile-tab-facturacion" class="flex flex-col items-center p-2 text-gray-600 hidden"><span class="text-2xl mb-1">🧾</span><span class="text-[10px] font-semibold">Facturación</span></button>
+                <button id="mobile-tab-inventario" class="flex flex-col items-center p-2 text-gray-600 hidden"><span class="text-2xl mb-1">📦</span><span class="text-[10px] font-semibold">Inventario</span></button>
+                <button id="mobile-tab-items" class="flex flex-col items-center p-2 text-gray-600 hidden"><span class="text-2xl mb-1">🏷️</span><span class="text-[10px] font-semibold">Ítems</span></button>
+                <button id="mobile-tab-clientes" class="flex flex-col items-center p-2 text-gray-600 hidden"><span class="text-2xl mb-1">👥</span><span class="text-[10px] font-semibold">Clientes</span></button>
+                <button id="mobile-tab-proveedores" class="flex flex-col items-center p-2 text-gray-600 hidden"><span class="text-2xl mb-1">🏭</span><span class="text-[10px] font-semibold">Proveed.</span></button>
+                <button id="mobile-tab-empleados" class="flex flex-col items-center p-2 text-gray-600 hidden"><span class="text-2xl mb-1">👷</span><span class="text-[10px] font-semibold">Empleados</span></button>
+                <button id="mobile-tab-funciones" class="flex flex-col items-center p-2 text-gray-600 hidden"><span class="text-2xl mb-1">⚙️</span><span class="text-[10px] font-semibold">Funciones</span></button>
+            </div>
+        </div>
+    </div>
+
+    
     <div id="modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden z-50">
         <div id="modal-content-wrapper" class="w-full">
             <div id="modal-content" class="bg-white rounded-lg p-6 shadow-xl w-11/12 max-w-sm mx-auto text-center"></div>
@@ -140,7 +203,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script type="module" src="js/app.js?v=1.2"></script>
+    <script type="module" src="js/app.js?v=1.3"></script>
 
 </body>
 </html>

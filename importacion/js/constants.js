@@ -2,7 +2,7 @@
 export const METODOS_DE_PAGO_IMPORTACION = ['Efectivo', 'Nequi', 'Bancolombia'];
 export const METODOS_DE_PAGO = ['Efectivo', 'Nequi', 'Bancolombia'];
 export const ESTADOS_REMISION = ['Recibido', 'En Proceso', 'Procesado', 'Entregado'];
-export const ALL_MODULES = ['remisiones', 'facturacion', 'inventario', 'clientes', 'gastos', 'proveedores', 'prestamos', 'empleados', 'items','funciones'];
+export const ALL_MODULES = ['remisiones',  'whatsapp', 'facturacion', 'inventario', 'clientes', 'gastos', 'proveedores', 'prestamos', 'empleados', 'items','funciones'];
 
 export const RRHH_DOCUMENT_TYPES = [
     { id: 'contrato', name: 'Contrato' }, { id: 'hojaDeVida', name: 'Hoja de Vida' }, 
