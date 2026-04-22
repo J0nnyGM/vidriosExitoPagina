@@ -1,7 +1,7 @@
 // js/modules/facturacion.js
 
 import { db, storage, functions } from '../firebase-config.js'; 
-import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+import { doc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { ref, uploadBytes } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js"; 
 import { allRemisiones, allClientes, currentUserData, showModalMessage, hideModal, showTemporaryMessage } from '../app.js';
@@ -134,7 +134,6 @@ export function renderFacturacion() {
             pendientesListEl.appendChild(el);
         });
 
-        // Controles de Paginación para Pendientes
         const pagPendEl = document.createElement('div');
         pagPendEl.className = 'flex flex-col sm:flex-row justify-between items-center mt-6 pt-4 border-t border-gray-200 gap-4';
         pagPendEl.innerHTML = `
@@ -217,7 +216,6 @@ export function renderFacturacion() {
             realizadasListEl.appendChild(el);
         });
 
-        // Controles de Paginación para Realizadas
         const pagRealEl = document.createElement('div');
         pagRealEl.className = 'flex flex-col sm:flex-row justify-between items-center mt-6 pt-4 border-t border-gray-200 gap-4';
         pagRealEl.innerHTML = `
@@ -236,18 +234,15 @@ export function renderFacturacion() {
         if(nextReal && currentPageRealizadas < totalPagesRealizadas) nextReal.addEventListener('click', () => { currentPageRealizadas++; renderFacturacion(); });
     }
 
-    // --- CORRECCIÓN: ASIGNAR EVENTOS DESPUÉS DE RENDERIZAR TODO ---
-    // Botones de Facturar y Adjuntar PDF (Misma clase)
+    // ASIGNAR EVENTOS DESPUÉS DE RENDERIZAR TODO
     document.querySelectorAll('.facturar-btn').forEach(btn => {
         btn.addEventListener('click', (e) => showFacturaModal(e.currentTarget.dataset.remisionId));
     });
     
-    // Botones de Retención
     document.querySelectorAll('.retention-btn').forEach(btn => {
         btn.addEventListener('click', (e) => showRetentionModal(JSON.parse(e.currentTarget.dataset.remisionJson)));
     });
 
-    // Botones de No Facturar (Anular)
     document.querySelectorAll('.no-facturar-btn').forEach(btn => {
         btn.addEventListener('click', (e) => handleNoFacturar(e.currentTarget.dataset.remisionId));
     });
@@ -283,15 +278,28 @@ export function showFacturaModal(remisionId) {
         try {
             const storagePath = `facturas/${remisionId}-${file.name}`;
             await uploadBytes(ref(storage, storagePath), file);
+            
+            // --- CORRECCIÓN CLAVE: serverTimestamp() ---
             await updateDoc(doc(db, "remisiones", remisionId), { 
                 facturado: true, 
                 numeroFactura: numeroFactura, 
                 facturaPdfPath: storagePath, 
-                fechaFacturado: new Date().toISOString() 
+                fechaFacturado: new Date().toISOString(),
+                _lastUpdated: serverTimestamp() // ESTO DISPARA EL ON-SNAPSHOT
             });
+
+            // --- ACTUALIZACIÓN VISUAL INSTANTÁNEA ---
+            const remLocal = allRemisiones.find(r => r.id === remisionId);
+            if (remLocal) {
+                remLocal.facturado = true;
+                remLocal.numeroFactura = numeroFactura;
+                remLocal.facturaPdfPath = storagePath;
+                remLocal.fechaFacturado = new Date().toISOString();
+                renderFacturacion();
+            }
+
             hideModal(); 
-            if(window.Swal) Swal.fire('¡Éxito!', 'Remisión facturada con éxito.', 'success');
-            else showTemporaryMessage("¡Remisión facturada con éxito!", "success");
+            showTemporaryMessage("¡Remisión facturada con éxito!", "success");
         } catch (error) { 
             console.error(error);
             showModalMessage("Error al procesar la factura."); 
@@ -301,7 +309,6 @@ export function showFacturaModal(remisionId) {
     });
 }
 
-// --- FUNCIONALIDAD: REVERTIR "ENVIAR A FACTURAR" ---
 async function handleNoFacturar(remisionId) {
     if (!confirm("¿Estás seguro de revertir esta remisión a 'No Facturable'?\nEl IVA se eliminará y el subtotal volverá a ser igual al Total actual. Se regenerarán los PDFs de Remisión.")) return;
 
@@ -310,6 +317,13 @@ async function handleNoFacturar(remisionId) {
     try {
         const toggleIvaFn = httpsCallable(functions, 'toggleFacturacionIVA');
         await toggleIvaFn({ remisionId: remisionId, action: 'revert' });
+
+        // --- ACTUALIZACIÓN VISUAL INSTANTÁNEA ---
+        const remLocal = allRemisiones.find(r => r.id === remisionId);
+        if (remLocal) {
+            remLocal.incluyeIVA = false;
+            renderFacturacion();
+        }
 
         hideModal();
         showTemporaryMessage("¡Remisión retirada de facturación!", "success");
@@ -329,11 +343,9 @@ export function setupFacturacionEvents() {
     
     if (facturacionPendientesTab && facturacionRealizadasTab) {
         facturacionPendientesTab.addEventListener('click', () => {
-            // Estilos para Tab Activo
             facturacionPendientesTab.classList.add('text-blue-600', 'border-blue-600');
             facturacionPendientesTab.classList.remove('text-gray-500', 'border-transparent');
             
-            // Estilos para Tab Inactivo
             facturacionRealizadasTab.classList.remove('text-blue-600', 'border-blue-600');
             facturacionRealizadasTab.classList.add('text-gray-500', 'border-transparent');
             
@@ -342,11 +354,9 @@ export function setupFacturacionEvents() {
         });
         
         facturacionRealizadasTab.addEventListener('click', () => {
-            // Estilos para Tab Activo
             facturacionRealizadasTab.classList.add('text-blue-600', 'border-blue-600');
             facturacionRealizadasTab.classList.remove('text-gray-500', 'border-transparent');
             
-            // Estilos para Tab Inactivo
             facturacionPendientesTab.classList.remove('text-blue-600', 'border-blue-600');
             facturacionPendientesTab.classList.add('text-gray-500', 'border-transparent');
             
@@ -354,7 +364,6 @@ export function setupFacturacionEvents() {
             facturacionPendientesView.classList.add('hidden');
         });
 
-        // Simular clic inicial para darle color al primer tab
         facturacionPendientesTab.classList.add('text-blue-600', 'border-blue-600');
         facturacionPendientesTab.classList.remove('text-gray-500', 'border-transparent');
     }
