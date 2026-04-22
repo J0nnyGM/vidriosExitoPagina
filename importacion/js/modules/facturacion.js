@@ -236,15 +236,20 @@ export function renderFacturacion() {
         if(nextReal && currentPageRealizadas < totalPagesRealizadas) nextReal.addEventListener('click', () => { currentPageRealizadas++; renderFacturacion(); });
     }
 
-    // Reasignar Eventos de los Botones
-    document.querySelectorAll('.facturar-btn').forEach(btn => btn.addEventListener('click', (e) => showFacturaModal(e.currentTarget.dataset.remisionId)));
-    document.querySelectorAll('.retention-btn').forEach(btn => 
-        btn.addEventListener('click', (e) => { showRetentionModal(JSON.parse(e.currentTarget.dataset.remisionJson)); })
-    );
+    // --- CORRECCIÓN: ASIGNAR EVENTOS DESPUÉS DE RENDERIZAR TODO ---
+    // Botones de Facturar y Adjuntar PDF (Misma clase)
+    document.querySelectorAll('.facturar-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => showFacturaModal(e.currentTarget.dataset.remisionId));
+    });
+    
+    // Botones de Retención
+    document.querySelectorAll('.retention-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => showRetentionModal(JSON.parse(e.currentTarget.dataset.remisionJson)));
+    });
+
+    // Botones de No Facturar (Anular)
     document.querySelectorAll('.no-facturar-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            handleNoFacturar(e.currentTarget.dataset.remisionId);
-        });
+        btn.addEventListener('click', (e) => handleNoFacturar(e.currentTarget.dataset.remisionId));
     });
 }
 
