@@ -1,6 +1,6 @@
 // js/app.js (Versión Modularizada - Controlador Principal LIMPIO)
 
-import { auth, db, storage, functions, analytics } from './firebase-config.js';
+import { auth, db, storage, functions, analytics, httpsCallable } from './firebase-config.js';
 import { METODOS_DE_PAGO, ALL_MODULES } from './constants.js';
 import { isMobileDevice } from './utils.js';
 
@@ -15,11 +15,12 @@ import { showDashboardModal, cleanupDashboardListeners } from './modules/dashboa
 import { setupFacturacionEvents } from './modules/facturacion.js';
 import { setupFuncionesEvents } from './modules/funciones.js';
 import { loadChats, setupWhatsAppEvents } from './modules/whatsapp.js'; // <--- IMPORTACIÓN DE WHATSAPP
+import { setupDespieceEvents } from './modules/despiece2d.js?v=1.8';
 
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, updateEmail, createUserWithEmailAndPassword, fetchSignInMethodsForEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
 import { doc, getDoc, updateDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { logEvent } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js";
+import { ref, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 
 // --- VISTAS Y ESTADO GLOBAL ---
 const authView = document.getElementById('auth-view');
@@ -135,21 +136,24 @@ function startApp() {
         inventario: document.getElementById('tab-inventario'), clientes: document.getElementById('tab-clientes'),
         gastos: document.getElementById('tab-gastos'), proveedores: document.getElementById('tab-proveedores'),
         empleados: document.getElementById('tab-empleados'), items: document.getElementById('tab-items'),
-        funciones: document.getElementById('tab-funciones'), whatsapp: document.getElementById('tab-whatsapp')
+        funciones: document.getElementById('tab-funciones'), whatsapp: document.getElementById('tab-whatsapp'),
+        despiece: document.getElementById('tab-despiece')
     };
     const views = {
         remisiones: document.getElementById('view-remisiones'), facturacion: document.getElementById('view-facturacion'),
         inventario: document.getElementById('view-inventario'), clientes: document.getElementById('view-clientes'),
         gastos: document.getElementById('view-gastos'), proveedores: document.getElementById('view-proveedores'),
         empleados: document.getElementById('view-empleados'), items: document.getElementById('view-items'),
-        funciones: document.getElementById('view-funciones'), whatsapp: document.getElementById('view-whatsapp')
+        funciones: document.getElementById('view-funciones'), whatsapp: document.getElementById('view-whatsapp'),
+        despiece: document.getElementById('view-despiece')
     };
         const mobileTabs = {
         remisiones: document.getElementById('mobile-tab-remisiones'), facturacion: document.getElementById('mobile-tab-facturacion'),
         inventario: document.getElementById('mobile-tab-inventario'), clientes: document.getElementById('mobile-tab-clientes'),
         gastos: document.getElementById('mobile-tab-gastos'), proveedores: document.getElementById('mobile-tab-proveedores'),
         empleados: document.getElementById('mobile-tab-empleados'), items: document.getElementById('mobile-tab-items'),
-        funciones: document.getElementById('mobile-tab-funciones'), whatsapp: document.getElementById('mobile-tab-whatsapp')
+        funciones: document.getElementById('mobile-tab-funciones'), whatsapp: document.getElementById('mobile-tab-whatsapp'),
+        despiece: document.getElementById('mobile-tab-despiece')
     };
     switchView(initialView, tabs, views, mobileTabs);
 
@@ -187,7 +191,10 @@ function loadViewTemplates() {
 
     if (registerForm) {
         registerForm.innerHTML = `
-            <h2 class="text-2xl font-bold text-center mb-6">Crear Cuenta</h2>
+            <div class="text-center mb-6">
+                <h2 class="text-2xl font-extrabold text-slate-800 mb-1">Crear Cuenta</h2>
+                <p class="text-xs text-slate-400 font-semibold">Completa los campos para registrarte en el sistema</p>
+            </div>
             <div class="space-y-4">
                 <input type="text" id="register-name" placeholder="Nombre Completo" class="w-full p-3 border border-gray-300 rounded-lg" required>
                 <input type="text" id="register-cedula" placeholder="Cédula" class="w-full p-3 border border-gray-300 rounded-lg" required>
@@ -195,43 +202,58 @@ function loadViewTemplates() {
                 <input type="text" id="register-address" placeholder="Dirección" class="w-full p-3 border border-gray-300 rounded-lg">
                 <input type="email" id="register-email" placeholder="Correo Electrónico" class="w-full p-3 border border-gray-300 rounded-lg" required>
                 <input type="password" id="register-password" placeholder="Contraseña (mín. 6 caracteres)" class="w-full p-3 border border-gray-300 rounded-lg" required>
-                <div><label for="register-dob" class="block text-sm font-medium text-gray-700">Fecha de Nacimiento</label><input type="date" id="register-dob" class="w-full p-3 border border-gray-300 rounded-lg mt-1" required></div>
+                <div>
+                    <label for="register-dob" class="block text-xs font-semibold text-slate-500 uppercase mb-1">Fecha de Nacimiento</label>
+                    <input type="date" id="register-dob" class="w-full p-3 border border-gray-300 rounded-lg mt-1" required>
+                </div>
                 <div class="flex items-center space-x-2">
-                    <input type="checkbox" id="register-politica" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" required>
-                    <label for="register-politica" class="text-sm text-gray-600">
-                        Acepto la <a href="#" id="show-policy-link" class="font-semibold text-indigo-600 hover:underline">Política de Tratamiento de Datos</a>.
+                    <input type="checkbox" id="register-politica" class="h-4 w-4 rounded border-gray-300 text-[#0066e2] focus:ring-[#0066e2]" required>
+                    <label for="register-politica" class="text-xs font-semibold text-slate-500 my-0 cursor-pointer">
+                        Acepto la <a href="#" id="show-policy-link" class="font-extrabold text-[#0066e2] hover:underline">Política de Tratamiento de Datos</a>.
                     </label>
                 </div>
-                <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">Registrarse</button>
+                <button type="submit" class="w-full bg-[#0066e2] text-white font-extrabold py-3.5 px-4 rounded-xl hover:bg-blue-700 transition shadow-md">Registrarse</button>
             </div>
-            <p class="text-center mt-4 text-sm">¿Ya tienes una cuenta? <a href="#" id="show-login-link-register" class="font-semibold text-indigo-600 hover:underline">Inicia sesión</a></p>
+            <p class="text-center mt-6 text-sm text-slate-500 font-semibold">¿Ya tienes una cuenta? <a href="#" id="show-login-link-register" class="font-extrabold text-[#0066e2] hover:underline">Inicia sesión</a></p>
         `;
     }
 
     const viewInventario = document.getElementById('view-inventario');
     if (viewInventario) {
         viewInventario.innerHTML = `
-        <div class="bg-white p-6 rounded-xl shadow-md max-w-7xl mx-auto">
-            <div class="border-b border-gray-200 mb-6">
-                <nav id="inventario-nav" class="-mb-px flex space-x-6">
-                    <button id="tab-importaciones" class="dashboard-tab-btn active py-3 px-1 font-semibold">Importaciones</button>
-                    <button id="tab-nacional" class="dashboard-tab-btn py-3 px-1 font-semibold">Compras Nacionales</button>
-                </nav>
+        <div class="max-w-7xl mx-auto space-y-6">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-2">
+                <div>
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Gestión de Inventario</h1>
+                    <p class="text-xs font-semibold text-slate-450 mt-1">Controla y realiza el seguimiento de las importaciones y compras nacionales de la empresa.</p>
+                </div>
             </div>
-            <div id="view-importaciones-content">
-                <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
-                    <h2 class="text-xl font-semibold">Gestión de Importaciones</h2>
-                    <button id="add-importacion-btn" class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 w-full sm:w-auto">+ Nueva Importación</button>
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                <div class="border-b border-gray-150 mb-6">
+                    <nav id="inventario-nav" class="-mb-px flex space-x-6">
+                        <button id="tab-importaciones" class="dashboard-tab-btn active py-3 px-1 font-bold text-sm uppercase tracking-wide">🚢 Importaciones</button>
+                        <button id="tab-nacional" class="dashboard-tab-btn py-3 px-1 font-bold text-sm uppercase tracking-wide">🇨🇴 Compras Nacionales</button>
+                    </nav>
                 </div>
-                <div id="importaciones-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6"></div>
+                <div id="view-importaciones-content">
+                    <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
+                        <h2 class="text-lg font-bold text-slate-800">Historial de Importaciones</h2>
+                        <button id="add-importacion-btn" class="bg-indigo-650 hover:bg-indigo-755 text-white font-extrabold py-2 px-5 rounded-full text-xs shadow-md transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-1.5 w-full sm:w-auto">
+                            <span class="text-base font-medium leading-none">+</span> Nueva Importación
+                        </button>
+                    </div>
+                    <div id="importaciones-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6"></div>
                 </div>
-            <div id="view-nacional-content" class="hidden">
-                <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
-                    <h2 class="text-xl font-semibold">Gestión de Compras Nacionales</h2>
-                    <button id="add-nacional-btn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 w-full sm:w-auto">+ Nueva Compra Nacional</button>
-                </div>
-                <div id="nacional-list" class="space-y-4">
-                    <p class="text-center text-gray-500 py-8">Aún no se han registrado compras nacionales.</p>
+                <div id="view-nacional-content" class="hidden">
+                    <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
+                        <h2 class="text-lg font-bold text-slate-800">Compras Nacionales</h2>
+                        <button id="add-nacional-btn" class="bg-teal-650 hover:bg-teal-755 text-white font-extrabold py-2 px-5 rounded-full text-xs shadow-md transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-1.5 w-full sm:w-auto">
+                            <span class="text-base font-medium leading-none">+</span> Nueva Compra Nacional
+                        </button>
+                    </div>
+                    <div id="nacional-list" class="space-y-4">
+                        <p class="text-center text-gray-500 py-8">Aún no se han registrado compras nacionales.</p>
+                    </div>
                 </div>
             </div>
         </div>`;
@@ -240,61 +262,74 @@ function loadViewTemplates() {
     const viewItems = document.getElementById('view-items');
     if (viewItems) {
         viewItems.innerHTML = `
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
-                <h2 class="text-xl font-semibold mb-4">Añadir Nuevo Ítem</h2>
-                <form id="add-item-form" class="space-y-4">
-                    
-                    <div class="bg-gray-50 p-3 rounded-lg border border-gray-200 mb-2">
-                        <label class="flex items-center space-x-2 cursor-pointer">
-                            <input type="checkbox" id="nuevo-item-es-unidad" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                            <span class="text-sm font-semibold text-gray-800">Se vende por Unidad (Ej: Silicona, Herrajes)</span>
-                        </label>
+        <div class="max-w-6xl mx-auto space-y-6">
+            <div id="item-form-container" class="mobile-form-modal">
+                <div class="modal-card max-w-md">
+                    <div class="modal-header-fixed">
+                        <h2 class="text-xl font-bold text-slate-800">Añadir Nuevo Ítem</h2>
+                        <button type="button" class="mobile-close-form-btn text-gray-400 hover:text-gray-600 text-2xl font-bold" data-target="item-form-container">&times;</button>
                     </div>
-
-                    <div>
-                        <label for="nuevo-item-tipo" class="block text-sm font-medium text-gray-700">Tipo de Ítem</label>
-                        <input type="text" id="nuevo-item-tipo" class="w-full p-2 border border-gray-300 rounded-lg mt-1" placeholder="Ej: Vidrio, Espejo, Silicona" required>
-                    </div>
-                    <div>
-                        <label for="nuevo-item-color" class="block text-sm font-medium text-gray-700">Color o Detalle</label>
-                        <input type="text" id="nuevo-item-color" class="w-full p-2 border border-gray-300 rounded-lg mt-1" placeholder="Ej: Claro, Crudo, Transparente" required>
-                    </div>
-                    
-                    <div id="nuevo-item-medidas-container" class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label for="nuevo-item-ancho" class="block text-sm font-medium text-gray-700">Ancho Muestra (mm)</label>
-                            <input type="number" id="nuevo-item-ancho" class="w-full p-2 border border-gray-300 rounded-lg mt-1" placeholder="Ej: 3600">
+                    <form id="add-item-form" class="modal-body-scroll space-y-4">
+                        <div class="bg-indigo-50/50 p-3.5 rounded-lg border border-indigo-100 mb-2">
+                            <label class="flex items-center space-x-2 cursor-pointer">
+                                <input type="checkbox" id="nuevo-item-es-unidad" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                <span class="text-xs font-bold text-indigo-950">Se vende por Unidad (Silicona, Herrajes)</span>
+                            </label>
                         </div>
                         <div>
-                            <label for="nuevo-item-alto" class="block text-sm font-medium text-gray-700">Alto Muestra (mm)</label>
-                            <input type="number" id="nuevo-item-alto" class="w-full p-2 border border-gray-300 rounded-lg mt-1" placeholder="Ej: 2600">
+                            <label for="nuevo-item-tipo" class="block text-xs font-semibold text-slate-600 uppercase">Tipo de Ítem</label>
+                            <input type="text" id="nuevo-item-tipo" class="w-full p-2 border border-gray-300 rounded-lg mt-1" placeholder="Ej: Vidrio, Espejo, Silicona" required>
                         </div>
-                    </div>
-                    
-                    <div id="nuevo-item-caja-container">
-                        <label for="nuevo-item-laminas-por-caja" class="block text-sm font-medium text-gray-700">Láminas por Caja</label>
-                        <input type="number" id="nuevo-item-laminas-por-caja" class="w-full p-2 border border-gray-300 rounded-lg mt-1" placeholder="Ej: 40">
-                    </div>
-
-                    <div class="bg-gray-50 p-3 rounded-lg border border-gray-200 mt-2">
-                        <label class="flex items-center space-x-2 cursor-pointer mb-2">
-                            <input type="checkbox" id="nuevo-item-stock-infinito" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                            <span class="text-sm font-semibold text-gray-800">Stock Infinito (Servicios / No descontar)</span>
-                        </label>
-                        <div id="nuevo-item-stock-container">
-                            <label for="nuevo-item-stock" class="block text-sm font-medium text-gray-700">Stock Inicial</label>
-                            <input type="number" id="nuevo-item-stock" class="w-full p-2 border border-gray-300 rounded-lg mt-1" required>
+                        <div>
+                            <label for="nuevo-item-color" class="block text-xs font-semibold text-slate-600 uppercase">Color o Detalle</label>
+                            <input type="text" id="nuevo-item-color" class="w-full p-2 border border-gray-300 rounded-lg mt-1" placeholder="Ej: Claro, Crudo, Transparente" required>
                         </div>
-                    </div>
-                    <button type="submit" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors">Guardar Ítem</button>
-                </form>
-            </div>
-            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold">Inventario de Ítems</h2>
-                    <input type="search" id="search-items" placeholder="Buscar..." class="p-2 border rounded-lg">
+                        <div id="nuevo-item-medidas-container" class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label for="nuevo-item-ancho" class="block text-xs font-semibold text-slate-600 uppercase">Ancho (mm)</label>
+                                <input type="number" id="nuevo-item-ancho" class="w-full p-2 border border-gray-300 rounded-lg mt-1" placeholder="Ej: 3600">
+                            </div>
+                            <div>
+                                <label for="nuevo-item-alto" class="block text-xs font-semibold text-slate-600 uppercase">Alto (mm)</label>
+                                <input type="number" id="nuevo-item-alto" class="w-full p-2 border border-gray-300 rounded-lg mt-1" placeholder="Ej: 2600">
+                            </div>
+                        </div>
+                        <div id="nuevo-item-caja-container">
+                            <label for="nuevo-item-laminas-por-caja" class="block text-xs font-semibold text-slate-600 uppercase">Láminas por Caja</label>
+                            <input type="number" id="nuevo-item-laminas-por-caja" class="w-full p-2 border border-gray-300 rounded-lg mt-1" placeholder="Ej: 40">
+                        </div>
+                        <div class="bg-slate-50 p-3.5 rounded-lg border border-slate-200 mt-2">
+                            <label class="flex items-center space-x-2 cursor-pointer mb-2">
+                                <input type="checkbox" id="nuevo-item-stock-infinito" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                <span class="text-xs font-bold text-slate-800">Stock Infinito (Servicios / No descontar)</span>
+                            </label>
+                            <div id="nuevo-item-stock-container">
+                                <label for="nuevo-item-stock" class="block text-xs font-semibold text-slate-600 uppercase mt-2">Stock Inicial</label>
+                                <input type="number" id="nuevo-item-stock" class="w-full p-2 border border-gray-300 rounded-lg mt-1" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="w-full bg-indigo-600 text-white font-bold py-2.5 px-4 rounded-lg hover:bg-indigo-700 transition shadow-sm">Guardar Ítem</button>
+                    </form>
                 </div>
+            </div>
+            
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-2">
+                <div>
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Inventario de Ítems</h1>
+                    <p class="text-xs font-semibold text-slate-450 mt-1">Monitorea el catálogo de vidrios, herrajes y siliconas, así como su stock en tiempo real.</p>
+                </div>
+                <div class="flex items-center gap-3 w-full md:w-auto">
+                    <div class="relative flex-grow md:flex-grow-0">
+                        <input type="search" id="search-items" placeholder="Buscar ítem..." class="w-full md:w-64 pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-semibold text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition">
+                        <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <button id="mobile-add-item-btn" class="bg-indigo-650 hover:bg-indigo-755 text-white font-extrabold py-2 px-5 rounded-full text-xs shadow-md transition-all transform hover:-translate-y-0.5 flex items-center gap-1.5 flex-shrink-0">
+                        <span class="text-base font-medium leading-none">+</span> Nuevo Ítem
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
                 <div id="items-list" class="space-y-3"></div>
             </div>
         </div>`;
@@ -303,107 +338,126 @@ function loadViewTemplates() {
     const viewRemisiones = document.getElementById('view-remisiones');
     if (viewRemisiones) {
         viewRemisiones.innerHTML = `
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            <div id="remision-form-container" class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
-                <h2 class="text-xl font-semibold mb-4">Nueva Remisión</h2>
-                <form id="remision-form" class="space-y-4">
-                    <div class="relative">
-                        <input type="text" id="cliente-search-input" autocomplete="off" placeholder="Buscar y seleccionar cliente..." class="w-full p-3 border border-gray-300 rounded-lg" required>
-                        <input type="hidden" id="cliente-id-hidden" name="clienteId">
-                        <div id="cliente-search-results" class="search-results hidden"></div>
+        <div class="max-w-6xl mx-auto space-y-6">
+            <div id="remision-form-container" class="mobile-form-modal">
+                <div class="modal-card max-w-md lg:max-w-4xl">
+                    <div class="modal-header-fixed">
+                        <h2 class="text-xl font-bold text-slate-800">Nueva Remisión</h2>
+                        <button type="button" class="mobile-close-form-btn text-gray-400 hover:text-gray-600 text-2xl font-bold" data-target="remision-form-container">&times;</button>
                     </div>
-                    <div>
-                        <label for="fecha-recibido" class="block text-sm font-medium text-gray-700">Fecha Remisión</label>
-                        <input type="date" id="fecha-recibido" class="w-full p-3 border border-gray-300 rounded-lg mt-1 bg-gray-100" value="${new Date().toISOString().split('T')[0]}" readonly>
-                    </div>
-                    <div class="border-t border-b border-gray-200 py-4">
-                        <h3 class="text-lg font-semibold mb-2">Ítems de la Remisión</h3>
-                        <div id="items-container" class="space-y-4"></div>
-                        <button type="button" id="add-item-btn" class="mt-4 w-full bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">+ Añadir Ítem</button>
-                    </div>
-                    <select id="forma-pago" class="w-full p-3 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed text-gray-600 font-semibold" disabled>
-                        <option value="Pendiente" selected>Pendiente</option>
-                    </select>
-                    <div>
-                        <label for="remision-observaciones" class="block text-sm font-medium text-gray-700">Observaciones</label>
-                        <textarea id="remision-observaciones" rows="3" class="w-full p-3 border border-gray-300 rounded-lg mt-1" placeholder="Añade aquí cualquier nota o instrucción especial..."></textarea>
-                    </div>
-                    <div class="bg-gray-50 p-4 rounded-lg space-y-2">
-                        <div class="flex justify-between items-center"><span class="font-medium">Subtotal:</span><span id="subtotal" class="font-bold text-lg">$ 0</span></div>
-                        <div class="flex justify-between items-center"><label for="incluir-iva" class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="incluir-iva" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"><span>Incluir IVA (19%)</span></label><span id="valor-iva" class="font-medium text-gray-600">$ 0</span></div>
-                        <hr>
-                        <div class="flex justify-between items-center text-xl"><span class="font-bold">TOTAL:</span><span id="valor-total" class="font-bold text-indigo-600">$ 0</span></div>
-                    </div>
-                    <button type="submit" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition-colors">Guardar Remisión</button>
-                </form>
+                    <form id="remision-form" class="modal-body-scroll space-y-4">
+                        <div class="relative">
+                            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Cliente</label>
+                            <input type="text" id="cliente-search-input" autocomplete="off" placeholder="Buscar y seleccionar cliente..." class="w-full p-3 border border-gray-300 rounded-lg" required>
+                            <input type="hidden" id="cliente-id-hidden" name="clienteId">
+                            <div id="cliente-search-results" class="search-results hidden"></div>
+                        </div>
+                        <div>
+                            <label for="fecha-recibido" class="block text-xs font-semibold text-slate-600 uppercase mb-1">Fecha Remisión</label>
+                            <input type="date" id="fecha-recibido" class="w-full p-3 border border-gray-300 rounded-lg mt-1 bg-slate-100 text-slate-600 cursor-not-allowed font-medium" value="${new Date().toISOString().split('T')[0]}" readonly>
+                        </div>
+                        <div class="border-t border-b border-slate-100 py-4 my-2">
+                            <h3 class="text-md font-bold text-slate-800 mb-3">Ítems de la Remisión</h3>
+                            <div id="items-container" class="space-y-4"></div>
+                            <button type="button" id="add-item-btn" class="mt-4 w-full bg-slate-100 text-slate-700 font-bold py-2.5 px-4 rounded-lg hover:bg-slate-200 transition">+ Añadir Ítem</button>
+                        </div>
+                        <select id="forma-pago" class="w-full p-3 border border-gray-300 rounded-lg bg-slate-100 cursor-not-allowed text-slate-500 font-bold hidden" disabled>
+                            <option value="Pendiente" selected>Pendiente</option>
+                        </select>
+                        <div>
+                            <label for="remision-observaciones" class="block text-xs font-semibold text-slate-600 uppercase mb-1">Observaciones</label>
+                            <textarea id="remision-observaciones" rows="3" class="w-full p-3 border border-gray-300 rounded-lg mt-1" placeholder="Añade aquí cualquier nota o instrucción especial..."></textarea>
+                        </div>
+                        <div class="bg-slate-50 p-4 rounded-lg space-y-2 border border-slate-200">
+                            <div class="flex justify-between items-center"><span class="font-medium text-slate-600">Subtotal:</span><span id="subtotal" class="font-bold text-slate-900">$ 0</span></div>
+                            <div class="flex justify-between items-center"><label for="incluir-iva" class="flex items-center space-x-2 cursor-pointer my-0"><input type="checkbox" id="incluir-iva" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"><span class="text-xs font-bold text-slate-600">Incluir IVA (19%)</span></label><span id="valor-iva" class="font-medium text-slate-600">$ 0</span></div>
+                            <hr class="border-slate-200">
+                            <div class="flex justify-between items-center text-lg"><span class="font-extrabold text-slate-800">TOTAL:</span><span id="valor-total" class="font-extrabold text-indigo-600 text-xl">$ 0</span></div>
+                        </div>
+                        <button type="submit" class="w-full bg-indigo-600 text-white font-extrabold py-3 px-4 rounded-lg hover:bg-indigo-700 transition shadow-md">Guardar Remisión</button>
+                    </form>
+                </div>
             </div>
-            <div id="remisiones-list-container" class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
-                
-                <div class="flex flex-col gap-4 mb-4">
-                    
-                    <div class="flex items-center justify-between w-full">
-                        <h2 class="text-xl font-semibold">Historial de Remisiones</h2>
-                        <button id="btn-pending-payments" class="relative bg-yellow-500 text-white p-2 rounded-full hover:bg-yellow-600 hidden transition-all shadow-md" title="Pagos por Confirmar">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-2">
+                <div>
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Historial de Remisiones</h1>
+                    <p class="text-xs font-semibold text-slate-450 mt-1">Genera, imprime y realiza el seguimiento de las remisiones y abonos de clientes.</p>
+                </div>
+                <div class="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+                    <div class="flex items-center gap-2 w-full sm:w-auto bg-white border border-slate-200 rounded-full px-3 py-1.5 shadow-sm">
+                        <select id="filter-remisiones-month" class="bg-transparent border-0 font-bold text-slate-700 text-xs focus:ring-0 cursor-pointer"></select>
+                        <span class="text-slate-300 font-light">|</span>
+                        <select id="filter-remisiones-year" class="bg-transparent border-0 font-bold text-slate-700 text-xs focus:ring-0 cursor-pointer"></select>
+                    </div>
+                    <div class="relative flex-grow sm:flex-grow-0 w-full sm:w-auto">
+                        <input type="search" id="search-remisiones" placeholder="Buscar cliente o remisión..." class="w-full sm:w-60 pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-semibold text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition">
+                        <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <div class="flex gap-2 flex-shrink-0">
+                        <button id="btn-pending-payments" class="relative bg-amber-500 text-white w-10 h-10 rounded-full hover:bg-amber-600 hidden transition-all shadow-md flex items-center justify-center" title="Pagos por Confirmar">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1m-4.5 9h11a2 2 0 002-2v-1a2 2 0 00-2-2h-1.5M7.5 17H4a2 2 0 01-2-2v-1a2 2 0 012-2h1.5"></path>
                             </svg>
-                            <span id="badge-pending-payments" class="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full shadow border-2 border-white">0</span>
+                            <span id="badge-pending-payments" class="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow border border-white">0</span>
+                        </button>
+                        <button id="mobile-add-remision-btn" class="bg-indigo-650 hover:bg-indigo-755 text-white font-extrabold py-2 px-5 rounded-full text-xs shadow-md transition-all transform hover:-translate-y-0.5 flex items-center gap-1.5">
+                            <span class="text-base font-medium leading-none">+</span> Nueva Remisión
                         </button>
                     </div>
-
-                    <div class="flex flex-col sm:flex-row gap-2 w-full">
-                        <select id="filter-remisiones-month" class="p-2 border border-gray-300 rounded-lg bg-white flex-1"></select>
-                        <select id="filter-remisiones-year" class="p-2 border border-gray-300 rounded-lg bg-white flex-1"></select>
-                        <input type="search" id="search-remisiones" placeholder="Buscar cliente o remisión..." class="p-2 border border-gray-300 rounded-lg flex-1 sm:flex-[2]">
-                    </div>
-
                 </div>
+            </div>
 
-                <div id="remisiones-list" class="space-y-3"></div>
+            <div id="remisiones-list-container" class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                <div id="remisiones-list" class="space-y-4"></div>
             </div>
         </div>`;
     }
 
-const viewFacturacion = document.getElementById('view-facturacion');
+    const viewFacturacion = document.getElementById('view-facturacion');
     if (viewFacturacion) {
         viewFacturacion.innerHTML = `
-        <div class="bg-white p-4 sm:p-6 rounded-xl shadow-md max-w-7xl mx-auto">
-            <h2 class="text-2xl font-semibold mb-4">Gestión de Facturación</h2>
-            
-            <div class="border-b border-gray-200 mb-6 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-4">
-                
-                <nav id="facturacion-nav" class="-mb-px flex space-x-6 overflow-x-auto w-full lg:w-auto">
-                    <button id="tab-pendientes" class="dashboard-tab-btn active py-3 px-1 font-semibold text-gray-500 hover:text-gray-800 border-b-2 border-transparent hover:border-gray-300 whitespace-nowrap">Pendientes</button>
-                    <button id="tab-realizadas" class="dashboard-tab-btn py-3 px-1 font-semibold text-gray-500 hover:text-gray-800 border-b-2 border-transparent hover:border-gray-300 whitespace-nowrap">Realizadas</button>
-                </nav>
-
-                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
-                    
-                    <div class="flex flex-wrap sm:flex-nowrap items-center justify-between sm:justify-start gap-2 bg-gray-50 p-2 rounded-lg border border-gray-200 w-full sm:w-auto">
-                        <div class="flex items-center gap-1">
-                            <span class="text-xs font-semibold text-gray-500">Desde:</span>
-                            <input type="month" id="factura-filter-start" class="p-1 bg-white border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500 w-[110px] sm:w-auto">
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <span class="text-xs font-semibold text-gray-500">Hasta:</span>
-                            <input type="month" id="factura-filter-end" class="p-1 bg-white border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500 w-[110px] sm:w-auto">
-                        </div>
-                    </div>
-
-                    <div class="relative w-full sm:w-auto flex-grow lg:flex-grow-0">
-                        <input type="search" id="search-facturacion" placeholder="Buscar cliente, N° remisión..." class="w-full lg:w-64 p-2 pl-3 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500">
-                    </div>
-
+        <div class="max-w-7xl mx-auto space-y-6">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-2">
+                <div>
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Gestión de Facturación</h1>
+                    <p class="text-xs font-semibold text-slate-450 mt-1">Consulta y genera la facturación de las remisiones pendientes y archivadas.</p>
                 </div>
             </div>
+            
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                <div class="border-b border-gray-150 mb-6 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-4">
+                    <nav id="facturacion-nav" class="-mb-px flex space-x-6 overflow-x-auto w-full lg:w-auto">
+                        <button id="tab-pendientes" class="dashboard-tab-btn active py-3 px-1 font-bold text-sm uppercase tracking-wide">🧾 Pendientes</button>
+                        <button id="tab-realizadas" class="dashboard-tab-btn py-3 px-1 font-bold text-sm uppercase tracking-wide">📦 Realizadas</button>
+                    </nav>
+                    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+                        <div class="flex flex-wrap sm:flex-nowrap items-center justify-between sm:justify-start gap-3 bg-white border border-slate-200 rounded-full px-4 py-1.5 shadow-sm w-full sm:w-auto">
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Desde:</span>
+                                <input type="month" id="factura-filter-start" class="bg-transparent border-0 p-0 text-xs font-bold text-slate-700 focus:ring-0 w-[135px] sm:w-auto cursor-pointer">
+                            </div>
+                            <span class="text-slate-300 font-light">|</span>
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Hasta:</span>
+                                <input type="month" id="factura-filter-end" class="bg-transparent border-0 p-0 text-xs font-bold text-slate-700 focus:ring-0 w-[135px] sm:w-auto cursor-pointer">
+                            </div>
+                        </div>
+                        <div class="relative w-full sm:w-auto flex-grow lg:flex-grow-0">
+                            <input type="search" id="search-facturacion" placeholder="Buscar cliente, remisión..." class="w-full lg:w-64 pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-semibold text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition">
+                            <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        </div>
+                    </div>
+                </div>
 
-            <div id="view-pendientes">
-                <h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Pendientes de Facturar</h3>
-                <div id="facturacion-pendientes-list" class="space-y-3"></div>
-            </div>
-            <div id="view-realizadas" class="hidden">
-                <h3 class="text-xl font-semibold text-gray-800 mb-4">Remisiones Facturadas</h3>
-                <div id="facturacion-realizadas-list" class="space-y-3"></div>
+                <div id="view-pendientes">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><span>📌</span> Remisiones Pendientes de Facturar</h3>
+                    <div id="facturacion-pendientes-list" class="space-y-3"></div>
+                </div>
+                <div id="view-realizadas" class="hidden">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><span>✅</span> Remisiones Facturadas</h3>
+                    <div id="facturacion-realizadas-list" class="space-y-3"></div>
+                </div>
             </div>
         </div>`;
     }
@@ -411,28 +465,46 @@ const viewFacturacion = document.getElementById('view-facturacion');
     const viewClientes = document.getElementById('view-clientes');
     if (viewClientes) {
         viewClientes.innerHTML = `
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
-                <h2 class="text-xl font-semibold mb-4">Añadir Cliente</h2>
-                <form id="add-cliente-form" class="space-y-4">
-                    <input type="text" id="nuevo-cliente-nombre-empresa" placeholder="Nombre Empresa" class="w-full p-3 border border-gray-300 rounded-lg" required>
-                    <input type="text" id="nuevo-cliente-contacto" placeholder="Nombre del Contacto" class="w-full p-3 border border-gray-300 rounded-lg">
-                    <input type="email" id="nuevo-cliente-email" placeholder="Correo Electrónico" class="w-full p-3 border border-gray-300 rounded-lg">
-                    <input type="tel" id="nuevo-cliente-telefono1" placeholder="Teléfono 1" class="w-full p-3 border border-gray-300 rounded-lg" required oninput="this.value = this.value.replace(/[^0-9]/g, '')">
-                    <input type="tel" id="nuevo-cliente-telefono2" placeholder="Teléfono 2 (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
-                    <input type="text" id="nuevo-cliente-nit" placeholder="NIT (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg">
-                    <div class="space-y-1">
-                        <label for="nuevo-cliente-rut" class="block text-sm font-medium text-gray-700">RUT (Opcional)</label>
-                        <input type="file" id="nuevo-cliente-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+        <div class="max-w-6xl mx-auto space-y-6">
+            <div id="cliente-form-container" class="mobile-form-modal">
+                <div class="modal-card max-w-md">
+                    <div class="modal-header-fixed">
+                        <h2 class="text-xl font-bold text-slate-800">Añadir Cliente</h2>
+                        <button type="button" class="mobile-close-form-btn text-gray-400 hover:text-gray-600 text-2xl font-bold" data-target="cliente-form-container">&times;</button>
                     </div>
-                    <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700">Registrar</button>
-                </form>
-            </div>
-            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold">Clientes</h2>
-                    <input type="search" id="search-clientes" placeholder="Buscar..." class="p-2 border rounded-lg">
+                    <form id="add-cliente-form" class="modal-body-scroll space-y-4">
+                        <input type="text" id="nuevo-cliente-nombre-empresa" placeholder="Nombre Empresa" class="w-full p-3 border border-gray-300 rounded-lg" required>
+                        <input type="text" id="nuevo-cliente-contacto" placeholder="Nombre del Contacto" class="w-full p-3 border border-gray-300 rounded-lg">
+                        <input type="email" id="nuevo-cliente-email" placeholder="Correo Electrónico" class="w-full p-3 border border-gray-300 rounded-lg">
+                        <input type="tel" id="nuevo-cliente-telefono1" placeholder="Teléfono 1" class="w-full p-3 border border-gray-300 rounded-lg" required oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                        <input type="tel" id="nuevo-cliente-telefono2" placeholder="Teléfono 2 (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                        <input type="text" id="nuevo-cliente-nit" placeholder="NIT (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg">
+                        <div class="space-y-1">
+                            <label for="nuevo-cliente-rut" class="block text-xs font-semibold text-slate-500 uppercase">RUT (Opcional)</label>
+                            <input type="file" id="nuevo-cliente-rut" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                        </div>
+                        <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 shadow-sm transition">Registrar Cliente</button>
+                    </form>
                 </div>
+            </div>
+            
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-2">
+                <div>
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Directorio de Clientes</h1>
+                    <p class="text-xs font-semibold text-slate-450 mt-1">Administra, busca y registra la información de tus clientes y sus compras.</p>
+                </div>
+                <div class="flex items-center gap-3 w-full md:w-auto">
+                    <div class="relative flex-grow md:flex-grow-0">
+                        <input type="search" id="search-clientes" placeholder="Buscar cliente..." class="w-full md:w-64 pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-semibold text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm transition">
+                        <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <button id="mobile-add-cliente-btn" class="bg-blue-650 hover:bg-blue-755 text-white font-extrabold py-2 px-5 rounded-full text-xs shadow-md transition-all transform hover:-translate-y-0.5 flex items-center gap-1.5 flex-shrink-0">
+                        <span class="text-base font-medium leading-none">+</span> Nuevo Cliente
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
                 <div id="clientes-list" class="space-y-3"></div>
             </div>
         </div>`;
@@ -441,26 +513,44 @@ const viewFacturacion = document.getElementById('view-facturacion');
     const viewProveedores = document.getElementById('view-proveedores');
     if (viewProveedores) {
         viewProveedores.innerHTML = `
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
-                <h2 class="text-xl font-semibold mb-4">Añadir Proveedor</h2>
-                <form id="add-proveedor-form" class="space-y-4">
-                    <input type="text" id="nuevo-proveedor-nombre" placeholder="Nombre del Proveedor" class="w-full p-3 border border-gray-300 rounded-lg" required>
-                    <input type="text" id="nuevo-proveedor-contacto" placeholder="Nombre de Contacto" class="w-full p-3 border border-gray-300 rounded-lg">
-                    <input type="tel" id="nuevo-proveedor-telefono" placeholder="Teléfono" class="w-full p-3 border border-gray-300 rounded-lg">
-                    <input type="email" id="nuevo-proveedor-email" placeholder="Correo" class="w-full p-3 border border-gray-300 rounded-lg">
-                    <div>
-                        <label for="nuevo-proveedor-rut" class="block text-sm font-medium text-gray-700">RUT (Opcional)</label>
-                        <input type="file" id="nuevo-proveedor-rut" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"/>
+        <div class="max-w-6xl mx-auto space-y-6">
+            <div id="proveedor-form-container" class="mobile-form-modal">
+                <div class="modal-card max-w-md">
+                    <div class="modal-header-fixed">
+                        <h2 class="text-xl font-bold text-slate-800">Añadir Proveedor</h2>
+                        <button type="button" class="mobile-close-form-btn text-gray-400 hover:text-gray-600 text-2xl font-bold" data-target="proveedor-form-container">&times;</button>
                     </div>
-                    <button type="submit" class="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-700">Registrar</button>
-                </form>
-            </div>
-            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold">Proveedores</h2>
-                    <input type="search" id="search-proveedores" placeholder="Buscar..." class="p-2 border rounded-lg">
+                    <form id="add-proveedor-form" class="modal-body-scroll space-y-4">
+                        <input type="text" id="nuevo-proveedor-nombre" placeholder="Nombre del Proveedor" class="w-full p-3 border border-gray-300 rounded-lg" required>
+                        <input type="text" id="nuevo-proveedor-contacto" placeholder="Nombre de Contacto" class="w-full p-3 border border-gray-300 rounded-lg">
+                        <input type="tel" id="nuevo-proveedor-telefono" placeholder="Teléfono" class="w-full p-3 border border-gray-300 rounded-lg">
+                        <input type="email" id="nuevo-proveedor-email" placeholder="Correo" class="w-full p-3 border border-gray-300 rounded-lg">
+                        <div>
+                            <label for="nuevo-proveedor-rut" class="block text-xs font-semibold text-slate-500 uppercase">RUT (Opcional)</label>
+                            <input type="file" id="nuevo-proveedor-rut" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"/>
+                        </div>
+                        <button type="submit" class="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-700 shadow-sm transition">Registrar Proveedor</button>
+                    </form>
                 </div>
+            </div>
+            
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-2">
+                <div>
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Directorio de Proveedores</h1>
+                    <p class="text-xs font-semibold text-slate-450 mt-1">Registra y administra los proveedores nacionales de la empresa.</p>
+                </div>
+                <div class="flex items-center gap-3 w-full md:w-auto">
+                    <div class="relative flex-grow md:flex-grow-0">
+                        <input type="search" id="search-proveedores" placeholder="Buscar proveedor..." class="w-full md:w-64 pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-semibold text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 shadow-sm transition">
+                        <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <button id="mobile-add-proveedor-btn" class="bg-teal-650 hover:bg-teal-755 text-white font-extrabold py-2 px-5 rounded-full text-xs shadow-md transition-all transform hover:-translate-y-0.5 flex items-center gap-1.5 flex-shrink-0">
+                        <span class="text-base font-medium leading-none">+</span> Nuevo Proveedor
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
                 <div id="proveedores-list" class="space-y-3"></div>
             </div>
         </div>`;
@@ -469,61 +559,77 @@ const viewFacturacion = document.getElementById('view-facturacion');
     const viewGastos = document.getElementById('view-gastos');
     if (viewGastos) {
         viewGastos.innerHTML = `
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
-                <h2 class="text-xl font-semibold mb-4">Nuevo Gasto</h2>
-                <form id="add-gasto-form" class="space-y-4">
-                    <div>
-                        <label for="gasto-fecha">Fecha</label>
-                        <input type="date" id="gasto-fecha" class="w-full p-3 border border-gray-300 rounded-lg mt-1" required>
+        <div class="max-w-6xl mx-auto space-y-6">
+            <div id="gasto-form-container" class="mobile-form-modal">
+                <div class="modal-card max-w-md">
+                    <div class="modal-header-fixed">
+                        <h2 class="text-xl font-bold text-slate-800">Nuevo Gasto</h2>
+                        <button type="button" class="mobile-close-form-btn text-gray-400 hover:text-gray-600 text-2xl font-bold" data-target="gasto-form-container">&times;</button>
                     </div>
-                    <div class="relative">
-                        <label for="proveedor-search-input">Proveedor</label>
-                        <input type="text" id="proveedor-search-input" autocomplete="off" placeholder="Buscar..." class="w-full p-3 border border-gray-300 rounded-lg mt-1" required>
-                        <input type="hidden" id="proveedor-id-hidden" name="proveedorId">
-                        <div id="proveedor-search-results" class="search-results hidden"></div>
-                    </div>
-                    <input type="text" id="gasto-factura" placeholder="N° de Factura (Opcional)" class="w-full p-3 border border-gray-300 rounded-lg">
-                    <input type="text" id="gasto-valor-total" inputmode="numeric" placeholder="Valor Total" class="w-full p-3 border border-gray-300 rounded-lg" required>
-                    <label class="flex items-center space-x-2">
-                        <input type="checkbox" id="gasto-iva" class="h-4 w-4 rounded border-gray-300">
-                        <span>IVA del 19% incluido</span>
-                    </label>
-                    <div>
-                        <label for="gasto-fuente">Fuente del Pago</label>
-                        <select id="gasto-fuente" class="w-full p-3 border border-gray-300 rounded-lg mt-1 bg-white" required>
-                            ${metodosDePagoHTML}
-                        </select>
-                    </div>
-                    <button type="submit" class="w-full bg-orange-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-orange-700 shadow">Registrar</button>
-                </form>
+                    <form id="add-gasto-form" class="modal-body-scroll space-y-4">
+                        <div>
+                            <label for="gasto-fecha" class="text-xs font-semibold text-slate-500 uppercase">Fecha</label>
+                            <input type="date" id="gasto-fecha" class="w-full p-3 border border-gray-300 rounded-lg mt-1" required>
+                        </div>
+                        <div class="relative">
+                            <label for="proveedor-search-input" class="text-xs font-semibold text-slate-500 uppercase">Proveedor</label>
+                            <input type="text" id="proveedor-search-input" autocomplete="off" placeholder="Buscar..." class="w-full p-3 border border-gray-300 rounded-lg mt-1" required>
+                            <input type="hidden" id="proveedor-id-hidden" name="proveedorId">
+                            <div id="proveedor-search-results" class="search-results hidden"></div>
+                        </div>
+                        <div>
+                            <label for="gasto-factura" class="text-xs font-semibold text-slate-500 uppercase">Factura (Opcional)</label>
+                            <input type="text" id="gasto-factura" placeholder="N° de Factura" class="w-full p-3 border border-gray-300 rounded-lg mt-1">
+                        </div>
+                        <div>
+                            <label for="gasto-valor-total" class="text-xs font-semibold text-slate-500 uppercase">Valor Total</label>
+                            <input type="text" id="gasto-valor-total" inputmode="numeric" placeholder="Valor Total (COP)" class="w-full p-3 border border-gray-300 rounded-lg mt-1" required>
+                        </div>
+                        <div class="bg-orange-50/50 p-3 rounded-lg border border-orange-100 mb-1">
+                            <label class="flex items-center space-x-2 cursor-pointer my-0">
+                                <input type="checkbox" id="gasto-iva" class="h-4 w-4 rounded border-orange-300 text-orange-600 focus:ring-orange-500">
+                                <span class="text-xs font-bold text-orange-950">IVA del 19% incluido</span>
+                            </label>
+                        </div>
+                        <div>
+                            <label for="gasto-fuente" class="text-xs font-semibold text-slate-500 uppercase">Fuente del Pago</label>
+                            <select id="gasto-fuente" class="w-full p-3 border border-gray-300 rounded-lg mt-1 bg-white" required>
+                                ${metodosDePagoHTML}
+                            </select>
+                        </div>
+                        <button type="submit" class="w-full bg-orange-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-orange-700 shadow-sm transition">Registrar Gasto</button>
+                    </form>
+                </div>
             </div>
-            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
-                <div class="flex justify-between items-center pb-4 border-b">
-                    <h2 class="text-xl font-semibold">Historial de Gastos</h2>
-                    <div class="flex gap-3">
-                        <button id="view-deleted-gastos-btn" class="bg-red-50 text-red-600 text-xl py-2 px-3 rounded-lg hover:bg-red-100 border border-red-200 flex-shrink-0 shadow-sm" title="Ver Papelera de Gastos">
-                            🗑️
-                        </button>
-                        <button id="sync-gastos-btn" class="bg-gray-200 text-gray-700 text-xl font-bold py-2 px-3 rounded-lg hover:bg-gray-300 flex-shrink-0 shadow-sm" title="Forzar Sincronización">
-                            ↻
+            
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-2">
+                <div>
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Historial de Gastos</h1>
+                    <p class="text-xs font-semibold text-slate-450 mt-1">Registra y controla los egresos y gastos operativos de la empresa.</p>
+                </div>
+                <div class="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+                    <div class="flex items-center gap-2 w-full sm:w-auto bg-white border border-slate-200 rounded-full px-3 py-1.5 shadow-sm">
+                        <select id="filter-gastos-month" class="bg-transparent border-0 font-bold text-slate-700 text-xs focus:ring-0 cursor-pointer"></select>
+                        <span class="text-slate-300 font-light">|</span>
+                        <select id="filter-gastos-year" class="bg-transparent border-0 font-bold text-slate-700 text-xs focus:ring-0 cursor-pointer"></select>
+                    </div>
+                    
+                    <div class="relative flex-grow sm:flex-grow-0 w-full sm:w-auto">
+                        <input type="search" id="search-gastos" placeholder="Buscar gasto..." class="w-full sm:w-60 pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-semibold text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 shadow-sm transition">
+                        <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+
+                    <div class="flex gap-2 flex-shrink-0">
+                        <button id="view-deleted-gastos-btn" class="bg-red-50 text-red-600 w-10 h-10 rounded-full hover:bg-red-100 flex items-center justify-center border border-red-100 shadow-sm transition" title="Ver Papelera de Gastos">🗑️</button>
+                        <button id="sync-gastos-btn" class="bg-slate-50 text-slate-700 w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center border border-slate-100 shadow-sm transition" title="Forzar Sincronización">↻</button>
+                        <button id="mobile-add-gasto-btn" class="bg-orange-650 hover:bg-orange-755 text-white font-extrabold py-2 px-5 rounded-full text-xs shadow-md transition-all transform hover:-translate-y-0.5 flex items-center gap-1.5">
+                            <span class="text-base font-medium leading-none">+</span> Nuevo Gasto
                         </button>
                     </div>
                 </div>
-                <div class="flex flex-col sm:flex-row gap-4 my-4 p-4 bg-gray-50 rounded-lg">
-                    <div class="flex-1">
-                        <label for="filter-gastos-month" class="text-sm font-medium text-gray-700">Mes</label>
-                        <select id="filter-gastos-month" class="p-2 border rounded-lg bg-white w-full mt-1"></select>
-                    </div>
-                    <div class="flex-1">
-                        <label for="filter-gastos-year" class="text-sm font-medium text-gray-700">Año</label>
-                        <select id="filter-gastos-year" class="p-2 border rounded-lg bg-white w-full mt-1"></select>
-                    </div>
-                    <div class="flex-1">
-                        <label for="search-gastos" class="text-sm font-medium text-gray-700">Buscar</label>
-                        <input type="search" id="search-gastos" placeholder="Por proveedor o factura..." class="p-2 border rounded-lg w-full mt-1">
-                    </div>
-                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
                 <div id="gastos-list" class="space-y-3"></div>
             </div>
         </div>`;
@@ -531,7 +637,18 @@ const viewFacturacion = document.getElementById('view-facturacion');
 
     const viewEmpleados = document.getElementById('view-empleados');
     if (viewEmpleados) {
-        viewEmpleados.innerHTML = `<div class="bg-white p-6 rounded-xl shadow-md max-w-4xl mx-auto"><h2 class="text-xl font-semibold mb-4">Gestión de Empleados</h2><div id="empleados-list" class="space-y-3"></div></div>`;
+        viewEmpleados.innerHTML = `
+        <div class="max-w-4xl mx-auto space-y-6">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-2">
+                <div>
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Gestión de Empleados</h1>
+                    <p class="text-xs font-semibold text-slate-450 mt-1">Administra las cuentas de usuario de tus colaboradores, sus roles y permisos en el sistema.</p>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                <div id="empleados-list" class="space-y-4"></div>
+            </div>
+        </div>`;
     }
 
     // Volver a asignar el listener de login-register links que acabamos de recrear
@@ -547,76 +664,76 @@ const viewFacturacion = document.getElementById('view-facturacion');
     const viewFunciones = document.getElementById('view-funciones');
     if (viewFunciones) {
         viewFunciones.innerHTML = `
-            <div class="bg-white p-6 rounded-xl shadow-md max-w-4xl mx-auto">
-                <h2 class="text-xl font-semibold mb-6 text-gray-800">Funciones y Reportes del Sistema</h2>
+            <div class="bg-white p-6 rounded-xl shadow-md max-w-4xl mx-auto border-t-4 border-indigo-600">
+                <h2 class="text-xl font-bold mb-6 text-slate-800">Funciones y Reportes del Sistema</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="border p-5 rounded-lg text-center bg-gray-50 hover:bg-gray-100 transition-colors">
+                    <div class="border border-slate-200 p-5 rounded-lg text-center bg-slate-50/50 hover:bg-slate-50 hover:shadow-md transition">
                         <div class="text-4xl mb-3">📊</div>
-                        <h3 class="font-bold text-lg mb-2">Exportar Gastos</h3>
-                        <p class="text-sm text-gray-600 mb-4">Descarga un archivo Excel detallado de todos los gastos registrados en el sistema.</p>
-                        <button id="btn-func-export-gastos" class="bg-indigo-600 text-white font-bold py-2 px-6 rounded-full hover:bg-indigo-700">Exportar Gastos</button>
+                        <h3 class="font-bold text-lg mb-2 text-slate-800">Exportar Gastos</h3>
+                        <p class="text-sm text-slate-500 mb-4">Descarga un archivo Excel detallado de todos los gastos registrados en el sistema.</p>
+                        <button id="btn-func-export-gastos" class="bg-indigo-600 text-white font-bold py-2 px-6 rounded-full hover:bg-indigo-700 transition shadow-sm">Exportar Gastos</button>
                     </div>
-                    <div class="border p-5 rounded-lg text-center bg-gray-50 hover:bg-gray-100 transition-colors">
+                    <div class="border border-slate-200 p-5 rounded-lg text-center bg-slate-50/50 hover:bg-slate-50 hover:shadow-md transition">
                         <div class="text-4xl mb-3">💰</div>
-                        <h3 class="font-bold text-lg mb-2">Exportar Pagos</h3>
-                        <p class="text-sm text-gray-600 mb-4">Descarga un archivo Excel con el historial de abonos y pagos de remisiones.</p>
-                        <button id="btn-func-export-pagos" class="bg-green-600 text-white font-bold py-2 px-6 rounded-full hover:bg-green-700">Exportar Pagos</button>
+                        <h3 class="font-bold text-lg mb-2 text-slate-800">Exportar Pagos</h3>
+                        <p class="text-sm text-slate-500 mb-4">Descarga un archivo Excel con el historial de abonos y pagos de remisiones.</p>
+                        <button id="btn-func-export-pagos" class="bg-green-600 text-white font-bold py-2 px-6 rounded-full hover:bg-green-700 transition shadow-sm">Exportar Pagos</button>
                     </div>
                 </div>
             </div>
         `;
     }
 
-// --- HTML DEL CHAT DE WHATSAPP (RESPONSIVE MEJORADO) ---
+    // --- HTML DEL CHAT DE WHATSAPP ---
     const viewWhatsapp = document.getElementById('view-whatsapp');
     if (viewWhatsapp) {
         viewWhatsapp.innerHTML = `
-        <div class="flex h-[calc(100vh-120px)] sm:h-[calc(100vh-180px)] max-w-6xl mx-auto bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden relative">
+        <div class="flex h-[calc(100vh-120px)] sm:h-[calc(100vh-180px)] w-full bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden relative border-t-4 border-indigo-600">
             
-            <div class="w-full md:w-1/3 flex flex-col border-r border-gray-200" id="whatsapp-sidebar">
-                <div class="p-3 sm:p-4 border-b bg-gray-50 flex justify-between items-center">
-                    <h2 class="text-xl font-bold text-gray-800">Mensajes</h2>
+            <div class="w-full md:w-1/3 flex flex-col border-r border-slate-100" id="whatsapp-sidebar">
+                <div class="p-3 sm:p-4 border-b bg-slate-50 flex justify-between items-center">
+                    <h2 class="text-lg font-bold text-slate-800">Mensajes</h2>
                 </div>
-                <div class="flex bg-gray-50 border-b border-gray-200">
-                    <button id="wa-tab-activos" class="flex-1 py-2 text-sm font-bold text-indigo-600 border-b-2 border-indigo-600 transition">Activos</button>
-                    <button id="wa-tab-resueltos" class="flex-1 py-2 text-sm font-bold text-gray-500 border-b-2 border-transparent hover:text-gray-700 transition">Resueltos</button>
+                <div class="flex bg-slate-50 border-b border-slate-100">
+                    <button id="wa-tab-activos" class="flex-1 py-2 text-xs font-extrabold uppercase text-indigo-600 border-b-2 border-indigo-600 transition">Activos</button>
+                    <button id="wa-tab-resueltos" class="flex-1 py-2 text-xs font-extrabold uppercase text-slate-450 border-b-2 border-transparent hover:text-slate-700 transition">Resueltos</button>
                 </div>
                 <div class="p-2 border-b">
-                    <input type="text" id="whatsapp-search" placeholder="Buscar chat..." class="w-full p-2 border rounded-lg text-sm bg-gray-100 focus:outline-none focus:border-indigo-300">
+                    <input type="text" id="whatsapp-search" placeholder="Buscar chat..." class="w-full p-2 border rounded-lg text-xs bg-slate-100 focus:outline-none focus:border-indigo-300">
                 </div>
                 <div id="chats-list" class="flex-grow overflow-y-auto">
-                    <p class="text-center text-gray-500 mt-10 text-sm">Cargando chats...</p>
+                    <p class="text-center text-slate-400 mt-10 text-xs font-semibold">Cargando chats...</p>
                 </div>
             </div>
-
-            <div class="hidden md:flex flex-col w-full md:w-2/3 bg-[#efeae2] relative" id="whatsapp-chat-area">
+ 
+            <div class="hidden md:flex flex-col w-full md:w-2/3 bg-[#f8fafc] relative" id="whatsapp-chat-area">
                 <div class="p-2 sm:p-3 bg-white border-b flex items-center justify-between shadow-sm z-10 min-h-[60px] sm:min-h-[70px]">
                     <div class="flex items-center gap-2 sm:gap-3 overflow-hidden flex-grow">
-                        <button id="wa-back-btn" class="md:hidden text-gray-600 font-bold text-2xl pr-1">&larr;</button>
-                        <div class="w-9 h-9 sm:w-10 sm:h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold text-lg sm:text-xl flex-shrink-0" id="wa-avatar">?</div>
+                        <button id="wa-back-btn" class="md:hidden text-slate-650 font-bold text-xl pr-1">&larr;</button>
+                        <div class="w-9 h-9 sm:w-10 sm:h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold text-base sm:text-lg flex-shrink-0" id="wa-avatar">?</div>
                         <div class="flex flex-col overflow-hidden w-full">
-                            <h3 class="font-bold text-gray-800 text-sm sm:text-base truncate" id="wa-contact-name">Selecciona un chat</h3>
-                            <p class="text-xs text-gray-500 flex items-center truncate" id="wa-contact-phone"></p>
+                          <h3 class="font-bold text-slate-800 text-sm sm:text-base truncate" id="wa-contact-name">Selecciona un chat</h3>
+                          <p class="text-xs text-slate-400 flex items-center truncate" id="wa-contact-phone"></p>
                         </div>
                     </div>
                     <div id="wa-chat-header-actions" class="flex items-center flex-shrink-0 ml-1 sm:ml-2"></div>
                 </div>
-
-                <div id="wa-messages-container" class="flex-grow overflow-y-auto p-3 sm:p-4 space-y-2 sm:space-y-3 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-opacity-50 relative"></div>
-
-                <div id="wa-24h-warning" class="hidden bg-yellow-100 text-yellow-800 text-[10px] sm:text-xs p-2 text-center border-t border-yellow-200">
+ 
+                <div id="wa-messages-container" class="flex-grow overflow-y-auto p-3 sm:p-4 space-y-2 sm:space-y-3 relative"></div>
+ 
+                <div id="wa-24h-warning" class="hidden bg-amber-50 text-amber-800 text-[10px] sm:text-xs p-2 text-center border-t border-amber-200 font-semibold">
                     ⚠️ Han pasado más de 24h. Solo puedes enviar plantillas pre-aprobadas.
                 </div>
-
-                <form id="wa-send-form" class="p-2 sm:p-3 bg-gray-100 border-t flex items-end gap-1 sm:gap-2 hidden">
+ 
+                <form id="wa-send-form" class="p-2 sm:p-3 bg-white border-t flex items-end gap-1 sm:gap-2 hidden">
                     <input type="hidden" id="wa-current-phone">
-                    <label class="cursor-pointer text-gray-500 hover:text-indigo-600 p-2 transition flex-shrink-0" title="Adjuntar archivo">
-                        <input type="file" id="wa-file-input" class="hidden" accept="image/*,application/pdf">
+                    <label class="cursor-pointer text-slate-400 hover:text-indigo-600 p-2 transition flex-shrink-0 my-0" title="Adjuntar archivo">
+                        <input type="file" id="wa-file-input" class="hidden" accept="*/*">
                         <svg class="w-6 h-6 transform rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
                     </label>
-                    <textarea id="wa-msg-input" rows="1" placeholder="Mensaje..." class="flex-grow p-2 sm:p-3 rounded-lg border border-gray-300 shadow-sm focus:outline-none focus:border-indigo-400 resize-none max-h-24 sm:max-h-32 bg-white text-sm sm:text-base" required></textarea>
-                    <button type="submit" id="wa-send-btn" class="bg-teal-500 text-white p-2 sm:p-3 rounded-full hover:bg-teal-600 transition shadow-sm h-10 w-10 sm:h-12 sm:w-12 flex items-center justify-center flex-shrink-0">
-                        <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path></svg>
+                    <textarea id="wa-msg-input" rows="1" placeholder="Mensaje..." class="flex-grow p-2.5 sm:p-3 rounded-full border border-slate-200 shadow-sm focus:outline-none focus:border-indigo-400 resize-none max-h-24 sm:max-h-32 bg-slate-50 text-sm" required></textarea>
+                    <button type="submit" id="wa-send-btn" class="bg-indigo-600 text-white p-2.5 sm:p-3 rounded-full hover:bg-indigo-700 transition shadow-sm h-10 w-10 sm:h-11 sm:w-11 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path></svg>
                     </button>
                 </form>
             </div>
@@ -788,12 +905,16 @@ document.getElementById('logout-btn')?.addEventListener('click', () => {
 });
 
 function setupEventListeners() {
+    if (window.__setupEventListenersInit) return;
+    window.__setupEventListenersInit = true;
+
     const tabs = {
         remisiones: document.getElementById('tab-remisiones'), facturacion: document.getElementById('tab-facturacion'),
         inventario: document.getElementById('tab-inventario'), clientes: document.getElementById('tab-clientes'),
         gastos: document.getElementById('tab-gastos'), proveedores: document.getElementById('tab-proveedores'),
         empleados: document.getElementById('tab-empleados'), items: document.getElementById('tab-items'),
-        funciones: document.getElementById('tab-funciones'), whatsapp: document.getElementById('tab-whatsapp')
+        funciones: document.getElementById('tab-funciones'), whatsapp: document.getElementById('tab-whatsapp'),
+        despiece: document.getElementById('tab-despiece')
     };
 
     const mobileTabs = {
@@ -801,7 +922,8 @@ function setupEventListeners() {
         inventario: document.getElementById('mobile-tab-inventario'), clientes: document.getElementById('mobile-tab-clientes'),
         gastos: document.getElementById('mobile-tab-gastos'), proveedores: document.getElementById('mobile-tab-proveedores'),
         empleados: document.getElementById('mobile-tab-empleados'), items: document.getElementById('mobile-tab-items'),
-        funciones: document.getElementById('mobile-tab-funciones'), whatsapp: document.getElementById('mobile-tab-whatsapp')
+        funciones: document.getElementById('mobile-tab-funciones'), whatsapp: document.getElementById('mobile-tab-whatsapp'),
+        despiece: document.getElementById('mobile-tab-despiece')
     };
 
     const views = {
@@ -809,7 +931,8 @@ function setupEventListeners() {
         inventario: document.getElementById('view-inventario'), clientes: document.getElementById('view-clientes'),
         gastos: document.getElementById('view-gastos'), proveedores: document.getElementById('view-proveedores'),
         empleados: document.getElementById('view-empleados'), items: document.getElementById('view-items'),
-        funciones: document.getElementById('view-funciones'), whatsapp: document.getElementById('view-whatsapp')
+        funciones: document.getElementById('view-funciones'), whatsapp: document.getElementById('view-whatsapp'),
+        despiece: document.getElementById('view-despiece')
     };
 
     // Navegación Desktop
@@ -873,6 +996,35 @@ function setupEventListeners() {
     document.getElementById('close-policy-modal')?.addEventListener('click', () => { document.getElementById('policy-modal').classList.add('hidden'); });
     document.getElementById('accept-policy-btn')?.addEventListener('click', () => { document.getElementById('policy-modal').classList.add('hidden'); });
 
+    // --- EVENT DELEGATION FOR RESPONSIVE MOBILE FORM MODALS ---
+    document.body.addEventListener('click', (e) => {
+        // Handle trigger buttons
+        if (e.target && e.target.id === 'mobile-add-cliente-btn') {
+            document.getElementById('cliente-form-container')?.classList.add('show-modal');
+        }
+        if (e.target && e.target.id === 'mobile-add-proveedor-btn') {
+            document.getElementById('proveedor-form-container')?.classList.add('show-modal');
+        }
+        if (e.target && e.target.id === 'mobile-add-gasto-btn') {
+            document.getElementById('gasto-form-container')?.classList.add('show-modal');
+        }
+        if (e.target && e.target.id === 'mobile-add-item-btn') {
+            document.getElementById('item-form-container')?.classList.add('show-modal');
+        }
+        if (e.target && e.target.id === 'mobile-add-remision-btn') {
+            document.getElementById('remision-form-container')?.classList.add('show-modal');
+        }
+
+        // Handle close buttons inside modals
+        const closeBtn = e.target.closest('.mobile-close-form-btn');
+        if (closeBtn) {
+            const targetId = closeBtn.dataset.target;
+            if (targetId) {
+                document.getElementById(targetId)?.classList.remove('show-modal');
+            }
+        }
+    });
+
     setupClientesEvents();
     setupProveedoresEvents();
     setupItemsEvents();
@@ -883,6 +1035,7 @@ function setupEventListeners() {
     setupFacturacionEvents();
     setupFuncionesEvents();
     setupWhatsAppEvents();
+    setupDespieceEvents();
 }
 
 function switchView(viewName, tabs, views, mobileTabs = null) {
@@ -893,18 +1046,33 @@ function switchView(viewName, tabs, views, mobileTabs = null) {
     if (mobileTabs) {
         Object.values(mobileTabs).forEach(tab => { 
             if (tab) {
-                tab.classList.remove('text-indigo-600');
+                tab.classList.remove('text-blue-600');
                 tab.classList.add('text-gray-500');
             }
         });
         if (mobileTabs[viewName]) {
             mobileTabs[viewName].classList.remove('text-gray-500');
-            mobileTabs[viewName].classList.add('text-indigo-600');
+            mobileTabs[viewName].classList.add('text-blue-600');
         }
     }
 
     Object.values(views).forEach(view => { if (view) view.classList.add('hidden') });
     if (views[viewName]) views[viewName].classList.remove('hidden');
+
+    // Expandir/contraer dinámicamente el contenedor principal <main> para el módulo de WhatsApp
+    const mainContainer = document.querySelector('main');
+    const body = document.body;
+    if (mainContainer) {
+        if (viewName === 'whatsapp') {
+            mainContainer.classList.remove('max-w-7xl', 'md:p-8', 'p-4', 'pb-24');
+            mainContainer.classList.add('max-w-none', 'md:p-2', 'p-1', 'pb-0');
+            if (body) body.classList.add('overflow-hidden');
+        } else {
+            mainContainer.classList.add('max-w-7xl', 'md:p-8', 'p-4', 'pb-24');
+            mainContainer.classList.remove('max-w-none', 'md:p-2', 'p-1', 'pb-0');
+            if (body) body.classList.remove('overflow-hidden');
+        }
+    }
 }
 
 export function hideModal() {
@@ -1061,6 +1229,127 @@ function showFileModal(url, title = 'Visualizador de Archivos') {
     });
 }
 
+// --- OPTIMIZACIÓN PREMIUM DE VER PDF (CACHÉ Y PRE-FETCHING) ---
+const URL_CACHE_KEY = 'secure_file_url_cache';
+
+// Cargar caché desde localStorage
+function loadUrlCache() {
+    try {
+        const cached = localStorage.getItem(URL_CACHE_KEY);
+        return cached ? JSON.parse(cached) : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+// Guardar caché a localStorage
+function saveUrlCache(cache) {
+    try {
+        localStorage.setItem(URL_CACHE_KEY, JSON.stringify(cache));
+    } catch (e) {}
+}
+
+const activePrefetches = new Map();
+
+// Resolver enlace de Storage (con pool de promesas y caché inteligente)
+async function getSecureFileUrl(filePath) {
+    if (!filePath) return '';
+    const cache = loadUrlCache();
+    const cachedEntry = cache[filePath];
+    
+    // Verificar si el enlace está en caché y sigue siendo válido
+    if (cachedEntry) {
+        if (cachedEntry.type === 'direct') {
+            return cachedEntry.url;
+        }
+        if (cachedEntry.type === 'signed' && cachedEntry.expiresAt > Date.now()) {
+            return cachedEntry.url;
+        }
+    }
+    
+    // Si ya hay una solicitud en vuelo para este mismo archivo, reutilizar su promesa
+    if (activePrefetches.has(filePath)) {
+        return activePrefetches.get(filePath);
+    }
+    
+    const fetchPromise = (async () => {
+        try {
+            // Método 1: SDK Cliente Directo (Carga ultra veloz ~100ms)
+            const fileRef = ref(storage, filePath);
+            const url = await getDownloadURL(fileRef);
+            
+            const freshCache = loadUrlCache();
+            freshCache[filePath] = {
+                url: url,
+                type: 'direct',
+                expiresAt: null
+            };
+            saveUrlCache(freshCache);
+            return url;
+        } catch (error) {
+            console.warn(`Fallo al obtener enlace directo para ${filePath}, reintentando con Cloud Function...`, error);
+            try {
+                // Método 2: Respaldo de Cloud Function (Expiración en 10 minutos)
+                const getSignedUrl = httpsCallable(functions, 'getSignedUrl');
+                const result = await getSignedUrl({ filePath: filePath });
+                const url = result.data.url;
+                
+                const freshCache = loadUrlCache();
+                freshCache[filePath] = {
+                    url: url,
+                    type: 'signed',
+                    expiresAt: Date.now() + 10 * 60 * 1000 // Válido por 10 minutos
+                };
+                saveUrlCache(freshCache);
+                return url;
+            } catch (cfError) {
+                console.error(`Fallo crítico al resolver enlace de archivo seguro para ${filePath}:`, cfError);
+                throw cfError;
+            }
+        } finally {
+            activePrefetches.delete(filePath);
+        }
+    })();
+    
+    activePrefetches.set(filePath, fetchPromise);
+    return fetchPromise;
+}
+
+// Prefetch en segundo plano de manera silenciosa
+export function prefetchSecureFile(filePath) {
+    if (!filePath) return;
+    const cache = loadUrlCache();
+    const cachedEntry = cache[filePath];
+    const isExpired = cachedEntry && cachedEntry.type === 'signed' && cachedEntry.expiresAt <= Date.now();
+    
+    if (!cachedEntry || isExpired) {
+        getSecureFileUrl(filePath).catch(() => {});
+    }
+}
+
+// Escanear el DOM y precargar todos los PDF visibles con delay staggered (evita ráfagas de red)
+export function scanAndPrefetchSecureFiles() {
+    const elements = document.querySelectorAll('[data-file-path]');
+    let delay = 150;
+    elements.forEach(el => {
+        const path = el.dataset.filePath;
+        if (path) {
+            const cache = loadUrlCache();
+            const cachedEntry = cache[path];
+            const isExpired = cachedEntry && cachedEntry.type === 'signed' && cachedEntry.expiresAt <= Date.now();
+            
+            if (!cachedEntry || isExpired) {
+                setTimeout(() => {
+                    prefetchSecureFile(path);
+                }, delay);
+                delay += 300; // Espaciar solicitudes 300ms
+            }
+        }
+    });
+}
+window.scanAndPrefetchSecureFiles = scanAndPrefetchSecureFiles;
+
+// Evento Global Click: Apertura instantánea (0ms) si está en caché
 document.body.addEventListener('click', (e) => {
     const secureFileButton = e.target.closest('[data-file-path]');
     if (secureFileButton) {
@@ -1071,16 +1360,52 @@ document.body.addEventListener('click', (e) => {
     }
 });
 
+// Evento Global Hover (PointerOver): Pre-fetch inteligente antes de hacer clic
+document.body.addEventListener('pointerover', (e) => {
+    const secureFileButton = e.target.closest('[data-file-path]');
+    if (secureFileButton) {
+        const path = secureFileButton.dataset.filePath;
+        if (path) prefetchSecureFile(path);
+    }
+});
+
+// Evento Global Touch (TouchStart): Pre-fetch inteligente en móviles
+document.body.addEventListener('touchstart', (e) => {
+    const secureFileButton = e.target.closest('[data-file-path]');
+    if (secureFileButton) {
+        const path = secureFileButton.dataset.filePath;
+        if (path) prefetchSecureFile(path);
+    }
+}, { passive: true });
+
 async function viewSecureFile(filePath, title) {
     if (!filePath) return;
-    if(window.Swal) window.Swal.fire({ title: 'Generando enlace...', allowOutsideClick: false, didOpen: () => window.Swal.showLoading() });
+    
+    // Verificar si ya está cargado en el caché para abrir de manera inmediata
+    const cache = loadUrlCache();
+    const cachedEntry = cache[filePath];
+    if (cachedEntry && (cachedEntry.type === 'direct' || (cachedEntry.type === 'signed' && cachedEntry.expiresAt > Date.now()))) {
+        showPdfModal(cachedEntry.url, title);
+        return;
+    }
+    
+    // Si no está en caché, mostrar modal SweetAlert mientras se resuelve
+    if (window.Swal) {
+        window.Swal.fire({
+            title: 'Generando enlace...',
+            allowOutsideClick: false,
+            didOpen: () => window.Swal.showLoading()
+        });
+    }
+    
     try {
-        const getSignedUrl = httpsCallable(functions, 'getSignedUrl');
-        const result = await getSignedUrl({ filePath: filePath });
-        showFileModal(result.data.url, title);
-        if(window.Swal) window.Swal.close();
+        const url = await getSecureFileUrl(filePath);
+        showPdfModal(url, title);
+        if (window.Swal) window.Swal.close();
     } catch (error) {
-        if(window.Swal) window.Swal.fire('Error', 'No se pudo obtener el enlace.', 'error');
+        if (window.Swal) {
+            window.Swal.fire('Error', 'No se pudo obtener el enlace del archivo.', 'error');
+        }
     }
 }
 
@@ -1094,40 +1419,44 @@ function showEditProfileModal() {
 
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
     modalContentWrapper.innerHTML = `
-        <div class="bg-white rounded-lg p-6 shadow-xl max-w-lg w-full mx-auto text-left">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-semibold">Editar Mi Perfil</h2>
+        <div class="modal-card max-w-lg w-full mx-auto text-left">
+            <div class="modal-header-fixed">
+                <h2 class="text-xl font-bold text-slate-800">Editar Mi Perfil</h2>
                 <button id="close-profile-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
             </div>
-            <form id="edit-profile-form" class="space-y-4">
-                <div>
-                    <label for="profile-name" class="block text-sm font-medium">Nombre Completo</label>
-                    <input type="text" id="profile-name" class="w-full p-2 border rounded-lg mt-1 ${disabledClasses}" value="${user.nombre || ''}" required ${disabledAttribute}>
+            <form id="edit-profile-form" class="modal-body-scroll space-y-4">
+                <div class="space-y-4">
+                    <div>
+                        <label for="profile-name" class="block text-sm font-semibold text-slate-700">Nombre Completo</label>
+                        <input type="text" id="profile-name" class="w-full p-2.5 border border-slate-300 rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all ${disabledClasses}" value="${user.nombre || ''}" required ${disabledAttribute}>
+                    </div>
+                    <div>
+                        <label for="profile-cedula" class="block text-sm font-semibold text-slate-700">Cédula</label>
+                        <input type="text" id="profile-cedula" class="w-full p-2.5 border border-slate-300 rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all ${disabledClasses}" value="${user.cedula || ''}" required ${disabledAttribute}>
+                    </div>
+                    <div>
+                        <label for="profile-dob" class="block text-sm font-semibold text-slate-700">Fecha de Nacimiento</label>
+                        <input type="date" id="profile-dob" class="w-full p-2.5 border border-slate-300 rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all ${disabledClasses}" value="${user.dob || ''}" required ${disabledAttribute}>
+                    </div>
                 </div>
-                <div>
-                    <label for="profile-cedula" class="block text-sm font-medium">Cédula</label>
-                    <input type="text" id="profile-cedula" class="w-full p-2 border rounded-lg mt-1 ${disabledClasses}" value="${user.cedula || ''}" required ${disabledAttribute}>
-                </div>
-                <div>
-                    <label for="profile-dob" class="block text-sm font-medium">Fecha de Nacimiento</label>
-                    <input type="date" id="profile-dob" class="w-full p-2 border rounded-lg mt-1 ${disabledClasses}" value="${user.dob || ''}" required ${disabledAttribute}>
-                </div>
-                <hr/>
-                <div>
-                    <label for="profile-phone" class="block text-sm font-medium">Celular</label>
-                    <input type="tel" id="profile-phone" class="w-full p-2 border rounded-lg mt-1" value="${user.telefono || ''}" required>
-                </div>
-                <div>
-                    <label for="profile-address" class="block text-sm font-medium">Dirección</label>
-                    <input type="text" id="profile-address" class="w-full p-2 border rounded-lg mt-1" value="${user.direccion || ''}">
-                </div>
-                <div>
-                    <label for="profile-email" class="block text-sm font-medium">Correo Electrónico</label>
-                    <input type="email" id="profile-email" class="w-full p-2 border rounded-lg mt-1" value="${user.email || ''}" required>
-                    <p class="text-xs text-gray-500 mt-1">Cambiar tu correo requiere que vuelvas a iniciar sesión.</p>
+                <hr class="border-slate-200 my-4" />
+                <div class="space-y-4">
+                    <div>
+                        <label for="profile-phone" class="block text-sm font-semibold text-slate-700">Celular</label>
+                        <input type="tel" id="profile-phone" class="w-full p-2.5 border border-slate-300 rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all" value="${user.telefono || ''}" required>
+                    </div>
+                    <div>
+                        <label for="profile-address" class="block text-sm font-semibold text-slate-700">Dirección</label>
+                        <input type="text" id="profile-address" class="w-full p-2.5 border border-slate-300 rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all" value="${user.direccion || ''}">
+                    </div>
+                    <div>
+                        <label for="profile-email" class="block text-sm font-semibold text-slate-700">Correo Electrónico</label>
+                        <input type="email" id="profile-email" class="w-full p-2.5 border border-slate-300 rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all" value="${user.email || ''}" required>
+                        <p class="text-xs text-slate-500 mt-1">Cambiar tu correo requiere que vuelvas a iniciar sesión.</p>
+                    </div>
                 </div>
                 <div class="flex justify-end pt-4">
-                    <button type="submit" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700">Guardar Cambios</button>
+                    <button type="submit" class="w-full bg-indigo-650 text-white font-bold py-3 px-4 rounded-xl hover:bg-indigo-700 transition-colors shadow-sm">Guardar Cambios</button>
                 </div>
             </form>
         </div>`;

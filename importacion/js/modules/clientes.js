@@ -144,28 +144,35 @@ export function renderClientes() {
     // 4. Dibujar Tarjetas
     clientsToRender.forEach(cliente => {
         const clienteDiv = document.createElement('div');
-        clienteDiv.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between sm:items-start gap-4';
+        clienteDiv.className = 'premium-card premium-card-blue p-5 flex flex-col sm:flex-row justify-between sm:items-center gap-4 bg-white shadow-sm hover:shadow-md transition';
 
+        const nameInitial = (cliente.nombreEmpresa || cliente.nombre || 'C').charAt(0).toUpperCase();
         const telefonos = [cliente.telefono1, cliente.telefono2].filter(Boolean).join(' | ');
         const editButton = (currentUserData && currentUserData.role === 'admin')
-            ? `<button data-client-json='${JSON.stringify(cliente)}' class="edit-client-btn bg-gray-200 text-gray-700 px-3 py-1 rounded-lg text-sm font-semibold hover:bg-gray-300 w-full text-center">Editar</button>`
+            ? `<button data-client-json='${JSON.stringify(cliente)}' class="edit-client-btn btn-premium-outline px-4 py-2 rounded-lg text-sm hover:bg-slate-50 transition w-full text-center">Editar Cliente</button>`
             : '';
 
-        const nombreContactoHtml = cliente.contacto ? `<p class="text-sm text-gray-700"><span class="font-medium">Contacto:</span> ${cliente.contacto}</p>` : '';
+        const nombreContactoHtml = cliente.contacto ? `<p class="text-sm text-slate-600"><span class="font-medium text-slate-800">Contacto:</span> ${cliente.contacto}</p>` : '';
 
         clienteDiv.innerHTML = `
-            <div class="flex-grow min-w-0">
-                <p class="font-semibold text-lg truncate" title="${cliente.nombre}">${cliente.nombreEmpresa || cliente.nombre}</p>
-                ${nombreContactoHtml}
-                <p class="text-sm text-gray-600 mt-1">${cliente.email || 'Sin correo'} | ${telefonos}</p>
-                ${cliente.nit ? `<p class="text-sm text-gray-500">NIT: ${cliente.nit}</p>` : ''}
-                <div class="mt-2 pt-2 border-t border-gray-100 text-sm">
-                    <p><span class="font-semibold">Última Compra:</span> ${cliente.ultimaCompra}</p>
-                    <p><span class="font-semibold">Total Comprado:</span> ${formatCurrency(cliente.totalComprado)}</p>
+            <div class="flex items-center gap-4 flex-grow min-w-0">
+                <div class="premium-avatar premium-avatar-blue flex-shrink-0">${nameInitial}</div>
+                <div class="flex-grow min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <p class="font-bold text-lg text-slate-900 truncate" title="${cliente.nombre}">${cliente.nombreEmpresa || cliente.nombre}</p>
+                        ${cliente.nit ? `<span class="bg-blue-50 text-blue-700 text-xs font-semibold px-2 py-0.5 rounded border border-blue-100">NIT: ${cliente.nit}</span>` : ''}
+                    </div>
+                    ${nombreContactoHtml}
+                    <p class="text-xs text-slate-500 mt-1">${cliente.email || 'Sin correo'} &bull; ${telefonos}</p>
                 </div>
             </div>
-            <div class="flex-shrink-0 w-full sm:w-auto">
-                 ${editButton}
+            
+            <div class="flex flex-col gap-2 flex-shrink-0 w-full sm:w-56 mt-2 sm:mt-0">
+                <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-100 text-xs text-slate-600 space-y-1">
+                    <p><span class="font-bold text-slate-700">Última Compra:</span> ${cliente.ultimaCompra}</p>
+                    <p><span class="font-bold text-slate-700">Total Comprado:</span> <span class="font-bold text-blue-600">${formatCurrency(cliente.totalComprado)}</span></p>
+                </div>
+                ${editButton}
             </div>
         `;
         clientesListEl.appendChild(clienteDiv);
@@ -173,13 +180,13 @@ export function renderClientes() {
 
     // 5. Dibujar Controles de Paginación
     const paginationEl = document.createElement('div');
-    paginationEl.className = 'flex justify-between items-center mt-4 pt-4 border-t border-gray-200';
+    paginationEl.className = 'premium-pagination-container flex justify-between items-center mt-6';
     paginationEl.innerHTML = `
-        <span class="text-sm text-gray-600">Mostrando ${startIndex + 1} - ${Math.min(endIndex, totalItems)} de ${totalItems}</span>
+        <span class="text-xs font-medium text-slate-500">Mostrando ${startIndex + 1} - ${Math.min(endIndex, totalItems)} de ${totalItems} clientes</span>
         <div class="flex gap-2">
-            <button id="prev-page-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPage === 1 ? 'disabled' : ''}>Anterior</button>
-            <span class="px-3 py-1 font-semibold text-gray-700">Pág ${currentPage} de ${totalPages}</span>
-            <button id="next-page-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente</button>
+            <button id="prev-page-btn" class="premium-pagination-btn" ${currentPage === 1 ? 'disabled' : ''}>&larr; Anterior</button>
+            <span class="px-3 py-1 text-xs font-bold text-slate-700 flex items-center bg-slate-50 border rounded-full">Pág ${currentPage} de ${totalPages}</span>
+            <button id="next-page-btn" class="premium-pagination-btn" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente &rarr;</button>
         </div>
     `;
     clientesListEl.appendChild(paginationEl);
@@ -276,6 +283,9 @@ export function showEditClientModal(cliente) {
 
 // --- CONFIGURACIÓN DE EVENTOS Y DEBOUNCE ---
 export function setupClientesEvents() {
+    if (window.__setupClientesEventsInit) return;
+    window.__setupClientesEventsInit = true;
+
     const searchInput = document.getElementById('search-clientes');
     let debounceTimer;
 
@@ -335,6 +345,7 @@ export function setupClientesEvents() {
                 if(window.Swal) Swal.fire('¡Cliente Registrado!', 'El nuevo cliente ha sido guardado con éxito.', 'success');
                 else showTemporaryMessage('Cliente registrado', 'success');
                 e.target.reset();
+                document.getElementById('cliente-form-container')?.classList.remove('show-modal');
             } catch (error) {
                 console.error("Error al registrar cliente:", error);
                 if(window.Swal) Swal.fire('Error', 'Hubo un problema al registrar el cliente.', 'error');

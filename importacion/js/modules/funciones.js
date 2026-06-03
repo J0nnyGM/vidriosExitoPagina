@@ -1,7 +1,6 @@
 // js/modules/funciones.js
 
-import { functions, db } from '../firebase-config.js';
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
+import { functions, db, httpsCallable } from '../firebase-config.js';
 import { doc, getDoc, updateDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { showModalMessage, hideModal, showTemporaryMessage, currentUser } from '../app.js';
 
@@ -10,6 +9,9 @@ import { showModalMessage, hideModal, showTemporaryMessage, currentUser } from '
 let userExportPermissionCache = null;
 
 export function setupFuncionesEvents() {
+    if (window.__setupFuncionesEventsInit) return;
+    window.__setupFuncionesEventsInit = true;
+
     const exportGastosBtn = document.getElementById('btn-func-export-gastos');
     const exportPagosBtn = document.getElementById('btn-func-export-pagos');
 

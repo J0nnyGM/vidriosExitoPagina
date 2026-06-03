@@ -1,9 +1,8 @@
 // js/modules/facturacion.js
 
-import { db, storage, functions } from '../firebase-config.js'; 
+import { db, storage, functions, httpsCallable } from '../firebase-config.js'; 
 import { doc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
-import { ref, uploadBytes } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js"; 
+import { ref, uploadBytes } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js"; 
 import { allRemisiones, allClientes, currentUserData, showModalMessage, hideModal, showTemporaryMessage } from '../app.js';
 import { formatCurrency } from '../utils.js';
 import { showRetentionModal } from './remisiones.js'; 
@@ -70,7 +69,7 @@ export function renderFacturacion() {
     } else {
         paginatedPendientes.forEach(remision => {
             const el = document.createElement('div');
-            el.className = 'bg-white border border-gray-200 p-4 sm:p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow flex flex-col lg:flex-row justify-between gap-4';
+            el.className = 'premium-card premium-card-blue p-5 flex flex-col lg:flex-row justify-between gap-4 bg-white shadow-sm hover:shadow-md transition';
             
             const clienteDeRemision = allClientes.find(c => c.id === remision.idCliente);
             let botonRUT = '';
@@ -87,24 +86,24 @@ export function renderFacturacion() {
                         }
                     } catch (e) {}
                     if (rutPath) {
-                        botonRUT = `<button data-file-path="${rutPath}" data-file-title="RUT de ${clienteDeRemision.nombre}" class="w-full sm:w-auto bg-purple-50 text-purple-700 border border-purple-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-purple-100 transition">RUT</button>`;
+                        botonRUT = `<button data-file-path="${rutPath}" data-file-title="RUT de ${clienteDeRemision.nombre}" class="w-full bg-purple-50 text-purple-700 border border-purple-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-100 transition flex items-center justify-center gap-1">📄 RUT</button>`;
                     }
                 }
                 infoClienteExtra = `<p class="text-sm text-gray-500 mt-1">${clienteDeRemision.nit ? `NIT: <span class="font-medium">${clienteDeRemision.nit}</span>` : ''}${clienteDeRemision.nit && clienteDeRemision.email ? ' <span class="mx-1">&bull;</span> ' : ''}${clienteDeRemision.email ? `<span class="truncate block sm:inline">${clienteDeRemision.email}</span>` : ''}</p>`;
             }
 
             const remisionPdfButton = remision.pdfPath 
-                ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="w-full sm:w-auto bg-gray-100 text-gray-700 border border-gray-300 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200 transition">Remisión PDF</button>` 
-                : `<button class="w-full sm:w-auto bg-gray-100 text-gray-400 border border-gray-200 px-4 py-2 rounded-lg text-sm font-bold cursor-not-allowed">Generando PDF...</button>`;
+                ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="w-full bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-200 transition flex items-center justify-center gap-1">📋 Remisión PDF</button>` 
+                : `<button class="w-full bg-slate-100 text-slate-400 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold cursor-not-allowed flex items-center justify-center gap-1">⏱️ Generando...</button>`;
             
             let btnRetencion = '';
             if (!remision.retention || !remision.retention.amount) {
-                btnRetencion = `<button data-remision-json='${JSON.stringify(remision)}' class="retention-btn w-full sm:w-auto bg-amber-50 text-amber-700 border border-amber-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-100 transition">Aplicar Retención</button>`;
+                btnRetencion = `<button data-remision-json='${JSON.stringify(remision)}' class="retention-btn w-full bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-amber-100 transition flex items-center justify-center gap-1">💰 Retención</button>`;
             }
 
             let btnRevertir = '';
             if (isAdmin) {
-                btnRevertir = `<button data-remision-id="${remision.id}" class="no-facturar-btn w-full sm:w-auto bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-100 transition">Anular (Quitar IVA)</button>`;
+                btnRevertir = `<button data-remision-id="${remision.id}" class="no-facturar-btn w-full bg-red-50 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-100 transition flex items-center justify-center gap-1">🚫 Quitar IVA</button>`;
             }
 
             el.innerHTML = `
@@ -120,28 +119,26 @@ export function renderFacturacion() {
                         <span class="text-sm text-gray-700">Total a Facturar: <span class="font-extrabold text-blue-700 ml-1">${formatCurrency(remision.valorTotal)}</span></span>
                     </div>
                 </div>
-                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto mt-4 lg:mt-0 lg:ml-4 border-t lg:border-t-0 pt-4 lg:pt-0 border-gray-100">
-                    <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                <div class="facturacion-btn-container mt-4 lg:mt-0 lg:ml-4 border-t lg:border-t-0 pt-4 lg:pt-0 border-gray-100">
+                    <div class="facturacion-secondary-row">
                         ${botonRUT}
                         ${remisionPdfButton}
-                    </div>
-                    <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                         ${btnRetencion}
-                        ${btnRevertir} 
-                        <button data-remision-id="${remision.id}" class="facturar-btn w-full sm:w-auto bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-sm transition">Facturar</button>
+                        ${btnRevertir}
                     </div>
+                    <button data-remision-id="${remision.id}" class="facturar-btn facturacion-main-btn bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm transition flex items-center justify-center gap-1">🧾 Facturar</button>
                 </div>`;
             pendientesListEl.appendChild(el);
         });
 
         const pagPendEl = document.createElement('div');
-        pagPendEl.className = 'flex flex-col sm:flex-row justify-between items-center mt-6 pt-4 border-t border-gray-200 gap-4';
+        pagPendEl.className = 'premium-pagination-container flex justify-between items-center mt-6';
         pagPendEl.innerHTML = `
-            <span class="text-sm text-gray-500 font-medium">Mostrando ${startPend + 1} - ${Math.min(startPend + itemsPerPage, totalPendientes)} de ${totalPendientes} pendientes</span>
-            <div class="flex items-center gap-2 bg-white rounded-lg border border-gray-200 p-1 shadow-sm">
-                <button id="prev-pend-btn" class="px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition" ${currentPagePendientes === 1 ? 'disabled' : ''}>Anterior</button>
-                <span class="px-4 py-1.5 text-sm font-bold text-gray-900 border-l border-r border-gray-200 bg-gray-50">${currentPagePendientes} / ${totalPagesPendientes}</span>
-                <button id="next-pend-btn" class="px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition" ${currentPagePendientes === totalPagesPendientes ? 'disabled' : ''}>Siguiente</button>
+            <span class="text-xs font-medium text-slate-500">Mostrando ${startPend + 1} - ${Math.min(startPend + itemsPerPage, totalPendientes)} de ${totalPendientes} pendientes</span>
+            <div class="flex gap-2">
+                <button id="prev-pend-btn" class="premium-pagination-btn" ${currentPagePendientes === 1 ? 'disabled' : ''}>&larr; Anterior</button>
+                <span class="px-3 py-1 text-xs font-bold text-slate-700 flex items-center bg-slate-50 border rounded-full">Pág ${currentPagePendientes} de ${totalPagesPendientes}</span>
+                <button id="next-pend-btn" class="premium-pagination-btn" ${currentPagePendientes === totalPagesPendientes ? 'disabled' : ''}>Siguiente &rarr;</button>
             </div>
         `;
         pendientesListEl.appendChild(pagPendEl);
@@ -169,7 +166,7 @@ export function renderFacturacion() {
     } else {
         paginatedRealizadas.forEach(remision => {
             const el = document.createElement('div');
-            el.className = 'bg-white border border-gray-200 p-4 sm:p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow flex flex-col lg:flex-row justify-between gap-4';
+            el.className = 'premium-card premium-card-teal p-5 flex flex-col lg:flex-row justify-between gap-4 bg-white shadow-sm hover:shadow-md transition';
             
             const clienteDeRemision = allClientes.find(c => c.id === remision.idCliente);
             let infoClienteExtra = '';
@@ -178,16 +175,16 @@ export function renderFacturacion() {
             }
 
             const remisionPdfButton = remision.pdfPath 
-                ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="w-full sm:w-auto bg-gray-100 text-gray-700 border border-gray-300 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200 transition">Remisión PDF</button>` 
+                ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="w-full bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-200 transition flex items-center justify-center gap-1">📋 Remisión PDF</button>` 
                 : '';
             
             let facturaButtons = remision.facturaPdfPath
-                ? `<button data-file-path="${remision.facturaPdfPath}" data-file-title="Factura N° ${remision.numeroFactura || remision.numeroRemision}" class="w-full sm:w-auto bg-teal-50 text-teal-700 border border-teal-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-teal-100 transition">Ver Factura PDF</button>`
-                : `<button data-remision-id="${remision.id}" class="facturar-btn w-full sm:w-auto bg-orange-50 text-orange-600 border border-orange-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-orange-100 transition">Adjuntar PDF Faltante</button>`;
+                ? `<button data-file-path="${remision.facturaPdfPath}" data-file-title="Factura N° ${remision.numeroFactura || remision.numeroRemision}" class="w-full bg-teal-50 text-teal-700 border border-teal-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-teal-100 transition flex items-center justify-center gap-1">👁️ Ver Factura</button>`
+                : `<button data-remision-id="${remision.id}" class="facturar-btn w-full bg-orange-50 text-orange-600 border border-orange-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-orange-100 transition flex items-center justify-center gap-1">📎 Adjuntar PDF</button>`;
 
             let btnRetencion = '';
             if (!remision.retention || !remision.retention.amount) {
-                 btnRetencion = `<button data-remision-json='${JSON.stringify(remision)}' class="retention-btn w-full sm:w-auto bg-amber-50 text-amber-700 border border-amber-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-100 transition">Retenciones</button>`;
+                 btnRetencion = `<button data-remision-json='${JSON.stringify(remision)}' class="retention-btn w-full bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-amber-100 transition flex items-center justify-center gap-1">💰 Retenciones</button>`;
             }
 
             el.innerHTML = `
@@ -204,12 +201,12 @@ export function renderFacturacion() {
                         <span class="text-sm text-gray-700">Total: <span class="font-extrabold text-teal-700 ml-1">${formatCurrency(remision.valorTotal)}</span></span>
                     </div>
                 </div>
-                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto mt-4 lg:mt-0 lg:ml-4 border-t lg:border-t-0 pt-4 lg:pt-0 border-gray-100">
-                    <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                <div class="facturacion-btn-container mt-4 lg:mt-0 lg:ml-4 border-t lg:border-t-0 pt-4 lg:pt-0 border-gray-100">
+                    <div class="facturacion-secondary-row">
                         ${btnRetencion}
                         ${remisionPdfButton}
                     </div>
-                    <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    <div class="facturacion-main-btn">
                         ${facturaButtons}
                     </div>
                 </div>`;
@@ -217,13 +214,13 @@ export function renderFacturacion() {
         });
 
         const pagRealEl = document.createElement('div');
-        pagRealEl.className = 'flex flex-col sm:flex-row justify-between items-center mt-6 pt-4 border-t border-gray-200 gap-4';
+        pagRealEl.className = 'premium-pagination-container flex justify-between items-center mt-6';
         pagRealEl.innerHTML = `
-            <span class="text-sm text-gray-500 font-medium">Mostrando ${startReal + 1} - ${Math.min(startReal + itemsPerPage, totalRealizadas)} de ${totalRealizadas} facturadas</span>
-            <div class="flex items-center gap-2 bg-white rounded-lg border border-gray-200 p-1 shadow-sm">
-                <button id="prev-real-btn" class="px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition" ${currentPageRealizadas === 1 ? 'disabled' : ''}>Anterior</button>
-                <span class="px-4 py-1.5 text-sm font-bold text-gray-900 border-l border-r border-gray-200 bg-gray-50">${currentPageRealizadas} / ${totalPagesRealizadas}</span>
-                <button id="next-real-btn" class="px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md disabled:opacity-30 disabled:hover:bg-transparent transition" ${currentPageRealizadas === totalPagesRealizadas ? 'disabled' : ''}>Siguiente</button>
+            <span class="text-xs font-medium text-slate-500">Mostrando ${startReal + 1} - ${Math.min(startReal + itemsPerPage, totalRealizadas)} de ${totalRealizadas} facturadas</span>
+            <div class="flex gap-2">
+                <button id="prev-real-btn" class="premium-pagination-btn" ${currentPageRealizadas === 1 ? 'disabled' : ''}>&larr; Anterior</button>
+                <span class="px-3 py-1 text-xs font-bold text-slate-700 flex items-center bg-slate-50 border rounded-full">Pág ${currentPageRealizadas} de ${totalPagesRealizadas}</span>
+                <button id="next-real-btn" class="premium-pagination-btn" ${currentPageRealizadas === totalPagesRealizadas ? 'disabled' : ''}>Siguiente &rarr;</button>
             </div>
         `;
         realizadasListEl.appendChild(pagRealEl);
@@ -246,6 +243,11 @@ export function renderFacturacion() {
     document.querySelectorAll('.no-facturar-btn').forEach(btn => {
         btn.addEventListener('click', (e) => handleNoFacturar(e.currentTarget.dataset.remisionId));
     });
+
+    // Precargar los enlaces de PDFs de manera inteligente y secuencial
+    if (typeof window.scanAndPrefetchSecureFiles === 'function') {
+        window.scanAndPrefetchSecureFiles();
+    }
 }
 
 export function showFacturaModal(remisionId) {
@@ -336,6 +338,9 @@ async function handleNoFacturar(remisionId) {
 }
 
 export function setupFacturacionEvents() {
+    if (window.__setupFacturacionEventsInit) return;
+    window.__setupFacturacionEventsInit = true;
+
     const facturacionPendientesTab = document.getElementById('tab-pendientes');
     const facturacionRealizadasTab = document.getElementById('tab-realizadas');
     const facturacionPendientesView = document.getElementById('view-pendientes');

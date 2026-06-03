@@ -1,9 +1,8 @@
 // js/modules/remisiones.js
 
-import { db, storage, functions } from '../firebase-config.js';
+import { db, storage, functions, httpsCallable } from '../firebase-config.js';
 import { collection, doc, updateDoc, addDoc, query, getDocs, where, writeBatch, runTransaction, arrayUnion, serverTimestamp, onSnapshot  } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { ref, uploadBytes } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { 
     allRemisiones, setAllRemisiones, allClientes, allItems, allUsers,
     currentUser, currentUserData, 
@@ -182,8 +181,10 @@ export function renderRemisiones() {
         const el = document.createElement('div');
         const esAnulada = remision.estado === 'Anulada';
         const esEntregada = remision.estado === 'Entregado';
-        el.className = `border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${esAnulada ? 'remision-anulada' : ''}`;
+        const remColorClass = esAnulada ? 'premium-card-red' : 'premium-card-indigo';
+        el.className = `premium-card ${remColorClass} p-5 flex flex-col lg:flex-row justify-between lg:items-center gap-4 bg-white shadow-sm hover:shadow-md transition`;
 
+        const nameInitial = (remision.clienteNombre || 'C').charAt(0).toUpperCase();
         const paymentsArray = Array.isArray(remision.payments) ? remision.payments : [];
         const totalPagadoConfirmado = paymentsArray.filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
         const saldoPendiente = remision.valorTotal - totalPagadoConfirmado;
@@ -197,20 +198,20 @@ export function renderRemisiones() {
 
         const pdfPath = isPlanta ? remision.pdfPlantaPath : remision.pdfPath;
         const pdfButton = pdfPath
-            ? `<button data-file-path="${pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="w-full bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition text-center">Ver Remisión</button>`
-            : `<button class="w-full bg-gray-400 text-white px-4 py-2 rounded-lg text-sm font-semibold btn-disabled" title="El PDF aún no está disponible.">Generando PDF...</button>`;
+            ? `<button data-file-path="${pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="w-full bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-green-700 transition text-center shadow-sm">Ver PDF</button>`
+            : `<button class="w-full bg-slate-300 text-slate-500 border border-slate-200 px-4 py-2.5 rounded-lg text-sm font-semibold cursor-not-allowed" disabled>Generando PDF...</button>`;
 
-        const anularButton = (esAnulada || esEntregada || isPlanta || paymentsArray.length > 0) ? '' : `<button data-remision-id="${remision.id}" class="anular-btn w-full bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-600 transition">Anular</button>`;
-        const pagosButton = esAnulada || isPlanta ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="payment-btn w-full bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 transition">Pagos (${formatCurrency(saldoPendiente)})</button>`;
-        const descuentoButton = (esAnulada || esEntregada || isPlanta || remision.discount) ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="discount-btn w-full bg-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-cyan-600 transition">Descuento</button>`;
+        const anularButton = (esAnulada || esEntregada || isPlanta || paymentsArray.length > 0) ? '' : `<button data-remision-id="${remision.id}" class="anular-btn w-full bg-red-50 text-red-650 border border-red-200 px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-red-100 hover:text-red-700 transition shadow-sm">Anular</button>`;
+        const pagosButton = esAnulada || isPlanta ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="payment-btn w-full bg-purple-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-purple-700 transition shadow-sm">Abonar (${formatCurrency(saldoPendiente)})</button>`;
+        const descuentoButton = (esAnulada || esEntregada || isPlanta || remision.discount) ? '' : `<button data-remision-json='${JSON.stringify(remision)}' class="discount-btn w-full bg-cyan-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-cyan-700 transition shadow-sm">Descuento</button>`;
         
         const enviarFacturarBtn = (!remision.incluyeIVA && !esAnulada && !isPlanta) 
-            ? `<button data-remision-id="${remision.id}" class="enviar-facturar-btn w-full bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition shadow">Enviar a Facturar</button>` 
+            ? `<button data-remision-id="${remision.id}" class="enviar-facturar-btn w-full bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition shadow-sm">Enviar a Facturar</button>` 
             : '';
 
         let discountInfo = '';
         if (remision.discount && remision.discount.percentage > 0) {
-            discountInfo = `<span class="text-xs font-semibold bg-cyan-100 text-cyan-800 px-2 py-1 rounded-full">DTO ${remision.discount.percentage.toFixed(2)}%</span>`;
+            discountInfo = `<span class="bg-cyan-50 text-cyan-700 text-xs font-semibold px-2 py-0.5 rounded border border-cyan-150">DTO ${remision.discount.percentage.toFixed(2)}%</span>`;
         }
         
         const statusClasses = { 'Recibido': 'status-recibido', 'En Proceso': 'status-en-proceso', 'Procesado': 'status-procesado', 'Entregado': 'status-entregado' };
@@ -220,34 +221,34 @@ export function renderRemisiones() {
         const currentIndex = ESTADOS_REMISION.indexOf(remision.estado);
         if (!esAnulada && currentIndex < ESTADOS_REMISION.length - 1) {
             const nextStatus = ESTADOS_REMISION[currentIndex + 1];
-            statusButton = `<button data-remision-id="${remision.id}" data-current-status="${remision.estado}" class="status-update-btn w-full bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-600 transition">Mover a ${nextStatus}</button>`;
+            statusButton = `<button data-remision-id="${remision.id}" data-current-status="${remision.estado}" class="status-update-btn w-full bg-indigo-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition shadow-sm">Listo: ${nextStatus}</button>`;
         }
 
         el.innerHTML = `
-            <div class="flex-grow">
+            <div class="flex-grow min-w-0 text-left">
                 <div class="flex items-center gap-3 flex-wrap">
-                    <span class="remision-id">N° ${remision.numeroRemision}</span>
-                    <p class="font-semibold text-lg">${remision.clienteNombre}</p>
+                    <span class="remision-id font-bold text-slate-800">N° ${remision.numeroRemision}</span>
+                    <p class="font-bold text-lg text-slate-900 truncate" title="${remision.clienteNombre}">${remision.clienteNombre}</p>
                     ${statusBadge} ${paymentStatusBadge} ${discountInfo}
-                    ${esAnulada ? '<span class="px-2 py-1 bg-red-200 text-red-800 text-xs font-bold rounded-full">ANULADA</span>' : ''}
+                    ${esAnulada ? '<span class="px-2.5 py-0.5 bg-red-100 text-red-800 text-[10px] font-extrabold border border-red-200 rounded-full">ANULADA</span>' : ''}
                 </div>
-                <p class="text-sm text-gray-600 mt-1">Recibido: ${remision.fechaRecibido} &bull; ${remision.fechaEntrega ? `Entregado: ${remision.fechaEntrega}` : 'Entrega: Pendiente'}</p>
-                ${!isPlanta ? `<p class="text-sm text-gray-600 mt-1">Total: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>` : ''}
+                <p class="text-xs text-slate-500 mt-2 font-medium">Recibido: ${remision.fechaRecibido} &bull; ${remision.fechaEntrega ? `Entregado: ${remision.fechaEntrega}` : 'Entrega: Pendiente'}</p>
+                ${!isPlanta ? `<p class="text-xs text-slate-600 mt-1 font-semibold">Monto Total: <span class="text-sm font-extrabold text-indigo-650">${formatCurrency(remision.valorTotal)}</span></p>` : ''}
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-shrink-0 w-full sm:max-w-xs">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-shrink-0 w-full sm:max-w-xs mt-2 lg:mt-0">
                 ${statusButton} ${pdfButton} ${pagosButton} ${descuentoButton} ${enviarFacturarBtn} ${anularButton}
             </div>`;
         remisionesListEl.appendChild(el);
     });
 
     const paginationEl = document.createElement('div');
-    paginationEl.className = 'flex justify-between items-center mt-4 pt-4 border-t border-gray-200';
+    paginationEl.className = 'premium-pagination-container flex justify-between items-center mt-6';
     paginationEl.innerHTML = `
-        <span class="text-sm text-gray-600">Mostrando ${startIndex + 1} - ${Math.min(endIndex, totalItems)} de ${totalItems}</span>
+        <span class="text-xs font-medium text-slate-500">Mostrando ${startIndex + 1} - ${Math.min(endIndex, totalItems)} de ${totalItems} remisiones</span>
         <div class="flex gap-2">
-            <button id="prev-page-rem-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPage === 1 ? 'disabled' : ''}>Anterior</button>
-            <span class="px-3 py-1 font-semibold text-gray-700">Pág ${currentPage} de ${totalPages}</span>
-            <button id="next-page-rem-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente</button>
+            <button id="prev-page-rem-btn" class="premium-pagination-btn" ${currentPage === 1 ? 'disabled' : ''}>&larr; Anterior</button>
+            <span class="px-3 py-1 text-xs font-bold text-slate-700 flex items-center bg-slate-50 border rounded-full">Pág ${currentPage} de ${totalPages}</span>
+            <button id="next-page-rem-btn" class="premium-pagination-btn" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente &rarr;</button>
         </div>
     `;
     remisionesListEl.appendChild(paginationEl);
@@ -279,6 +280,11 @@ export function renderRemisiones() {
     });
 
     updatePendingPaymentsBadge();
+    
+    // Precargar los enlaces de PDFs de manera inteligente y secuencial
+    if (typeof window.scanAndPrefetchSecureFiles === 'function') {
+        window.scanAndPrefetchSecureFiles();
+    }
 }
 
 // --- LÓGICA DE ALGORITMO Y CÁLCULOS ---
@@ -343,7 +349,7 @@ function calcularTotales() {
     return { subtotalGeneral, valorIVA, total };
 }
 
-function optimizarCortes(sheetW, sheetH, cortes, opts = {}) {
+export function optimizarCortes(sheetW, sheetH, cortes, opts = {}) {
     const KERF = Math.max(0, opts.kerf ?? 0);
     const MARGIN = Math.max(0, opts.margin ?? 0);
     const ALLOW_SHEET_ROTATION = opts.allowSheetRotation ?? false;
@@ -715,17 +721,21 @@ function optimizarCortes(sheetW, sheetH, cortes, opts = {}) {
     candidates.sort((a, b) => (a.count - b.count) || (a.waste - b.waste));
 
     let chosen = null;
-    const equalOrBetter = candidates.filter(c => c.tag !== 'base' && c.count <= baseSheets);
-
-    if (equalOrBetter.length > 0) {
-        if (PREFERENCE === 'prefer-vertical') {
-            const prefer = equalOrBetter.find(c => c.tag === 'gV' && c.count === equalOrBetter[0].count);
-            chosen = prefer ?? equalOrBetter[0];
-        } else {
-            chosen = equalOrBetter[0];
-        }
+    if (opts.strategy && candidates.some(c => c.tag === opts.strategy)) {
+        chosen = candidates.find(c => c.tag === opts.strategy);
     } else {
-        chosen = candidates.find(c => c.tag === 'base');
+        const equalOrBetter = candidates.filter(c => c.tag !== 'base' && c.count <= baseSheets);
+
+        if (equalOrBetter.length > 0) {
+            if (PREFERENCE === 'prefer-vertical') {
+                const prefer = equalOrBetter.find(c => c.tag === 'gV' && c.count === equalOrBetter[0].count);
+                chosen = prefer ?? equalOrBetter[0];
+            } else {
+                chosen = equalOrBetter[0];
+            }
+        } else {
+            chosen = candidates.find(c => c.tag === 'base');
+        }
     }
 
     if (!chosen) {
@@ -1058,6 +1068,7 @@ async function handleRemisionSubmit(e) {
         calcularTotales();
         hideModal();
         showTemporaryMessage("¡Remisión guardada con éxito!", "success");
+        document.getElementById('remision-form-container')?.classList.remove('show-modal');
 
     } catch (error) {
         console.error("Error al procesar la remisión:", error);
@@ -1554,6 +1565,8 @@ async function handleEnviarAFacturar(remisionId) {
 }
 
 export function setupRemisionesEvents() {
+    if (window.__setupRemisionesEventsInit) return;
+    window.__setupRemisionesEventsInit = true;
 
     populateDateFilters('filter-remisiones');
     

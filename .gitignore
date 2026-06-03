@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+importacion/css/output.css
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

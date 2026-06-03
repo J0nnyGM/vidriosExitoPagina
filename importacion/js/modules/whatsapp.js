@@ -1,9 +1,8 @@
 // js/modules/whatsapp.js
 
-import { db, storage, functions } from '../firebase-config.js';
+import { db, storage, functions, httpsCallable } from '../firebase-config.js';
 import { collection, query, onSnapshot, orderBy, doc, updateDoc, serverTimestamp, limit, getDocs, where } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { currentUserData, showModalMessage, showTemporaryMessage, allClientes, allRemisiones, hideModal } from '../app.js';
 import { formatCurrency } from '../utils.js';
 
@@ -13,6 +12,20 @@ let currentChatPhone = null;
 let allChats = [];
 let tempSendingMessage = null; 
 let currentChatMessagesMap = new Map();
+// --- QUICK REPLIES ---
+const QUICK_REPLIES = [
+    { title: "saludo", text: "¡Hola! Gracias por escribir a Vidrio Express. ¿En qué podemos ayudarte hoy?" },
+    { title: "horarios", text: "Nuestros horarios de atención son:\n\n📅 Lunes a Viernes: 8:00 AM - 5:30 PM\n📅 Sábados: 8:00 AM - 12:15 PM" }
+];
+
+function formatWhatsAppText(text) {
+    if (!text) return "";
+    let safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return safeText
+        .replace(/\*(.*?)\*/g, '<strong class="font-black">$1</strong>')
+        .replace(/_(.*?)_/g, '<em class="italic">$1</em>')             
+        .replace(/~(.*?)~/g, '<del class="line-through">$1</del>');    
+}
 
 // --- NUEVO: Variable para controlar el reloj en vivo ---
 let chatTimerInterval = null;
@@ -229,7 +242,26 @@ function renderChatList(searchTerm = '') {
 
     listContainer.innerHTML = filteredChats.map(chat => {
         const dateObj = chat.ultimaFecha?.toDate ? chat.ultimaFecha.toDate() : new Date();
-        const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const now = new Date();
+        let timeStr = "";
+        if (dateObj.toDateString() === now.toDateString()) {
+            timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        } else {
+            const yesterday = new Date();
+            yesterday.setDate(now.getDate() - 1);
+            if (dateObj.toDateString() === yesterday.toDateString()) {
+                timeStr = "Ayer";
+            } else {
+                const diffTime = Math.abs(now - dateObj);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                if (diffDays < 7) {
+                    const daysOfWeek = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+                    timeStr = daysOfWeek[dateObj.getDay()];
+                } else {
+                    timeStr = dateObj.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+                }
+            }
+        }
         const unreadBadge = chat.mensajesNoLeidos > 0 ? `<div class="bg-green-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full">${chat.mensajesNoLeidos}</div>` : '';
         const isSelected = currentChatPhone === chat.id ? 'bg-gray-200' : 'hover:bg-gray-100';
         
@@ -361,6 +393,8 @@ function openChat(phone, name) {
     })();
     bannerContainer.innerHTML = generarBannerCRM(phone);
 
+
+
     const msgContainer = document.getElementById('wa-messages-container');
     msgContainer.innerHTML = '<div class="text-center p-4 text-sm text-gray-500">Cargando mensajes...</div>';
 
@@ -374,6 +408,7 @@ function openChat(phone, name) {
     if (cachedMsgs) {
         try {
             JSON.parse(cachedMsgs).forEach(m => currentChatMessagesMap.set(m.id, m));
+            renderMessagesFromMap(phone, msgContainer, true); // Renderizar cache instantáneamente y forzar scroll
         } catch(e) { localStorage.removeItem(CACHE_KEY_MSG); }
     }
 
@@ -382,6 +417,7 @@ function openChat(phone, name) {
 
     const q = query(collection(db, `chats/${phone}/mensajes`), orderBy("fecha", "desc"), limit(20));
     
+    let isFirstLoadOfChat = true;
     unsubscribeMessages = onSnapshot(q, (snapshot) => {
         snapshot.docChanges().forEach(change => {
             const data = change.doc.data();
@@ -394,13 +430,14 @@ function openChat(phone, name) {
             }
         });
 
-        renderMessagesFromMap(phone, msgContainer);
+        renderMessagesFromMap(phone, msgContainer, isFirstLoadOfChat);
+        isFirstLoadOfChat = false;
     });
 
     renderChatList(); 
 }
 
-function renderMessagesFromMap(phone, msgContainer) {
+function renderMessagesFromMap(phone, msgContainer, forceScroll = false) {
     const messagesArray = Array.from(currentChatMessagesMap.values());
     messagesArray.sort((a, b) => (a.fecha || 0) - (b.fecha || 0));
     localStorage.setItem(`wa_msgs_${phone}`, JSON.stringify(messagesArray));
@@ -419,11 +456,46 @@ function renderMessagesFromMap(phone, msgContainer) {
         return;
     }
 
+    let lastDateStr = null;
+
     messagesArray.forEach(msg => {
         const isSaliente = msg.direccion === 'saliente';
         const dateObj = new Date(msg.fecha || Date.now());
         const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
+        // Separador de fecha dinámico
+        const dateStr = dateObj.toDateString();
+        if (dateStr !== lastDateStr) {
+            lastDateStr = dateStr;
+            const now = new Date();
+            let label = "";
+            if (dateStr === now.toDateString()) {
+                label = "Hoy";
+            } else {
+                const yesterday = new Date();
+                yesterday.setDate(now.getDate() - 1);
+                if (dateStr === yesterday.toDateString()) {
+                    label = "Ayer";
+                } else {
+                    const diffTime = Math.abs(now - dateObj);
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    if (diffDays < 7) {
+                        const daysOfWeek = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+                        label = daysOfWeek[dateObj.getDay()];
+                    } else {
+                        label = dateObj.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' });
+                    }
+                }
+            }
+            html += `
+                <div class="flex items-center justify-center my-4 w-full">
+                    <span class="bg-indigo-50 border border-indigo-150 text-indigo-700 text-xs font-bold px-3 py-1 rounded-full shadow-sm">
+                        ${label}
+                    </span>
+                </div>
+            `;
+        }
+
         // Guardar el más reciente que NO sea nuestro
         if (!isSaliente) ultimoMsgDelCliente = dateObj;
 
@@ -448,7 +520,7 @@ function renderMessagesFromMap(phone, msgContainer) {
             mediaHTML = `<img src="${msg.mediaUrl}" class="w-32 h-32 object-contain drop-shadow-md">`;
         } else if (msg.tipo === 'video') {
             mediaHTML = `<video controls src="${msg.mediaUrl}" class="rounded-lg mb-1 max-w-[220px] sm:max-w-[280px] bg-black"></video>`;
-        } else if (msg.tipo === 'audio') {
+        } else if (msg.tipo === 'audio' || msg.tipo === 'voice') {
             mediaHTML = `<audio controls src="${msg.mediaUrl}" class="w-56 sm:w-64 mb-1 h-10"></audio>`;
         } else if (msg.tipo === 'document') {
             mediaHTML = `
@@ -458,30 +530,56 @@ function renderMessagesFromMap(phone, msgContainer) {
                     </div>
                     <span class="text-sm font-semibold truncate max-w-[150px] text-gray-800">${msg.fileName || 'Ver Documento'}</span>
                 </a>`;
-        } else if (msg.tipo === 'location' && msg.location) {
+        } else if (msg.tipo === 'location') {
+            const loc = msg.location || {};
+            let lat = loc.lat;
+            let lng = loc.lng;
+            if (!lat && msg.mediaUrl) {
+                const match = msg.mediaUrl.match(/query=([-\d.]+),([-\d.]+)/);
+                if (match) {
+                    lat = match[1];
+                    lng = match[2];
+                }
+            }
+            const mapUrl = msg.mediaUrl || `http://googleusercontent.com/maps.google.com/maps?q=${lat || ''},${lng || ''}`;
+            const address = loc.address || msg.texto?.replace('📍 Ubicación: ', '') || 'Ver en Google Maps';
+            const name = loc.name || 'Ubicación Compartida';
+            
             mediaHTML = `
-                <a href="http://googleusercontent.com/maps.google.com/maps?q=${msg.location.lat},${msg.location.lng}" target="_blank" class="block w-48 sm:w-56 rounded-lg overflow-hidden border border-gray-200 shadow-sm hover:shadow-md transition mb-1 bg-[#e5e3df]">
+                <a href="${mapUrl}" target="_blank" class="block w-48 sm:w-56 rounded-lg overflow-hidden border border-gray-200 shadow-sm hover:shadow-md transition mb-1 bg-[#e5e3df]">
                     <div class="h-24 flex items-center justify-center text-4xl relative">
                         <div class="absolute inset-0 opacity-40" style="background-image: linear-gradient(#d1cec7 2px, transparent 2px), linear-gradient(90deg, #d1cec7 2px, transparent 2px); background-size: 20px 20px;"></div>
                         <div class="z-10 drop-shadow-md pb-4 text-red-500 animate-bounce">📍</div>
                     </div>
                     <div class="p-3 bg-white flex flex-col">
-                        <span class="text-sm font-bold text-gray-800 truncate">${msg.location.name || 'Ubicación Compartida'}</span>
-                        <span class="text-xs font-medium text-gray-500 truncate">${msg.location.address || 'Ver en Google Maps'}</span>
+                        <span class="text-sm font-bold text-gray-800 truncate">${name}</span>
+                        <span class="text-xs font-medium text-gray-500 truncate">${address}</span>
                     </div>
                 </a>`;
-        } else if (msg.tipo === 'contacts' && msg.contactos) {
+        } else if (msg.tipo === 'contacts') {
+            let contactos = msg.contactos;
+            if (!contactos) {
+                const formattedName = msg.texto?.replace('👤 Contacto: ', '') || 'Contacto';
+                const phone = msg.mediaUrl || '';
+                contactos = [{
+                    name: { formatted_name: formattedName },
+                    phones: [{ phone: phone }]
+                }];
+            }
             mediaHTML = `
                 <div class="bg-white border border-gray-200 rounded-lg mb-1 w-48 sm:w-56 shadow-sm divide-y divide-gray-100">
-                   ${msg.contactos.map(c => `
+                   ${contactos.map(c => {
+                     const phoneNumber = c.phones?.[0]?.phone || '';
+                     const cleanPhone = phoneNumber.replace(/\D/g,'');
+                     return `
                      <div class="flex items-center gap-3 p-3">
                        <div class="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-xl flex-shrink-0">👤</div>
                        <div class="overflow-hidden">
                          <p class="font-bold text-sm truncate text-gray-800">${c.name?.formatted_name || 'Contacto'}</p>
-                         <p class="text-xs text-blue-600 truncate hover:underline cursor-pointer font-semibold"><a href="tel:+${c.phones?.[0]?.phone?.replace(/\D/g,'')}">${c.phones?.[0]?.phone || 'Sin número'}</a></p>
+                         <p class="text-xs text-blue-600 truncate hover:underline cursor-pointer font-semibold"><a href="tel:+${cleanPhone}">${phoneNumber || 'Sin número'}</a></p>
                        </div>
-                     </div>
-                   `).join('')}
+                     </div>`;
+                   }).join('')}
                 </div>`;
         }
 
@@ -497,7 +595,7 @@ function renderMessagesFromMap(phone, msgContainer) {
         html += `
             <div class="${bubbleClass} ${shadowPadding} max-w-[85%] w-fit relative group flex flex-col mb-1.5">
                 ${mediaHTML}
-                ${showText ? `<p class="text-[15px] text-gray-800 break-words whitespace-pre-wrap leading-tight">${msg.texto}</p>` : ''}
+                ${showText ? `<p class="text-[15px] text-gray-800 break-words whitespace-pre-wrap leading-tight">${formatWhatsAppText(msg.texto)}</p>` : ''}
                 
                 <div class="${(msg.tipo === 'sticker' && !showText) ? 'absolute bottom-0 right-0 bg-white/80 rounded-full px-1.5 py-0.5' : 'text-right mt-1'} text-[10px] text-gray-500 flex justify-end items-center gap-1">
                     ${timeStr}${tick}
@@ -512,8 +610,11 @@ function renderMessagesFromMap(phone, msgContainer) {
     
     msgContainer.innerHTML = html;
     
-    if (isAtBottom || tempSendingMessage) {
+    if (isAtBottom || tempSendingMessage || forceScroll) {
         msgContainer.scrollTop = msgContainer.scrollHeight;
+        setTimeout(() => {
+            msgContainer.scrollTop = msgContainer.scrollHeight;
+        }, 50);
     }
 
     // Iniciar Temporizador de 24H
@@ -529,10 +630,12 @@ function manejarTemporizador(phone, ultimoMsgDate) {
     const btnEl = document.getElementById('wa-send-btn');
     const fileInput = document.getElementById('wa-file-input');
     const phoneEl = document.getElementById('wa-contact-phone');
+    const slashMenu = document.getElementById('wa-slash-menu');
 
     if (!ultimoMsgDate) {
         if(phoneEl) phoneEl.innerHTML = `<span class="truncate">+${phone}</span> <span class="ml-1 sm:ml-2 bg-gray-200 text-gray-600 font-bold px-1.5 py-0.5 rounded text-[8px] sm:text-[10px] uppercase tracking-wider flex-shrink-0">Esperando</span>`;
         if(warningEl) warningEl.classList.remove('hidden');
+        if(slashMenu) slashMenu.classList.add('hidden');
         if(inputEl) { inputEl.disabled = true; inputEl.placeholder = "Esperando respuesta..."; inputEl.classList.add('bg-gray-200'); }
         if(btnEl) btnEl.disabled = true;
         if(fileInput) fileInput.disabled = true;
@@ -548,6 +651,7 @@ function manejarTemporizador(phone, ultimoMsgDate) {
         if (leftMs <= 0) {
             if(phoneEl) phoneEl.innerHTML = `<span class="truncate">+${phone}</span> <span class="ml-1 sm:ml-2 bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded text-[8px] sm:text-[10px] uppercase tracking-wider flex-shrink-0">Expirado</span>`;
             if(warningEl) warningEl.classList.remove('hidden');
+            if(slashMenu) slashMenu.classList.add('hidden');
             
             if(inputEl) { 
                 inputEl.disabled = true; 
@@ -692,6 +796,9 @@ async function handleSendMessage(e) {
 }
 
 export function setupWhatsAppEvents() {
+    if (window.__setupWhatsAppEventsInit) return;
+    window.__setupWhatsAppEventsInit = true;
+
     const searchInput = document.getElementById('whatsapp-search');
     if (searchInput) {
         searchInput.addEventListener('input', (e) => renderChatList(e.target.value));
@@ -721,12 +828,123 @@ export function setupWhatsAppEvents() {
         sendForm.addEventListener('submit', handleSendMessage);
         
         const textarea = document.getElementById('wa-msg-input');
+        
+        const updateSlashMenuSelection = (menu, oldIdx, newIdx) => {
+            menu.dataset.selectedIndex = newIdx.toString();
+            
+            const oldOpt = document.getElementById(`slash-option-${oldIdx}`);
+            if (oldOpt) {
+                oldOpt.classList.add('border-transparent');
+                oldOpt.classList.remove('bg-slate-100', 'border-indigo-600');
+            }
+            
+            const newOpt = document.getElementById(`slash-option-${newIdx}`);
+            if (newOpt) {
+                newOpt.classList.remove('border-transparent');
+                newOpt.classList.add('bg-slate-100', 'border-indigo-600');
+                newOpt.scrollIntoView({ block: 'nearest' });
+            }
+        };
+
         textarea.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                if (this.value.trim() !== '' || document.getElementById('wa-file-input').files.length > 0) {
-                    sendForm.dispatchEvent(new Event('submit'));
+            let slashMenu = document.getElementById('wa-slash-menu');
+            if (slashMenu && !slashMenu.classList.contains('hidden')) {
+                const selectedIndex = parseInt(slashMenu.dataset.selectedIndex || "0");
+                const maxIndex = parseInt(slashMenu.dataset.maxIndex || "0");
+
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    let nextIndex = selectedIndex + 1;
+                    if (nextIndex > maxIndex) nextIndex = 0;
+                    updateSlashMenuSelection(slashMenu, selectedIndex, nextIndex);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    let prevIndex = selectedIndex - 1;
+                    if (prevIndex < 0) prevIndex = maxIndex;
+                    updateSlashMenuSelection(slashMenu, selectedIndex, prevIndex);
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const activeOption = document.getElementById(`slash-option-${selectedIndex}`);
+                    if (activeOption) {
+                        activeOption.click();
+                    }
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    slashMenu.classList.add('hidden');
                 }
+            } else {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (this.value.trim() !== '' || document.getElementById('wa-file-input').files.length > 0) {
+                        sendForm.dispatchEvent(new Event('submit'));
+                    }
+                }
+            }
+        });
+
+        // Menú de Respuestas Rápidas con '/'
+        textarea.addEventListener('input', function(e) {
+            const text = this.value;
+            let slashMenu = document.getElementById('wa-slash-menu');
+            
+            if (!slashMenu) {
+                slashMenu = document.createElement('div');
+                slashMenu.id = 'wa-slash-menu';
+                slashMenu.className = 'absolute bottom-16 left-4 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-40 overflow-y-auto hidden flex flex-col divide-y divide-slate-100 min-w-[200px]';
+                document.getElementById('whatsapp-chat-area').appendChild(slashMenu);
+            }
+
+            if (this.disabled) {
+                slashMenu.classList.add('hidden');
+                return;
+            }
+
+            if (text.startsWith('/')) {
+                const queryText = text.substring(1).toLowerCase().trim();
+                const filtered = QUICK_REPLIES.filter(reply => 
+                    reply.title.toLowerCase().includes(queryText) || 
+                    reply.text.toLowerCase().includes(queryText)
+                );
+
+                if (filtered.length > 0) {
+                    slashMenu.classList.remove('hidden');
+                    slashMenu.innerHTML = filtered.map((reply, index) => {
+                        return `<button type="button" class="slash-option-btn w-full text-left px-3 py-2 text-xs text-slate-700 font-semibold transition border-l-4 border-transparent hover:bg-slate-50" data-index="${index}" id="slash-option-${index}">
+                            <span class="font-bold text-indigo-600">/${reply.title}</span> - <span class="text-slate-400 truncate inline-block max-w-[150px] align-bottom">${reply.text.substring(0, 30)}...</span>
+                        </button>`;
+                    }).join('');
+
+                    slashMenu.querySelectorAll('.slash-option-btn').forEach((btn) => {
+                        btn.onclick = () => {
+                            const idx = parseInt(btn.dataset.index);
+                            const replyText = filtered[idx].text;
+                            textarea.value = replyText;
+                            slashMenu.classList.add('hidden');
+                            textarea.focus();
+                        };
+                    });
+
+                    slashMenu.dataset.selectedIndex = "0";
+                    slashMenu.dataset.maxIndex = (filtered.length - 1).toString();
+                    
+                    const firstOption = document.getElementById('slash-option-0');
+                    if (firstOption) {
+                        firstOption.classList.remove('border-transparent');
+                        firstOption.classList.add('bg-slate-100', 'border-indigo-600');
+                    }
+                } else {
+                    slashMenu.classList.add('hidden');
+                }
+            } else {
+                slashMenu.classList.add('hidden');
+            }
+        });
+
+        // Ocultar menú al hacer click fuera
+        document.addEventListener('click', function(e) {
+            const slashMenu = document.getElementById('wa-slash-menu');
+            if (slashMenu && !e.target.closest('#wa-slash-menu') && e.target !== textarea) {
+                slashMenu.classList.add('hidden');
             }
         });
     }

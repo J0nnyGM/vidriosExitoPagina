@@ -1548,3 +1548,5 @@ const waFns = require('./whatsapp');
 exports.whatsappWebhook = waFns.whatsappWebhook;
 exports.enviarMensajeWhatsApp = waFns.enviarMensajeWhatsApp;
 exports.marcarChatComoLeido = waFns.marcarChatComoLeido;
+exports.sendTestTemplate = waFns.sendTestTemplate;
+exports.sendMassTemplate = waFns.sendMassTemplate;

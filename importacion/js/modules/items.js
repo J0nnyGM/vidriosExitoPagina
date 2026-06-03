@@ -149,25 +149,33 @@
                         
                         // Etiqueta visual para distinguir si es unidad o medida
                         const badgeUnidad = item.esUnidad 
-                            ? `<span class="bg-purple-100 text-purple-800 text-xs font-semibold px-2 py-0.5 rounded ml-2">Unidad</span>` 
+                            ? `<span class="bg-purple-50 text-purple-700 text-xs font-semibold px-2.5 py-0.5 rounded border border-purple-200 ml-2">Unidad</span>` 
+                            : `<span class="bg-indigo-50 text-indigo-700 text-xs font-semibold px-2.5 py-0.5 rounded border border-indigo-200 ml-2">Medidas</span>`;
+
+                        const badgeStock = item.stockInfinito
+                            ? `<span class="bg-slate-100 text-slate-700 text-xs font-semibold px-2.5 py-0.5 rounded border border-slate-200 ml-2">Stock Infinito</span>`
                             : '';
 
                         const itemDiv = document.createElement('div');
-                        itemDiv.className = 'border p-4 rounded-lg flex justify-between items-center';
+                        itemDiv.className = 'premium-card premium-card-indigo p-5 flex flex-col sm:flex-row justify-between sm:items-center gap-4 bg-white shadow-sm hover:shadow-md transition';
 
                         itemDiv.innerHTML = `
-                            <div class="flex-grow">
-                                <p class="font-semibold flex items-center"><span class="item-ref">${item.referencia}</span> ${badgeUnidad}</p>
-                                <p class="text-sm text-gray-700">${item.descripcion}</p>
-                                <p class="text-sm text-blue-600 font-semibold mt-1">Costo Promedio: ${formatCurrency(averageCost)}</p>
-                            </div>
-                            <div class="flex items-center gap-4">
-                                <div class="text-right">
-                                    <p class="font-bold text-2xl">${item.stockInfinito ? '∞' : item.stock}</p>
-                                    <p class="text-sm text-gray-500">${item.stockInfinito ? 'ilimitado' : 'en stock'}</p>
+                            <div class="flex-grow min-w-0">
+                                <div class="flex items-center gap-1.5 flex-wrap">
+                                    <span class="item-ref">${item.referencia}</span>
+                                    ${badgeUnidad}
+                                    ${badgeStock}
                                 </div>
-                                <button data-item-json='${JSON.stringify(item)}' class="edit-item-btn bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-300">
-                                    Editar
+                                <p class="text-sm font-semibold text-slate-800 mt-2">${item.descripcion}</p>
+                                <p class="text-xs text-blue-600 font-bold mt-1 bg-blue-50 border border-blue-100 rounded px-2.5 py-0.5 inline-block">Costo Promedio: ${formatCurrency(averageCost)}</p>
+                            </div>
+                            <div class="flex items-center justify-between sm:justify-end gap-6 flex-shrink-0 w-full sm:w-auto">
+                                <div class="text-right">
+                                    <p class="font-extrabold text-3xl text-indigo-600 leading-none">${item.stockInfinito ? '∞' : item.stock}</p>
+                                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">${item.stockInfinito ? 'ilimitado' : 'en stock'}</p>
+                                </div>
+                                <button data-item-json='${JSON.stringify(item)}' class="edit-item-btn btn-premium-outline px-4 py-2.5 rounded-lg text-sm hover:bg-slate-50 transition w-full sm:w-auto text-center">
+                                    Editar Ítem
                                 </button>
                             </div>
                         `;
@@ -175,13 +183,13 @@
                     });
 
                     const paginationEl = document.createElement('div');
-                    paginationEl.className = 'flex justify-between items-center mt-4 pt-4 border-t border-gray-200';
+                    paginationEl.className = 'premium-pagination-container flex justify-between items-center mt-6';
                     paginationEl.innerHTML = `
-                        <span class="text-sm text-gray-600">Mostrando ${startIndex + 1} - ${Math.min(endIndex, totalItemsCount)} de ${totalItemsCount}</span>
+                        <span class="text-xs font-medium text-slate-500">Mostrando ${startIndex + 1} - ${Math.min(endIndex, totalItemsCount)} de ${totalItemsCount} ítems</span>
                         <div class="flex gap-2">
-                            <button id="prev-page-items-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPage === 1 ? 'disabled' : ''}>Anterior</button>
-                            <span class="px-3 py-1 font-semibold text-gray-700">Pág ${currentPage} de ${totalPages}</span>
-                            <button id="next-page-items-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente</button>
+                            <button id="prev-page-items-btn" class="premium-pagination-btn" ${currentPage === 1 ? 'disabled' : ''}>&larr; Anterior</button>
+                            <span class="px-3 py-1 text-xs font-bold text-slate-700 flex items-center bg-slate-50 border rounded-full">Pág ${currentPage} de ${totalPages}</span>
+                            <button id="next-page-items-btn" class="premium-pagination-btn" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente &rarr;</button>
                         </div>
                     `;
                     itemsListEl.appendChild(paginationEl);
@@ -276,6 +284,9 @@
                 }
 
                 export function setupItemsEvents() {
+                    if (window.__setupItemsEventsInit) return;
+                    window.__setupItemsEventsInit = true;
+
                     const searchInput = document.getElementById('search-items');
                     let debounceTimer;
 
@@ -367,6 +378,7 @@ const tipo = document.getElementById('nuevo-item-tipo').value;
 
                                 currentPage = 1;
                                 renderItems();
+                                document.getElementById('item-form-container')?.classList.remove('show-modal');
 
                             } catch (error) {
                                 console.error("Error al guardar el ítem:", error);

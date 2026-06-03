@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 body {
     font-family: 'Inter', sans-serif;
     background-color: #f3f4f6;
@@ -190,3 +194,697 @@ button {
     justify-content: flex-end;
     align-items: center;
 }
+
+/* --- REDISEÑO PREMIUM: SIDEBAR & NAVIGATION --- */
+
+/* Ajustes globales */
+body {
+    background-color: #f8fafc; /* Slate-50: un gris azulado muy limpio */
+}
+
+/* Sidebar Escritorio - Estilo Mediline Premium */
+#desktop-sidebar {
+    background-color: #0066e2 !important; /* Azul real de la marca */
+    color: #ffffff !important;
+    border-right: none !important;
+    box-shadow: 4px 0 24px rgba(0, 102, 226, 0.15) !important;
+}
+
+#desktop-sidebar .border-b {
+    border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+#desktop-sidebar h2 {
+    color: #ffffff !important;
+}
+
+#desktop-sidebar #user-info {
+    color: rgba(255, 255, 255, 0.75) !important;
+}
+
+/* Nav del Sidebar */
+#desktop-sidebar #main-nav {
+    padding: 1.5rem 1.25rem !important; /* Espaciado uniforme a ambos lados */
+}
+
+#desktop-sidebar .tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    width: 100%;
+    padding: 0.85rem 1.25rem !important;
+    font-size: 0.9rem !important;
+    font-weight: 600 !important;
+    color: rgba(255, 255, 255, 0.8) !important;
+    background: transparent !important;
+    border: none !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    border-radius: 2rem !important; /* Totalmente redondeado por todos los lados */
+    position: relative !important;
+    outline: none !important;
+    text-align: left;
+}
+
+#desktop-sidebar .tab-btn:hover {
+    color: #ffffff !important;
+    background-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Tab Activo - Estilo de Píldora Premium Autocontenida */
+#desktop-sidebar .tab-btn.active {
+    color: #0066e2 !important; /* Texto azul de marca */
+    background-color: #ffffff !important; /* Fondo blanco limpio */
+    font-weight: 700 !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+    z-index: 10 !important;
+}
+
+/* Badges en Sidebar */
+#desktop-sidebar .tab-btn span.badge {
+    margin-left: auto;
+}
+
+/* Footer del Sidebar */
+#desktop-sidebar div.p-4.border-t {
+    border-top-color: rgba(255, 255, 255, 0.15) !important;
+    padding-top: 1.25rem !important;
+    padding-bottom: 1.25rem !important;
+}
+
+#desktop-sidebar #edit-profile-btn {
+    background-color: rgba(255, 255, 255, 0.15) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    color: #ffffff !important;
+}
+
+#desktop-sidebar #edit-profile-btn:hover {
+    background-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+#desktop-sidebar #logout-btn {
+    background-color: rgba(239, 68, 68, 0.2) !important;
+    border: 1px solid rgba(239, 68, 68, 0.3) !important;
+    color: #fee2e2 !important;
+}
+
+#desktop-sidebar #logout-btn:hover {
+    background-color: rgba(239, 68, 68, 0.35) !important;
+}
+
+/* Header Móvil */
+#mobile-header {
+    background-color: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+/* Barra inferior móvil glassmorphic */
+@media (max-width: 767px) {
+    #mobile-bottom-nav {
+        background-color: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border-top: 1px solid rgba(226, 232, 240, 0.8);
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.03);
+        height: 64px !important;
+        padding-bottom: env(safe-area-inset-bottom) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-around !important;
+    }
+}
+
+/* Efecto hover/click en botones móviles */
+#mobile-bottom-nav button {
+    transition: transform 0.15s ease-in-out, color 0.15s ease-in-out;
+}
+
+#mobile-bottom-nav button:active {
+    transform: scale(0.92);
+}
+
+/* Estilo cajón desplegable móvil */
+#mobile-menu-content {
+    border-top-left-radius: 1.75rem;
+    border-top-right-radius: 1.75rem;
+    box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.15);
+    background-color: #ffffff;
+}
+
+#mobile-menu-content button {
+    transition: all 0.2s ease;
+}
+
+#mobile-menu-content button:active {
+    transform: scale(0.95);
+}
+
+/* Adaptación responsiva del contenido principal */
+@media (min-width: 768px) {
+    #main-content-layout {
+        margin-left: 16rem; /* Deja espacio exacto para el Sidebar (w-64) */
+        min-height: 100vh;
+    }
+}
+
+/* --- UNIFICACIÓN Y MODERNIZACIÓN DE TODOS LOS MÓDULOS --- */
+
+/* Modernización de Formularios e Entradas */
+input[type="text"],
+input[type="email"],
+input[type="tel"],
+input[type="password"],
+input[type="date"],
+input[type="number"],
+input[type="search"],
+textarea,
+select {
+    background-color: #ffffff;
+    border: 1px solid #cbd5e1 !important; /* Slate-300 */
+    border-radius: 0.5rem !important;
+    padding: 0.65rem 0.85rem !important;
+    font-size: 0.95rem !important;
+    color: #0f172a !important; /* Slate-900 */
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03) !important;
+}
+
+/* Permitir que clases utilitarias de Tailwind anulen el estilo general de inputs */
+input.rounded-full {
+    border-radius: 9999px !important;
+}
+input.pl-10 {
+    padding-left: 2.5rem !important;
+}
+input.pr-4 {
+    padding-right: 1rem !important;
+}
+input.py-2 {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="tel"]:focus,
+input[type="password"]:focus,
+input[type="date"]:focus,
+input[type="number"]:focus,
+input[type="search"]:focus,
+textarea:focus,
+select:focus {
+    border-color: #6366f1 !important; /* Indigo-500 */
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18), 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Unificación de Tarjetas (.bg-white con bordes redondos y sombras) */
+.bg-white {
+    border: 1px solid rgba(226, 232, 240, 0.8) !important;
+    box-shadow: 0 4px 18px -2px rgba(15, 23, 42, 0.04), 0 2px 6px -1px rgba(15, 23, 42, 0.02) !important;
+    border-radius: 0.75rem !important;
+}
+
+/* Unificación y transiciones en botones */
+button,
+input[type="submit"],
+.header-btn {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    border-radius: 0.5rem !important;
+}
+
+button:active,
+input[type="submit"]:active {
+    transform: scale(0.97) !important;
+}
+
+/* Refinamiento para cuadros de búsqueda predictiva */
+.search-results {
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.1) !important;
+    border-radius: 0.5rem !important;
+    background-color: #ffffff !important;
+}
+
+.search-result-item {
+    padding: 0.65rem 1rem !important;
+    font-size: 0.9rem !important;
+    color: #334155 !important;
+}
+
+.search-result-item:hover {
+    background-color: #f1f5f9 !important; /* Slate-100 */
+    color: #0f172a !important;
+}
+
+/* Scrollbars modernos para los listados */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* --- REFINAMIENTOS DE DISEÑO DE ALTO NIVEL PARA TODOS LOS MÓDULOS --- */
+
+/* Tipografía y Títulos Modernos */
+h2 {
+    color: #0f172a !important; /* Slate-900 */
+    font-weight: 700 !important;
+    letter-spacing: -0.025em !important;
+}
+
+h3 {
+    color: #1e293b !important; /* Slate-800 */
+    font-weight: 600 !important;
+}
+
+/* Etiquetas de Formularios Limpias y Visibles */
+label {
+    font-weight: 600 !important;
+    color: #475569 !important; /* Slate-600 */
+    font-size: 0.85rem !important;
+    margin-bottom: 0.25rem !important;
+    display: block !important;
+}
+
+/* Contenedores de Opciones Suaves */
+.bg-gray-50, .bg-gray-100 {
+    background-color: #f8fafc !important; /* Slate-50 */
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 0.5rem !important;
+    padding: 0.75rem 1rem !important;
+}
+
+/* Distintivos de Estado (Badges) Modernizados */
+.status-badge, .payment-status {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 0.72rem !important;
+    padding: 0.25rem 0.75rem !important;
+    border-radius: 9999px !important;
+    font-weight: 700 !important;
+    border: 1px solid transparent !important;
+    letter-spacing: 0.025em !important;
+    text-transform: uppercase !important;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02) !important;
+}
+
+.status-recibido { background-color: #e0e7ff !important; color: #4338ca !important; border-color: #c7d2fe !important; }
+.status-en-proceso { background-color: #fef3c7 !important; color: #d97706 !important; border-color: #fde68a !important; }
+.status-procesado { background-color: #e0f2fe !important; color: #0369a1 !important; border-color: #bae6fd !important; }
+.status-entregado { background-color: #dcfce7 !important; color: #15803d !important; border-color: #bbf7d0 !important; }
+
+.payment-pagado { background-color: #dcfce7 !important; color: #15803d !important; border-color: #bbf7d0 !important; }
+.payment-abono { background-color: #fef9c3 !important; color: #a16207 !important; border-color: #fef08a !important; }
+.payment-pendiente { background-color: #fee2e2 !important; color: #b91c1c !important; border-color: #fecaca !important; }
+
+/* Tarjetas de Importación con Efecto Elevación */
+.importacion-card {
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    border: 1px solid rgba(226, 232, 240, 0.8) !important;
+    box-shadow: 0 4px 18px -2px rgba(15, 23, 42, 0.03), 0 2px 6px -1px rgba(15, 23, 42, 0.01) !important;
+    background-color: #ffffff !important;
+    border-radius: 0.75rem !important;
+}
+
+.importacion-card:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 12px 25px -5px rgba(15, 23, 42, 0.06), 0 8px 10px -6px rgba(15, 23, 42, 0.04) !important;
+    border-color: #cbd5e1 !important;
+}
+
+/* Modernización Completa de WhatsApp CRM */
+#chats-list .chat-item {
+    border-bottom: 1px solid #f1f5f9 !important;
+    padding: 0.85rem 1rem !important;
+    transition: all 0.2s ease !important;
+}
+
+#chats-list .chat-item.bg-gray-200 {
+    background-color: #f1f5f9 !important; /* Selección elegante en gris */
+    border-left: 4px solid #4f46e5 !important; /* Línea de pestaña activa */
+}
+
+#wa-messages-container {
+    background-color: #f8fafc !important; /* Fondo moderno con cuadrícula */
+    background-image: radial-gradient(#e2e8f0 1.5px, transparent 1.5px) !important;
+    background-size: 24px 24px !important;
+}
+
+/* Globos de chat salientes (Enviados por nosotros) */
+#wa-messages-container div.ml-auto.bg-\[\#dcf8c6\] {
+    background-color: #4f46e5 !important; /* Azul índigo premium */
+    color: #ffffff !important;
+    border-radius: 1rem 1rem 0 1rem !important;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.12) !important;
+    border: none !important;
+}
+
+#wa-messages-container div.ml-auto.bg-\[\#dcf8c6\] p {
+    color: #ffffff !important;
+}
+
+#wa-messages-container div.ml-auto.bg-\[\#dcf8c6\] div {
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+
+/* Globos de chat entrantes (Recibidos del cliente) */
+#wa-messages-container div.mr-auto.bg-white {
+    background-color: #ffffff !important;
+    border-radius: 1rem 1rem 1rem 0 !important;
+    border: 1px solid rgba(226, 232, 240, 0.8) !important;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03) !important;
+}
+
+#wa-messages-container div.mr-auto.bg-white p {
+    color: #1e293b !important;
+}
+
+#wa-send-form {
+    background-color: #ffffff !important;
+    border-top: 1px solid #e2e8f0 !important;
+    padding: 0.75rem 1rem !important;
+}
+
+#wa-msg-input {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 9999px !important;
+    padding-left: 1.25rem !important;
+    padding-right: 1.25rem !important;
+    background-color: #f8fafc !important;
+    min-height: 42px !important;
+    line-height: 1.4 !important;
+}
+
+#wa-msg-input:focus {
+    background-color: #ffffff !important;
+}
+
+/* Ajuste de Altura de WhatsApp para Escritorio */
+@media (min-width: 768px) {
+    #view-whatsapp > div {
+        height: calc(100vh - 5rem) !important; /* Maximiza el uso del alto de pantalla */
+    }
+}
+
+/* --- PREMIUM CARD DESIGN SYSTEM FOR DYNAMIC VIEWS --- */
+
+/* Contenedores de Tarjetas */
+.premium-card {
+    background: #ffffff !important;
+    border: 1px solid rgba(226, 232, 240, 0.8) !important;
+    border-radius: 1rem !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.04), 0 2px 4px -1px rgba(0, 0, 0, 0.02) !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    position: relative !important;
+    overflow: hidden !important;
+    padding-left: 1.5rem !important; /* Deja espacio para la barra de color */
+}
+
+.premium-card:hover {
+    transform: translateY(-3px) !important;
+    box-shadow: 0 12px 24px -10px rgba(99, 102, 241, 0.12), 0 4px 8px -2px rgba(99, 102, 241, 0.04) !important;
+    border-color: #cbd5e1 !important;
+}
+
+/* Decorador de color de módulo */
+.premium-card::before {
+    content: '' !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    height: 100% !important;
+    width: 5px !important;
+}
+
+.premium-card-indigo::before { background-color: #6366f1 !important; }
+.premium-card-blue::before { background-color: #3b82f6 !important; }
+.premium-card-teal::before { background-color: #0d9488 !important; }
+.premium-card-orange::before { background-color: #f97316 !important; }
+.premium-card-emerald::before { background-color: #10b981 !important; }
+.premium-card-red::before { background-color: #ef4444 !important; }
+
+/* Avatares Modernos */
+.premium-avatar {
+    width: 2.75rem !important;
+    height: 2.75rem !important;
+    border-radius: 9999px !important;
+    background-color: #f1f5f9 !important;
+    color: #475569 !important;
+    font-weight: 700 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 1.1rem !important;
+    border: 2px solid #e2e8f0 !important;
+}
+
+.premium-avatar-indigo { background-color: #e0e7ff !important; color: #4338ca !important; border-color: #c7d2fe !important; }
+.premium-avatar-blue { background-color: #dbeafe !important; color: #1d4ed8 !important; border-color: #bfdbfe !important; }
+.premium-avatar-teal { background-color: #ccfbf1 !important; color: #0f766e !important; border-color: #99f6e4 !important; }
+.premium-avatar-orange { background-color: #ffedd5 !important; color: #c2410c !important; border-color: #fed7aa !important; }
+.premium-avatar-emerald { background-color: #dcfce7 !important; color: #15803d !important; border-color: #bbf7d0 !important; }
+
+/* Grid de métricas en tarjetas */
+.premium-metrics-grid {
+    display: grid !important;
+    grid-template-cols: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.75rem !important;
+    background-color: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 0.75rem !important;
+    padding: 0.75rem !important;
+    margin-top: 0.75rem !important;
+}
+
+/* Botones Premium Outline */
+.btn-premium-outline {
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #475569 !important;
+    font-weight: 600 !important;
+    transition: all 0.2s !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.5rem !important;
+}
+
+.btn-premium-outline:hover {
+    background-color: #f8fafc !important;
+    border-color: #94a3b8 !important;
+    color: #0f172a !important;
+}
+
+/* Estilización de paginación premium */
+.premium-pagination-container {
+    background-color: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 0.75rem !important;
+    padding: 0.75rem 1rem !important;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+.premium-pagination-btn {
+    padding: 0.5rem 1rem !important;
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    color: #475569 !important;
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 9999px !important; /* Totalmente redondos */
+    transition: all 0.15s ease-in-out !important;
+}
+
+.premium-pagination-btn:hover:not(:disabled) {
+    background-color: #f8fafc !important;
+    border-color: #94a3b8 !important;
+    color: #0f172a !important;
+}
+
+.premium-pagination-btn:disabled {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+}
+
+/* --- MODALES DE FORMULARIO GLOBALES (PARA ESCRITORIO Y MÓVIL) --- */
+.mobile-form-modal {
+    display: none !important; /* Oculto por defecto */
+    position: fixed !important;
+    inset: 0 !important;
+    background-color: rgba(15, 23, 42, 0.5) !important; /* Fondo oscuro semi-transparente */
+    backdrop-filter: blur(8px) !important; /* Desenfoque premium */
+    z-index: 100 !important; /* Por encima de todo */
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 1.25rem !important;
+}
+
+.mobile-form-modal.show-modal {
+    display: flex !important;
+}
+
+/* Tarjeta de Contenido del Modal */
+.modal-card {
+    background-color: #ffffff !important;
+    border-radius: 1.5rem !important;
+    border: 1px solid rgba(226, 232, 240, 0.8) !important;
+    box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.15) !important;
+    animation: modalSlideUp 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards !important;
+    width: 100% !important;
+    max-height: 90vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important; /* Mantiene bordes redondeados limpios */
+}
+
+/* Área de cabecera fija del modal */
+.modal-header-fixed {
+    padding: 1.75rem 2rem 1rem 2rem !important;
+    flex-shrink: 0 !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    border-bottom: 1px solid #f1f5f9 !important;
+}
+
+/* Área de formulario scrollable interna */
+.modal-body-scroll {
+    overflow-y: auto !important;
+    padding: 1.5rem 2rem 2rem 2rem !important;
+    flex-grow: 1 !important;
+}
+
+/* Animación de entrada premium para el modal */
+@keyframes modalSlideUp {
+    from {
+        transform: translateY(30px) scale(0.96);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+}
+
+/* --- PREMIUM MODERN PILL BUTTON BACKGROUND COLORS --- */
+.bg-indigo-650 { background-color: #4f46e5 !important; }
+.hover\:bg-indigo-755:hover { background-color: #3730a3 !important; }
+
+.bg-blue-650 { background-color: #2563eb !important; }
+.hover\:bg-blue-755:hover { background-color: #1d4ed8 !important; }
+
+.bg-teal-650 { background-color: #0d9488 !important; }
+.hover\:bg-teal-755:hover { background-color: #0f766e !important; }
+
+.bg-orange-650 { background-color: #ea580c !important; }
+.hover\:bg-orange-755:hover { background-color: #c2410c !important; }
+
+.text-red-650 { color: #dc2626 !important; }
+.bg-slate-50 { background-color: #f8fafc !important; }
+.border-slate-200 { border-color: #e2e8f0 !important; }
+.text-slate-450 { color: #64748b !important; }
+.rounded-2xl { border-radius: 1rem !important; }
+.rounded-xl { border-radius: 0.75rem !important; }
+.rounded-full { border-radius: 9999px !important; }
+
+/* Corrección de visibilidad y contraste en botones de pie del Sidebar */
+#desktop-sidebar #view-all-loans-btn {
+    background-color: rgba(254, 243, 199, 0.15) !important; /* Soft high contrast amber */
+    border: 1px solid rgba(254, 240, 138, 0.4) !important;
+    color: #fef08a !important; /* Bright distinct text */
+}
+
+#desktop-sidebar #view-all-loans-btn:hover {
+    background-color: rgba(254, 243, 199, 0.25) !important;
+}
+
+#desktop-sidebar #loan-request-btn {
+    background-color: rgba(253, 224, 71, 0.15) !important; /* Yellow */
+    border: 1px solid rgba(253, 224, 71, 0.4) !important;
+    color: #fef08a !important;
+}
+
+#desktop-sidebar #loan-request-btn:hover {
+    background-color: rgba(253, 224, 71, 0.25) !important;
+}
+
+#desktop-sidebar #summary-btn {
+    background-color: rgba(52, 211, 153, 0.15) !important; /* Green */
+    border: 1px solid rgba(52, 211, 153, 0.4) !important;
+    color: #a7f3d0 !important;
+}
+
+#desktop-sidebar #summary-btn:hover {
+    background-color: rgba(52, 211, 153, 0.25) !important;
+}
+
+/* --- DISEÑO DE BOTONES DE FACTURACIÓN EN FILAS Y COLUMNAS --- */
+.facturacion-btn-container {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+    width: 100% !important;
+    flex-shrink: 0 !important;
+}
+
+@media (min-width: 1024px) {
+    .facturacion-btn-container {
+        width: 19rem !important; /* 304px */
+        margin-left: 1rem !important;
+    }
+}
+
+.facturacion-secondary-row {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 0.375rem !important; /* 6px */
+    width: 100% !important;
+}
+
+/* Distribuye equitativamente las columnas secundarias en la fila */
+.facturacion-secondary-row > button, 
+.facturacion-secondary-row > a {
+    flex: 1 1 calc(50% - 0.25rem) !important;
+    min-width: 80px !important;
+    white-space: nowrap !important;
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.75rem !important;
+    height: 36px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.25rem !important;
+}
+
+.facturacion-main-btn {
+    width: 100% !important;
+}
+
+.facturacion-main-btn > button,
+.facturacion-main-btn > a,
+button.facturacion-main-btn {
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0.625rem 1rem !important;
+    font-size: 0.8rem !important;
+    font-weight: 700 !important;
+    height: 40px !important;
+    gap: 0.25rem !important;
+}

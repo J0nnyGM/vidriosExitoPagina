@@ -140,23 +140,34 @@ export function renderGastos() {
 
     paginatedGastos.forEach((gasto) => {
         const el = document.createElement('div');
-        el.className = 'border p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-white shadow-sm';
+        el.className = 'premium-card premium-card-orange p-5 flex flex-col sm:flex-row justify-between sm:items-center gap-4 bg-white shadow-sm hover:shadow-md transition';
         
-        // ELIMINAR AHORA ES UNA "X"
+        const nameInitial = (gasto.proveedorNombre || 'G').charAt(0).toUpperCase();
         let deleteBtnHTML = '';
         if (isAdmin && !gasto.isEmployeePayment && !gasto.isTransfer && !gasto.isImportacionGasto) {
-            deleteBtnHTML = `<button data-gasto-id="${gasto.id}" class="delete-gasto-btn mt-2 sm:mt-0 sm:ml-4 bg-red-100 text-red-700 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold hover:bg-red-200 transition shadow-sm" title="Eliminar Gasto">✕</button>`;
+            deleteBtnHTML = `<button data-gasto-id="${gasto.id}" class="delete-gasto-btn bg-red-50 text-red-600 w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold hover:bg-red-100 hover:text-red-700 transition border border-red-200 shadow-sm" title="Eliminar Gasto">✕</button>`;
         }
 
+        let badgeFactura = gasto.numeroFactura 
+            ? `<span class="bg-orange-50 text-orange-700 text-[10px] font-bold px-2 py-0.5 rounded border border-orange-100 font-mono">Factura: ${gasto.numeroFactura}</span>`
+            : '';
+
         el.innerHTML = `
-            <div class="w-full sm:w-auto flex-grow">
-                <p class="font-semibold text-gray-800">${gasto.proveedorNombre}</p>
-                <p class="text-sm text-gray-600">${gasto.fecha} ${gasto.numeroFactura ? `| Factura: <span class="font-mono">${gasto.numeroFactura}</span>` : ''}</p>
+            <div class="flex items-center gap-4 flex-grow min-w-0">
+                <div class="premium-avatar premium-avatar-orange flex-shrink-0">${nameInitial}</div>
+                <div class="flex-grow min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <p class="font-bold text-base text-slate-900 truncate" title="${gasto.proveedorNombre}">${gasto.proveedorNombre}</p>
+                        ${badgeFactura}
+                    </div>
+                    <p class="text-xs text-slate-500 mt-1">Fecha: ${gasto.fecha}</p>
+                </div>
             </div>
-            <div class="flex flex-col sm:flex-row items-start sm:items-center w-full sm:w-auto mt-2 sm:mt-0">
+            
+            <div class="flex items-center justify-between sm:justify-end gap-4 flex-shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
                 <div class="text-left sm:text-right">
-                    <p class="font-bold text-lg text-red-600">-${formatCurrency(gasto.valorTotal)}</p>
-                    <p class="text-xs text-gray-500 uppercase tracking-wider">${gasto.fuentePago}</p>
+                    <p class="font-extrabold text-lg text-red-600 leading-none">-${formatCurrency(gasto.valorTotal)}</p>
+                    <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-1">${gasto.fuentePago}</p>
                 </div>
                 ${deleteBtnHTML}
             </div>
@@ -165,13 +176,13 @@ export function renderGastos() {
     });
 
     const paginationEl = document.createElement('div');
-    paginationEl.className = 'flex justify-between items-center mt-4 pt-4 border-t border-gray-200';
+    paginationEl.className = 'premium-pagination-container flex justify-between items-center mt-6';
     paginationEl.innerHTML = `
-        <span class="text-sm text-gray-600">Mostrando ${startIndex + 1} - ${Math.min(endIndex, totalItems)} de ${totalItems}</span>
+        <span class="text-xs font-medium text-slate-500">Mostrando ${startIndex + 1} - ${Math.min(endIndex, totalItems)} de ${totalItems} gastos</span>
         <div class="flex gap-2">
-            <button id="prev-page-gastos-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPage === 1 ? 'disabled' : ''}>Anterior</button>
-            <span class="px-3 py-1 font-semibold text-gray-700">Pág ${currentPage} de ${totalPages}</span>
-            <button id="next-page-gastos-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente</button>
+            <button id="prev-page-gastos-btn" class="premium-pagination-btn" ${currentPage === 1 ? 'disabled' : ''}>&larr; Anterior</button>
+            <span class="px-3 py-1 text-xs font-bold text-slate-700 flex items-center bg-slate-50 border rounded-full">Pág ${currentPage} de ${totalPages}</span>
+            <button id="next-page-gastos-btn" class="premium-pagination-btn" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente &rarr;</button>
         </div>
     `;
     gastosListEl.appendChild(paginationEl);
@@ -287,6 +298,9 @@ async function showDeletedGastosModal() {
 
 // --- SETUP EVENTOS PRINCIPALES (PROTEGIDO CONTRA DUPLICADOS) ---
 export function setupGastosEvents() {
+    if (window.__setupGastosEventsInit) return;
+    window.__setupGastosEventsInit = true;
+
     populateDateFilters('filter-gastos');
 
     const resetAndRender = () => {
@@ -431,6 +445,7 @@ export function setupGastosEvents() {
                 else showTemporaryMessage('Gasto registrado', 'success');
 
                 currentPage = 1; 
+                document.getElementById('gasto-form-container')?.classList.remove('show-modal'); 
 
             } catch (error) {
                 console.error("Error al registrar gasto:", error);

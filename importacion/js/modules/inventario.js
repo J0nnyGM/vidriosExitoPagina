@@ -277,13 +277,13 @@ export function renderImportaciones() {
 
     // Paginación Importaciones
     const pagImpEl = document.createElement('div');
-    pagImpEl.className = 'col-span-full flex justify-between items-center mt-4 pt-4 border-t border-gray-200';
+    pagImpEl.className = 'col-span-full premium-pagination-container flex justify-between items-center mt-6';
     pagImpEl.innerHTML = `
-        <span class="text-sm text-gray-600">Mostrando ${startIdx + 1} - ${Math.min(startIdx + itemsPerPage, totalItems)} de ${totalItems}</span>
+        <span class="text-xs font-medium text-slate-500">Mostrando ${startIdx + 1} - ${Math.min(startIdx + itemsPerPage, totalItems)} de ${totalItems} importaciones</span>
         <div class="flex gap-2">
-            <button id="prev-imp-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPageImp === 1 ? 'disabled' : ''}>Anterior</button>
-            <span class="px-3 py-1 font-semibold text-gray-700">Pág ${currentPageImp} de ${totalPages}</span>
-            <button id="next-imp-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPageImp === totalPages ? 'disabled' : ''}>Siguiente</button>
+            <button id="prev-imp-btn" class="premium-pagination-btn" ${currentPageImp === 1 ? 'disabled' : ''}>&larr; Anterior</button>
+            <span class="px-3 py-1 text-xs font-bold text-slate-700 flex items-center bg-slate-50 border rounded-full">Pág ${currentPageImp} de ${totalPages}</span>
+            <button id="next-imp-btn" class="premium-pagination-btn" ${currentPageImp === totalPages ? 'disabled' : ''}>Siguiente &rarr;</button>
         </div>
     `;
     container.appendChild(pagImpEl);
@@ -320,23 +320,26 @@ export function renderComprasNacionales() {
         const totalAbonado = (compra.abonos || []).reduce((sum, abono) => sum + abono.valor, 0);
         const saldoPendiente = compra.valorTotalCompra - totalAbonado;
 
+        const nameInitial = (compra.proveedorNombre || 'C').charAt(0).toUpperCase();
         let estadoPago = '';
-        if (saldoPendiente <= 0) estadoPago = `<span class="text-xs font-semibold bg-green-200 text-green-800 px-2 py-1 rounded-full">Pagado</span>`;
-        else if (totalAbonado > 0) estadoPago = `<span class="text-xs font-semibold bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">Abono</span>`;
-        else estadoPago = `<span class="text-xs font-semibold bg-red-200 text-red-800 px-2 py-1 rounded-full">Pendiente</span>`;
+        if (saldoPendiente <= 0) estadoPago = `<span class="bg-green-50 text-green-700 text-xs font-semibold px-2.5 py-0.5 rounded border border-green-200">Pagado</span>`;
+        else if (totalAbonado > 0) estadoPago = `<span class="bg-yellow-50 text-yellow-700 text-xs font-semibold px-2.5 py-0.5 rounded border border-yellow-200">Abono</span>`;
+        else estadoPago = `<span class="bg-red-50 text-red-700 text-xs font-semibold px-2.5 py-0.5 rounded border border-red-200">Pendiente</span>`;
 
         const card = document.createElement('div');
-        card.className = 'border p-4 rounded-lg';
+        card.className = 'premium-card premium-card-emerald p-5 bg-white shadow-sm hover:shadow-md transition';
         card.innerHTML = `
-            <div class="flex flex-col sm:flex-row justify-between items-start">
-                <div>
-                    <p class="font-bold">${compra.proveedorNombre}</p>
-                    <p class="text-sm text-gray-600">Fecha: ${compra.fecha}</p>
-                    <p class="text-sm text-gray-500">Total: <span class="font-semibold">${formatCurrency(compra.valorTotalCompra)}</span></p>
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div class="flex items-center gap-4 flex-grow min-w-0">
+                    <div class="premium-avatar premium-avatar-emerald flex-shrink-0">${nameInitial}</div>
+                    <div class="flex-grow min-w-0">
+                        <p class="font-bold text-base text-slate-900 truncate" title="${compra.proveedorNombre}">${compra.proveedorNombre}</p>
+                        <p class="text-xs text-slate-500 mt-1">Fecha: ${compra.fecha} &bull; Total: <span class="font-semibold text-emerald-650">${formatCurrency(compra.valorTotalCompra)}</span></p>
+                    </div>
                 </div>
-                <div class="flex items-center gap-2 mt-2 sm:mt-0">
+                <div class="flex items-center gap-3 flex-shrink-0 w-full sm:w-auto justify-between sm:justify-end">
                     ${estadoPago}
-                    <button data-compra-json='${JSON.stringify(compra)}' class="edit-nacional-btn bg-gray-200 text-gray-700 px-3 py-1 rounded-lg text-sm font-semibold hover:bg-gray-300">
+                    <button data-compra-json='${JSON.stringify(compra)}' class="edit-nacional-btn btn-premium-outline px-4 py-2 rounded-lg text-sm hover:bg-slate-50 transition w-full sm:w-auto text-center">
                         Gestionar
                     </button>
                 </div>
@@ -354,13 +357,13 @@ export function renderComprasNacionales() {
 
     // Paginación Nacionales
     const pagNacEl = document.createElement('div');
-    pagNacEl.className = 'flex justify-between items-center mt-4 pt-4 border-t border-gray-200';
+    pagNacEl.className = 'premium-pagination-container flex justify-between items-center mt-6';
     pagNacEl.innerHTML = `
-        <span class="text-sm text-gray-600">Mostrando ${startIdx + 1} - ${Math.min(startIdx + itemsPerPage, totalItems)} de ${totalItems}</span>
+        <span class="text-xs font-medium text-slate-500">Mostrando ${startIdx + 1} - ${Math.min(startIdx + itemsPerPage, totalItems)} de ${totalItems} compras</span>
         <div class="flex gap-2">
-            <button id="prev-nac-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPageNac === 1 ? 'disabled' : ''}>Anterior</button>
-            <span class="px-3 py-1 font-semibold text-gray-700">Pág ${currentPageNac} de ${totalPages}</span>
-            <button id="next-nac-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPageNac === totalPages ? 'disabled' : ''}>Siguiente</button>
+            <button id="prev-nac-btn" class="premium-pagination-btn" ${currentPageNac === 1 ? 'disabled' : ''}>&larr; Anterior</button>
+            <span class="px-3 py-1 text-xs font-bold text-slate-700 flex items-center bg-slate-50 border rounded-full">Pág ${currentPageNac} de ${totalPages}</span>
+            <button id="next-nac-btn" class="premium-pagination-btn" ${currentPageNac === totalPages ? 'disabled' : ''}>Siguiente &rarr;</button>
         </div>
     `;
     container.appendChild(pagNacEl);
@@ -788,25 +791,25 @@ export async function showImportacionModal(importacion = null) {
     }
 
     modalContentWrapper.innerHTML = `
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl mx-auto flex flex-col" style="max-height: 95vh;">
-            <div class="flex justify-between items-center p-4 border-b sticky top-0 bg-white z-10">
-                <h2 class="text-xl font-semibold">${title}</h2>
+        <div class="modal-card max-w-6xl w-full mx-auto" style="height: 85vh; max-height: 85vh;">
+            <div class="modal-header-fixed">
+                <h2 class="text-xl font-bold text-slate-800">${title}</h2>
                 <button id="close-importacion-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
             </div>
-            <div id="importacion-modal-body" class="p-6 overflow-y-auto flex-grow">
+            <div id="importacion-modal-body" class="modal-body-scroll">
                 <form id="importacion-form" class="space-y-8">
                     <input type="hidden" id="importacion-id" value="${isEditing ? importacion.id : ''}">
                     <input type="hidden" id="importacion-trm-hidden" value="${importacion?.trmLiquidacion || '4100'}">
-                    <div><h3 class="text-lg font-bold text-gray-800 mb-2">1. Datos Generales</h3><div class="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label class="block text-sm font-medium">Fecha de Pedido</label><input type="date" id="importacion-fecha-pedido" class="w-full p-2 border rounded-lg mt-1" value="${importacion?.fechaPedido || new Date().toISOString().slice(0, 10)}"></div><div><label class="block text-sm font-medium">Naviera / Proveedor</label><input type="text" id="importacion-naviera" class="w-full p-2 border rounded-lg mt-1" value="${importacion?.naviera || ''}"></div><div><label class="block text-sm font-medium">Número de BL</label><input type="text" id="importacion-bl" class="w-full p-2 border rounded-lg mt-1" value="${importacion?.numeroBl || ''}"></div></div></div>
-                    <div><h3 class="text-lg font-bold text-gray-800 mb-2">2. Costos Origen (China) - Valores en USD</h3><div class="border-t pt-4"><h4 class="font-semibold mb-2">Ítems de la Importación</h4><div id="importacion-items-container" class="space-y-4"></div><button type="button" id="add-importacion-item-btn" class="mt-4 w-full bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 text-sm">+ Añadir Ítem</button></div><div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"><div><label class="block text-sm font-medium">Flete Marítimo (USD)</label><input type="text" id="importacion-flete" class="cost-input-usd w-full p-2 border rounded-lg mt-1" value="${importacion?.fleteMaritimoUSD ? formatCurrency(importacion.fleteMaritimoUSD, true) : ''}"></div><div><label class="block text-sm font-medium">Seguro (USD)</label><input type="text" id="importacion-seguro" class="cost-input-usd w-full p-2 border rounded-lg mt-1" value="${importacion?.seguroUSD ? formatCurrency(importacion.seguroUSD, true) : ''}"></div><div class="p-2 bg-gray-100 rounded-lg"><label class="block text-sm font-bold text-gray-700">Total China (USD)</label><p id="total-china-usd-display" class="text-xl font-bold text-gray-900">USD 0.00</p></div>${abonosChinaHTML}</div></div>
+                    <div><h3 class="text-lg font-bold text-gray-800 mb-2">1. Datos Generales</h3><div class="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label class="block text-sm font-medium">Fecha de Pedido</label><input type="date" id="importacion-fecha-pedido" class="w-full p-2 border rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-white" value="${importacion?.fechaPedido || new Date().toISOString().slice(0, 10)}"></div><div><label class="block text-sm font-medium">Naviera / Proveedor</label><input type="text" id="importacion-naviera" class="w-full p-2 border rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-white" value="${importacion?.naviera || ''}"></div><div><label class="block text-sm font-medium">Número de BL</label><input type="text" id="importacion-bl" class="w-full p-2 border rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-white" value="${importacion?.numeroBl || ''}"></div></div></div>
+                    <div><h3 class="text-lg font-bold text-gray-800 mb-2">2. Costos Origen (China) - Valores en USD</h3><div class="border-t pt-4"><h4 class="font-semibold mb-2 text-slate-800">Ítems de la Importación</h4><div id="importacion-items-container" class="space-y-4"></div><button type="button" id="add-importacion-item-btn" class="mt-4 w-full bg-slate-100 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-200 border border-slate-200 transition-colors text-sm">+ Añadir Ítem</button></div><div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"><div><label class="block text-sm font-medium">Flete Marítimo (USD)</label><input type="text" id="importacion-flete" class="cost-input-usd w-full p-2 border rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-white" value="${importacion?.fleteMaritimoUSD ? formatCurrency(importacion.fleteMaritimoUSD, true) : ''}"></div><div><label class="block text-sm font-medium">Seguro (USD)</label><input type="text" id="importacion-seguro" class="cost-input-usd w-full p-2 border rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-white" value="${importacion?.seguroUSD ? formatCurrency(importacion.seguroUSD, true) : ''}"></div><div class="p-2 bg-slate-50 border border-slate-100 rounded-lg"><label class="block text-sm font-bold text-slate-700">Total China (USD)</label><p id="total-china-usd-display" class="text-xl font-bold text-slate-900">USD 0.00</p></div>${abonosChinaHTML}</div></div>
                     <div class="${isEditing ? '' : 'hidden'}"><h3 class="text-lg font-bold text-gray-800 mb-2">3. Documentos Soporte</h3><div id="documentos-container" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div></div>
-                    <div class="${isEditing ? '' : 'hidden'}"><h3 class="text-lg font-bold text-gray-800 mb-2">4. Gastos de Nacionalización - Valores en COP</h3><div id="gastos-nacionalizacion-container" class="space-y-4"></div><div class="p-2 bg-gray-100 rounded-lg mt-4 text-right"><label class="block text-sm font-bold text-gray-700">Total Nacionalización (COP)</label><p id="total-nacionalizacion-cop-display" class="text-xl font-bold text-gray-900">$ 0</p></div></div>
-                    <div class="p-4 bg-indigo-50 rounded-lg border-t-4 border-indigo-200"><h3 class="text-lg font-bold text-indigo-900 mb-2">Resumen Financiero</h3><div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center"><div><label class="block text-sm font-semibold">Total China (COP)</label><p id="resumen-total-china-cop" class="text-xl font-bold">$ 0</p></div><div><label class="block text-sm font-semibold">Total Nacionalización</label><p id="resumen-total-nacionalizacion-cop" class="text-xl font-bold">$ 0</p></div><div class="p-2 bg-white rounded"><label class="block text-sm font-bold text-indigo-800">GRAN TOTAL (COP)</label><p id="resumen-gran-total-cop" class="text-2xl font-extrabold text-indigo-900">$ 0</p></div></div></div>
-                    ${logisticaHTML}
-                    <div class="p-4 bg-gray-100 rounded-lg border-t-4 border-gray-300"><h3 class="text-lg font-bold text-gray-900 mb-2">Costeo Final por Ítem (COP)</h3><div id="costeo-final-container" class="space-y-2"></div></div>
+                    <div class="${isEditing ? '' : 'hidden'}"><h3 class="text-lg font-bold text-gray-800 mb-2">4. Gastos de Nacionalización - Valores en COP</h3><div id="gastos-nacionalizacion-container" class="space-y-4"></div><div class="p-2 bg-slate-50 border border-slate-100 rounded-lg mt-4 text-right"><label class="block text-sm font-bold text-slate-700">Total Nacionalización (COP)</label><p id="total-nacionalizacion-cop-display" class="text-xl font-bold text-slate-900">$ 0</p></div></div>
+                    <div class="p-4 bg-indigo-50 rounded-lg border-t-4 border-indigo-200"><h3 class="text-lg font-bold text-indigo-900 mb-2">Resumen Financiero</h3><div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center"><div><label class="block text-sm font-semibold text-indigo-800">Total China (COP)</label><p id="resumen-total-china-cop" class="text-xl font-bold text-indigo-950">$ 0</p></div><div><label class="block text-sm font-semibold text-indigo-800">Total Nacionalización</label><p id="resumen-total-nacionalizacion-cop" class="text-xl font-bold text-indigo-950">$ 0</p></div><div class="p-2 bg-white rounded"><label class="block text-sm font-bold text-indigo-800">GRAN TOTAL (COP)</label><p id="resumen-gran-total-cop" class="text-2xl font-extrabold text-indigo-950">$ 0</p></div></div></div>
+                    	extLogisticaHTML
+                    <div class="p-4 bg-slate-50 border border-slate-100 rounded-lg border-t-4 border-slate-300"><h3 class="text-lg font-bold text-slate-800 mb-2">Costeo Final por Ítem (COP)</h3><div id="costeo-final-container" class="space-y-2"></div></div>
                 </form>
             </div>
-            <div class="p-4 border-t text-right sticky bottom-0 bg-white z-10"><button id="save-importacion-btn" class="bg-indigo-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-indigo-700">${isEditing ? 'Guardar Cambios' : 'Crear Importación'}</button></div>
+            <div class="p-4 border-t text-right bg-slate-50 flex-shrink-0 flex justify-end gap-3"><button id="save-importacion-btn" class="bg-indigo-650 text-white font-bold py-2.5 px-6 rounded-xl hover:bg-indigo-700 transition-colors shadow-sm">${isEditing ? 'Guardar Cambios' : 'Crear Importación'}</button></div>
         </div>
     `;
 
@@ -1001,23 +1004,23 @@ function createImportacionItemElement(item = null) {
 
     itemRow.innerHTML = `
         <div class="relative md:col-span-2">
-            <label class="text-sm font-medium text-gray-600">Ítem</label>
-            <input type="text" placeholder="Buscar ítem..." class="item-search-input w-full p-2 border border-gray-300 rounded-lg" value="${descripcion}" autocomplete="off" required>
+            <label class="text-xs font-semibold text-slate-650">Ítem</label>
+            <input type="text" placeholder="Buscar ítem..." class="item-search-input w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all mt-1 bg-white" value="${descripcion}" autocomplete="off" required>
             <input type="hidden" class="item-id-hidden" value="${itemId}">
             <input type="hidden" class="item-referencia-hidden" value="${referencia}">
             <input type="hidden" class="item-descripcion-hidden" value="${descripcion}">
             <div class="search-results hidden"></div>
         </div>
         <div>
-            <label class="text-sm font-medium text-gray-600">Cantidad</label>
-            <input type="number" class="item-cantidad p-2 border border-gray-300 rounded-lg w-full" placeholder="Cant." min="1" value="${cantidad}" required>
+            <label class="text-xs font-semibold text-slate-650">Cantidad</label>
+            <input type="number" class="item-cantidad p-2.5 border border-slate-300 rounded-lg w-full focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all mt-1 bg-white" placeholder="Cant." min="1" value="${cantidad}" required>
         </div>
         <div class="flex items-end gap-2 md:col-span-2">
             <div class="flex-grow">
-                <label class="text-sm font-medium text-gray-600">Valor Total del Ítem (USD)</label>
-                <input type="text" class="item-valor-total cost-input-usd p-2 border border-gray-300 rounded-lg w-full" placeholder="Valor Total" value="${valorTotalUSD}" required>
+                <label class="text-xs font-semibold text-slate-650">Valor Total del Ítem (USD)</label>
+                <input type="text" class="item-valor-total cost-input-usd p-2.5 border border-slate-300 rounded-lg w-full focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all mt-1 bg-white" placeholder="Valor Total" value="${valorTotalUSD}" required>
             </div>
-            <button type="button" class="remove-import-item-btn bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 p-2 h-10 w-10 flex-shrink-0 flex items-center justify-center">X</button>
+            <button type="button" class="remove-import-item-btn bg-red-100 hover:bg-red-200 text-red-700 font-bold rounded-lg p-2.5 h-[46px] w-[46px] flex-shrink-0 flex items-center justify-center transition-colors border border-red-200">X</button>
         </div>
     `;
     return itemRow;
@@ -1642,6 +1645,9 @@ function setupImportacionModalEventListeners(modalBody, importacion) {
 
 // SETUP PRINCIPAL DE INVENTARIO
 export function setupInventarioEvents() {
+    if (window.__setupInventarioEventsInit) return;
+    window.__setupInventarioEventsInit = true;
+
     const importacionesTab = document.getElementById('tab-importaciones');
     const nacionalTab = document.getElementById('tab-nacional');
     const importacionesView = document.getElementById('view-importaciones-content');

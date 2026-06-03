@@ -132,19 +132,23 @@ export function renderProveedores() {
     // 3. Dibujar Tarjetas
     paginatedProviders.forEach(proveedor => {
         const el = document.createElement('div');
-        el.className = 'border p-4 rounded-lg flex justify-between items-center';
+        el.className = 'premium-card premium-card-teal p-5 flex flex-col sm:flex-row justify-between sm:items-center gap-4 bg-white shadow-sm hover:shadow-md transition';
         
+        const nameInitial = (proveedor.nombre || 'P').charAt(0).toUpperCase();
         const editButton = (currentUserData && currentUserData.role === 'admin')
-            ? `<button data-provider-json='${JSON.stringify(proveedor)}' class="edit-provider-btn bg-gray-200 text-gray-700 px-3 py-1 rounded-lg text-sm font-semibold hover:bg-gray-300">Editar</button>`
+            ? `<button data-provider-json='${JSON.stringify(proveedor)}' class="edit-provider-btn btn-premium-outline px-4 py-2 rounded-lg text-sm hover:bg-slate-50 transition w-full sm:w-auto text-center">Editar Proveedor</button>`
             : '';
 
         el.innerHTML = `
-            <div class="flex-grow">
-                <p class="font-semibold text-lg text-gray-800">${proveedor.nombre}</p>
-                <p class="text-sm text-gray-600">${proveedor.email || 'Sin correo'} | ${proveedor.telefono || 'Sin teléfono'}</p>
-                ${proveedor.contacto ? `<p class="text-sm text-gray-500 mt-1">Contacto: ${proveedor.contacto}</p>` : ''}
+            <div class="flex items-center gap-4 flex-grow min-w-0">
+                <div class="premium-avatar premium-avatar-teal flex-shrink-0">${nameInitial}</div>
+                <div class="flex-grow min-w-0">
+                    <p class="font-bold text-lg text-slate-900 truncate" title="${proveedor.nombre}">${proveedor.nombre}</p>
+                    <p class="text-xs text-slate-500 mt-1">${proveedor.email || 'Sin correo'} &bull; ${proveedor.telefono || 'Sin teléfono'}</p>
+                    ${proveedor.contacto ? `<p class="text-xs text-teal-800 font-semibold bg-teal-50 border border-teal-100 rounded px-2 py-0.5 mt-1 inline-block">Contacto: ${proveedor.contacto}</p>` : ''}
+                </div>
             </div>
-            <div class="flex-shrink-0">
+            <div class="flex-shrink-0 w-full sm:w-auto">
                 ${editButton}
             </div>
         `;
@@ -153,13 +157,13 @@ export function renderProveedores() {
 
     // 4. Dibujar Controles de Paginación
     const paginationEl = document.createElement('div');
-    paginationEl.className = 'flex justify-between items-center mt-4 pt-4 border-t border-gray-200';
+    paginationEl.className = 'premium-pagination-container flex justify-between items-center mt-6';
     paginationEl.innerHTML = `
-        <span class="text-sm text-gray-600">Mostrando ${startIndex + 1} - ${Math.min(endIndex, totalItems)} de ${totalItems}</span>
+        <span class="text-xs font-medium text-slate-500">Mostrando ${startIndex + 1} - ${Math.min(endIndex, totalItems)} de ${totalItems} proveedores</span>
         <div class="flex gap-2">
-            <button id="prev-page-prov-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPage === 1 ? 'disabled' : ''}>Anterior</button>
-            <span class="px-3 py-1 font-semibold text-gray-700">Pág ${currentPage} de ${totalPages}</span>
-            <button id="next-page-prov-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente</button>
+            <button id="prev-page-prov-btn" class="premium-pagination-btn" ${currentPage === 1 ? 'disabled' : ''}>&larr; Anterior</button>
+            <span class="px-3 py-1 text-xs font-bold text-slate-700 flex items-center bg-slate-50 border rounded-full">Pág ${currentPage} de ${totalPages}</span>
+            <button id="next-page-prov-btn" class="premium-pagination-btn" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente &rarr;</button>
         </div>
     `;
     proveedoresListEl.appendChild(paginationEl);
@@ -254,6 +258,9 @@ export function showEditProviderModal(proveedor) {
 
 // --- SETUP DE EVENTOS ---
 export function setupProveedoresEvents() {
+    if (window.__setupProveedoresEventsInit) return;
+    window.__setupProveedoresEventsInit = true;
+
     const searchInput = document.getElementById('search-proveedores');
     let debounceTimer;
 
@@ -309,6 +316,7 @@ export function setupProveedoresEvents() {
                 if(window.Swal) Swal.fire('¡Éxito!', 'Proveedor registrado correctamente.', 'success');
                 else showTemporaryMessage('Proveedor registrado', 'success');
                 e.target.reset();
+                document.getElementById('proveedor-form-container')?.classList.remove('show-modal');
             } catch (error) {
                 console.error("Error al registrar el proveedor: ", error);
                 if(window.Swal) Swal.fire('Error', 'No se pudo registrar el proveedor.', 'error');

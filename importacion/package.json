@@ -1,5 +1,15 @@
 {
+  "name": "importacion-frontend",
+  "version": "1.0.0",
+  "description": "Compilador de Tailwind CSS para el modulo de Importacion",
+  "scripts": {
+    "build-css": "tailwindcss -i ./css/styles.css -o ./css/output.css --minify",
+    "watch-css": "tailwindcss -i ./css/styles.css -o ./css/output.css --watch"
+  },
   "dependencies": {
     "exceljs": "^4.4.0"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.4"
   }
 }

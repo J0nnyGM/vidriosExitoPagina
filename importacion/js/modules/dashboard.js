@@ -1,8 +1,7 @@
 // js/modules/dashboard.js
 
-import { db, functions } from '../firebase-config.js';
+import { db, functions, httpsCallable } from '../firebase-config.js';
 import { collection, doc, getDoc, query, onSnapshot, getDocs, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { 
     allRemisiones, allGastos, allClientes, allUsers, initialBalances, currentUserData, currentUser,
     showModalMessage, hideModal, showTemporaryMessage 
@@ -53,109 +52,137 @@ export async function showDashboardModal() {
 
     await ensureInitialBalances();
     const hasRealBalances = Object.keys(initialBalances).some(key => METODOS_DE_PAGO.includes(key));
-    let initialBalanceButtonHTML = !hasRealBalances ? `<button id="set-initial-balance-btn" class="bg-gray-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700">Saldos Iniciales</button>` : '';
+    let initialBalanceButtonHTML = !hasRealBalances ? `<button id="set-initial-balance-btn" class="bg-slate-650 hover:bg-indigo-755 text-white text-xs font-bold py-2 px-3 sm:text-sm sm:py-2 sm:px-4 rounded-xl transition-colors whitespace-nowrap shadow-xs">Saldos Iniciales</button>` : '';
 
     const saldosHTML = METODOS_DE_PAGO.map(metodo => `
-        <div class="bg-gray-100 p-4 rounded-lg">
-            <div class="text-sm font-semibold text-gray-800">${metodo.toUpperCase()}</div>
-            <div id="summary-${metodo.toLowerCase()}" class="text-xl font-bold"></div>
+        <div class="bg-slate-50 border border-slate-100 p-3 sm:p-4 rounded-xl shadow-xs">
+            <div class="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">${metodo}</div>
+            <div id="summary-${metodo.toLowerCase()}" class="text-lg sm:text-xl font-black text-slate-800 mt-1"></div>
         </div>
     `).join('');
 
     modalContentWrapper.innerHTML = `
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl mx-auto text-left flex flex-col" style="height: 80vh;">
-        <div class="flex justify-between items-center p-4 border-b flex-wrap gap-2">
-            <h2 class="text-xl font-semibold">Resumen Financiero</h2>
-            <div class="flex items-center gap-4 flex-wrap justify-end">
+    <div class="modal-card max-w-6xl w-full mx-auto" style="height: 85vh; max-height: 85vh;">
+        <div class="modal-header-fixed flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+            <div class="flex justify-between items-center w-full md:w-auto">
+                <h2 class="text-xl font-bold text-slate-800">Resumen Financiero</h2>
+                <button id="close-dashboard-modal" class="text-gray-500 hover:text-gray-800 text-3xl md:hidden">&times;</button>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap w-full md:w-auto justify-start md:justify-end">
                 ${initialBalanceButtonHTML}
-                <button id="show-transfer-modal-btn" class="bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-700 whitespace-nowrap">Transferir Fondos</button>
-                <button id="download-report-btn" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 whitespace-nowrap">Descargar PDF</button>
-                <button id="close-dashboard-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+                <button id="show-transfer-modal-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white text-xs font-bold py-2 px-3 sm:text-sm sm:py-2 sm:px-4 rounded-xl transition-colors whitespace-nowrap shadow-xs">Transferir Fondos</button>
+                <button id="download-report-btn" class="bg-indigo-650 hover:bg-indigo-755 text-white text-xs font-bold py-2 px-3 sm:text-sm sm:py-2 sm:px-4 rounded-xl transition-colors whitespace-nowrap shadow-xs">Descargar PDF</button>
+                <button id="close-dashboard-modal-desktop" class="text-gray-500 hover:text-gray-800 text-3xl hidden md:block">&times;</button>
             </div>
         </div>
-        <div class="border-b border-gray-200">
+        <div class="border-b border-gray-200 bg-slate-50/50 flex-shrink-0">
             <nav class="-mb-px flex space-x-6 px-6 overflow-x-auto">
-                <button id="dashboard-tab-summary" class="dashboard-tab-btn active py-4 px-1 font-semibold whitespace-nowrap">Resumen Mensual</button>
-                <button id="dashboard-tab-cartera" class="dashboard-tab-btn py-4 px-1 font-semibold whitespace-nowrap">Cartera</button>
-                <button id="dashboard-tab-clientes" class="dashboard-tab-btn py-4 px-1 font-semibold whitespace-nowrap">Clientes</button>
-                <button id="dashboard-tab-transferencias" class="dashboard-tab-btn py-4 px-1 font-semibold whitespace-nowrap">Transferencias</button>
+                <button id="dashboard-tab-summary" class="dashboard-tab-btn active py-4 px-1 font-semibold whitespace-nowrap text-sm border-b-2 border-transparent hover:text-slate-700 transition-all duration-150">Resumen Mensual</button>
+                <button id="dashboard-tab-cartera" class="dashboard-tab-btn py-4 px-1 font-semibold whitespace-nowrap text-sm border-b-2 border-transparent hover:text-slate-700 transition-all duration-150">Cartera</button>
+                <button id="dashboard-tab-clientes" class="dashboard-tab-btn py-4 px-1 font-semibold whitespace-nowrap text-sm border-b-2 border-transparent hover:text-slate-700 transition-all duration-150">Clientes</button>
+                <button id="dashboard-tab-transferencias" class="dashboard-tab-btn py-4 px-1 font-semibold whitespace-nowrap text-sm border-b-2 border-transparent hover:text-slate-700 transition-all duration-150">Transferencias</button>
             </nav>
         </div>
         
-        <div id="dashboard-summary-view" class="p-6 space-y-6 overflow-y-auto flex-grow">
-             <div class="flex items-center gap-4"> 
-                <select id="summary-month" class="p-2 border rounded-lg"></select> 
-                <select id="summary-year" class="p-2 border rounded-lg"></select> 
+        <div id="dashboard-summary-view" class="modal-body-scroll p-4 sm:p-6 space-y-6 flex-grow">
+             <div class="flex items-center gap-3 w-full sm:w-auto"> 
+                <select id="summary-month" class="p-2.5 border border-slate-300 rounded-xl bg-white shadow-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all text-sm flex-1 sm:flex-initial"></select> 
+                <select id="summary-year" class="p-2.5 border border-slate-300 rounded-xl bg-white shadow-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all text-sm flex-1 sm:flex-initial"></select> 
              </div>
-             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"> 
-                <div class="bg-green-100 p-4 rounded-lg"><div class="text-sm font-semibold text-green-800">VENTAS (MES)</div><div id="summary-sales" class="text-2xl font-bold"></div></div> 
-                <div class="bg-red-100 p-4 rounded-lg"><div class="text-sm font-semibold text-red-800">GASTOS (MES)</div><div id="summary-expenses" class="text-2xl font-bold"></div></div> 
-                <div class="bg-indigo-100 p-4 rounded-lg"><div class="text-sm font-semibold text-indigo-800">UTILIDAD (MES)</div><div id="summary-profit" class="text-2xl font-bold"></div></div> 
-                <div class="bg-yellow-100 p-4 rounded-lg"><div class="text-sm font-semibold text-yellow-800">CARTERA PENDIENTE (MES)</div><div id="summary-cartera" class="text-2xl font-bold"></div></div> 
+             <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4"> 
+                <div class="bg-emerald-50 border border-emerald-100 p-3.5 sm:p-5 rounded-2xl shadow-xs"><div class="text-[10px] sm:text-xs font-bold text-emerald-800 uppercase tracking-wider">VENTAS (MES)</div><div id="summary-sales" class="text-lg sm:text-2xl font-black text-emerald-950 mt-1"></div></div> 
+                <div class="bg-rose-50 border border-rose-100 p-3.5 sm:p-5 rounded-2xl shadow-xs"><div class="text-[10px] sm:text-xs font-bold text-rose-800 uppercase tracking-wider">GASTOS (MES)</div><div id="summary-expenses" class="text-lg sm:text-2xl font-black text-rose-950 mt-1"></div></div> 
+                <div class="bg-indigo-50 border border-indigo-100 p-3.5 sm:p-5 rounded-2xl shadow-xs"><div class="text-[10px] sm:text-xs font-bold text-indigo-800 uppercase tracking-wider">UTILIDAD (MES)</div><div id="summary-profit" class="text-lg sm:text-2xl font-black text-indigo-950 mt-1"></div></div> 
+                <div class="bg-amber-50 border border-amber-100 p-3.5 sm:p-5 rounded-2xl shadow-xs"><div class="text-[10px] sm:text-xs font-bold text-amber-800 uppercase tracking-wider">CARTERA PENDIENTE (MES)</div><div id="summary-cartera" class="text-lg sm:text-2xl font-black text-amber-950 mt-1"></div></div> 
              </div>
              <div> 
-                <h3 class="font-semibold mb-2">Saldos Estimados (Total Cuentas)</h3> 
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4"> ${saldosHTML} </div> 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"> 
-                    <div class="bg-gray-100 p-4 rounded-lg"> 
-                        <div class="text-sm font-semibold text-gray-800">CARTERA TOTAL ACUMULADA</div> 
-                        <div id="summary-cartera-total" class="text-xl font-bold"></div> 
+                <h3 class="font-bold text-slate-800 text-lg border-b border-slate-100 pb-2 mb-3">Saldos Estimados (Total Cuentas)</h3> 
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4"> ${saldosHTML} </div> 
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-4"> 
+                    <div class="bg-slate-50 border border-slate-100 p-4 sm:p-5 rounded-2xl shadow-xs"> 
+                        <div class="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">CARTERA TOTAL ACUMULADA</div> 
+                        <div id="summary-cartera-total" class="text-lg sm:text-2xl font-black text-slate-800 mt-1"></div> 
                     </div> 
-                    <div class="bg-teal-100 p-4 rounded-lg border-l-4 border-teal-500"> 
-                        <div class="text-sm font-semibold text-teal-800">INGRESO CONFIRMADO DEL DÍA</div> 
-                        <div id="summary-daily-sales" class="text-xl font-bold"></div> 
+                    <div class="bg-teal-50/50 border border-teal-100 p-4 sm:p-5 rounded-2xl border-l-4 border-l-teal-500 shadow-xs"> 
+                        <div class="text-[10px] sm:text-xs font-bold text-teal-800 uppercase tracking-wider">INGRESO CONFIRMADO DEL DÍA</div> 
+                        <div id="summary-daily-sales" class="text-lg sm:text-2xl font-black text-teal-900 mt-1"></div> 
                     </div> 
                 </div> 
-                <div class="mt-4">
-                    <h4 class="text-sm font-semibold text-gray-600 mb-2">Desglose Venta del Día (Ingresos vs Crédito)</h4>
-                    <div id="daily-sales-breakdown-cards" class="grid grid-cols-2 sm:grid-cols-4 gap-4"></div>
+                <div class="mt-5 border-t border-slate-100 pt-4">
+                    <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Desglose Venta del Día (Ingresos vs Crédito)</h4>
+                    <div id="daily-sales-breakdown-cards" class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4"></div>
                 </div>
              </div>
-             <div> <h3 class="font-semibold mb-2">Utilidad/Pérdida (Últimos 6 Meses)</h3> <div class="bg-gray-50 p-4 rounded-lg"><canvas id="profitLossChart"></canvas></div> </div>
+             <div class="mt-6 border-t border-slate-100 pt-4"> 
+                <h3 class="font-bold text-slate-800 text-lg mb-3">Utilidad/Pérdida (Últimos 6 Meses)</h3> 
+                <div class="bg-slate-50 border border-slate-100 p-3 sm:p-5 rounded-2xl shadow-xs"><canvas id="profitLossChart" class="max-h-65"></canvas></div> 
+             </div>
         </div>
 
-        <div id="dashboard-cartera-view" class="p-6 hidden flex-grow overflow-y-auto flex-col">
+        <div id="dashboard-cartera-view" class="modal-body-scroll p-4 sm:p-6 hidden flex-grow flex-col">
             <h3 class="font-semibold mb-2 text-xl">Cartera Pendiente de Cobro</h3>
             
-            <div class="flex space-x-1 bg-gray-100 p-1 rounded-lg mb-4 w-fit">
-                <button id="subtab-cartera-detalle" class="px-4 py-2 rounded-md text-sm font-semibold bg-white shadow text-gray-800 transition-all">Detalle por Remisión</button>
-                <button id="subtab-cartera-cliente" class="px-4 py-2 rounded-md text-sm font-semibold text-gray-500 hover:text-gray-800 transition-all">Total por Cliente</button>
+            <div class="flex space-x-1 bg-slate-100 p-1 rounded-xl mb-4 w-fit border border-slate-200/50">
+                <button id="subtab-cartera-detalle" class="px-4 py-2 rounded-lg text-sm font-semibold bg-white shadow text-gray-800 transition-all">Detalle por Remisión</button>
+                <button id="subtab-cartera-cliente" class="px-4 py-2 rounded-lg text-sm font-semibold text-gray-500 hover:text-gray-800 transition-all">Total por Cliente</button>
             </div>
 
             <div id="view-cartera-detalle">
                 <div id="cartera-list" class="space-y-4"></div>
-                <div id="cartera-total" class="text-right font-bold text-xl mt-4"></div>
+                <div id="cartera-total" class="text-right font-black text-xl text-slate-800 mt-4 bg-slate-50 p-4 rounded-xl border border-slate-100"></div>
             </div>
 
             <div id="view-cartera-cliente" class="hidden">
                 <div id="cartera-clientes-list" class="space-y-4"></div>
-                <div id="cartera-clientes-total" class="text-right font-bold text-xl mt-4"></div>
+                <div id="cartera-clientes-total" class="text-right font-black text-xl text-slate-800 mt-4 bg-slate-50 p-4 rounded-xl border border-slate-100"></div>
             </div>
         </div>
 
-        <div id="dashboard-clientes-view" class="p-6 hidden flex-grow overflow-y-auto">
+        <div id="dashboard-clientes-view" class="modal-body-scroll p-4 sm:p-6 hidden flex-grow">
             <h3 class="font-semibold mb-2 text-xl">Ranking de Clientes</h3>
-            <div class="flex flex-wrap items-center gap-4 mb-4 p-2 bg-gray-50 rounded-lg border"> 
-                <div class="flex items-center gap-2"><label class="text-sm font-medium">Desde:</label><select id="rank-start-month" class="p-2 border rounded-lg"></select><select id="rank-start-year" class="p-2 border rounded-lg"></select></div> 
-                <div class="flex items-center gap-2"><label class="text-sm font-medium">Hasta:</label><select id="rank-end-month" class="p-2 border rounded-lg"></select><select id="rank-end-year" class="p-2 border rounded-lg"></select></div> 
-                <button id="rank-filter-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Filtrar</button> 
-                <button id="rank-show-all-btn" class="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-700">Mostrar Todos</button> 
+            <div class="bg-slate-50 border border-slate-200/60 p-4 rounded-2xl mb-5 space-y-4 sm:space-y-0 sm:flex sm:flex-wrap sm:items-end sm:gap-4">
+                <div class="grid grid-cols-2 gap-3 sm:flex sm:items-center sm:gap-4 flex-grow">
+                    <div class="space-y-1">
+                        <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Desde</label>
+                        <div class="flex gap-2">
+                            <select id="rank-start-month" class="p-2 border border-slate-300 rounded-lg bg-white text-sm w-full"></select>
+                            <select id="rank-start-year" class="p-2 border border-slate-300 rounded-lg bg-white text-sm w-full"></select>
+                        </div>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Hasta</label>
+                        <div class="flex gap-2">
+                            <select id="rank-end-month" class="p-2 border border-slate-300 rounded-lg bg-white text-sm w-full"></select>
+                            <select id="rank-end-year" class="p-2 border border-slate-300 rounded-lg bg-white text-sm w-full"></select>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3 sm:flex sm:gap-2 pt-2 sm:pt-0">
+                    <button id="rank-filter-btn" class="bg-indigo-650 hover:bg-indigo-755 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-colors whitespace-nowrap shadow-xs">Filtrar</button>
+                    <button id="rank-show-all-btn" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-sm transition-colors whitespace-nowrap">Mostrar Todos</button>
+                </div>
             </div>
             <div id="top-clientes-list" class="space-y-3"></div>
         </div>
         
-        <div id="dashboard-transferencias-view" class="p-6 hidden flex-grow overflow-y-auto flex-col">
+        <div id="dashboard-transferencias-view" class="modal-body-scroll p-4 sm:p-6 hidden flex-grow flex-col">
             <h3 class="font-semibold mb-2 text-xl">Historial de Transferencias Confirmadas</h3>
-             <div class="flex flex-col sm:flex-row gap-4 my-4 p-4 bg-gray-50 rounded-lg border">
-                 <div class="flex-1"> <label for="filter-transfer-month" class="text-sm font-medium text-gray-700">Mes</label> <select id="filter-transfer-month" class="p-2 border rounded-lg bg-white w-full mt-1"></select> </div>
-                 <div class="flex-1"> <label for="filter-transfer-year" class="text-sm font-medium text-gray-700">Año</label> <select id="filter-transfer-year" class="p-2 border rounded-lg bg-white w-full mt-1"></select> </div>
-             </div>
+            <div class="grid grid-cols-2 gap-4 bg-slate-50 border border-slate-200/60 p-4 rounded-2xl my-4">
+                <div class="space-y-1"> 
+                    <label for="filter-transfer-month" class="text-xs font-bold text-slate-500 uppercase tracking-wider">Mes</label> 
+                    <select id="filter-transfer-month" class="p-2 border border-slate-300 rounded-lg bg-white w-full text-sm"></select> 
+                </div>
+                <div class="space-y-1"> 
+                    <label for="filter-transfer-year" class="text-xs font-bold text-slate-500 uppercase tracking-wider">Año</label> 
+                    <select id="filter-transfer-year" class="p-2 border border-slate-300 rounded-lg bg-white w-full text-sm"></select> 
+                </div>
+            </div>
             <div id="transferencias-list" class="space-y-3"></div>
             <div id="transferencias-pagination" class="mt-auto pt-4 border-t border-gray-200"></div>
         </div>
 
-        <div id="pending-transfers-section" class="p-6 border-t mt-auto bg-yellow-50 hidden">
-            <h3 class="font-semibold mb-2 text-lg text-yellow-800">Transferencias Pendientes de Confirmación</h3>
+        <div id="pending-transfers-section" class="p-4 sm:p-6 border-t mt-auto bg-amber-50/50 hidden">
+            <h3 class="font-bold mb-2 text-base text-amber-850">Transferencias Pendientes de Confirmación</h3>
             <div id="pending-transfers-list" class="space-y-3 max-h-40 overflow-y-auto"></div>
         </div>
     </div>
@@ -218,9 +245,13 @@ export async function showDashboardModal() {
         });
     }
 
-    document.getElementById('close-dashboard-modal').addEventListener('click', () => {
-        cleanupDashboardListeners();
-        hideModal();
+    const closeBtnIds = ['close-dashboard-modal', 'close-dashboard-modal-desktop'];
+    closeBtnIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('click', () => {
+            cleanupDashboardListeners();
+            hideModal();
+        });
     });
 
     const initialBalanceBtn = document.getElementById('set-initial-balance-btn');
@@ -398,16 +429,16 @@ async function updateDashboard(year, month) {
         let cardsHTML = '';
         METODOS_DE_PAGO.forEach(metodo => {
             cardsHTML += `
-                <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                    <div class="text-xs font-semibold text-gray-500 uppercase">${metodo}</div>
-                    <div class="text-lg font-bold text-gray-800">${formatCurrency(breakdown[metodo] || 0)}</div>
+                <div class="bg-slate-50 border border-slate-100 p-3 sm:p-3.5 rounded-xl shadow-xs">
+                    <div class="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">${metodo}</div>
+                    <div class="text-base sm:text-lg font-black text-slate-800 mt-1">${formatCurrency(breakdown[metodo] || 0)}</div>
                 </div>
             `;
         });
         cardsHTML += `
-            <div class="bg-red-50 p-3 rounded-lg border border-red-200">
-                <div class="text-xs font-semibold text-red-800 uppercase">EN CARTERA (HOY)</div>
-                <div class="text-lg font-bold text-red-700">${formatCurrency(carteraToday)}</div>
+            <div class="bg-rose-50/60 border border-rose-100 p-3 sm:p-3.5 rounded-xl shadow-xs">
+                <div class="text-[10px] sm:text-xs font-bold text-rose-800 uppercase tracking-wider">EN CARTERA (HOY)</div>
+                <div class="text-base sm:text-lg font-black text-rose-700 mt-1">${formatCurrency(carteraToday)}</div>
             </div>
         `;
         if (totalConfirmedToday === 0 && carteraToday === 0) {
@@ -486,29 +517,32 @@ function renderCartera() {
         if (overdueDays > 60) overdueColor = 'text-red-600';
 
         const card = document.createElement('div');
-        card.className = 'bg-white p-4 rounded-lg shadow-md border border-gray-200';
+        card.className = 'bg-white p-4 sm:p-5 rounded-2xl shadow-xs flex flex-col gap-3 hover:border-indigo-400 transition-colors duration-200';
         card.dataset.remisionJson = JSON.stringify(r); 
 
         card.innerHTML = `
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-                <div class="mb-2 sm:mb-0 flex-grow">
-                    <p class="font-bold text-gray-800">${r.clienteNombre}</p>
-                    <p class="text-sm text-gray-500">Remisión N° <span class="font-mono">${r.numeroRemision}</span> &bull; Recibido: ${r.fechaRecibido}</p>
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                <div class="flex-grow">
+                    <p class="font-extrabold text-slate-800 text-base sm:text-lg">${r.clienteNombre}</p>
+                    <p class="text-xs sm:text-sm text-slate-500 mt-0.5">Remisión N° <span class="font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md text-xs">${r.numeroRemision}</span> &bull; ${r.fechaRecibido}</p>
                 </div>
-                <div class="text-left sm:text-right w-full sm:w-auto flex-shrink-0"> 
-                    <p class="text-sm text-gray-500">Saldo Pendiente</p>
-                    <p class="font-bold text-xl text-red-600">${formatCurrency(saldoPendiente)}</p>
+                <div class="text-left sm:text-right w-full sm:w-auto flex-shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 mt-1 sm:mt-0"> 
+                    <p class="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Saldo Pendiente</p>
+                    <p class="font-black text-xl sm:text-2xl text-rose-600">${formatCurrency(saldoPendiente)}</p>
                 </div>
             </div>
-            <div class="mt-2 pt-2 border-t border-gray-200 text-sm flex justify-between items-center">
-                <p><span class="font-semibold">Valor Total:</span> ${formatCurrency(r.valorTotal)}</p>
-                <p class="${overdueColor} font-semibold">${overdueDays} días de vencido</p>
-                <button class="cartera-payment-btn bg-purple-600 text-white font-bold py-1 px-3 rounded-lg hover:bg-purple-700 text-xs">Gestionar Pagos</button>
+            <div class="mt-2 pt-3 border-t border-slate-100 text-xs sm:text-sm flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-500">
+                    <p><span class="font-semibold text-slate-700">Valor Total:</span> ${formatCurrency(r.valorTotal)}</p>
+                    <span class="hidden sm:inline text-slate-300">&bull;</span>
+                    <p class="${overdueColor} font-bold">${overdueDays} días de vencido</p>
+                </div>
+                <button class="cartera-payment-btn bg-indigo-650 hover:bg-indigo-755 text-white font-bold py-2 px-4 rounded-xl text-xs transition-colors shadow-xs w-full sm:w-auto text-center">Gestionar Pagos</button>
             </div>
         `;
         carteraListEl.appendChild(card);
     });
-    carteraTotalEl.innerHTML = `Total Cartera: <span class="text-red-600">${formatCurrency(totalCartera)}</span>`;
+    carteraTotalEl.innerHTML = `Total Cartera: <span class="text-rose-650 font-black">${formatCurrency(totalCartera)}</span>`;
     
     const oldListener = carteraListEl._paymentClickListener;
     if (oldListener) carteraListEl.removeEventListener('click', oldListener);
@@ -564,22 +598,22 @@ function renderCarteraClientes() {
     container.innerHTML = '';
     clientesOrdenados.forEach(c => {
         const card = document.createElement('div');
-        card.className = 'bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4';
+        card.className = 'bg-white p-4 sm:p-5 rounded-2xl shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:border-indigo-400 transition-colors duration-200';
         const labelRemisiones = c.remisionesCount === 1 ? 'remisión pendiente' : 'remisiones pendientes';
         card.innerHTML = `
             <div>
-                <p class="font-bold text-lg text-gray-800">${c.nombre}</p>
-                <p class="text-sm text-gray-600 font-medium">${c.remisionesCount} ${labelRemisiones}</p>
-                ${c.telefono && c.telefono !== 'N/A' ? `<p class="text-xs text-gray-400 mt-1">Tel: ${c.telefono}</p>` : ''}
+                <p class="font-extrabold text-slate-800 text-base sm:text-lg">${c.nombre}</p>
+                <p class="text-xs sm:text-sm text-slate-500 mt-0.5"><span class="bg-amber-50 text-amber-800 text-xs font-semibold px-2 py-0.5 rounded-md">${c.remisionesCount} ${labelRemisiones}</span></p>
+                ${c.telefono && c.telefono !== 'N/A' ? `<p class="text-xs text-slate-400 mt-2 flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg> ${c.telefono}</p>` : ''}
             </div>
-            <div class="text-left sm:text-right w-full sm:w-auto border-t sm:border-t-0 pt-2 sm:pt-0 mt-2 sm:mt-0">
-                <p class="text-xs text-gray-500 uppercase tracking-wider">Deuda Total</p>
-                <p class="font-bold text-xl text-red-600">${formatCurrency(c.totalDeuda)}</p>
+            <div class="text-left sm:text-right w-full sm:w-auto border-t sm:border-t-0 pt-2 sm:pt-0 mt-2 sm:mt-0 flex-shrink-0">
+                <p class="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Deuda Total</p>
+                <p class="font-black text-xl sm:text-2xl text-rose-600">${formatCurrency(c.totalDeuda)}</p>
             </div>
         `;
         container.appendChild(card);
     });
-    totalEl.innerHTML = `Total Cartera: <span class="text-red-600">${formatCurrency(granTotal)}</span>`;
+    totalEl.innerHTML = `Total Cartera: <span class="text-rose-650 font-black">${formatCurrency(granTotal)}</span>`;
 }
 
 function renderTopClientes(startDate, endDate) {
@@ -606,16 +640,30 @@ function renderTopClientes(startDate, endDate) {
         return;
     }
 
-    clientesConHistorial.forEach(cliente => {
+    clientesConHistorial.forEach((cliente, index) => {
         const el = document.createElement('div');
-        el.className = 'border p-4 rounded-lg';
+        el.className = 'bg-white p-4 sm:p-5 rounded-2xl shadow-xs flex justify-between items-center gap-4 hover:border-indigo-400 transition-colors duration-200';
+        
+        let rankBadgeClass = "bg-slate-100 text-slate-700 border-slate-200";
+        if (index === 0) rankBadgeClass = "bg-amber-500 text-white border-amber-600 shadow-sm";
+        else if (index === 1) rankBadgeClass = "bg-slate-350 text-white border-slate-400 shadow-sm";
+        else if (index === 2) rankBadgeClass = "bg-amber-650 text-white border-amber-700 shadow-sm";
+
         el.innerHTML = `
-                <div class="flex justify-between items-center">
-                    <p class="font-semibold text-lg">${cliente.nombre}</p>
-                    <p class="font-bold text-xl text-green-600">${formatCurrency(cliente.totalComprado)}</p>
+            <div class="flex items-center gap-3">
+                <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-extrabold border ${rankBadgeClass}">
+                    #${index + 1}
                 </div>
-                <p class="text-sm text-gray-600">${cliente.numCompras} ${cliente.numCompras === 1 ? 'compra' : 'compras'}</p>
-            `;
+                <div>
+                    <p class="font-extrabold text-slate-800 text-base sm:text-lg">${cliente.nombre}</p>
+                    <p class="text-xs text-slate-400 font-medium mt-0.5">${cliente.numCompras} ${cliente.numCompras === 1 ? 'compra' : 'compras'}</p>
+                </div>
+            </div>
+            <div class="text-right flex-shrink-0">
+                <p class="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Total Comprado</p>
+                <p class="font-black text-lg sm:text-xl text-emerald-600">${formatCurrency(cliente.totalComprado)}</p>
+            </div>
+        `;
         container.appendChild(el);
     });
 }
@@ -742,7 +790,7 @@ function renderConfirmedTransfersList() {
 
     paginatedTransfers.forEach(transfer => {
         const el = document.createElement('div');
-        el.className = 'bg-white p-4 rounded-lg shadow border border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-4 items-start';
+        el.className = 'bg-white p-4 sm:p-5 rounded-2xl shadow-xs grid grid-cols-1 md:grid-cols-3 gap-4 items-start hover:border-indigo-400 transition-colors duration-200';
 
         let fechaConfirmacionStr = new Date(transfer.confirmadoEn).toLocaleDateString();
         let horaConfirmacionStr = new Date(transfer.confirmadoEn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -753,21 +801,25 @@ function renderConfirmedTransfersList() {
         const confirmadoPorNombre = allUsers.find(u => u.id === transfer.confirmadoPor)?.nombre || 'Desconocido';
 
         el.innerHTML = `
-            <div class="md:col-span-1 space-y-1">
-                <p class="font-bold text-xl text-indigo-700">${formatCurrency(transfer.monto)}</p>
-                <p class="text-sm font-semibold text-gray-800">
-                    <span class="text-red-600">${transfer.cuentaOrigen}</span> &rarr; <span class="text-green-600">${transfer.cuentaDestino}</span>
-                </p>
-                 <p class="text-xs text-gray-500">Fecha Transferencia: ${fechaTransferenciaStr}</p>
-                ${transfer.referencia ? `<p class="text-xs text-gray-600 italic break-all">Ref: ${transfer.referencia}</p>` : ''}
+            <div class="md:col-span-1 space-y-2">
+                <p class="font-black text-xl text-indigo-655">${formatCurrency(transfer.monto)}</p>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="bg-rose-50 text-rose-700 px-2 py-0.5 rounded-md text-xs font-bold border border-rose-100">${transfer.cuentaOrigen}</span> 
+                    <span class="text-slate-400 text-xs font-bold">&rarr;</span> 
+                    <span class="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md text-xs font-bold border border-emerald-100">${transfer.cuentaDestino}</span>
+                </div>
+                <p class="text-xs text-slate-400 font-medium">Fecha Transf: ${fechaTransferenciaStr}</p>
+                ${transfer.referencia ? `<p class="text-xs text-slate-500 bg-slate-50 border border-slate-100 p-1.5 rounded-lg italic break-all">Ref: ${transfer.referencia}</p>` : ''}
             </div>
-            <div class="md:col-span-1 text-xs text-gray-600 border-t md:border-t-0 md:border-l md:pl-4 pt-2 md:pt-0">
-                <p class="font-semibold text-gray-800">Registrado:</p>
-                <p>Por: ${registradoPorNombre}</p><p>Fecha: ${fechaRegistroStr}</p>
+            <div class="md:col-span-1 text-xs text-slate-600 border-t md:border-t-0 md:border-l md:border-slate-100 md:pl-4 pt-3 md:pt-0 space-y-1">
+                <p class="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Registrado</p>
+                <p><span class="font-medium text-slate-500">Por:</span> ${registradoPorNombre}</p>
+                <p><span class="font-medium text-slate-500">Fecha:</span> ${fechaRegistroStr}</p>
             </div>
-            <div class="md:col-span-1 text-xs text-gray-600 border-t md:border-t-0 md:border-l md:pl-4 pt-2 md:pt-0">
-                <p class="font-semibold text-gray-800">Confirmado:</p>
-                <p>Por: ${confirmadoPorNombre}</p><p>Fecha: ${fechaConfirmacionStr}</p><p>Hora: ${horaConfirmacionStr}</p>
+            <div class="md:col-span-1 text-xs text-slate-600 border-t md:border-t-0 md:border-l md:border-slate-100 md:pl-4 pt-3 md:pt-0 space-y-1">
+                <p class="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Confirmado</p>
+                <p><span class="font-medium text-slate-500">Por:</span> ${confirmadoPorNombre}</p>
+                <p><span class="font-medium text-slate-500">Fecha:</span> ${fechaConfirmacionStr} &bull; ${horaConfirmacionStr}</p>
             </div>
         `;
         listContainer.appendChild(el);
@@ -775,12 +827,12 @@ function renderConfirmedTransfersList() {
 
     if (paginationContainer) {
         paginationContainer.innerHTML = `
-            <div class="flex justify-between items-center mt-2">
-                <span class="text-sm text-gray-600">Mostrando ${startIndex + 1} - ${Math.min(endIndex, totalItems)} de ${totalItems}</span>
-                <div class="flex gap-2">
-                    <button id="prev-transf-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPageTransfers === 1 ? 'disabled' : ''}>Anterior</button>
-                    <span class="px-3 py-1 font-semibold text-gray-700">Pág ${currentPageTransfers} de ${totalPages}</span>
-                    <button id="next-transf-btn" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50" ${currentPageTransfers === totalPages ? 'disabled' : ''}>Siguiente</button>
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-3 mt-4">
+                <span class="text-xs font-medium text-slate-500 order-2 sm:order-1">Mostrando ${startIndex + 1} - ${Math.min(endIndex, totalItems)} de ${totalItems}</span>
+                <div class="flex gap-2 order-1 sm:order-2 w-full sm:w-auto justify-between sm:justify-end">
+                    <button id="prev-transf-btn" class="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition-colors disabled:opacity-50" ${currentPageTransfers === 1 ? 'disabled' : ''}>Anterior</button>
+                    <span class="px-3 py-1.5 text-xs font-bold text-slate-600">Pág ${currentPageTransfers} de ${totalPages}</span>
+                    <button id="next-transf-btn" class="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition-colors disabled:opacity-50" ${currentPageTransfers === totalPages ? 'disabled' : ''}>Siguiente</button>
                 </div>
             </div>
         `;
@@ -819,19 +871,23 @@ function renderPendingTransfers() {
 
         pendingTransfers.forEach(transfer => {
             const el = document.createElement('div');
-            el.className = 'border p-3 rounded-lg flex justify-between items-center bg-white';
+            el.className = 'bg-white p-4 rounded-2xl shadow-xs border border-amber-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3';
             const canConfirm = currentUser.uid !== transfer.registradoPor;
             const fechaRegistro = transfer.fechaRegistro ? new Date(transfer.fechaRegistro.seconds * 1000).toLocaleDateString() : 'Fecha no disponible';
             const fechaMostrar = transfer.fechaTransferencia || fechaRegistro;
 
             el.innerHTML = `
-                <div>
-                    <p class="font-semibold">${formatCurrency(transfer.monto)}</p>
-                    <p class="text-sm text-gray-600">${transfer.cuentaOrigen} &rarr; ${transfer.cuentaDestino}</p>
-                    <p class="text-xs text-gray-400">Fecha Transferencia: ${fechaMostrar}</p>
-                    ${transfer.referencia ? `<p class="text-xs text-gray-500">Ref: ${transfer.referencia}</p>` : ''}
+                <div class="space-y-1.5 w-full sm:w-auto">
+                    <p class="font-black text-lg text-slate-800">${formatCurrency(transfer.monto)}</p>
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <span class="bg-rose-50 text-rose-700 px-2 py-0.5 rounded-md text-xs font-bold border border-rose-100">${transfer.cuentaOrigen}</span> 
+                        <span class="text-slate-400 text-xs font-bold">&rarr;</span> 
+                        <span class="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md text-xs font-bold border border-emerald-100">${transfer.cuentaDestino}</span>
+                    </div>
+                    <p class="text-xs text-slate-400 font-medium">Fecha Transf: ${fechaMostrar}</p>
+                    ${transfer.referencia ? `<p class="text-xs text-slate-500 bg-slate-50 border border-slate-100 p-1.5 rounded-lg italic break-all">Ref: ${transfer.referencia}</p>` : ''}
                 </div>
-                <button data-transfer-id="${transfer.id}" class="confirm-transfer-btn bg-green-500 text-white text-xs px-3 py-1 rounded hover:bg-green-600 ${!canConfirm ? 'opacity-50 cursor-not-allowed' : ''}" ${!canConfirm ? 'disabled title="Otro admin debe confirmar"' : ''}>
+                <button data-transfer-id="${transfer.id}" class="confirm-transfer-btn w-full sm:w-auto text-center font-bold px-4 py-2.5 rounded-xl text-xs transition-colors shadow-xs bg-emerald-650 hover:bg-emerald-755 text-white ${!canConfirm ? 'opacity-40 cursor-not-allowed bg-slate-400 hover:bg-slate-400 text-slate-600' : ''}" ${!canConfirm ? 'disabled title="Otro admin debe confirmar"' : ''}>
                     Confirmar
                 </button>
             `;
@@ -880,15 +936,38 @@ function showTransferModal() {
     const origenOptions = METODOS_DE_PAGO.map(m => `<option value="${m}">${m}</option>`).join('');
 
     modalContentWrapper.innerHTML = `
-        <div class="bg-white rounded-lg p-6 shadow-xl max-w-md w-full mx-auto text-left">
-            <div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Registrar Transferencia</h2><button id="close-transfer-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button></div>
-            <form id="transfer-form" class="space-y-4">
-                <div><label class="block text-sm font-medium">Cuenta Origen</label><select id="transfer-origen" class="w-full p-2 border rounded-lg bg-white" required><option value="">-- Seleccionar --</option>${origenOptions}</select></div>
-                <div><label class="block text-sm font-medium">Cuenta Destino</label><select id="transfer-destino" class="w-full p-2 border rounded-lg bg-white" required><option value="">-- Seleccionar --</option></select></div>
-                <div><label class="block text-sm font-medium">Fecha de Transferencia</label><input type="date" id="transfer-fecha" class="w-full p-2 border rounded-lg" value="${new Date().toISOString().split('T')[0]}" required></div>
-                 <div><label class="block text-sm font-medium">Monto (COP)</label><input type="text" id="transfer-amount" inputmode="numeric" class="w-full p-2 border rounded-lg" required></div>
-                 <div><label class="block text-sm font-medium">Referencia (Opcional)</label><input type="text" id="transfer-reference" class="w-full p-2 border rounded-lg"></div>
-                <button type="submit" class="w-full bg-yellow-600 text-white font-bold py-2 rounded-lg hover:bg-yellow-700">Registrar Transferencia</button>
+        <div class="modal-card max-w-md w-full mx-auto" style="height: auto; max-height: 85vh;">
+            <div class="modal-header-fixed">
+                <h2 class="text-xl font-bold text-slate-800">Registrar Transferencia</h2>
+                <button id="close-transfer-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            </div>
+            <form id="transfer-form" class="modal-body-scroll p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Cuenta Origen</label>
+                    <select id="transfer-origen" class="w-full p-2.5 border border-slate-300 rounded-xl bg-white shadow-xs focus:ring-2 focus:ring-indigo-500 text-sm" required>
+                        <option value="">-- Seleccionar --</option>
+                        ${origenOptions}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Cuenta Destino</label>
+                    <select id="transfer-destino" class="w-full p-2.5 border border-slate-300 rounded-xl bg-white shadow-xs focus:ring-2 focus:ring-indigo-500 text-sm" required>
+                        <option value="">-- Seleccionar --</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha de Transferencia</label>
+                    <input type="date" id="transfer-fecha" class="w-full p-2.5 border border-slate-300 rounded-xl bg-white shadow-xs focus:ring-2 focus:ring-indigo-500 text-sm" value="${new Date().toISOString().split('T')[0]}" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Monto (COP)</label>
+                    <input type="text" id="transfer-amount" inputmode="numeric" class="w-full p-2.5 border border-slate-300 rounded-xl bg-white shadow-xs focus:ring-2 focus:ring-indigo-500 text-sm" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Referencia (Opcional)</label>
+                    <input type="text" id="transfer-reference" class="w-full p-2.5 border border-slate-300 rounded-xl bg-white shadow-xs focus:ring-2 focus:ring-indigo-500 text-sm">
+                </div>
+                <button type="submit" class="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 rounded-xl transition-colors shadow-xs mt-2">Registrar Transferencia</button>
             </form>
         </div>
     `;
@@ -946,10 +1025,16 @@ async function showInitialBalanceModal() {
     `).join('');
 
     modalContentWrapper.innerHTML = `
-        <div class="bg-white rounded-lg p-6 shadow-xl max-w-lg w-full mx-auto text-left">
-            <div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Establecer Saldos Iniciales</h2><button id="close-balance-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button></div>
-            <p class="text-sm text-gray-600 mb-4">Ingresa el saldo base de cada cuenta.</p>
-            <form id="initial-balance-form" class="space-y-3">${balanceFieldsHTML}<div class="pt-4"><button type="submit" class="w-full bg-indigo-600 text-white font-bold py-2 rounded-lg hover:bg-indigo-700">Guardar Saldos</button></div></form>
+        <div class="modal-card max-w-md w-full mx-auto" style="height: auto; max-height: 85vh;">
+            <div class="modal-header-fixed">
+                <h2 class="text-xl font-bold text-slate-800">Establecer Saldos Iniciales</h2>
+                <button id="close-balance-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            </div>
+            <form id="initial-balance-form" class="modal-body-scroll p-6 space-y-4">
+                <p class="text-xs text-slate-500 mb-2">Ingresa el saldo base de cada cuenta para comenzar el registro financiero.</p>
+                ${balanceFieldsHTML}
+                <button type="submit" class="w-full bg-indigo-650 hover:bg-indigo-755 text-white font-bold py-3 rounded-xl transition-colors shadow-xs mt-2">Guardar Saldos</button>
+            </form>
         </div>
     `;
 
@@ -1001,18 +1086,28 @@ function showReportDateRangeModal() {
     for (let i = 0; i < 5; i++) { const year = now.getFullYear() - i; yearOptions += `<option value="${year}">${year}</option>`; }
 
     modalContentWrapper.innerHTML = `
-        <div class="bg-white rounded-lg p-6 shadow-xl max-w-lg w-full mx-auto text-left">
-            <div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Reporte Financiero</h2><button id="close-report-range-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button></div>
-            <form id="report-range-form" class="space-y-4">
-                <div class="grid grid-cols-2 gap-4">
-                    <div><label class="block text-sm">Mes Inicio</label><select id="report-start-month" class="w-full p-2 border rounded-lg">${monthOptions}</select></div>
-                    <div><label class="block text-sm">Año Inicio</label><select id="report-start-year" class="w-full p-2 border rounded-lg">${yearOptions}</select></div>
+        <div class="modal-card max-w-md w-full mx-auto" style="height: auto; max-height: 85vh;">
+            <div class="modal-header-fixed">
+                <h2 class="text-xl font-bold text-slate-800">Reporte Financiero</h2>
+                <button id="close-report-range-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            </div>
+            <form id="report-range-form" class="modal-body-scroll p-6 space-y-4">
+                <p class="text-xs text-slate-500 mb-2">Selecciona el rango de fechas para generar el reporte de ventas, gastos y utilidades en PDF.</p>
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">Inicio del Periodo</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <select id="report-start-month" class="p-2.5 border border-slate-300 rounded-xl bg-white text-sm w-full">${monthOptions}</select>
+                        <select id="report-start-year" class="p-2.5 border border-slate-300 rounded-xl bg-white text-sm w-full">${yearOptions}</select>
+                    </div>
                 </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div><label class="block text-sm">Mes Fin</label><select id="report-end-month" class="w-full p-2 border rounded-lg">${monthOptions}</select></div>
-                    <div><label class="block text-sm">Año Fin</label><select id="report-end-year" class="w-full p-2 border rounded-lg">${yearOptions}</select></div>
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">Fin del Periodo</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <select id="report-end-month" class="p-2.5 border border-slate-300 rounded-xl bg-white text-sm w-full">${monthOptions}</select>
+                        <select id="report-end-year" class="p-2.5 border border-slate-300 rounded-xl bg-white text-sm w-full">${yearOptions}</select>
+                    </div>
                 </div>
-                <button type="submit" class="w-full bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700">Generar Reporte PDF</button>
+                <button type="submit" class="w-full bg-indigo-650 hover:bg-indigo-755 text-white font-bold py-3 rounded-xl transition-colors shadow-xs mt-4">Generar Reporte PDF</button>
             </form>
         </div>
     `;

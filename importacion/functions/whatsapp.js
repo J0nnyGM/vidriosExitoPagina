@@ -1,337 +1,612 @@
-// functions/whatsapp.js
-const functions = require("firebase-functions");
+const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const axios = require("axios");
-const cors = require("cors")({ origin: true });
+const sharp = require("sharp"); // 🔥 NUEVA LIBRERÍA DE CONVERSIÓN
+const db = admin.firestore();
+const storage = admin.storage();
 
-const VERIFY_TOKEN = "mi_secreto_vidrio_express_2026";
-const BUCKET_NAME = "vidrioexpres1.firebasestorage.app"; // Tu bucket de Storage
+// --- CONFIGURACIÓN ---
+const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || "mi_secreto_vidrio_express_2026";
+const API_TOKEN = process.env.WHATSAPP_API_TOKEN || process.env.WHATSAPP_TOKEN;
+const PHONE_ID = process.env.WHATSAPP_PHONE_ID || process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+// Memoria caché para no convertir la misma imagen 500 veces en campañas masivas
+const convertedImageCache = {}; 
 
 // --- HELPERS ---
-function formatColombianPhone(phone) {
-    if (!phone || typeof phone !== "string") return null;
-    let cleanPhone = phone.replace(/[\s-()]/g, "");
-    if (cleanPhone.startsWith("57")) return cleanPhone;
-    if (cleanPhone.length === 10) return `57${cleanPhone}`;
-    return null;
+
+// 🔥 NUEVO: Convertidor sobre la marcha (WebP a JPG)
+async function getMetaCompatibleUrl(mediaUrl) {
+    if (!mediaUrl) return null;
+    
+    // Si la URL no contiene .webp, asumimos que es segura y la pasamos directo
+    if (!mediaUrl.includes('.webp')) return mediaUrl;
+
+    // Si ya la convertimos en esta sesión, devolvemos la URL convertida al instante
+    if (convertedImageCache[mediaUrl]) return convertedImageCache[mediaUrl];
+
+    console.log(`🔄 Convirtiendo imagen WebP a JPG para Meta: ${mediaUrl}`);
+    
+    try {
+        // 1. Descargar la imagen original
+        const response = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
+        const buffer = Buffer.from(response.data, 'binary');
+
+        // 2. Convertir a JPEG
+        const jpegBuffer = await sharp(buffer).jpeg({ quality: 90 }).toBuffer();
+
+        // 3. Subir a una carpeta temporal en Storage
+        const fileName = `meta_cache/${Date.now()}_converted.jpg`;
+        const file = storage.bucket().file(fileName);
+        
+        await file.save(jpegBuffer, { metadata: { contentType: 'image/jpeg' } });
+        await file.makePublic();
+
+        const newUrl = file.publicUrl();
+        convertedImageCache[mediaUrl] = newUrl; // Guardar en caché local
+        
+        console.log(`✅ Imagen convertida con éxito: ${newUrl}`);
+        return newUrl;
+    } catch (error) {
+        console.error("❌ Error convirtiendo imagen para Meta:", error.message);
+        return mediaUrl; // Si algo falla, pasamos la original (plan de contingencia)
+    }
 }
 
-// Función mágica para descargar fotos/audios de WhatsApp y guardarlos en Firebase Storage
-async function downloadAndSaveMedia(mediaId, mimeType) {
-    const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+// 1. Enviar mensaje a Meta
+async function sendToMeta(phoneNumber, message, type = 'text', mediaUrl = null, templateName = null, templateLang = 'en_US') {
+    const url = `https://graph.facebook.com/v17.0/${PHONE_ID}/messages`;
+    let body = { 
+        messaging_product: 'whatsapp', 
+        to: phoneNumber, 
+        type: type 
+    };
+
+    if (type === 'image') {
+        body.image = { link: mediaUrl, caption: message || "" };
+    } else if (type === 'document') {
+        // 🔥 NUEVO: Soporte para PDFs y Archivos
+        body.document = { link: mediaUrl, filename: message || "Documento" };
+    } else if (type === 'template') {
+        body.template = { 
+            name: templateName, 
+            language: { code: templateLang } 
+        };
+    } else if (type === 'audio') {
+        body.audio = { link: mediaUrl };
+    } else {
+        body.text = { body: message };
+    }
+
     try {
-        // 1. Pedirle a Meta la URL temporal de descarga del archivo
-        const resUrl = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
-            headers: { "Authorization": `Bearer ${WHATSAPP_TOKEN}` }
+        const response = await axios.post(url, body, {
+            headers: { 'Authorization': `Bearer ${API_TOKEN}`, 'Content-Type': 'application/json' }
         });
-        const urlDescarga = resUrl.data.url;
-
-        // 2. Descargar el archivo binario
-        const resBuffer = await axios.get(urlDescarga, {
-            responseType: 'arraybuffer',
-            headers: { "Authorization": `Bearer ${WHATSAPP_TOKEN}` }
-        });
-
-        // 3. Guardarlo en tu Firebase Storage
-        const extension = mimeType.split('/')[1].split(';')[0] || 'bin';
-        const bucket = admin.storage().bucket(BUCKET_NAME);
-        const filePath = `whatsapp_media/${mediaId}.${extension}`;
-        const file = bucket.file(filePath);
-        
-        await file.save(resBuffer.data, { contentType: mimeType });
-        
-        // 4. Generar URL firmada válida por mucho tiempo (o hacerla pública)
-        const [url] = await file.getSignedUrl({ action: 'read', expires: '01-01-2100' });
-        return url;
+        return response.data.messages[0].id;
     } catch (error) {
-        functions.logger.error("Error descargando media de WhatsApp:", error);
+        console.error("Error Meta API:", error.response?.data || error.message);
+        throw new Error(error.response?.data?.error?.message || "Fallo al enviar mensaje a WhatsApp");
+    }
+}
+
+// 2. Descargar y subir multimedia entrante
+async function downloadAndUploadMedia(mediaId, mimeType, phoneNumber) {
+    try {
+        const metaRes = await axios.get(`https://graph.facebook.com/v17.0/${mediaId}`, {
+            headers: { 'Authorization': `Bearer ${API_TOKEN}` }
+        });
+        const fileRes = await axios.get(metaRes.data.url, {
+            responseType: 'arraybuffer',
+            headers: { 'Authorization': `Bearer ${API_TOKEN}` }
+        });
+
+        const ext = mimeType.split('/')[1].split(';')[0] || 'bin';
+        const fileName = `chats/${phoneNumber}/${Date.now()}_${mediaId}.${ext}`;
+        const file = storage.bucket().file(fileName);
+
+        await file.save(fileRes.data, { metadata: { contentType: mimeType } });
+        await file.makePublic();
+        return file.publicUrl();
+    } catch (error) {
+        console.error("Error media:", error);
         return null;
     }
 }
 
-// --- 1. WEBHOOK: RECIBE MENSAJES Y LOS GUARDA EN FIRESTORE ---
-exports.whatsappWebhook = functions.https.onRequest((req, res) => {
-    cors(req, res, async () => {
-        if (req.method === 'GET') {
-            if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === VERIFY_TOKEN) {
-                return res.status(200).send(req.query['hub.challenge']);
-            }
-            return res.status(403).send("Token inválido");
+// --- WEBHOOK (RECIBIR + BOT) ---
+const webhook = onRequest({ timeoutSeconds: 60 }, async (req, res) => {
+    if (req.method === "GET") {
+        if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === VERIFY_TOKEN) {
+            console.log("✅ Webhook verificado por Meta correctamente.");
+            res.status(200).send(req.query["hub.challenge"]);
+        } else {
+            res.sendStatus(403);
         }
-
-        if (req.method === 'POST') {
-            const body = req.body;
-
-            if (body.object === 'whatsapp_business_account') {
-                try {
-                    const changes = body.entry?.[0]?.changes?.[0]?.value;
-                    
-                    // A) Si es un mensaje entrante de un cliente
-                    if (changes && changes.messages && changes.messages.length > 0) {
-                        const msg = changes.messages[0];
-                        const contact = changes.contacts ? changes.contacts[0] : null;
-                        
-                        const phone = msg.from;
-                        const contactName = contact ? contact.profile.name : "Desconocido";
-                        const msgType = msg.type;
-                        const msgId = msg.id;
-                        
-                        // Estructura base del mensaje
-                        let firestoreMsg = {
-                            id: msgId,
-                            tipo: msgType,
-                            direccion: 'entrante',
-                            fecha: admin.firestore.Timestamp.fromDate(new Date(parseInt(msg.timestamp) * 1000)),
-                            leido: false,
-                            texto: ''
-                        };
-
-                        // Parsear el contenido dependiendo del tipo
-                        if (msgType === 'text') {
-                            firestoreMsg.texto = msg.text.body;
-                        } 
-                        // 👇 ¡AQUÍ ESTÁ EL CAMBIO! Añadimos msgType === 'sticker' 👇
-                        else if (msgType === 'image' || msgType === 'video' || msgType === 'audio' || msgType === 'document' || msgType === 'sticker') {
-                            const mediaData = msg[msgType];
-                            firestoreMsg.texto = mediaData.caption || `[${msgType.toUpperCase()}]`;
-                            firestoreMsg.mediaId = mediaData.id;
-                            firestoreMsg.mimeType = mediaData.mime_type;
-                            if (msgType === 'document') firestoreMsg.fileName = mediaData.filename;
-                            
-                            // Descargar a Firebase Storage
-                            const firebaseMediaUrl = await downloadAndSaveMedia(mediaData.id, mediaData.mime_type);
-                            firestoreMsg.mediaUrl = firebaseMediaUrl;
-                        } 
-                        else if (msgType === 'location') {
-                            firestoreMsg.texto = `Ubicación: ${msg.location.name || ''} ${msg.location.address || ''}`;
-                            firestoreMsg.location = { lat: msg.location.latitude, lng: msg.location.longitude };
-                        } 
-                        else if (msgType === 'contacts') {
-                            firestoreMsg.texto = `[Contacto(s) recibido(s)]`;
-                            firestoreMsg.contactos = msg.contacts;
-                        } 
-                        else if (msgType === 'interactive') {
-                            // Cuando responden a botones
-                            firestoreMsg.texto = msg.interactive.button_reply ? msg.interactive.button_reply.title : msg.interactive.list_reply.title;
-                        }
-
-// Guardar en Firestore: Colección "chats" -> Doc(Teléfono) -> Colección "mensajes"
-                        const db = admin.firestore();
-                        const chatRef = db.collection('chats').doc(phone);
-                        
-                        // --- LÓGICA DE AUTO-RESPUESTA INTELIGENTE ---
-                        const chatDoc = await chatRef.get();
-                        let needsAutoReply = false;
-                        const data = chatDoc.exists ? chatDoc.data() : null;
-                        
-                        // Evitamos enviar múltiples mensajes si el cliente manda 5 fotos de golpe (Cooldown de 10 min)
-                        const lastAutoMs = data && data.ultimaRespuestaBot ? data.ultimaRespuestaBot.toDate().getTime() : 0;
-                        const hasCooldownPassed = (Date.now() - lastAutoMs) > (10 * 60 * 1000);
-
-                        if (hasCooldownPassed) {
-                            // Enviamos auto-respuesta si:
-                            // 1. Es un cliente totalmente nuevo (!data)
-                            // 2. El chat había sido marcado como 'resuelto'
-                            // 3. Pasaron más de 24 horas desde la última interacción
-                            const lastClientMsgMs = data && data.ultimaFecha ? data.ultimaFecha.toDate().getTime() : 0;
-                            if (!data || data.estadoChat === 'resuelto' || (Date.now() - lastClientMsgMs > 24 * 60 * 60 * 1000)) {
-                                needsAutoReply = true;
-                            }
-                        }
-
-                        // 1. Guardar el mensaje real del cliente
-                        await chatRef.collection('mensajes').doc(msgId).set(firestoreMsg);
-                        
-                        // 2. Actualizar el Inbox principal para que salte a la pestaña "Activos"
-                        const updatePayload = {
-                            telefono: phone,
-                            nombre: contactName,
-                            ultimoMensaje: firestoreMsg.texto,
-                            ultimaFecha: firestoreMsg.fecha,
-                            mensajesNoLeidos: admin.firestore.FieldValue.increment(1),
-                            estadoChat: 'activo',
-                            _lastUpdated: admin.firestore.FieldValue.serverTimestamp()
-                        };
-
-                        if (needsAutoReply) {
-                            updatePayload.ultimaRespuestaBot = admin.firestore.FieldValue.serverTimestamp();
-                        }
-
-                        await chatRef.set(updatePayload, { merge: true });
-
-                        // 3. Ejecutar el envío de la auto-respuesta
-                        if (needsAutoReply) {
-                            // Puedes modificar este texto a tu gusto:
-                            const autoReplyText = "¡Hola! Gracias por comunicarte con *Vidrio Express*. 🏢\n\nHemos recibido tu mensaje y en breve uno de nuestros asesores te atenderá.\n\n_Horario de atención: Lunes a Viernes 8:00 AM - 5:30 PM y Sábados 8:00 AM - 12:15 PM_";
-                            
-                            try {
-                                const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-                                const PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
-                                const url = `https://graph.facebook.com/v19.0/${PHONE_ID}/messages`;
-                                
-                                const resMeta = await axios.post(url, {
-                                    messaging_product: "whatsapp",
-                                    recipient_type: "individual",
-                                    to: phone,
-                                    type: "text",
-                                    text: { preview_url: false, body: autoReplyText }
-                                }, {
-                                    headers: { "Authorization": `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" }
-                                });
-
-                                // Guardar la auto-respuesta en Firestore para que el asesor la vea en pantalla
-                                const replyMsgId = resMeta.data.messages[0].id;
-                                await chatRef.collection('mensajes').doc(replyMsgId).set({
-                                    id: replyMsgId,
-                                    tipo: 'text',
-                                    direccion: 'saliente',
-                                    fecha: admin.firestore.FieldValue.serverTimestamp(),
-                                    estadoEnvio: 'sent',
-                                    enviadoPor: 'bot_automatico',
-                                    texto: autoReplyText,
-                                    mediaUrl: null
-                                });
-                            } catch (e) {
-                                functions.logger.error("Error en bot automático:", e);
-                            }
-                        }
-                        // -----------------------------------------------------------
-                    }
-
-                    // B) Si es una actualización de estado (Enviado, Entregado, Leído)
-                    if (changes && changes.statuses && changes.statuses.length > 0) {
-                        const statusObj = changes.statuses[0];
-                        const phone = statusObj.recipient_id;
-                        
-                        // CORRECCIÓN DE LA CONDICIÓN DE CARRERA: Usamos SET con merge
-                        await admin.firestore().collection('chats').doc(phone).collection('mensajes').doc(statusObj.id).set({
-                            estadoEnvio: statusObj.status,
-                            _lastUpdated: admin.firestore.FieldValue.serverTimestamp()
-                        }, { merge: true });
-                    }
-
-                } catch (error) {
-                    functions.logger.error("Error procesando Webhook:", error);
-                }
-                return res.status(200).send('EVENT_RECEIVED');
-            }
-            return res.status(404).send('No es un evento de WhatsApp');
-        }
-        return res.status(405).send("Method Not Allowed");
-    });
-});
-
-// --- 2. FUNCIÓN PARA ENVIAR MENSAJES DESDE EL SISTEMA ---
-exports.enviarMensajeWhatsApp = functions.https.onCall(async (data, context) => {
-    // Seguridad: Asegurar que el usuario está logueado
-    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Usuario no autenticado.");
-
-    const { telefonoDestino, tipo, contenido, mediaUrl, fileName } = data;
-    if (!telefonoDestino || !tipo) throw new functions.https.HttpsError("invalid-argument", "Faltan datos requeridos.");
-
-    const phone = formatColombianPhone(telefonoDestino);
-    const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-    const PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    
-    let payload = {
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to: phone,
-        type: tipo
-    };
-
-    // Construir el payload según el tipo de mensaje que envías
-    if (tipo === 'text') {
-        payload.text = { preview_url: true, body: contenido };
-    } else if (tipo === 'image') {
-        payload.image = { link: mediaUrl, caption: contenido || '' };
-    } else if (tipo === 'document') {
-        payload.document = { link: mediaUrl, caption: contenido || '', filename: fileName || 'Documento' };
-    } else if (tipo === 'video') {
-        payload.video = { link: mediaUrl, caption: contenido || '' };
-    } else if (tipo === 'audio') {
-        payload.audio = { link: mediaUrl };
+        return;
     }
 
-    try {
-        const url = `https://graph.facebook.com/v19.0/${PHONE_ID}/messages`;
-        const resMeta = await axios.post(url, payload, {
-            headers: { "Authorization": `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" }
-        });
+    if (req.method === "POST") {
+        const body = req.body;
 
-        // Si fue exitoso, Meta nos devuelve el ID del mensaje
-        const msgId = resMeta.data.messages[0].id;
-        const db = admin.firestore();
-        const msgRef = db.collection('chats').doc(phone).collection('mensajes').doc(msgId);
+        if (body.object) {
+            const change = body.entry?.[0]?.changes?.[0]?.value;
 
-        // CORRECCIÓN DE LA CONDICIÓN DE CARRERA: Respetar si el Webhook llegó primero
-        const msgDoc = await msgRef.get();
-        let finalStatus = 'sent';
-        if (msgDoc.exists && msgDoc.data().estadoEnvio) {
-            finalStatus = msgDoc.data().estadoEnvio; // Mantener 'delivered' o 'read'
+            // ESCENARIO 1: Mensaje entrante
+            if (change?.messages) {
+                const message = change.messages[0];
+                const phoneNumber = message.from;
+                const userName = change.contacts?.[0]?.profile?.name || "Usuario";
+                const type = message.type;
+                
+                let content = "";
+                let mediaUrl = null;
+                let locationData = null;
+                let contactosData = null;
+
+                try {
+                    if (type === "text") {
+                        content = message.text.body;
+                    } else if (type === "image") {
+                        content = message.image.caption || "📷 Imagen recibida";
+                        mediaUrl = await downloadAndUploadMedia(message.image.id, message.image.mime_type, phoneNumber);
+                    } else if (type === "audio" || type === "voice") {
+                        content = "🎤 Audio recibido";
+                        const mediaData = message.audio || message.voice;
+                        mediaUrl = await downloadAndUploadMedia(mediaData.id, mediaData.mime_type, phoneNumber);
+                    } else if (type === "sticker") {
+                        content = "🌟 Sticker";
+                        mediaUrl = await downloadAndUploadMedia(message.sticker.id, message.sticker.mime_type, phoneNumber);
+                    } else if (type === "document") {
+                        // 🔥 NUEVO: Recibir PDFs de clientes
+                        content = message.document.filename || "📄 Documento recibido";
+                        mediaUrl = await downloadAndUploadMedia(message.document.id, message.document.mime_type, phoneNumber);
+                    } else if (type === "location") {
+                        const lat = message.location.latitude;
+                        const lng = message.location.longitude;
+                        content = `📍 Ubicación: ${message.location.name || ""} ${message.location.address || ""}`.trim();
+                        mediaUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+                        locationData = {
+                            lat: lat,
+                            lng: lng,
+                            name: message.location.name || "Ubicación Compartida",
+                            address: message.location.address || "Ver en Google Maps"
+                        };
+                    } else if (type === "contacts") {
+                        const contactPhone = message.contacts[0].phones?.[0]?.wa_id || message.contacts[0].phones?.[0]?.phone || "0";
+                        content = `👤 Contacto: ${message.contacts[0].name?.formatted_name || "Contacto"}`;
+                        mediaUrl = contactPhone.replace(/[^0-9]/g, ''); 
+                        contactosData = message.contacts.map(c => ({
+                            name: { formatted_name: c.name?.formatted_name || "Contacto" },
+                            phones: (c.phones || []).map(p => ({ phone: p.phone || p.wa_id || "" }))
+                        }));
+                    } else {
+                        content = `[Archivo no soportado: ${type}]`;
+                    }
+
+                    const chatRef = db.collection('chats').doc(phoneNumber);
+                    const now = new Date();
+                    const bogotaHour = parseInt(now.toLocaleString("en-US", {timeZone: "America/Bogota", hour: "numeric", hour12: false}));
+                    
+                    const isOutOfOffice = bogotaHour >= 20 || bogotaHour < 7; 
+                    let autoReplySent = false;
+
+                    if (isOutOfOffice) {
+                        // Usar una transacción para evitar condiciones de carrera (duplicados de auto-respuesta)
+                        autoReplySent = await db.runTransaction(async (transaction) => {
+                            const docSnap = await transaction.get(chatRef);
+                            const data = docSnap.exists ? docSnap.data() : {};
+                            
+                            let lastAutoReplyDate = null;
+                            if (data.lastAutoReply && typeof data.lastAutoReply.toDate === 'function') {
+                                lastAutoReplyDate = data.lastAutoReply.toDate();
+                            } else if (data.ultimaRespuestaBot && typeof data.ultimaRespuestaBot.toDate === 'function') {
+                                lastAutoReplyDate = data.ultimaRespuestaBot.toDate();
+                            } else if (data.lastAutoReply) {
+                                lastAutoReplyDate = new Date(data.lastAutoReply);
+                            } else if (data.ultimaRespuestaBot) {
+                                lastAutoReplyDate = new Date(data.ultimaRespuestaBot);
+                            }
+
+                            const hoursSinceLast = lastAutoReplyDate ? (new Date() - lastAutoReplyDate) / (1000 * 60 * 60) : 24;
+
+                            if (hoursSinceLast > 12) {
+                                transaction.set(chatRef, {
+                                    lastAutoReply: admin.firestore.FieldValue.serverTimestamp(),
+                                    ultimaRespuestaBot: admin.firestore.FieldValue.serverTimestamp()
+                                }, { merge: true });
+                                return true;
+                            }
+                            return false;
+                        });
+                    }
+
+                    if (autoReplySent) {
+                        try {
+                            const replyText = "¡Hola! Gracias por comunicarte con *Vidrio Express*. 🏢\n\nHemos recibido tu mensaje, pero en este momento nuestro equipo está descansando. Te responderemos a primera hora de la mañana.";
+                            const replyId = await sendToMeta(phoneNumber, replyText, 'text');
+                            
+                            // Guardar auto-respuesta en subcolección 'messages'
+                            await chatRef.collection('messages').add({
+                                type: 'outgoing', content: replyText, messageType: 'text',
+                                whatsappId: replyId, isAutoReply: true, timestamp: admin.firestore.Timestamp.now()
+                            });
+                            // Guardar auto-respuesta en subcolección 'mensajes'
+                            await chatRef.collection('mensajes').doc(replyId).set({
+                                id: replyId,
+                                tipo: 'text',
+                                direccion: 'saliente',
+                                fecha: admin.firestore.FieldValue.serverTimestamp(),
+                                estadoEnvio: 'sent',
+                                enviadoPor: 'bot_automatico',
+                                texto: replyText,
+                                mediaUrl: null
+                            });
+                        } catch (metaErr) {
+                            console.error("Error enviando auto-respuesta:", metaErr);
+                        }
+                    }
+
+                    // Actualizar el documento del chat con soporte para ambos esquemas de nombres
+                    const updateData = {
+                        // Esquema 2 (MiSmartech)
+                        clientName: userName,
+                        phoneNumber,
+                        lastMessage: content,
+                        lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+                        lastCustomerInteraction: admin.firestore.FieldValue.serverTimestamp(),
+                        unread: true,
+                        platform: 'whatsapp',
+                        status: 'open',
+
+                        // Esquema 1 (VidriosExito)
+                        telefono: phoneNumber,
+                        nombre: userName,
+                        ultimoMensaje: content,
+                        ultimaFecha: admin.firestore.FieldValue.serverTimestamp(),
+                        mensajesNoLeidos: admin.firestore.FieldValue.increment(1),
+                        estadoChat: 'activo',
+
+                        _lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+                    };
+
+                    if (autoReplySent) {
+                        updateData.lastAutoReply = admin.firestore.FieldValue.serverTimestamp();
+                        updateData.ultimaRespuestaBot = admin.firestore.FieldValue.serverTimestamp();
+                    }
+
+                    await chatRef.set(updateData, { merge: true });
+
+                    // Guardar mensaje entrante en subcolección 'messages'
+                    const msgDocEnglish = {
+                        id: message.id,
+                        type: 'incoming',
+                        content: content,
+                        mediaUrl: mediaUrl,
+                        messageType: type,
+                        whatsappId: message.id,
+                        timestamp: admin.firestore.Timestamp.now()
+                    };
+                    if (locationData) msgDocEnglish.location = locationData;
+                    if (contactosData) msgDocEnglish.contactos = contactosData;
+                    await chatRef.collection('messages').doc(message.id).set(msgDocEnglish);
+
+                    // Guardar mensaje entrante en subcolección 'mensajes'
+                    const msgDocSpanish = {
+                        id: message.id,
+                        tipo: type,
+                        direccion: 'entrante',
+                        fecha: admin.firestore.FieldValue.serverTimestamp(),
+                        texto: content,
+                        mediaUrl: mediaUrl,
+                        fileName: type === 'document' ? (message.document.filename || 'Documento') : null
+                    };
+                    if (locationData) msgDocSpanish.location = locationData;
+                    if (contactosData) msgDocSpanish.contactos = contactosData;
+                    await chatRef.collection('mensajes').doc(message.id).set(msgDocSpanish);
+                    
+                } catch (e) { 
+                    console.error("❌ [ERROR INTERNO PROCESANDO MENSAJE]:", e); 
+                }
+            } 
+            // ESCENARIO 2: Reporte de Estado (Fallos de Meta)
+            else if (change?.statuses) {
+                const status = change.statuses[0];
+                
+                if (status.errors) {
+                    console.error("🚫 [META BLOQUEO/ERROR]:", JSON.stringify(status.errors, null, 2));
+                    try {
+                        const recipientId = status.recipient_id;
+                        
+                        // Actualizar en subcolección 'messages'
+                        const msgsSnapshot = await db.collection('chats').doc(recipientId).collection('messages').where('whatsappId', '==', status.id).get();
+                        if (!msgsSnapshot.empty) {
+                            msgsSnapshot.forEach(docRef => {
+                                docRef.ref.update({
+                                    error: true,
+                                    errorDetails: status.errors[0].message || status.errors[0].title || "Bloqueado por Meta"
+                                });
+                            });
+                        }
+
+                        // Actualizar en subcolección 'mensajes'
+                        const msgRef = db.collection('chats').doc(recipientId).collection('mensajes').doc(status.id);
+                        const docCheck = await msgRef.get();
+                        if (docCheck.exists) {
+                            await msgRef.update({
+                                error: true,
+                                errorDetails: status.errors[0].message || status.errors[0].title || "Bloqueado por Meta"
+                            });
+                        }
+                    } catch(e) { console.error("Error al actualizar BD con el fallo:", e); }
+                } else {
+                    // Actualizar estado ordinario (sent, delivered, read) en Firestore
+                    try {
+                        const recipientId = status.recipient_id;
+                        
+                        // Subcolección 'messages'
+                        const msgsSnapshot = await db.collection('chats').doc(recipientId).collection('messages').where('whatsappId', '==', status.id).get();
+                        if (!msgsSnapshot.empty) {
+                            msgsSnapshot.forEach(docRef => {
+                                docRef.ref.update({
+                                    status: status.status
+                                });
+                            });
+                        }
+
+                        // Subcolección 'mensajes'
+                        await db.collection('chats').doc(recipientId).collection('mensajes').doc(status.id).set({
+                            estadoEnvio: status.status,
+                            _lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+                        }, { merge: true });
+                    } catch(e) { console.error("Error al actualizar estado del mensaje:", e); }
+                }
+            }
         }
+        res.sendStatus(200);
+    }
+});
 
-        const firestoreMsg = {
-            id: msgId,
-            tipo: tipo,
-            direccion: 'saliente',
-            fecha: admin.firestore.FieldValue.serverTimestamp(),
-            estadoEnvio: finalStatus,
-            enviadoPor: context.auth.uid,
-            texto: contenido || `[${tipo.toUpperCase()}]`,
-            mediaUrl: mediaUrl || null
-        };
+// --- FUNCIÓN DE ENVÍO MANUAL (PANEL ADMIN) ---
+const sendMessage = onCall(async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login requerido.');
+    
+    // Soportar tanto variables de MiSmartech (phoneNumber) como VidriosExito (telefonoDestino)
+    const phoneNumber = request.data.phoneNumber || request.data.telefonoDestino;
+    const message = request.data.message || request.data.contenido;
+    const type = request.data.type || request.data.tipo;
+    const mediaUrl = request.data.mediaUrl;
+    const fileName = request.data.fileName;
 
-        await msgRef.set(firestoreMsg, { merge: true });
+    if (!phoneNumber || !type) throw new HttpsError('invalid-argument', 'Faltan datos requeridos (número o tipo).');
+    
+    let agentName = request.auth.token.name;
+    if (!agentName) {
+        try {
+            const userDoc = await db.collection('users').doc(request.auth.uid).get();
+            if (userDoc.exists && userDoc.data().name) agentName = userDoc.data().name;
+            else agentName = request.auth.token.email.split('@')[0];
+        } catch (e) { agentName = request.auth.token.email.split('@')[0]; }
+    }
+    
+    let finalType = type;
+    let finalMedia = mediaUrl;
+    
+    // Filtro 1: Si es un placeholder, mandarlo como texto normal
+    if (type === 'image' && (!mediaUrl || mediaUrl.includes('via.placeholder.com'))) {
+        finalType = 'text';
+        finalMedia = null;
+    } 
+    // Filtro 2: 🔥 PROCESAR WEBP A JPG SI ES NECESARIO
+    else if (type === 'image' && mediaUrl) {
+        finalMedia = await getMetaCompatibleUrl(mediaUrl);
+    }
+    
+    try {
+        const waId = await sendToMeta(phoneNumber, message, finalType, finalMedia);
+
+        const chatRef = db.collection('chats').doc(phoneNumber);
         
-        await db.collection('chats').doc(phone).set({
-            telefono: phone,
-            ultimoMensaje: `Tú: ${firestoreMsg.texto}`,
+        // 🔥 Dinámico según el tipo
+        let previewTxt = `tú: ${message}`;
+        if (finalType === 'image') previewTxt = '📷 Imagen enviada';
+        if (finalType === 'document') previewTxt = '📄 Documento enviado';
+
+        // Actualizar el documento del chat en ambos esquemas
+        await chatRef.set({
+            // Esquema 2 (MiSmartech)
+            lastMessage: previewTxt,
+            lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+            unread: false,
+
+            // Esquema 1 (VidriosExito)
+            ultimoMensaje: previewTxt,
             ultimaFecha: admin.firestore.FieldValue.serverTimestamp(),
+            mensajesNoLeidos: 0,
+            estadoChat: 'activo',
+
             _lastUpdated: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
 
-        return { success: true, messageId: msgId };
+        // Guardar mensaje saliente en subcolección 'messages' (English)
+        await chatRef.collection('messages').doc(waId).set({
+            type: 'outgoing',
+            content: message || (finalType === 'image' ? 'Imagen enviada' : ''),
+            mediaUrl: finalMedia || null,
+            messageType: finalType || 'text',
+            whatsappId: waId,
+            timestamp: admin.firestore.Timestamp.now(),
+            sentBy: agentName
+        });
+
+        // Guardar mensaje saliente en subcolección 'mensajes' (Spanish)
+        await chatRef.collection('mensajes').doc(waId).set({
+            id: waId,
+            tipo: finalType,
+            direccion: 'saliente',
+            fecha: admin.firestore.FieldValue.serverTimestamp(),
+            estadoEnvio: 'sent',
+            enviadoPor: request.auth.uid, // Guardamos ID de usuario original
+            texto: message || (finalType === 'image' ? 'Imagen enviada' : ''),
+            mediaUrl: finalMedia || null,
+            fileName: finalType === 'document' ? (fileName || 'Documento') : null
+        });
+
+        return { success: true, messageId: waId };
     } catch (error) {
-        functions.logger.error("Error enviando mensaje de WA:", error.response ? error.response.data : error.message);
-        throw new functions.https.HttpsError("internal", "No se pudo enviar el mensaje a Meta.");
+        throw new HttpsError('internal', error.message);
     }
 });
 
-// --- 3. FUNCIÓN PARA MARCAR MENSAJES COMO LEÍDOS (CHULOS AZULES) ---
-exports.marcarChatComoLeido = functions.https.onCall(async (data, context) => {
-    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Usuario no autenticado.");
+// --- FUNCIÓN PARA MARCAR MENSAJES COMO LEÍDOS (CHULOS AZULES) ---
+const marcarChatComoLeido = onCall(async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login requerido.');
 
-    const { telefono, messageId } = data;
-    if (!telefono) throw new functions.https.HttpsError("invalid-argument", "Falta el teléfono.");
-
-    const db = admin.firestore();
+    const { telefono, messageId } = request.data;
+    if (!telefono) throw new HttpsError('invalid-argument', 'Falta el teléfono.');
 
     try {
         // 1. Avisarle a Meta que leímos el mensaje (esto pone los chulos azules al cliente)
         if (messageId) {
-            const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-            const PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
-            const url = `https://graph.facebook.com/v19.0/${PHONE_ID}/messages`;
-            
+            const url = `https://graph.facebook.com/v17.0/${PHONE_ID}/messages`;
             await axios.post(url, {
                 messaging_product: "whatsapp",
                 status: "read",
                 message_id: messageId
             }, {
-                headers: { "Authorization": `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" }
+                headers: { 'Authorization': `Bearer ${API_TOKEN}`, 'Content-Type': 'application/json' }
             });
         }
 
         // 2. Poner el contador de "no leídos" en 0 en nuestro Firestore
         await db.collection('chats').doc(telefono).update({
+            // Spanish
             mensajesNoLeidos: 0,
+            // English
+            unread: false,
             _lastUpdated: admin.firestore.FieldValue.serverTimestamp()
         });
 
         return { success: true };
     } catch (error) {
-        functions.logger.error(`Error marcando como leído el chat ${telefono}:`, error.response ? error.response.data : error.message);
-        throw new functions.https.HttpsError("internal", "No se pudo marcar como leído.");
+        console.error(`Error marcando como leido el chat ${telefono}:`, error.message);
+        throw new HttpsError('internal', error.message);
     }
 });
+
+// --- PRUEBA DE PLANTILLA ---
+const sendTestTemplate = onCall(async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login requerido.');
+    try {
+        const waId = await sendToMeta(request.data.phoneNumber, null, 'template', null, 'hello_world', 'en_US');
+        return { success: true, waId: waId };
+    } catch (error) { throw new HttpsError('internal', error.message); }
+});
+
+// --- FUNCIÓN DE MARKETING MASIVO (CAMPAÑAS) ---
+const sendMassTemplate = onCall(async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login requerido.');
+    
+    const { phoneNumber, templateName, imageUrl, clientName, customMessage, linkPath } = request.data;
+    
+    try {
+        // 🔥 PROCESAR LA IMAGEN DE LA CAMPAÑA (Solo se procesa 1 vez gracias a la caché)
+        const finalImageUrl = await getMetaCompatibleUrl(imageUrl);
+
+        const url = `https://graph.facebook.com/v17.0/${PHONE_ID}/messages`;
+        
+        const body = {
+            messaging_product: 'whatsapp',
+            to: phoneNumber,
+            type: 'template',
+            template: {
+                name: templateName,
+                language: { code: 'es' }, 
+                components: [
+                    {
+                        type: 'header',
+                        parameters: [
+                            { type: 'image', image: { link: finalImageUrl } }
+                        ]
+                    },
+                    {
+                        type: 'body',
+                        parameters: [
+                            { type: 'text', text: clientName || "Cliente" }, 
+                            { type: 'text', text: customMessage || "Promoción especial" } 
+                        ]
+                    },
+                    {
+                        type: 'button',
+                        sub_type: 'url',
+                        index: "0", 
+                        parameters: [
+                            { type: 'text', text: linkPath }
+                        ]
+                    }
+                ]
+            }
+        };
+
+        const response = await axios.post(url, body, {
+            headers: { 'Authorization': `Bearer ${API_TOKEN}`, 'Content-Type': 'application/json' }
+        });
+
+        const chatRef = db.collection('chats').doc(phoneNumber);
+        
+        const previewTxt = '📢 [Campaña Enviada]';
+
+        await chatRef.set({
+            // Spanish
+            ultimoMensaje: previewTxt,
+            ultimaFecha: admin.firestore.FieldValue.serverTimestamp(),
+            mensajesNoLeidos: 0,
+            estadoChat: 'activo',
+
+            // English
+            lastMessage: previewTxt,
+            lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+            unread: false,
+
+            _lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        // messages
+        await chatRef.collection('messages').add({
+            type: 'outgoing',
+            content: `📢 *Campaña Masiva:*\n${customMessage}\n🔗 URL: /${linkPath}`,
+            mediaUrl: finalImageUrl,
+            messageType: 'template',
+            whatsappId: response.data.messages[0].id,
+            timestamp: admin.firestore.Timestamp.now()
+        });
+
+        // mensajes
+        await chatRef.collection('mensajes').add({
+            id: response.data.messages[0].id,
+            tipo: 'template',
+            direccion: 'saliente',
+            fecha: admin.firestore.FieldValue.serverTimestamp(),
+            estadoEnvio: 'sent',
+            enviadoPor: 'campana_masiva',
+            texto: `📢 *Campaña Masiva:*\n${customMessage}\n🔗 URL: /${linkPath}`,
+            mediaUrl: finalImageUrl
+        });
+
+        return { success: true, waId: response.data.messages[0].id };
+    } catch (error) {
+        console.error("❌ Error Meta API (Campaña Masiva):", JSON.stringify(error.response?.data || error.message));
+        throw new HttpsError('internal', error.response?.data?.error?.message || "Fallo al enviar campaña a Meta");
+    }
+});
+
+// Exports for Cloud Functions exports v2
+exports.webhook = webhook;
+exports.whatsappWebhook = webhook;
+
+exports.sendMessage = sendMessage;
+exports.enviarMensajeWhatsApp = sendMessage;
+
+exports.marcarChatComoLeido = marcarChatComoLeido;
+
+exports.sendTestTemplate = sendTestTemplate;
+exports.sendMassTemplate = sendMassTemplate;

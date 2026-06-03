@@ -21,7 +21,8 @@
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.2",
     "nodemailer": "^8.0.1",
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "sharp": "^0.33.4"
   },
   "devDependencies": {
     "eslint": "^8.15.0",

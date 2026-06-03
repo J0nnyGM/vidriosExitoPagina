@@ -3,7 +3,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebas
 import { getAuth } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
-import { getFunctions } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js";
 
 const firebaseConfig = {
@@ -30,4 +30,4 @@ try {
     document.body.innerHTML = `<h1>Error Crítico: No se pudo inicializar la aplicación.</h1>`;
 }
 
-export { app, auth, db, storage, functions, analytics };
+export { app, auth, db, storage, functions, analytics, httpsCallable };
