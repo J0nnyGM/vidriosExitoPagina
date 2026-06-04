@@ -2,6 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
+
 body {
     font-family: 'Inter', sans-serif;
     background-color: #f3f4f6;
@@ -887,4 +888,4 @@ button.facturacion-main-btn {
     font-weight: 700 !important;
     height: 40px !important;
     gap: 0.25rem !important;
-}
+}
