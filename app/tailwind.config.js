@@ -3,18 +3,7 @@ module.exports = {
   darkMode: 'class', // <--- AGREGAR ESTA LÍNEA
   content: [
     "./index.html",
-    "./js/app.js",
-    "./js/cartera.js",
-    "./js/configuracion.js",
-    "./js/dashboard.js",
-    "./js/dotacion.js",
-    "./js/empleados.js",
-    "./js/solicitudes.js",
-    "./js/ingresopersonal.js",
-    "./js/herramientas.js",
-    "./js/cotizaciones.js",
-    "./js/informes.js"
-
+    "./js/**/*.js" // <--- ¡Asegúrate de tener esta línea!
   ],
 
 

@@ -1,0 +1,167 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- FUNCIONES AUXILIARES ---
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Rol básico: Admin
+    function isAdmin() {
+      return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Rol extendido: Admin o Nómina
+    function isNominaOrAdmin() {
+      let role = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      return isAuth() && (role == 'admin' || role == 'nomina');
+    }
+    
+    // Rol extendido: Admin o Bodega
+    function isBodegaOrAdmin() {
+      let role = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      return isAuth() && (role == 'admin' || role == 'bodega');
+    }
+
+    // Rol extendido: Admin o SST (Seguridad y Salud en el Trabajo)
+    function isSstOrAdmin() {
+      let role = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      return isAuth() && (role == 'admin' || role == 'sst');
+    }
+
+    // =========================================================
+    // 1. REGLA MAESTRA DE LECTURA
+    // =========================================================
+    match /{document=**} {
+      allow read: if isAuth();
+    }
+
+    // =========================================================
+    // 2. REGLAS ESPECÍFICAS DE ESCRITURA
+    // =========================================================
+
+    // --- USUARIOS (Perfiles) ---
+    match /users/{userId} {
+      allow create: if isAuth(); 
+      allow delete: if isNominaOrAdmin();
+      
+      // Permitir editar perfil si es Admin, Nómina, SST o el mismo usuario (con restricciones)
+      allow update: if isNominaOrAdmin() || isSstOrAdmin()
+                    || (request.auth.uid == userId && 
+                        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'salarioBasico', 'status']));
+      
+      // Subcolecciones de usuarios
+      match /loans/{loanId} { allow write: if isAuth(); }
+      match /paymentHistory/{paymentId} { allow write: if isNominaOrAdmin(); }
+      match /daily_reports/{reportId} { allow write: if request.auth.uid == userId || isAdmin(); }
+      match /attendance_reports/{reportId} { allow write: if request.auth.uid == userId || isAdmin(); }
+      match /dotacionAsignada/{docId} { allow write: if isBodegaOrAdmin(); }
+      match /profileHistory/{historyId} { allow write: if isAuth(); }
+
+      match /expedientes/{docId} {
+         allow write: if request.auth.uid == userId || isNominaOrAdmin() || isSstOrAdmin();
+      }
+      match /documents/{docId} {
+         allow write: if request.auth.uid == userId || isNominaOrAdmin() || isSstOrAdmin();
+      }
+    }
+
+    // --- ESTADÍSTICAS DE EMPLEADOS (NUEVO - CRÍTICO PARA TAREAS) ---
+    match /employeeStats/{userId}/{document=**} {
+       allow write: if isAuth();
+    }
+
+    // --- SISTEMA ---
+    match /system/{document=**} {
+      allow write: if isAdmin();
+    }
+
+    // --- PROYECTOS ---
+    match /projects/{projectId} {
+      allow create: if isNominaOrAdmin();
+      allow delete: if isAdmin();
+      allow update: if isAuth();
+
+      match /cortes/{corteId} { allow write: if isNominaOrAdmin(); }
+      match /payments/{paymentId} { allow write: if isNominaOrAdmin(); }
+      // SubItems, MaterialRequests, etc.
+      match /{subcol}/{doc=**} { allow write: if isAuth(); }
+    }
+    
+    // --- COTIZACIONES ---
+    match /cotizaciones/{cotizacionId} {
+       allow write: if isAuth();
+       
+       // Permitir escribir en la subcolección 'historial' (donde se guardan las versiones anteriores)
+       match /historial/{historyId} {
+          allow write: if isAuth();
+       }
+    }
+    
+    // --- INVENTARIO (Materiales) ---
+    match /materialCatalog/{materialId} { 
+      allow write: if isBodegaOrAdmin(); 
+
+      match /stockBatches/{batchId} {
+         allow write: if isBodegaOrAdmin();
+      }
+      match /remnantStock/{remnantId} {
+         allow write: if isBodegaOrAdmin();
+      }
+    }
+
+    // --- INVENTARIO (Herramientas) ---
+    match /tools/{toolId} { 
+      allow write: if isBodegaOrAdmin(); 
+      match /history/{historyId} {
+         allow write: if isBodegaOrAdmin();
+      }
+    }
+    
+    // --- INVENTARIO GLOBAL ---
+    match /inventory/{itemId} {
+      allow write: if isBodegaOrAdmin();
+    }
+
+    // --- DOTACIÓN ---
+    match /dotacionCatalog/{itemId} { 
+      allow write: if isBodegaOrAdmin(); 
+    }
+    match /dotacionHistory/{historyId} {
+      allow write: if isBodegaOrAdmin(); 
+    }
+    
+    // --- PROVEEDORES Y COMPRAS ---
+    match /suppliers/{supplierId} { allow write: if isBodegaOrAdmin(); }
+    match /purchaseOrders/{poId} { allow write: if isBodegaOrAdmin(); }
+    
+    // --- TAREAS ---
+    match /tasks/{taskId} { 
+      allow write: if isAuth(); 
+      match /comments/{commentId} {
+        allow read, write: if isAuth();
+      }
+    }
+    
+    // --- NOTIFICACIONES ---
+    match /notifications/{notifId} { 
+      allow write: if isAuth(); 
+    }
+    
+    // --- AUDITORÍA ---
+    match /audit_logs/{logId} {
+       allow create: if isAuth();
+       allow update, delete: if false;
+    }
+    
+    // --- CONTADORES ---
+    match /counters/{docId} { allow write: if isAuth(); }
+    
+    // --- DOCUMENTACIÓN GENERAL (SST) ---
+    match /company_documents/{docId} {
+      allow write: if isSstOrAdmin();
+    }
+    
+  }
+}

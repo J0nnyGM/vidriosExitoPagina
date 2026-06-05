@@ -40,6 +40,7 @@ let _setupCurrencyInput;
 // Variables locales
 let activeEmpleadoChart = null;
 let unsubscribeEmpleadosTab = null;
+const dotacionCatalogCache = new Map();
 
 // --- CORRECCIÓN CRÍTICA: Declarar pero NO inicializar aquí ---
 let _storage = null;
@@ -734,218 +735,555 @@ function switchSSTSubTab(subTabName) {
 // SUB-MÓDULO 1: DOCUMENTACIÓN GENERAL (LÓGICA COMPLETA)
 // ----------------------------------------------------------
 function loadSSTGeneralSubTab(container) {
-    // 1. CONFIGURACIÓN DE CATEGORÍAS SG-SST
+    // 1. CONFIGURACIÓN DE CATEGORÍAS SG-SST POR DEFECTO
     const SST_CATEGORIES = [
-        { id: 'politicas', label: 'Políticas y Reglamentos', icon: 'fa-scale-balanced', color: 'text-blue-600', bg: 'bg-blue-50' },
-        { id: 'matriz', label: 'Matriz de Riesgos (IPERC)', icon: 'fa-table-list', color: 'text-orange-600', bg: 'bg-orange-50' },
-        { id: 'emergencias', label: 'Plan de Emergencias', icon: 'fa-truck-medical', color: 'text-red-600', bg: 'bg-red-50' },
-        { id: 'copasst', label: 'Actas COPASST / Vigía', icon: 'fa-users-line', color: 'text-indigo-600', bg: 'bg-indigo-50' },
-        { id: 'capacitacion', label: 'Plan de Capacitación', icon: 'fa-chalkboard-user', color: 'text-emerald-600', bg: 'bg-emerald-50' },
-        { id: 'legal', label: 'Requisitos Legales', icon: 'fa-gavel', color: 'text-slate-600', bg: 'bg-slate-50' },
-        { id: 'otros_sst', label: 'Otros Documentos SST', icon: 'fa-folder-open', color: 'text-gray-600', bg: 'bg-gray-50' }
+        { id: 'politicas', label: 'Políticas y Reglamentos', icon: 'fa-scale-balanced', color: 'text-blue-650', bg: 'bg-blue-50' },
+        { id: 'matriz', label: 'Matriz de Riesgos (IPERC)', icon: 'fa-table-list', color: 'text-orange-655', bg: 'bg-orange-50' },
+        { id: 'emergencias', label: 'Plan de Emergencias', icon: 'fa-truck-medical', color: 'text-red-655', bg: 'bg-red-50' },
+        { id: 'copasst', label: 'Actas COPASST / Vigía', icon: 'fa-users-line', color: 'text-indigo-650', bg: 'bg-indigo-50' },
+        { id: 'capacitacion', label: 'Plan de Capacitación', icon: 'fa-chalkboard-user', color: 'text-emerald-650', bg: 'bg-emerald-50' },
+        { id: 'legal', label: 'Requisitos Legales', icon: 'fa-gavel', color: 'text-slate-650', bg: 'bg-slate-50' },
+        { id: 'otros_sst', label: 'Otros Documentos SST', icon: 'fa-folder-open', color: 'text-gray-650', bg: 'bg-gray-50' }
     ];
 
-    // 2. ESTRUCTURA HTML
+    let activeFolderId = null;
+    let currentDocsSnapshot = null;
+
+    // 2. SHELL INICIAL DEL REPOSITORIO
     container.innerHTML = `
         <div class="space-y-6">
-            <div class="bg-indigo-50 border-l-4 border-indigo-500 p-4 rounded-r-lg flex justify-between items-start">
+            <!-- BANNER PRINCIPAL -->
+            <div class="bg-indigo-50 border-l-4 border-indigo-500 p-4 rounded-r-lg flex justify-between items-center">
                 <div>
                     <h4 class="text-indigo-900 font-bold text-sm">Repositorio Central SG-SST</h4>
-                    <p class="text-indigo-700 text-xs mt-1">Los documentos cargados aquí son visibles para la gestión administrativa de la empresa.</p>
+                    <p class="text-indigo-700 text-xs mt-1">Los documentos cargados aquí son visibles para la gestión de Seguridad y Salud en el Trabajo.</p>
                 </div>
-                <div class="text-right">
+                <div class="flex items-center gap-2">
                      <span id="sst-total-docs" class="bg-white text-indigo-600 px-3 py-1 rounded-full text-xs font-bold shadow-sm">0 Archivos</span>
+                     <button id="btn-create-folder" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2 px-3.5 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-1.5">
+                         <i class="fa-solid fa-folder-plus text-xs"></i> Nueva Carpeta
+                     </button>
                 </div>
             </div>
 
-            <div id="sst-docs-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div class="col-span-full text-center py-12">
-                    <div class="loader mx-auto"></div>
-                    <p class="text-gray-400 mt-3 text-sm">Sincronizando documentación...</p>
-                </div>
+            <!-- CONTENEDOR DINÁMICO DE CONTENIDO (Carpetas o Archivos) -->
+            <div id="sst-dynamic-area" class="space-y-6">
+                <!-- Carga dinámica -->
             </div>
         </div>
-
         <input type="file" id="sst-doc-upload" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx">
     `;
 
-    const gridContainer = document.getElementById('sst-docs-grid');
+    const dynamicArea = document.getElementById('sst-dynamic-area');
     const fileInput = document.getElementById('sst-doc-upload');
     const totalCountEl = document.getElementById('sst-total-docs');
 
-    let activeCategoryId = null; // Para saber en qué caja estamos subiendo
+    // 3. RENDERIZADO DEL REPOSITORIO (0MS NAVIGATION DESDE MEMORIA)
+    const renderSSTRepository = () => {
+        if (!currentDocsSnapshot || !dynamicArea) return;
 
-    // 3. LISTENER DE DOCUMENTOS (REAL-TIME)
-    const q = query(collection(_db, "company_documents"), where("system", "==", "sst"), orderBy("uploadedAt", "desc"));
-
-    unsubscribeEmpleadosTab = onSnapshot(q, (snapshot) => {
-        totalCountEl.textContent = `${snapshot.size} Archivos`;
-
-        // Agrupar documentos por categoría en memoria
-        const docsByCategory = {};
-        SST_CATEGORIES.forEach(cat => docsByCategory[cat.id] = []); // Inicializar arrays
-
-        snapshot.forEach(docSnap => {
+        // Mezclar categorías por defecto con carpetas personalizadas cargadas desde Firestore (mismo snapshot)
+        const mergedCategories = [...SST_CATEGORIES];
+        
+        // Identificar carpetas personalizadas en el snapshot de documentos
+        currentDocsSnapshot.forEach(docSnap => {
             const data = docSnap.data();
-            // Si la categoría existe en nuestro mapa, lo agregamos, si no, a 'otros_sst'
-            const targetCat = docsByCategory[data.category] ? data.category : 'otros_sst';
-            docsByCategory[targetCat].push({ id: docSnap.id, ...data });
+            if (data.isFolder) {
+                if (!mergedCategories.some(c => c.id === data.id)) {
+                    mergedCategories.push({
+                        id: data.id,
+                        label: data.label,
+                        icon: data.icon || 'fa-folder-closed',
+                        color: data.color || 'text-indigo-500',
+                        bg: data.bg || 'bg-indigo-50',
+                        isCustom: true,
+                        createdAt: data.uploadedAt
+                    });
+                }
+            }
         });
 
-        // Renderizar el Grid
-        gridContainer.innerHTML = '';
+        // Filtrar y agrupar en memoria (ignora archivados y carpetas en el listado de archivos)
+        let activeDocsCount = 0;
+        const docsByCategory = {};
+        mergedCategories.forEach(cat => docsByCategory[cat.id] = []);
 
-        SST_CATEGORIES.forEach(category => {
-            const files = docsByCategory[category.id];
-            const hasFiles = files.length > 0;
-
-            // Generar lista de archivos HTML
-            let filesHtml = '';
-            if (hasFiles) {
-                filesHtml = `<ul class="space-y-2 mt-3 max-h-40 overflow-y-auto custom-scrollbar pr-1">
-                    ${files.map(file => {
-                    let icon = 'fa-file text-gray-400';
-                    if (file.type?.includes('pdf')) icon = 'fa-file-pdf text-red-500';
-                    else if (file.type?.includes('sheet') || file.name.endsWith('xlsx')) icon = 'fa-file-excel text-green-600';
-                    else if (file.type?.includes('word') || file.name.endsWith('docx')) icon = 'fa-file-word text-blue-600';
-
-                    return `
-                        <li class="flex items-center justify-between p-2 bg-gray-50 rounded hover:bg-gray-100 transition-colors group">
-                            <div class="flex items-center gap-2 min-w-0">
-                                <i class="fa-solid ${icon} text-sm"></i>
-                                <a href="${file.url}" target="_blank" class="text-xs text-gray-700 font-medium truncate hover:text-indigo-600 hover:underline" title="${file.name}">
-                                    ${file.name}
-                                </a>
-                            </div>
-                            <button class="btn-delete-sst-doc text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 px-2" 
-                                data-id="${file.id}" data-path="${file.storagePath}" data-name="${file.name}">
-                                <i class="fa-solid fa-xmark"></i>
-                            </button>
-                        </li>`;
-                }).join('')}
-                </ul>`;
-            } else {
-                filesHtml = `<div class="mt-4 py-6 text-center border-2 border-dashed border-gray-100 rounded-lg">
-                    <p class="text-[10px] text-gray-400">Carpeta vacía</p>
-                </div>`;
+        currentDocsSnapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            if (data.isFolder) return; // Omitir carpetas del conteo de archivos
+            if (data.status === 'archived') return; // Filtro in-memory de archivados
+            
+            activeDocsCount++;
+            const targetCat = docsByCategory[data.category] ? data.category : 'otros_sst';
+            if (docsByCategory[targetCat]) {
+                docsByCategory[targetCat].push({ id: docSnap.id, ...data });
             }
+        });
 
-            // Construir la Tarjeta de Categoría
-            const card = document.createElement('div');
-            card.className = "bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col hover:shadow-md transition-shadow";
-            card.innerHTML = `
-                <div class="flex justify-between items-start">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-lg ${category.bg} flex items-center justify-center text-lg">
-                            <i class="fa-solid ${category.icon} ${category.color}"></i>
+        totalCountEl.textContent = `${activeDocsCount} Archivos`;
+
+        if (activeFolderId === null) {
+            // ==========================================
+            // VISTA 1: LISTADO DE CARPETAS (TIPO DRIVE)
+            // ==========================================
+            let foldersHtml = `
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-250 flex items-center gap-3">
+                    <div class="relative flex-grow group">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-indigo-500 transition-colors">
+                            <i class="fa-solid fa-magnifying-glass text-sm"></i>
                         </div>
-                        <div>
-                            <h5 class="font-bold text-gray-800 text-sm">${category.label}</h5>
-                            <span class="text-[10px] text-gray-500">${files.length} documentos</span>
-                        </div>
+                        <input type="text" id="sst-global-search" 
+                            class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none" 
+                            placeholder="Buscar documentos por nombre o descripción en todo el repositorio...">
                     </div>
-                    <button class="btn-add-sst-doc bg-indigo-50 text-indigo-600 hover:bg-indigo-100 w-8 h-8 rounded-full flex items-center justify-center transition-colors" title="Subir archivo aquí" data-cat="${category.id}">
-                        <i class="fa-solid fa-plus text-xs font-bold"></i>
-                    </button>
                 </div>
-                
-                ${filesHtml}
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" id="folders-grid">
             `;
 
-            // Listener: Subir Archivo en esta categoría
-            card.querySelector('.btn-add-sst-doc').addEventListener('click', (e) => {
-                activeCategoryId = e.currentTarget.dataset.cat;
-                fileInput.click();
+            mergedCategories.forEach(cat => {
+                const filesCount = docsByCategory[cat.id].length;
+                foldersHtml += `
+                    <div class="folder-card bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between cursor-pointer hover:border-indigo-400 hover:shadow-md hover:-translate-y-1 transition-all duration-300" data-folder-id="${cat.id}">
+                        <div class="flex items-center gap-4 min-w-0">
+                            <!-- Icono de Carpeta Tipo Drive -->
+                            <div class="w-14 h-14 rounded-2xl ${cat.bg} flex items-center justify-center text-3xl shrink-0 border border-gray-100 shadow-inner">
+                                <i class="fa-solid fa-folder-closed text-amber-500"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <h5 class="font-bold text-gray-800 text-sm truncate" title="${cat.label}">${cat.label}</h5>
+                                <span class="text-xs text-gray-500 font-semibold">${filesCount} documentos</span>
+                            </div>
+                        </div>
+                        <div class="text-gray-300 hover:text-indigo-600 transition-colors pl-2 shrink-0">
+                            <i class="fa-solid fa-chevron-right text-sm"></i>
+                        </div>
+                    </div>
+                `;
             });
 
-            // Listeners: Borrar Archivos (CORREGIDO)
-            card.querySelectorAll('.btn-delete-sst-doc').forEach(btn => {
-                btn.addEventListener('click', function () {
-                    const docId = this.dataset.id;
-                    const path = this.dataset.path;
-                    const name = this.dataset.name;
+            foldersHtml += `</div>`;
+            dynamicArea.innerHTML = foldersHtml;
 
-                    // --- AQUÍ ESTÁ EL CAMBIO IMPORTANTE: Usar _openConfirmModal ---
-                    if (_openConfirmModal) {
-                        _openConfirmModal(`¿Eliminar "${name}" del sistema?`, async () => {
-                            try {
-                                await deleteObject(ref(_storage, path)); // Borrar de Storage
-                                await deleteDoc(doc(_db, "company_documents", docId)); // Borrar de BD
-
-                                window.showToast("Documento eliminado.", "success");
-                                
-                                if (typeof window.logAuditAction === 'function') {
-                                    window.logAuditAction("Eliminar Doc SST", `Borrado: ${name}`, _getCurrentUserId());
-                                }
-
-                            } catch (e) {
-                                console.error(e);
-                                window.showToast("Error al eliminar.", "error");
-                            }
-                        });
-                    } else {
-                        // Fallback simple
-                        if(confirm(`¿Eliminar "${name}"?`)){
-                           // Lógica de borrado directa si el modal no carga
-                           deleteObject(ref(_storage, path)).then(() => deleteDoc(doc(_db, "company_documents", docId)));
+            // Listener para crear nueva carpeta
+            document.getElementById('btn-create-folder').style.display = ''; // Mostrar el botón
+            document.getElementById('btn-create-folder').onclick = async () => {
+                if (typeof openCustomInputModal !== 'function') {
+                    const name = prompt("Nombre de la nueva carpeta:");
+                    if (name && name.trim()) {
+                        try {
+                            await addDoc(collection(_db, "company_documents"), {
+                                system: 'sst',
+                                isFolder: true,
+                                id: 'custom_' + Date.now(),
+                                label: name.trim(),
+                                icon: 'fa-folder-closed',
+                                color: 'text-indigo-500',
+                                bg: 'bg-indigo-50',
+                                isCustom: true,
+                                uploadedAt: serverTimestamp()
+                            });
+                            window.showToast("Carpeta creada correctamente.", "success");
+                        } catch (e) {
+                            console.error(e);
                         }
+                    }
+                    return;
+                }
+
+                const folderName = await openCustomInputModal(
+                    "Nueva Carpeta SST",
+                    "Escribe el nombre de la nueva carpeta:",
+                    "text",
+                    "Ej: Registros de Inspección..."
+                );
+
+                if (!folderName || !folderName.trim()) return;
+
+                const folderId = 'custom_' + Date.now();
+                try {
+                    await addDoc(collection(_db, "company_documents"), {
+                        system: 'sst',
+                        isFolder: true,
+                        id: folderId,
+                        label: folderName.trim(),
+                        icon: 'fa-folder-closed',
+                        color: 'text-indigo-500',
+                        bg: 'bg-indigo-50',
+                        isCustom: true,
+                        uploadedAt: serverTimestamp()
+                    });
+                    window.showToast("Carpeta creada correctamente.", "success");
+                } catch (err) {
+                    console.error("Error al crear carpeta:", err);
+                    window.showToast("Error al crear: " + err.message, "error");
+                }
+            };
+
+            // Listeners para abrir carpetas
+            dynamicArea.querySelectorAll('.folder-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    activeFolderId = card.dataset.folderId;
+                    renderSSTRepository();
+                });
+            });
+
+            // Buscador Global en tiempo real
+            const globalSearch = document.getElementById('sst-global-search');
+            globalSearch.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                const cards = dynamicArea.querySelectorAll('.folder-card');
+                
+                cards.forEach(card => {
+                    const catId = card.dataset.folderId;
+                    const catFiles = docsByCategory[catId];
+                    const catLabel = mergedCategories.find(c => c.id === catId)?.label.toLowerCase() || '';
+                    
+                    const matchesFiles = catFiles.some(file => 
+                        file.name.toLowerCase().includes(term) || 
+                        (file.description && file.description.toLowerCase().includes(term))
+                    );
+
+                    if (catLabel.includes(term) || matchesFiles) {
+                        card.style.display = '';
+                    } else {
+                        card.style.display = 'none';
                     }
                 });
             });
 
-            gridContainer.appendChild(card);
-        });
+        } else {
+            // ==========================================
+            // VISTA 2: DENTRO DE UNA CARPETA (TIPO DRIVE)
+            // ==========================================
+            const currentCat = mergedCategories.find(c => c.id === activeFolderId);
+            const files = docsByCategory[activeFolderId];
 
-    }, (error) => {
-        console.error("Error cargando docs SST:", error);
-        gridContainer.innerHTML = `<div class="col-span-full text-center text-red-500">Error de conexión: ${error.message}</div>`;
-    });
+            // Ocultar botón de crear carpeta en vista interna
+            document.getElementById('btn-create-folder').style.display = 'none';
 
-    // 4. LÓGICA DE SUBIDA (FILE INPUT)
-    fileInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file || !activeCategoryId) return;
+            let filesHtml = '';
+            if (files.length > 0) {
+                filesHtml = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="files-grid">
+                        ${files.map(file => {
+                            let icon = 'fa-file text-gray-400';
+                            if (file.type?.includes('pdf')) icon = 'fa-file-pdf text-red-500';
+                            else if (file.type?.includes('sheet') || file.name.endsWith('xlsx')) icon = 'fa-file-excel text-green-600';
+                            else if (file.type?.includes('word') || file.name.endsWith('docx')) icon = 'fa-file-word text-blue-600';
+                            else if (file.type?.includes('image')) icon = 'fa-file-image text-purple-500';
 
-        if (file.size > 10 * 1024 * 1024) { // 10MB límite
-            window.showToast("El archivo supera los 10MB.", "error");
-            fileInput.value = '';
-            return;
-        }
+                            const fileSizeStr = file.size ? (file.size < 1024 * 1024 
+                                ? `${(file.size / 1024).toFixed(1)} KB` 
+                                : `${(file.size / (1024 * 1024)).toFixed(1)} MB`) : 'N/A';
 
-        window.showToast("Subiendo al sistema...", "info");
+                            const dateStr = file.uploadedAt ? (file.uploadedAt.toDate ? file.uploadedAt.toDate().toLocaleDateString('es-CO') : new Date(file.uploadedAt).toLocaleDateString('es-CO')) : 'N/A';
 
-        try {
-            // Ruta: company_docs/sst/categoria/timestamp_nombre
-            const storagePath = `company_docs/sst/${activeCategoryId}/${Date.now()}_${file.name}`;
-            const storageRef = ref(_storage, storagePath);
+                            return `
+                                <div class="file-card bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-col hover:shadow-md hover:border-indigo-200 transition-all group relative" data-name="${file.name.toLowerCase()}" data-desc="${(file.description || '').toLowerCase()}">
+                                    <div class="flex items-start justify-between">
+                                        <div class="flex items-center gap-3 min-w-0">
+                                            <div class="w-10 h-10 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center text-xl shrink-0 shadow-inner">
+                                                <i class="fa-solid ${icon}"></i>
+                                            </div>
+                                            <div class="min-w-0">
+                                                <h6 class="font-bold text-gray-800 text-xs truncate" title="${file.name}">${file.name}</h6>
+                                                <span class="text-[9px] text-gray-400 font-semibold">${fileSizeStr} &bull; ${dateStr}</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="flex gap-1 shrink-0">
+                                            <button class="btn-edit-sst-doc text-gray-400 hover:text-indigo-650 transition-colors p-1.5 rounded-full hover:bg-indigo-50" 
+                                                data-id="${file.id}" data-name="${file.name}" data-desc="${file.description || ''}" title="Editar descripción">
+                                                <i class="fa-solid fa-pen-to-square text-xs"></i>
+                                            </button>
+                                            <button class="btn-archive-sst-doc text-gray-300 hover:text-amber-600 transition-colors p-1.5 rounded-full hover:bg-amber-50" 
+                                                data-id="${file.id}" data-name="${file.name}" title="Archivar documento">
+                                                <i class="fa-solid fa-box-archive text-xs"></i>
+                                            </button>
+                                        </div>
+                                    </div>
 
-            const snapshot = await uploadBytes(storageRef, file);
-            const downloadURL = await getDownloadURL(snapshot.ref);
+                                    <!-- DESCRIPCIÓN DEL ARCHIVO -->
+                                    <div class="mt-3 flex-grow bg-slate-50/50 p-2.5 rounded-xl border border-slate-100/50">
+                                        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-wide mb-0.5">Descripción</p>
+                                        <p class="text-[11px] text-slate-600 italic leading-snug">${file.description || 'Sin descripción detallada.'}</p>
+                                    </div>
 
-            // Guardar en Firestore
-            await addDoc(collection(_db, "company_documents"), {
-                name: file.name,
-                system: 'sst',
-                category: activeCategoryId,
-                url: downloadURL,
-                storagePath: storagePath,
-                type: file.type,
-                size: file.size,
-                uploadedAt: serverTimestamp(),
-                uploadedBy: _getCurrentUserId()
+                                    <!-- BOTÓN DESCARGAR -->
+                                    <a href="${file.url}" target="_blank" class="mt-3 w-full bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-slate-200 hover:border-indigo-100 text-slate-600 text-center font-bold text-[10px] py-1.5 rounded-xl transition-all flex items-center justify-center gap-1">
+                                        <i class="fa-solid fa-arrow-down-to-bracket"></i> Ver / Descargar
+                                    </a>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            } else {
+                filesHtml = `
+                    <div class="py-16 text-center bg-white rounded-2xl border border-dashed border-slate-200">
+                        <i class="fa-solid fa-folder-open text-slate-300 text-5xl mb-3"></i>
+                        <p class="text-sm font-bold text-slate-500">Esta carpeta está vacía</p>
+                        <p class="text-xs text-slate-400">Utiliza el formulario superior para añadir tu primer documento.</p>
+                    </div>
+                `;
+            }
+
+            dynamicArea.innerHTML = `
+                <!-- BREADCRUMB & CARPETA TITULO -->
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                    <button id="btn-back-to-folders" class="text-xs bg-white text-gray-600 border border-slate-250 hover:bg-slate-50 px-3 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all shadow-sm">
+                        <i class="fa-solid fa-arrow-left"></i> Volver a Carpetas
+                    </button>
+                    <div class="flex items-center gap-2">
+                        <div class="w-8 h-8 rounded-lg ${currentCat.bg || 'bg-indigo-50'} flex items-center justify-center text-sm">
+                            <i class="fa-solid ${currentCat.icon || 'fa-folder-closed'} ${currentCat.color || 'text-indigo-500'}"></i>
+                        </div>
+                        <h4 class="font-bold text-gray-800 text-xs uppercase tracking-wider">${currentCat.label}</h4>
+                    </div>
+                </div>
+
+                <!-- FORMULARIO DE SUBIDA INLINE (PREMIUM) -->
+                <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4">
+                    <h5 class="font-black text-xs text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-cloud-arrow-up text-indigo-500"></i> Subir Documento a esta Carpeta
+                    </h5>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                        <!-- Selector de Archivo -->
+                        <div class="md:col-span-4">
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Archivo (PDF, Excel, Word, Imagen)</label>
+                            <button id="btn-select-file" class="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 font-bold text-xs py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
+                                <i class="fa-solid fa-file-arrow-up"></i> Seleccionar Archivo
+                            </button>
+                            <span id="selected-file-label" class="text-[10px] text-slate-400 italic mt-1 block truncate">Ningún archivo seleccionado</span>
+                        </div>
+
+                        <!-- Descripción -->
+                        <div class="md:col-span-6">
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Descripción del Documento</label>
+                            <input type="text" id="sst-file-description" 
+                                class="w-full border border-slate-350 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all h-[36px]" 
+                                placeholder="Escribe una breve descripción para identificar este archivo rápidamente...">
+                        </div>
+
+                        <!-- Botón Enviar -->
+                        <div class="md:col-span-2">
+                            <button id="btn-do-upload" class="w-full bg-indigo-650 hover:bg-indigo-750 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-md hover:shadow-lg transition-all h-[36px] flex items-center justify-center gap-1.5">
+                                <i class="fa-solid fa-paper-plane"></i> Publicar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BUSCADOR DE ARCHIVOS EN LA CARPETA -->
+                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                    <div class="relative group">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-indigo-500 transition-colors">
+                            <i class="fa-solid fa-magnifying-glass text-sm"></i>
+                        </div>
+                        <input type="text" id="sst-folder-search" 
+                            class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none" 
+                            placeholder="Buscar por nombre o descripción dentro de esta carpeta...">
+                    </div>
+                </div>
+
+                <!-- LISTADO DE ARCHIVOS -->
+                ${filesHtml}
+            `;
+
+            // Configurar Listeners de la vista interna
+            document.getElementById('btn-back-to-folders').addEventListener('click', () => {
+                activeFolderId = null;
+                renderSSTRepository();
             });
 
-            window.showToast("Documento publicado correctamente.", "success");
+            // Trigger file input
+            const btnSelectFile = document.getElementById('btn-select-file');
+            const selectedLabel = document.getElementById('selected-file-label');
+            let selectedFile = null;
 
-        } catch (error) {
-            console.error("Error subiendo doc SST:", error);
-            window.showToast("Error en la carga: " + error.message, "error");
-        } finally {
-            fileInput.value = '';
-            activeCategoryId = null;
+            btnSelectFile.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            fileInput.onchange = (event) => {
+                selectedFile = event.target.files[0];
+                if (selectedFile) {
+                    selectedLabel.textContent = selectedFile.name;
+                    selectedLabel.className = "text-[10px] text-indigo-600 font-bold mt-1 block truncate";
+                } else {
+                    selectedLabel.textContent = "Ningún archivo seleccionado";
+                    selectedLabel.className = "text-[10px] text-slate-400 italic mt-1 block truncate";
+                }
+            };
+
+            // Ejecutar Subida
+            const btnDoUpload = document.getElementById('btn-do-upload');
+            btnDoUpload.addEventListener('click', async () => {
+                if (!selectedFile) {
+                    window.showToast("Por favor selecciona un archivo primero.", "error");
+                    return;
+                }
+
+                if (selectedFile.size > 10 * 1024 * 1024) {
+                    window.showToast("El archivo supera los 10MB.", "error");
+                    return;
+                }
+
+                const descInput = document.getElementById('sst-file-description');
+                const descriptionText = descInput.value.trim() || 'Sin descripción detallada.';
+
+                btnDoUpload.disabled = true;
+                btnDoUpload.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Subiendo...';
+
+                try {
+                    const storagePath = `company_docs/sst/${activeFolderId}/${Date.now()}_${selectedFile.name}`;
+                    const storageRef = ref(_storage, storagePath);
+
+                    const snapshot = await uploadBytes(storageRef, selectedFile);
+                    const downloadURL = await getDownloadURL(snapshot.ref);
+
+                    await addDoc(collection(_db, "company_documents"), {
+                        name: selectedFile.name,
+                        system: 'sst',
+                        category: activeFolderId,
+                        url: downloadURL,
+                        storagePath: storagePath,
+                        type: selectedFile.type,
+                        size: selectedFile.size,
+                        uploadedAt: serverTimestamp(),
+                        uploadedBy: _getCurrentUserId(),
+                        description: descriptionText
+                    });
+
+                    window.showToast("Documento publicado correctamente.", "success");
+                    
+                    selectedFile = null;
+                    fileInput.value = '';
+                    selectedLabel.textContent = "Ningún archivo seleccionado";
+                    selectedLabel.className = "text-[10px] text-slate-400 italic mt-1 block truncate";
+                    descInput.value = '';
+
+                } catch (err) {
+                    console.error("Error subiendo doc SST:", err);
+                    window.showToast("Error en la carga: " + err.message, "error");
+                } finally {
+                    btnDoUpload.disabled = false;
+                    btnDoUpload.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Publicar';
+                }
+            });
+
+            // Buscador interno en tiempo real
+            const folderSearch = document.getElementById('sst-folder-search');
+            folderSearch.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                const fileCards = dynamicArea.querySelectorAll('.file-card');
+                fileCards.forEach(card => {
+                    const name = card.dataset.name || '';
+                    const desc = card.dataset.desc || '';
+                    if (name.includes(term) || desc.includes(term)) {
+                        card.style.display = '';
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+            });
+
+            // Listeners: Editar Descripción
+            dynamicArea.querySelectorAll('.btn-edit-sst-doc').forEach(btn => {
+                btn.addEventListener('click', async function () {
+                    const docId = this.dataset.id;
+                    const name = this.dataset.name;
+                    const oldDesc = this.dataset.desc || '';
+
+                    if (typeof openCustomInputModal !== 'function') {
+                        const newD = prompt("Nueva descripción:", oldDesc);
+                        if (newD !== null) {
+                            try {
+                                await updateDoc(doc(_db, "company_documents", docId), {
+                                    description: newD.trim() || 'Sin descripción detallada.'
+                                });
+                                window.showToast("Descripción actualizada.", "success");
+                            } catch (e) { console.error(e); }
+                        }
+                        return;
+                    }
+
+                    const newDesc = await openCustomInputModal(
+                        "Editar Descripción",
+                        `Nueva descripción para "${name}":`,
+                        "text",
+                        oldDesc
+                    );
+
+                    if (newDesc === null) return;
+
+                    try {
+                        await updateDoc(doc(_db, "company_documents", docId), {
+                            description: newDesc.trim() || 'Sin descripción detallada.'
+                        });
+                        window.showToast("Descripción actualizada.", "success");
+
+                        if (typeof window.logAuditAction === 'function') {
+                            window.logAuditAction("Editar Doc SST", `Descripción de "${name}" editada`, _getCurrentUserId());
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        window.showToast("Error al editar descripción.", "error");
+                    }
+                });
+            });
+
+            // Listeners: Archivar Archivos (Ya no se eliminan!)
+            dynamicArea.querySelectorAll('.btn-archive-sst-doc').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    const docId = this.dataset.id;
+                    const name = this.dataset.name;
+
+                    if (_openConfirmModal) {
+                        _openConfirmModal(`¿Archivar "${name}"? El documento dejará de ser visible en el repositorio activo pero se conservará en el archivo histórico.`, async () => {
+                            try {
+                                await updateDoc(doc(_db, "company_documents", docId), {
+                                    status: 'archived',
+                                    archivedAt: serverTimestamp(),
+                                    archivedBy: _getCurrentUserId()
+                                });
+
+                                window.showToast("Documento archivado.", "success");
+                                
+                                if (typeof window.logAuditAction === 'function') {
+                                    window.logAuditAction("Archivar Doc SST", `Archivado: ${name}`, _getCurrentUserId());
+                                }
+
+                            } catch (e) {
+                                console.error(e);
+                                window.showToast("Error al archivar.", "error");
+                            }
+                        });
+                    }
+                });
+            });
         }
+    };
+
+    // 4. SUSCRIPCIÓN EN TIEMPO REAL A DOCUMENTOS (QUE AHORA INCLUYEN LAS CARPETAS PERSONALIZADAS)
+    const qDocs = query(collection(_db, "company_documents"), where("system", "==", "sst"), orderBy("uploadedAt", "desc"));
+
+    const unsubscribeDocs = onSnapshot(qDocs, (snapshot) => {
+        currentDocsSnapshot = snapshot;
+        renderSSTRepository();
+    }, (error) => {
+        console.error("Error cargando docs SST:", error);
     });
+
+    // Limpiar suscripciones concurrentes
+    unsubscribeEmpleadosTab = () => {
+        unsubscribeDocs();
+    };
 }
+
+
 
 // ----------------------------------------------------------
 // SUB-MÓDULO 2: SEGUIMIENTO COLABORADORES (CORREGIDO)
@@ -995,10 +1333,10 @@ async function loadSSTColaboradoresSubTab(container) {
 
     const usersMap = _getUsersMap();
 
-    // Mapeamos entries() para asegurar que el ID vaya dentro del objeto
+    // Mapeamos entries() para asegurar que el ID vaya dentro del objeto y filtramos administradores
     const activeUsers = Array.from(usersMap.entries())
         .map(([id, data]) => ({ id: id, ...data }))
-        .filter(u => u.status === 'active');
+        .filter(u => u.status === 'active' && u.role !== 'admin' && u.role !== 'administrador');
 
     tableBody.innerHTML = '';
 
@@ -1006,6 +1344,15 @@ async function loadSSTColaboradoresSubTab(container) {
         tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-400">No hay colaboradores activos.</td></tr>';
         return;
     }
+
+    const roleMap = {
+        'admin': 'Administrador',
+        'administrador': 'Administrador',
+        'sst': 'Responsable SST',
+        'nomina': 'Gestor de Nómina',
+        'bodega': 'Auxiliar de Bodega',
+        'operario': 'Operario'
+    };
 
     for (const user of activeUsers) {
         if (!user.id) continue;
@@ -1015,6 +1362,7 @@ async function loadSSTColaboradoresSubTab(container) {
         tr.dataset.name = `${user.firstName || ''} ${user.lastName || ''} ${user.idNumber || ''}`.toLowerCase();
 
         const initials = (user.firstName?.[0] || '') + (user.lastName?.[0] || '');
+        const roleDisplay = roleMap[user.role] || (user.role ? (user.role.charAt(0).toUpperCase() + user.role.slice(1)) : 'Operario');
 
         tr.innerHTML = `
             <td class="px-4 py-3 font-medium text-gray-900">
@@ -1024,7 +1372,7 @@ async function loadSSTColaboradoresSubTab(container) {
                     </div>
                     <div>
                         <p>${user.firstName} ${user.lastName}</p>
-                        <p class="text-[10px] text-gray-400">${user.jobTitle || 'Operario'}</p>
+                        <p class="text-[10px] text-gray-400 font-medium">${roleDisplay}</p>
                     </div>
                 </div>
             </td>
@@ -1420,12 +1768,27 @@ function loadSSTDotacionSubTab(container) {
         const alerts = [];
         const usersMap = _getUsersMap();
 
-        // Carga eficiente de catálogo
+        // Carga eficiente de catálogo en paralelo y con caché inteligente (0ms)
         const catalogRefs = new Set(snapshot.docs.map(d => d.data().itemId));
         const catalogMap = new Map();
+        const fetchPromises = [];
+
         for (const itemId of catalogRefs) {
-            const snap = await getDoc(doc(_db, "dotacionCatalog", itemId));
-            if (snap.exists()) catalogMap.set(itemId, snap.data());
+            if (dotacionCatalogCache.has(itemId)) {
+                catalogMap.set(itemId, dotacionCatalogCache.get(itemId));
+            } else {
+                fetchPromises.push(
+                    getDoc(doc(_db, "dotacionCatalog", itemId)).then(snap => {
+                        if (snap.exists()) {
+                            dotacionCatalogCache.set(itemId, snap.data());
+                            catalogMap.set(itemId, snap.data());
+                        }
+                    })
+                );
+            }
+        }
+        if (fetchPromises.length > 0) {
+            await Promise.all(fetchPromises);
         }
 
         snapshot.forEach(doc => {
@@ -1504,10 +1867,24 @@ function loadSSTAlertsInSidePanel() {
         const alerts = [];
         const catalogRefs = new Set(snapshot.docs.map(d => d.data().itemId));
         const catalogMap = new Map();
+        const fetchPromises = [];
 
         for (const itemId of catalogRefs) {
-            const snap = await getDoc(doc(_db, "dotacionCatalog", itemId));
-            if (snap.exists()) catalogMap.set(itemId, snap.data());
+            if (dotacionCatalogCache.has(itemId)) {
+                catalogMap.set(itemId, dotacionCatalogCache.get(itemId));
+            } else {
+                fetchPromises.push(
+                    getDoc(doc(_db, "dotacionCatalog", itemId)).then(snap => {
+                        if (snap.exists()) {
+                            dotacionCatalogCache.set(itemId, snap.data());
+                            catalogMap.set(itemId, snap.data());
+                        }
+                    })
+                );
+            }
+        }
+        if (fetchPromises.length > 0) {
+            await Promise.all(fetchPromises);
         }
 
         snapshot.forEach(doc => {
@@ -1628,9 +2005,11 @@ async function loadGlobalHistoryTab(container) {
         tbody.innerHTML = `<tr><td colspan="5" class="text-center py-10"><div class="loader-small mx-auto"></div></td></tr>`;
 
         try {
-            const startDate = new Date(start);
-            const endDate = new Date(end);
-            endDate.setHours(23, 59, 59);
+            const [startYear, startMonth, startDay] = start.split('-').map(Number);
+            const startDate = new Date(startYear, startMonth - 1, startDay, 0, 0, 0);
+
+            const [endYear, endMonth, endDay] = end.split('-').map(Number);
+            const endDate = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
 
             const q = query(
                 collectionGroup(_db, 'paymentHistory'),
@@ -1998,7 +2377,139 @@ async function loadProductividadTab(container) {
 
 
 /**
- * Carga el contenido de la pestaña "Nómina" (CON INTERRUPTOR DE PRÉSTAMOS).
+ * Determina la quincena contable activa de forma inteligente.
+ */
+function getCurrentActiveQuincena(selectedMonthYear) {
+    if (!selectedMonthYear) return "";
+    const today = new Date();
+    const [selYear, selMonth] = selectedMonthYear.split('-').map(Number);
+    const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const monthName = months[selMonth - 1];
+
+    // Si el mes seleccionado es el mes actual
+    if (today.getFullYear() === selYear && (today.getMonth() + 1) === selMonth) {
+        if (today.getDate() <= 15) {
+            return `Primera Quincena de ${monthName} ${selYear}`;
+        } else {
+            return `Segunda Quincena de ${monthName} ${selYear}`;
+        }
+    }
+
+    // Si el mes seleccionado es anterior al mes actual (ej: hoy es 1 de junio y está seleccionado mayo)
+    const currentMonthAbs = today.getFullYear() * 12 + today.getMonth();
+    const selMonthAbs = selYear * 12 + (selMonth - 1);
+    
+    if (currentMonthAbs > selMonthAbs) {
+        // Si estamos en los primeros 10 días del mes siguiente, se asume que se está pagando la segunda quincena del anterior
+        if (currentMonthAbs === selMonthAbs + 1 && today.getDate() <= 10) {
+            return `Segunda Quincena de ${monthName} ${selYear}`;
+        } else {
+            return `Segunda Quincena de ${monthName} ${selYear}`;
+        }
+    } else {
+        // Mes futuro
+        return `Primera Quincena de ${monthName} ${selYear}`;
+    }
+}
+
+/**
+ * Retorna el código ACH del banco según la tabla oficial.
+ */
+function getBankCode(bankName) {
+    if (!bankName) return '7'; // Default to Bancolombia
+    const normalized = bankName.toLowerCase();
+    
+    if (normalized.includes('nequi')) return '507';
+    if (normalized.includes('daviplata')) return '51';
+    
+    if (normalized.includes('bogota')) return '1';
+    if (normalized.includes('popular')) return '2';
+    if (normalized.includes('corpbanca')) return '6';
+    if (normalized.includes('bancolombia')) return '7';
+    if (normalized.includes('citibank')) return '9';
+    if (normalized.includes('sudameris')) return '12';
+    if (normalized.includes('bbva')) return '13';
+    if (normalized.includes('itau') || normalized.includes('itaú')) return '14';
+    if (normalized.includes('colpatria')) return '19';
+    if (normalized.includes('occidente')) return '23';
+    if (normalized.includes('caja social') || normalized.includes('social') || normalized.includes('bcs')) return '32';
+    if (normalized.includes('agrario')) return '40';
+    if (normalized.includes('paribas')) return '42';
+    if (normalized.includes('davivienda')) return '51';
+    if (normalized.includes('av villas') || normalized.includes('villas')) return '52';
+    if (normalized.includes('procredit')) return '58';
+    if (normalized.includes('pichincha')) return '60';
+    if (normalized.includes('coomeva')) return '61';
+    if (normalized.includes('falabella')) return '62';
+    if (normalized.includes('finandina')) return '63';
+    if (normalized.includes('multibank')) return '64';
+    if (normalized.includes('santander')) return '65';
+    if (normalized.includes('coopcentral')) return '66';
+    if (normalized.includes('compartir')) return '67';
+    if (normalized.includes('corficolombiana')) return '90';
+    if (normalized.includes('juridiscoop')) return '121';
+    if (normalized.includes('antioquia')) return '283';
+    if (normalized.includes('cotrafa')) return '289';
+    if (normalized.includes('confiar')) return '292';
+    if (normalized.includes('coltefinanciera')) return '370';
+    
+    return '7'; // Default to Bancolombia
+}
+
+/**
+ * Retorna el tipo de producto bancario.
+ * Si es nequi -> 'CA'
+ * Si es daviplata o cualquier otro -> 'DP'
+ */
+function getProductType(bankName) {
+    if (!bankName) return 'DP';
+    const normalized = bankName.toLowerCase();
+    if (normalized.includes('nequi')) return 'CA';
+    return 'DP';
+}
+
+/**
+ * Remueve tildes y acentos, y reemplaza la Ñ/ñ con N/n para compatibilidad bancaria.
+ */
+function cleanTextForBank(text) {
+    if (!text) return "";
+    return text
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[ñÑ]/g, match => match === 'ñ' ? 'n' : 'N');
+}
+
+/**
+ * Formatea la descripción de la quincena para Bancolombia (ej. "2 quincena abril").
+ */
+function formatDescription(quincenaConcept) {
+    if (!quincenaConcept) return "";
+    const norm = quincenaConcept.toLowerCase();
+    const monthsShort = {
+        'enero': 'enero', 'febrero': 'febrero', 'marzo': 'marzo', 'abril': 'abril',
+        'mayo': 'mayo', 'junio': 'junio', 'julio': 'julio', 'agosto': 'agosto',
+        'septiembre': 'septiembre', 'octubre': 'octubre', 'noviembre': 'noviembre', 'diciembre': 'diciembre'
+    };
+    
+    let q = '1 quincena';
+    if (norm.includes('segunda') || norm.includes('2ª') || norm.includes('2a')) {
+        q = '2 quincena';
+    } else if (norm.includes('mensual') || norm.includes('mes')) {
+        q = 'mensual';
+    }
+    
+    let foundMonth = 'mes';
+    for (const m in monthsShort) {
+        if (norm.includes(m)) {
+            foundMonth = monthsShort[m];
+            break;
+        }
+    }
+    return `${q} ${foundMonth}`;
+}
+
+/**
+ * Carga el contenido de la pestaña "Nómina" (CON INTERRUPTOR DE PRÉSTAMOS, BADGE DE ESTADO Y EXPORTACIÓN INTERACTIVA).
  */
 async function loadNominaTab(container) {
     // 1. ESTRUCTURA HTML MEJORADA
@@ -2014,13 +2525,20 @@ async function loadNominaTab(container) {
 
             <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
                 
-                    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                        <button data-action="back-to-empleados-from-payment" class="text-slate-500 hover:text-blue-600 font-bold text-sm flex items-center gap-2 transition-colors">
+                <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b border-slate-100 pb-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                        <button data-action="back-to-empleados-from-payment" class="text-slate-500 hover:text-blue-600 font-bold text-sm flex items-center gap-2 transition-colors mr-2">
                             <i class="fa-solid fa-arrow-left"></i> Volver a Lista
                         </button>
-                        
-                        <div class="flex bg-white rounded-lg shadow-sm border border-gray-200 p-1">
-                        
+                        <div class="h-4 w-[1px] bg-slate-200 hidden sm:block"></div>
+                        <h3 class="text-base font-black text-slate-800 flex items-center gap-2">
+                            <span>Previsualización de Nómina</span>
+                            <span id="nomina-active-quincena-badge" class="text-[10px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-100 px-2.5 py-0.5 rounded-full uppercase tracking-wider">Cargando...</span>
+                        </h3>
+                    </div>
+                    
+                    <div class="flex bg-white rounded-lg shadow-sm border border-gray-200 p-1">
+                    
                         <label class="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors h-[42px]">
                             <input type="checkbox" id="toggle-apply-loans" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer">
                             <span class="text-xs font-bold text-slate-600 select-none">Aplicar Préstamos</span>
@@ -2047,10 +2565,10 @@ async function loadNominaTab(container) {
                             <thead class="text-xs text-gray-500 uppercase bg-slate-50 border-b border-gray-200">
                                 <tr>
                                     <th class="px-6 py-4 font-extrabold tracking-wider">Colaborador</th>
-                                    <th class="px-6 py-4 font-extrabold tracking-wider text-center">Nivel</th>
-                                    <th class="px-6 py-4 font-extrabold tracking-wider text-right">Básico</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-right">Básico + Aux (15d)</th>
                                     <th class="px-6 py-4 font-extrabold tracking-wider text-right text-emerald-600">Bonos (M²)</th>
-                                    <th class="px-6 py-4 font-extrabold tracking-wider text-right text-rose-600">Deducciones</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-right text-rose-600">Deducciones Ley</th>
+                                    <th class="px-6 py-4 font-extrabold tracking-wider text-right text-amber-600">Préstamos</th>
                                     <th class="px-6 py-4 font-extrabold tracking-wider text-right text-blue-700">Neto a Pagar</th>
                                     <th class="px-6 py-4 font-extrabold tracking-wider text-center">Acciones</th>
                                 </tr>
@@ -2075,7 +2593,7 @@ async function loadNominaTab(container) {
     const kpiContainer = document.getElementById('nomina-kpi-container');
     const searchInput = document.getElementById('nomina-search');
     const exportBtn = document.getElementById('btn-export-nomina-excel');
-    const toggleLoans = document.getElementById('toggle-apply-loans'); // <-- Nuevo Switch
+    const toggleLoans = document.getElementById('toggle-apply-loans');
 
     if (!monthSelector || !tableBody) return;
 
@@ -2105,37 +2623,74 @@ async function loadNominaTab(container) {
         if (!document.getElementById('nomina-table')) return;
 
         const userLoansMap = new Map();
-        loansSnapshot.forEach(doc => {
-            const loan = doc.data();
-            const userId = doc.ref.parent.parent.id;
-            if (!userLoansMap.has(userId)) userLoansMap.set(userId, { totalBalance: 0, estimatedDeduction: 0 });
+        loansSnapshot.forEach(docSnap => {
+            const loan = docSnap.data();
+            const userId = docSnap.ref.parent.parent.id;
+            if (!userLoansMap.has(userId)) userLoansMap.set(userId, { totalBalance: 0, estimatedDeduction: 0, loans: [] });
 
             const userData = userLoansMap.get(userId);
             userData.totalBalance += (loan.balance || 0);
+            
             const installments = loan.installments > 0 ? loan.installments : 1;
-            userData.estimatedDeduction += (loan.balance || 0) / installments;
+            let suggestedInstallment = (loan.amount || 0) / installments;
+            if (suggestedInstallment > (loan.balance || 0)) {
+                suggestedInstallment = (loan.balance || 0);
+            }
+            userData.estimatedDeduction += suggestedInstallment;
+            userData.loans.push({
+                id: docSnap.id,
+                ...loan
+            });
         });
 
-        // 5. Obtener ESTADÍSTICAS
+        // 5. Obtener ESTADÍSTICAS y PAGOS DUPLICADOS concurrentemente
+        const activeQuincena = getCurrentActiveQuincena(selectedMonthYear);
+        
+        const badgeEl = document.getElementById('nomina-active-quincena-badge');
+        if (badgeEl) badgeEl.textContent = activeQuincena;
+
+        const paymentsQuery = query(
+            collectionGroup(_db, 'paymentHistory'),
+            where('concepto', '==', activeQuincena)
+        );
+
         const statPromises = activeUsers.map(op => getDoc(doc(_db, "employeeStats", op.id, "monthlyStats", currentStatDocId)));
-        const statSnapshots = await Promise.all(statPromises);
+
+        const [statSnapshots, paymentsSnapshot] = await Promise.all([
+            Promise.all(statPromises),
+            getDocs(paymentsQuery).catch(err => {
+                console.error("Error al obtener pagos para double-payment check:", err);
+                return { empty: true, forEach: () => {} };
+            })
+        ]);
 
         if (!document.getElementById('nomina-table')) return;
 
-        // 6. Procesar Datos BASE (Sin cálculos finales de totales todavía)
+        let paidEmployeeIds = new Set();
+        if (paymentsSnapshot && !paymentsSnapshot.empty) {
+            paymentsSnapshot.forEach(docSnap => {
+                const userId = docSnap.ref.parent.parent.id;
+                paidEmployeeIds.add(userId);
+            });
+        }
+
+        // 6. Procesar Datos BASE
         const rawEmpleadoData = activeUsers.map((operario, index) => {
             const statDoc = statSnapshots[index];
             const stats = statDoc.exists() ? statDoc.data() : { totalBonificacion: 0 };
-            const loanInfo = userLoansMap.get(operario.id) || { totalBalance: 0, estimatedDeduction: 0 };
+            const loanInfo = userLoansMap.get(operario.id) || { totalBalance: 0, estimatedDeduction: 0, loans: [] };
 
             const basico = parseFloat(operario.salarioBasico) || 0;
             const bono = stats.totalBonificacion || 0;
-            // Calculamos la deducción potencial (la máxima posible)
             const deductionPotential = Math.min(loanInfo.estimatedDeduction, loanInfo.totalBalance);
+            const dedSobreMinimo = operario.deduccionSobreMinimo === true || operario.deduccionSobreMinimo === 'true';
 
             return {
                 id: operario.id,
                 fullName: `${operario.firstName} ${operario.lastName}`,
+                firstName: operario.firstName || '',
+                lastName: operario.lastName || '',
+                email: operario.email || '',
                 initials: (operario.firstName[0] + operario.lastName[0]).toUpperCase(),
                 cedula: operario.idNumber || 'N/A',
                 bankName: operario.bankName || 'N/A',
@@ -2144,8 +2699,10 @@ async function loadNominaTab(container) {
                 role: operario.role || 'operario',
                 salarioBasico: basico,
                 bonificacion: bono,
-                deduccionPotencial: deductionPotential, // Guardamos el valor potencial
-                deudaTotal: loanInfo.totalBalance
+                deduccionPotencial: deductionPotential,
+                deudaTotal: loanInfo.totalBalance,
+                loansList: loanInfo.loans,
+                deduccionSobreMinimo: dedSobreMinimo
             };
         });
 
@@ -2154,15 +2711,55 @@ async function loadNominaTab(container) {
             const applyLoans = toggleLoans.checked;
             const searchTerm = searchInput.value.toLowerCase();
 
-            // A. Recalcular datos dinámicos
+            const config = _getPayrollConfig() || {
+                salarioMinimo: 1300000,
+                auxilioTransporte: 162000,
+                porcentajeSalud: 4,
+                porcentajePension: 4
+            };
+
+            const diasPagar = 15;
+
+            // A. Recalcular datos dinámicos para una quincena (15 días)
             const processedData = rawEmpleadoData.map(emp => {
-                // Si el switch está apagado, la deducción aplicada es 0
-                const deduccionAplicada = applyLoans ? emp.deduccionPotencial : 0;
-                const totalPagar = emp.salarioBasico + emp.bonificacion - deduccionAplicada;
+                const salarioProrrateado = (emp.salarioBasico / 30) * diasPagar;
+                const auxTransporteMensual = config.auxilioTransporte || 162000;
+                const auxTransporteProrrateado = (auxTransporteMensual / 30) * diasPagar;
+
+                // Base Deducción Ley
+                let baseDeduccion = 0;
+                if (emp.deduccionSobreMinimo && config.salarioMinimo) {
+                    baseDeduccion = (config.salarioMinimo / 30) * diasPagar;
+                } else {
+                    baseDeduccion = salarioProrrateado + emp.bonificacion;
+                }
+
+                // Ajuste base para no cotizar bajo el mínimo proporcional
+                if (config.salarioMinimo && baseDeduccion > 0 && baseDeduccion < (config.salarioMinimo / 30) * diasPagar) {
+                    baseDeduccion = (config.salarioMinimo / 30) * diasPagar;
+                }
+
+                const deduccionSalud = baseDeduccion * ((config.porcentajeSalud || 4) / 100);
+                const deduccionPension = baseDeduccion * ((config.porcentajePension || 4) / 100);
+                const totalDeduccionesLey = deduccionSalud + deduccionPension;
+                const deduccionPrestamos = applyLoans ? emp.deduccionPotencial : 0;
+
+                // Devengado & Neto a Pagar
+                const totalDevengado = salarioProrrateado + auxTransporteProrrateado + emp.bonificacion;
+                
+                // Double-payment logic: Si ya está pagado en la quincena actual, el neto a pagar es 0
+                const originalTotalPagar = Math.max(0, totalDevengado - totalDeduccionesLey - deduccionPrestamos);
+                const isAlreadyPaid = paidEmployeeIds.has(emp.id);
+                const totalPagar = isAlreadyPaid ? 0 : originalTotalPagar;
 
                 return {
                     ...emp,
-                    deduccionAplicada,
+                    salarioProrrateado,
+                    auxTransporteProrrateado,
+                    totalDeduccionesLey,
+                    deduccionPrestamos,
+                    originalTotalPagar,
+                    isAlreadyPaid,
                     totalPagar
                 };
             });
@@ -2173,18 +2770,16 @@ async function loadNominaTab(container) {
                 emp.cedula.includes(searchTerm)
             );
 
-            // C. Ordenar
-            filteredData.sort((a, b) => b.totalPagar - a.totalPagar);
+            // C. Ordenar por orden alfabético (A-Z)
+            filteredData.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || '', 'es'));
 
-            // D. Calcular Totales Globales (de toda la lista procesada, no solo la filtrada, para los KPIs)
+            // D. Calcular Totales Globales (Solo acumula operarios que NO han sido pagados aún)
             let sumBasico = 0, sumBonificacion = 0, sumDeducciones = 0, sumTotal = 0;
 
-            // Usamos 'processedData' para los KPIs generales, o 'filteredData' si quieres que los KPIs respondan a la búsqueda.
-            // Usualmente en dashboards, los KPIs superiores muestran el total general.
             processedData.forEach(p => {
-                sumBasico += p.salarioBasico;
+                sumBasico += p.salarioProrrateado;
                 sumBonificacion += p.bonificacion;
-                sumDeducciones += p.deduccionAplicada;
+                sumDeducciones += p.totalDeduccionesLey + p.deduccionPrestamos;
                 sumTotal += p.totalPagar;
             });
 
@@ -2193,7 +2788,7 @@ async function loadNominaTab(container) {
                 <div class="bg-white p-4 rounded-xl shadow-sm border border-blue-100 flex items-center gap-4">
                     <div class="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-xl"><i class="fa-solid fa-money-bill-wave"></i></div>
                     <div>
-                        <p class="text-[10px] font-bold text-gray-400 uppercase">Nómina Estimada</p>
+                        <p class="text-[10px] font-bold text-gray-400 uppercase">Nómina Quincenal Estimada</p>
                         <h3 class="text-xl font-black text-gray-800">${currencyFormatter.format(sumTotal)}</h3>
                     </div>
                 </div>
@@ -2207,8 +2802,8 @@ async function loadNominaTab(container) {
                 <div class="bg-white p-4 rounded-xl shadow-sm border border-red-100 flex items-center gap-4">
                     <div class="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center text-xl"><i class="fa-solid fa-hand-holding-dollar"></i></div>
                     <div>
-                        <p class="text-[10px] font-bold text-gray-400 uppercase">Deducciones ${applyLoans ? '' : '(Inactivas)'}</p>
-                        <h3 class="text-xl font-black ${applyLoans ? 'text-red-600' : 'text-gray-300'}">- ${currencyFormatter.format(sumDeducciones)}</h3>
+                        <p class="text-[10px] font-bold text-gray-400 uppercase">Deducciones Aplicadas</p>
+                        <h3 class="text-xl font-black text-red-600">- ${currencyFormatter.format(sumDeducciones)}</h3>
                     </div>
                 </div>
                 <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
@@ -2233,13 +2828,34 @@ async function loadNominaTab(container) {
 
                     const levelText = data.commissionLevel.charAt(0).toUpperCase() + data.commissionLevel.slice(1);
 
-                    // Visualización condicional de la deducción
-                    let dedHtml = `<span class="text-gray-300">-</span>`;
-                    if (data.deduccionAplicada > 0) {
-                        dedHtml = `<span class="text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded">- ${currencyFormatter.format(data.deduccionAplicada)}</span>`;
-                    } else if (!applyLoans && data.deduccionPotencial > 0) {
-                        // Si hay deuda pero el switch está apagado, mostramos un indicador gris
-                        dedHtml = `<span class="text-gray-400 text-xs italic" title="Deuda existente no aplicada">(${currencyFormatter.format(data.deduccionPotencial)})</span>`;
+                    const leyHtml = data.totalDeduccionesLey > 0 
+                        ? `<span class="text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded border border-rose-100">-${currencyFormatter.format(data.totalDeduccionesLey)}</span>`
+                        : `<span class="text-gray-300">-</span>`;
+
+                    let prestamosHtml = `<span class="text-gray-300">-</span>`;
+                    if (!applyLoans) {
+                        if (data.deudaTotal > 0) {
+                            prestamosHtml = `<span class="text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-100" title="Deuda total pendiente: ${currencyFormatter.format(data.deudaTotal)}">Saldo: ${currencyFormatter.format(data.deudaTotal)}</span>`;
+                        }
+                    } else {
+                        if (data.deduccionPrestamos > 0) {
+                            prestamosHtml = `<span class="text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded border border-rose-100" title="Descuento aplicado en esta quincena">-${currencyFormatter.format(data.deduccionPrestamos)}</span>`;
+                        }
+                    }
+
+                    const basicoMasAux = data.salarioProrrateado + data.auxTransporteProrrateado;
+
+                    // Neto a Pagar Custom Render if Already Paid
+                    let netPayHtml = `<span class="font-black text-blue-700 text-base">${currencyFormatter.format(data.totalPagar)}</span>`;
+                    if (data.isAlreadyPaid) {
+                        netPayHtml = `
+                            <div class="flex flex-col items-end">
+                                <span class="font-black text-slate-400 text-sm line-through">${currencyFormatter.format(data.originalTotalPagar)}</span>
+                                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 mt-1 shadow-sm">
+                                    <i class="fa-solid fa-circle-check"></i> PAGADO
+                                </span>
+                            </div>
+                        `;
                     }
 
                     row.innerHTML = `
@@ -2254,15 +2870,11 @@ async function loadNominaTab(container) {
                                 </div>
                             </div>
                         </td>
-                        <td class="px-6 py-4 text-center">
-                            <span class="px-2 py-1 rounded text-[10px] font-bold uppercase bg-gray-100 text-gray-600 border border-gray-200">${levelText}</span>
-                        </td>
-                        <td class="px-6 py-4 text-right font-medium text-gray-600 text-sm">${currencyFormatter.format(data.salarioBasico)}</td>
+                        <td class="px-6 py-4 text-right font-medium text-gray-600 text-sm">${currencyFormatter.format(basicoMasAux)}</td>
                         <td class="px-6 py-4 text-right font-bold text-emerald-600 text-sm">${currencyFormatter.format(data.bonificacion)}</td>
-                        <td class="px-6 py-4 text-right text-sm">${dedHtml}</td>
-                        <td class="px-6 py-4 text-right">
-                            <span class="font-black text-blue-700 text-base">${currencyFormatter.format(data.totalPagar)}</span>
-                        </td>
+                        <td class="px-6 py-4 text-right text-sm">${leyHtml}</td>
+                        <td class="px-6 py-4 text-right text-sm">${prestamosHtml}</td>
+                        <td class="px-6 py-4 text-right">${netPayHtml}</td>
                         <td class="px-6 py-4 text-center">
                             <button class="btn-cert-laboral text-slate-400 hover:text-blue-600 hover:bg-blue-50 w-8 h-8 rounded-lg transition-all inline-flex items-center justify-center shadow-sm border border-transparent hover:border-blue-200" 
                                 title="Generar Certificación" 
@@ -2290,26 +2902,493 @@ async function loadNominaTab(container) {
         toggleLoans.addEventListener('change', updateView);
         searchInput.addEventListener('input', updateView);
 
-        exportBtn.addEventListener('click', () => {
+        // --- EXPORTACIÓN INTERACTIVA CON EDICIÓN DE DÍAS ---
+        exportBtn.addEventListener('click', async () => {
             const applyLoans = toggleLoans.checked;
-            // Recalculamos para exportación asegurándonos de tener la data fresca
-            const dataForExport = rawEmpleadoData.map(emp => ({
-                "Cédula": emp.cedula,
-                "Nombre": emp.fullName,
-                "Banco": emp.bankName,
-                "Cuenta": emp.accountNumber,
-                "Básico": emp.salarioBasico,
-                "Bonos": emp.bonificacion,
-                "Deducción": applyLoans ? emp.deduccionPotencial : 0,
-                "Neto a Pagar": emp.salarioBasico + emp.bonificacion - (applyLoans ? emp.deduccionPotencial : 0)
-            }));
+            
+            const config = _getPayrollConfig() || {
+                salarioMinimo: 1300000,
+                auxilioTransporte: 162000,
+                porcentajeSalud: 4,
+                porcentajePension: 4
+            };
 
-            try {
-                const ws = XLSX.utils.json_to_sheet(dataForExport);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "Nomina");
-                XLSX.writeFile(wb, `Nomina_${selectedMonthYear}.xlsx`);
-            } catch (e) { alert("Error exportando Excel."); }
+            let exportModal = document.getElementById('export-nomina-modal');
+            if (!exportModal) {
+                exportModal = document.createElement('div');
+                exportModal.id = 'export-nomina-modal';
+                exportModal.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 transition-all opacity-0 pointer-events-none duration-300';
+                document.body.appendChild(exportModal);
+            }
+
+            exportModal.innerHTML = `
+                <div class="bg-white w-full max-w-5xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden transform scale-95 transition-all duration-300" id="export-nomina-modal-card">
+                    <!-- Header -->
+                    <div class="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-4 flex justify-between items-center text-white shrink-0">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-file-excel"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-black text-base md:text-lg">Exportación de Nómina Bancaria</h3>
+                                <p class="text-xs text-emerald-100 font-medium">Formato Bancolombia • <span class="uppercase font-bold">${activeQuincena}</span></p>
+                            </div>
+                        </div>
+                        <button id="btn-close-export-modal" class="text-white/80 hover:text-white transition-colors w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center">
+                            <i class="fa-solid fa-xmark text-lg"></i>
+                        </button>
+                    </div>
+
+                    <!-- Body -->
+                    <div class="p-6 flex-1 overflow-y-auto custom-scrollbar bg-slate-50/50 space-y-6">
+                        <!-- Info Banner & Totals -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="md:col-span-1 bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex items-center gap-4">
+                                <div class="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg"><i class="fa-solid fa-users"></i></div>
+                                <div>
+                                    <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">A Exportar</p>
+                                    <h4 class="text-lg font-black text-slate-800" id="export-total-count">0 operarios</h4>
+                                </div>
+                            </div>
+                            <div class="md:col-span-1 bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex items-center gap-4">
+                                <div class="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg"><i class="fa-solid fa-vault"></i></div>
+                                <div>
+                                    <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Monto Total</p>
+                                    <h4 class="text-lg font-black text-slate-800" id="export-total-amount">$ 0</h4>
+                                </div>
+                            </div>
+                            <div class="md:col-span-1 bg-gradient-to-br from-emerald-50 to-teal-50/20 border border-emerald-100/50 p-4 rounded-xl flex items-start gap-3">
+                                <i class="fa-solid fa-circle-info text-emerald-600 mt-0.5 text-sm"></i>
+                                <p class="text-[11px] text-emerald-800 leading-normal">
+                                    <strong>Edición de Días:</strong> Puedes ajustar los días de salario y transporte para cada colaborador. El neto individual y el total de la exportación se recalcularán en tiempo real.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Table -->
+                        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-xs text-left" id="export-nomina-table">
+                                    <thead class="text-[10px] text-slate-400 uppercase bg-slate-50 border-b border-slate-200">
+                                        <tr>
+                                            <th class="px-4 py-3 text-center w-12">
+                                                <input type="checkbox" id="export-select-all" checked class="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer">
+                                            </th>
+                                            <th class="px-4 py-3 font-extrabold tracking-wider">Colaborador</th>
+                                            <th class="px-4 py-3 font-extrabold tracking-wider text-right">Sueldo Básico</th>
+                                            <th class="px-4 py-3 font-extrabold tracking-wider text-center w-24">Días Salario</th>
+                                            <th class="px-4 py-3 font-extrabold tracking-wider text-center w-24">Días Aux. Transp.</th>
+                                            <th class="px-4 py-3 font-extrabold tracking-wider text-right text-emerald-600">Bonificaciones</th>
+                                            <th class="px-4 py-3 font-extrabold tracking-wider text-right text-rose-600">Deducciones Ley</th>
+                                            <th class="px-4 py-3 font-extrabold tracking-wider text-right text-blue-700">Neto a Pagar</th>
+                                            <th class="px-4 py-3 font-extrabold tracking-wider text-center">Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100" id="export-nomina-tbody">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="bg-slate-50 border-t border-slate-200 px-6 py-4 flex justify-between items-center shrink-0">
+                        <button type="button" id="btn-cancel-export-modal" class="px-5 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-bold hover:bg-slate-100 transition-colors text-sm">
+                            Cancelar
+                        </button>
+                        <button type="button" id="btn-confirm-export-excel" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white px-8 py-2.5 rounded-lg font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-file-excel text-base"></i> Confirmar y Descargar Excel
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            const tbody = document.getElementById('export-nomina-tbody');
+            const defaultDias = (activeQuincena.includes('Mensual') || activeQuincena.includes('Completo')) ? 30 : 15;
+
+            rawEmpleadoData.forEach(emp => {
+                const salarioProrrateado = (emp.salarioBasico / 30) * defaultDias;
+                const auxTransporteMensual = config.auxilioTransporte || 162000;
+                const auxTransporteProrrateado = (auxTransporteMensual / 30) * defaultDias;
+                
+                let baseDeduccion = 0;
+                if (emp.deduccionSobreMinimo && config.salarioMinimo) {
+                    baseDeduccion = (config.salarioMinimo / 30) * defaultDias;
+                } else {
+                    baseDeduccion = salarioProrrateado + emp.bonificacion;
+                }
+                if (config.salarioMinimo && baseDeduccion > 0 && baseDeduccion < (config.salarioMinimo / 30) * defaultDias) {
+                    baseDeduccion = (config.salarioMinimo / 30) * defaultDias;
+                }
+                
+                const deduccionSalud = baseDeduccion * ((config.porcentajeSalud || 4) / 100);
+                const deduccionPension = baseDeduccion * ((config.porcentajePension || 4) / 100);
+                const totalDeduccionesLey = deduccionSalud + deduccionPension;
+                const deduccionPrestamos = applyLoans ? emp.deduccionPotencial : 0;
+                
+                const totalDevengado = salarioProrrateado + auxTransporteProrrateado + emp.bonificacion;
+                const totalPagar = Math.max(0, totalDevengado - totalDeduccionesLey - deduccionPrestamos);
+                
+                const isPaid = paidEmployeeIds.has(emp.id);
+
+                const row = document.createElement('tr');
+                row.className = `hover:bg-slate-50 transition-colors ${isPaid ? 'bg-emerald-50/20' : ''}`;
+                row.dataset.id = emp.id;
+                row.dataset.diasSalario = defaultDias;
+                row.dataset.diasAuxTransporte = defaultDias;
+                row.dataset.totalPagar = isPaid ? 0 : totalPagar;
+
+                row.innerHTML = `
+                    <td class="px-4 py-3 text-center">
+                        <input type="checkbox" ${isPaid ? '' : 'checked'} class="export-include-chk w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer">
+                    </td>
+                    <td class="px-4 py-3 font-bold text-slate-800">
+                        <div>
+                            <p class="text-xs font-black text-slate-700">${emp.fullName}</p>
+                            <p class="text-[9px] text-slate-400 mt-0.5">${emp.role.toUpperCase()} • C.C. ${emp.cedula}</p>
+                        </div>
+                    </td>
+                    <td class="px-4 py-3 text-right font-medium text-slate-500 font-mono">${currencyFormatter.format(emp.salarioBasico)}</td>
+                    <td class="px-4 py-3 text-center">
+                        <input type="number" value="${defaultDias}" min="0" max="30" class="export-days-salario w-14 text-center border border-slate-200 focus:ring-emerald-500 focus:border-emerald-500 rounded-md p-1 font-bold text-slate-700">
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        <input type="number" value="${defaultDias}" min="0" max="30" class="export-days-transport w-14 text-center border border-slate-200 focus:ring-emerald-500 focus:border-emerald-500 rounded-md p-1 font-bold text-slate-700">
+                    </td>
+                    <td class="px-4 py-3 text-right font-bold text-emerald-600 font-mono">${currencyFormatter.format(emp.bonificacion)}</td>
+                    <td class="px-4 py-3 text-right font-medium text-rose-600 font-mono export-deducciones-display">-${currencyFormatter.format(totalDeduccionesLey + deduccionPrestamos)}</td>
+                    <td class="px-4 py-3 text-right font-black text-blue-700 font-mono export-neto-display">${currencyFormatter.format(isPaid ? 0 : totalPagar)}</td>
+                    <td class="px-4 py-3 text-center">
+                        ${isPaid 
+                            ? `<span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200"><i class="fa-solid fa-circle-check"></i> PAGADO</span>`
+                            : `<span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200"><i class="fa-solid fa-clock"></i> PENDIENTE</span>`
+                        }
+                    </td>
+                `;
+
+                const daysSalarioInput = row.querySelector('.export-days-salario');
+                const daysTransportInput = row.querySelector('.export-days-transport');
+                const includeChk = row.querySelector('.export-include-chk');
+
+                const recalculateRow = () => {
+                    const dSalario = parseInt(daysSalarioInput.value) || 0;
+                    const dTransport = parseInt(daysTransportInput.value) || 0;
+                    
+                    const salProrrateado = (emp.salarioBasico / 30) * dSalario;
+                    const auxTransMensual = config.auxilioTransporte || 162000;
+                    const auxTransProrrateado = (auxTransMensual / 30) * dTransport;
+                    
+                    let baseDed = 0;
+                    if (emp.deduccionSobreMinimo && config.salarioMinimo) {
+                        baseDed = (config.salarioMinimo / 30) * dSalario;
+                    } else {
+                        baseDed = salProrrateado + emp.bonificacion;
+                    }
+                    if (config.salarioMinimo && baseDed > 0 && baseDed < (config.salarioMinimo / 30) * dSalario) {
+                        baseDed = (config.salarioMinimo / 30) * dSalario;
+                    }
+                    
+                    const dedSalud = baseDed * ((config.porcentajeSalud || 4) / 100);
+                    const dedPension = baseDed * ((config.porcentajePension || 4) / 100);
+                    const totalDedLey = dedSalud + dedPension;
+                    const dedPrestamos = applyLoans ? emp.deduccionPotencial : 0;
+                    
+                    const totDevengado = salProrrateado + auxTransProrrateado + emp.bonificacion;
+                    const totPagar = Math.max(0, totDevengado - totalDedLey - dedPrestamos);
+                    
+                    const isIncluded = includeChk.checked;
+                    const finalPagar = isIncluded ? totPagar : 0;
+                    
+                    row.dataset.diasSalario = dSalario;
+                    row.dataset.diasAuxTransporte = dTransport;
+                    row.dataset.totalPagar = finalPagar;
+                    
+                    row.querySelector('.export-deducciones-display').textContent = `-${currencyFormatter.format(totalDedLey + dedPrestamos)}`;
+                    row.querySelector('.export-neto-display').textContent = currencyFormatter.format(finalPagar);
+                    
+                    updateExportGrandTotals();
+                };
+
+                daysSalarioInput.addEventListener('input', recalculateRow);
+                daysTransportInput.addEventListener('input', recalculateRow);
+                includeChk.addEventListener('change', recalculateRow);
+
+                tbody.appendChild(row);
+            });
+
+            const updateExportGrandTotals = () => {
+                const rows = tbody.querySelectorAll('tr');
+                let includedCount = 0;
+                let grandTotal = 0;
+                
+                rows.forEach(r => {
+                    const includeChk = r.querySelector('.export-include-chk');
+                    if (includeChk && includeChk.checked) {
+                        includedCount++;
+                        grandTotal += parseFloat(r.dataset.totalPagar) || 0;
+                    }
+                });
+                
+                document.getElementById('export-total-count').textContent = `${includedCount} operario${includedCount !== 1 ? 's' : ''}`;
+                document.getElementById('export-total-amount').textContent = currencyFormatter.format(grandTotal);
+            };
+
+            updateExportGrandTotals();
+
+            // Select All listener
+            const selectAllChk = document.getElementById('export-select-all');
+            selectAllChk.addEventListener('change', () => {
+                const chks = tbody.querySelectorAll('.export-include-chk');
+                chks.forEach(chk => {
+                    chk.checked = selectAllChk.checked;
+                    chk.dispatchEvent(new Event('change'));
+                });
+            });
+
+            // Close actions
+            const closeModal = () => {
+                const card = document.getElementById('export-nomina-modal-card');
+                if (card) card.classList.add('scale-95');
+                exportModal.classList.add('opacity-0', 'pointer-events-none');
+            };
+
+            document.getElementById('btn-close-export-modal').addEventListener('click', closeModal);
+            document.getElementById('btn-cancel-export-modal').addEventListener('click', closeModal);
+
+            // Confirm & Download Excel
+            document.getElementById('btn-confirm-export-excel').addEventListener('click', async () => {
+                const rows = tbody.querySelectorAll('tr');
+                const exportData = [];
+                
+                const batch = writeBatch(_db);
+                const currentUserId = _getCurrentUserId();
+                const usersMap = _getUsersMap();
+                const currentUser = usersMap.get(currentUserId);
+                const registeredByName = currentUser ? `${currentUser.firstName} ${currentUser.lastName}` : 'Sistema';
+                let hasUpdates = false;
+
+                rows.forEach(r => {
+                    const includeChk = r.querySelector('.export-include-chk');
+                    if (includeChk && includeChk.checked) {
+                        const empId = r.dataset.id;
+                        const emp = rawEmpleadoData.find(e => e.id === empId);
+                        if (!emp) return;
+                        
+                        const dSalario = parseInt(r.dataset.diasSalario) || 0;
+                        const dTransport = parseInt(r.dataset.diasAuxTransporte) || 0;
+                        const finalPagar = parseFloat(r.dataset.totalPagar) || 0;
+                        
+                        // Prorrateo
+                        const salarioProrrateado = (emp.salarioBasico / 30) * dSalario;
+                        const auxTransporteMensual = config.auxilioTransporte || 162000;
+                        const auxTransporteProrrateado = (auxTransporteMensual / 30) * dTransport;
+                        
+                        let baseDeduccion = 0;
+                        if (emp.deduccionSobreMinimo && config.salarioMinimo) {
+                            baseDeduccion = (config.salarioMinimo / 30) * dSalario;
+                        } else {
+                            baseDeduccion = salarioProrrateado + emp.bonificacion;
+                        }
+                        if (config.salarioMinimo && baseDeduccion > 0 && baseDeduccion < (config.salarioMinimo / 30) * dSalario) {
+                            baseDeduccion = (config.salarioMinimo / 30) * dSalario;
+                        }
+                        
+                        const deduccionSalud = baseDeduccion * ((config.porcentajeSalud || 4) / 100);
+                        const deduccionPension = baseDeduccion * ((config.porcentajePension || 4) / 100);
+                        const totalDeduccionesLey = deduccionSalud + deduccionPension;
+                        
+                        const deduccionPrestamos = applyLoans ? emp.deduccionPotencial : 0;
+                        
+                        // Amortizar préstamos
+                        let remainingDeduction = deduccionPrestamos;
+                        const loanPayments = [];
+                        
+                        if (remainingDeduction > 0 && emp.loansList) {
+                            emp.loansList.forEach(loan => {
+                                if (remainingDeduction <= 0) return;
+                                
+                                const installments = loan.installments > 0 ? loan.installments : 1;
+                                let suggestedInstallment = (loan.amount || 0) / installments;
+                                if (suggestedInstallment > (loan.balance || 0)) {
+                                    suggestedInstallment = (loan.balance || 0);
+                                }
+                                
+                                let actualDeduction = Math.min(suggestedInstallment, remainingDeduction);
+                                if (actualDeduction > (loan.balance || 0)) {
+                                    actualDeduction = (loan.balance || 0);
+                                }
+                                
+                                if (actualDeduction > 0) {
+                                    loanPayments.push({
+                                        loanId: loan.id,
+                                        amount: actualDeduction,
+                                        previousBalance: loan.balance || 0
+                                    });
+                                    remainingDeduction -= actualDeduction;
+                                }
+                            });
+                            
+                            if (remainingDeduction > 0) {
+                                emp.loansList.forEach(loan => {
+                                    if (remainingDeduction <= 0) return;
+                                    
+                                    const prevAmort = loanPayments.find(p => p.loanId === loan.id);
+                                    const currentBalance = prevAmort ? (loan.balance - prevAmort.amount) : (loan.balance || 0);
+                                    
+                                    if (currentBalance > 0) {
+                                        const extraDeduction = Math.min(currentBalance, remainingDeduction);
+                                        if (prevAmort) {
+                                            prevAmort.amount += extraDeduction;
+                                        } else {
+                                            loanPayments.push({
+                                                loanId: loan.id,
+                                                amount: extraDeduction,
+                                                previousBalance: loan.balance || 0
+                                            });
+                                        }
+                                        remainingDeduction -= extraDeduction;
+                                    }
+                                });
+                            }
+                        }
+
+                        // Compilar voucher
+                        const paymentData = {
+                            userId: emp.id,
+                            paymentDate: new Date().toISOString().split('T')[0],
+                            concepto: activeQuincena,
+                            monto: Math.round(finalPagar),
+                            diasPagados: dSalario,
+                            diasAuxTransporte: dTransport,
+                            desglose: {
+                                salarioProrrateado: salarioProrrateado,
+                                auxilioTransporteProrrateado: auxTransporteProrrateado,
+                                diasAuxTransporte: dTransport,
+                                bonificacionM2: emp.bonificacion,
+                                horasExtra: 0,
+                                otros: 0,
+                                abonoPrestamos: deduccionPrestamos,
+                                detallesPrestamos: loanPayments,
+                                deduccionSalud: -deduccionSalud,
+                                deduccionPension: -deduccionPension,
+                                baseDeduccion: baseDeduccion,
+                                deduccionSobreMinimo: emp.deduccionSobreMinimo
+                            },
+                            horas: { totalHorasExtra: 0 },
+                            createdAt: serverTimestamp(),
+                            registeredBy: currentUserId,
+                            registeredByName: registeredByName
+                        };
+
+                        const paymentHistoryRef = doc(collection(_db, "users", emp.id, "paymentHistory"));
+                        batch.set(paymentHistoryRef, paymentData);
+
+                        if (emp.bonificacion > 0) {
+                            const today = new Date();
+                            const currentStatDocId = `${today.getFullYear()}_${String(today.getMonth() + 1).padStart(2, '0')}`;
+                            const statRef = doc(_db, "employeeStats", emp.id, "monthlyStats", currentStatDocId);
+                            batch.set(statRef, { bonificacionPagada: true }, { merge: true });
+                        }
+
+                        loanPayments.forEach(pago => {
+                            const loanRef = doc(_db, "users", emp.id, "loans", pago.loanId);
+                            const newBalance = pago.previousBalance - pago.amount;
+                            const updateData = { balance: newBalance };
+                            if (newBalance <= 0) {
+                                updateData.status = 'paid';
+                                updateData.paidAt = serverTimestamp();
+                            }
+                            batch.update(loanRef, updateData);
+                        });
+
+                        hasUpdates = true;
+
+                        // Datos Excel - Sanitizar acentos, tildes y Ñ/ñ
+                        const firstName = cleanTextForBank(emp.firstName || '');
+                        const lastName = cleanTextForBank(emp.lastName || '');
+                        const bankCode = getBankCode(emp.bankName);
+                        const productType = getProductType(emp.bankName);
+                        const descDetail = cleanTextForBank(formatDescription(activeQuincena));
+                        
+                        exportData.push({
+                            "Tipo de Identificación": 1,
+                            "Número de Identificación": emp.cedula,
+                            "Nombre": firstName.toUpperCase(),
+                            "Apellido": lastName.toUpperCase(),
+                            "Código del Banco": bankCode,
+                            "Tipo de Producto o Servicio": productType,
+                            "Número del Producto o Servicio": emp.accountNumber,
+                            "Valor del pago o de la recarga": Math.round(finalPagar),
+                            "Referencia (Opcional)": "",
+                            "Correo Electrónico (Opcional)": emp.email || "dvidriosexito@gmail.com",
+                            "Descripción o Detalle (Opcional)": descDetail
+                        });
+                    }
+                });
+
+                if (exportData.length === 0) {
+                    alert("No has seleccionado ningún colaborador para exportar.");
+                    return;
+                }
+
+                // Cambiar el texto del botón confirmador para indicar que se están procesando los pagos
+                const confirmBtn = document.getElementById('btn-confirm-export-excel');
+                confirmBtn.disabled = true;
+                confirmBtn.innerHTML = '<div class="loader-small-white mx-auto"></div> Registrando pagos...';
+
+                try {
+                    if (hasUpdates) {
+                        await batch.commit();
+                    }
+
+                    await window.ensureXLSX();
+                    const ws = XLSX.utils.json_to_sheet(exportData);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Dispersión Bancaria");
+
+                    // Determinar el nombre del archivo de forma inteligente: nomina (dia) de (mes).xlsx
+                    const today = new Date();
+                    let payDay = today.getDate();
+                    const monthsListSpanish = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+                    let payMonthName = monthsListSpanish[today.getMonth()];
+                    
+                    const conceptLower = activeQuincena.toLowerCase();
+                    if (conceptLower.includes('primera') || conceptLower.includes('1ª') || conceptLower.includes('1a')) {
+                        payDay = 15;
+                    } else if (conceptLower.includes('segunda') || conceptLower.includes('2ª') || conceptLower.includes('2a')) {
+                        payDay = 30;
+                    }
+                    
+                    for (let i = 0; i < monthsListSpanish.length; i++) {
+                        if (conceptLower.includes(monthsListSpanish[i])) {
+                            payMonthName = monthsListSpanish[i];
+                            break;
+                        }
+                    }
+                    
+                    const filename = `nomina ${payDay} de ${payMonthName}.xlsx`;
+                    XLSX.writeFile(wb, filename);
+                    
+                    closeModal();
+                    
+                    if (window.showToast) window.showToast("Pagos registrados y archivo de dispersión exportado correctamente.", "success");
+                    
+                    // Recargar vista para reflejar el estado "PAGADO"
+                    loadNominaTab(container);
+                } catch (e) {
+                    console.error("Error registrando pagos / exportando Excel:", e);
+                    alert("Error al procesar la nómina en lote: " + e.message);
+                    confirmBtn.disabled = false;
+                    confirmBtn.innerHTML = '<i class="fa-solid fa-file-excel text-base"></i> Confirmar y Descargar Excel';
+                }
+            });
+
+            // Open animations
+            exportModal.classList.remove('opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                const card = document.getElementById('export-nomina-modal-card');
+                if (card) card.classList.remove('scale-95');
+            }, 50);
         });
 
         // 8. Renderizado Inicial
@@ -2334,10 +3413,11 @@ function loadEmployeeBitacora(userId, startDateInput = null, endDateInput = null
 
     let q;
     if (startDateInput && endDateInput) {
-        const start = new Date(startDateInput);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(endDateInput);
-        end.setHours(23, 59, 59, 999);
+        const [startYear, startMonth, startDay] = startDateInput.split('-').map(Number);
+        const start = new Date(startYear, startMonth - 1, startDay, 0, 0, 0);
+
+        const [endYear, endMonth, endDay] = endDateInput.split('-').map(Number);
+        const end = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
 
         q = query(collection(_db, "users", userId, "daily_reports"), where("createdAt", ">=", start), where("createdAt", "<=", end), orderBy("createdAt", "desc"));
     } else {
@@ -3183,11 +4263,20 @@ async function openPaymentVoucherModal(payment, user) {
     }
 
     if (concepto.includes('prima')) {
-        earningsList.innerHTML += createRow('Valor Prima', payment.monto, true);
+        const base = parseFloat(det.baseCalculo) || 0;
+        const dias = parseFloat(det.diasSemestre) || 0;
+        const primaBruta = (base * dias) / 360;
+        
+        earningsList.innerHTML += createRow('Valor Prima (Bruta)', primaBruta, true);
         if (det.rangoFechas) earningsList.innerHTML += createRow('Periodo', det.rangoFechas);
         if (det.diasSemestre) earningsList.innerHTML += createRow('Días Liquidados', `${det.diasSemestre}`);
         if (det.baseCalculo) earningsList.innerHTML += createRow('Base Promedio', det.baseCalculo);
-        deductionsList.innerHTML = '<li class="text-xs text-gray-300 text-center py-2 italic">Sin deducciones</li>';
+        
+        if (det.descuentoPrestamos > 0) {
+            deductionsList.innerHTML += createRow('Descuento Préstamos', det.descuentoPrestamos, true);
+        } else {
+            deductionsList.innerHTML = '<li class="text-xs text-gray-300 text-center py-2 italic">Sin deducciones</li>';
+        }
 
     } else if (concepto.includes('cesant')) {
         earningsList.innerHTML += createRow('Valor Fondo', payment.monto, true);
@@ -3258,7 +4347,10 @@ async function openPaymentVoucherModal(payment, user) {
         }
 
         if (displaySalario > 0) earningsList.innerHTML += createRow(labelSalario, displaySalario);
-        if (d.auxilioTransporteProrrateado > 0) earningsList.innerHTML += createRow('Aux. Transporte', d.auxilioTransporteProrrateado);
+        if (d.auxilioTransporteProrrateado > 0) {
+            const diasAux = payment.diasAuxTransporte !== undefined ? payment.diasAuxTransporte : (d.diasAuxTransporte !== undefined ? d.diasAuxTransporte : payment.diasPagados);
+            earningsList.innerHTML += createRow(`Aux. Transporte (${diasAux} días)`, d.auxilioTransporteProrrateado);
+        }
         if (d.horasExtra > 0) earningsList.innerHTML += createRow('Horas Extra', d.horasExtra);
         
         if (displayBonificacion > 0) {
@@ -3841,27 +4933,82 @@ function getEmployeeStartDate(user) {
     return new Date(new Date().getFullYear(), 0, 1);
 }
 
+/**
+ * Sugiere el siguiente periodo contable basado en el último concepto de pago.
+ */
+function getNextPeriodSuggestion(lastConcept) {
+    if (!lastConcept) return null;
+    
+    const normalized = lastConcept.toLowerCase();
+    const monthsList = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    
+    let foundMonthIndex = -1;
+    let foundMonthName = '';
+    for (let i = 0; i < monthsList.length; i++) {
+        if (normalized.includes(monthsList[i].toLowerCase())) {
+            foundMonthIndex = i;
+            foundMonthName = monthsList[i];
+            break;
+        }
+    }
+    
+    const yearMatch = lastConcept.match(/\b(20\d{2})\b/);
+    let foundYear = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
+    
+    if (foundMonthIndex === -1) {
+        return null;
+    }
+    
+    if (normalized.includes('primera quincena') || normalized.includes('1ª quincena') || normalized.includes('1a quincena')) {
+        return `Segunda Quincena de ${foundMonthName} ${foundYear}`;
+    }
+    
+    if (normalized.includes('segunda quincena') || normalized.includes('2ª quincena') || normalized.includes('2a quincena') || normalized.includes('mensual') || normalized.includes('completo')) {
+        let nextMonthIndex = foundMonthIndex + 1;
+        let nextYear = foundYear;
+        if (nextMonthIndex >= 12) {
+            nextMonthIndex = 0;
+            nextYear += 1;
+        }
+        const nextMonthName = monthsList[nextMonthIndex];
+        return `Primera Quincena de ${nextMonthName} ${nextYear}`;
+    }
+    
+    return null;
+}
+
 // --- FORMULARIO NÓMINA ESTÁNDAR (CORREGIDO) ---
 async function renderStandardPayrollForm(container, user) {
     container.innerHTML = `
         <form id="payment-register-form" class="space-y-8" data-deduccion-sobre-minimo="${user.deduccionSobreMinimo || false}">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Periodo</label>
                     <div class="relative">
                         <select id="payment-concepto" class="w-full border-gray-300 rounded-lg p-3 text-sm font-medium bg-gray-50 focus:bg-white transition-colors cursor-pointer outline-none focus:ring-2 focus:ring-indigo-500"></select>
                     </div>
                 </div>
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-2 gap-3 sm:gap-4">
                     <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Días</label>
-                        <input type="number" id="payment-dias-pagar" class="payment-dias-input w-full border-gray-300 rounded-lg p-3 text-center font-bold text-gray-700" value="15" min="1" max="30">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Días Salario</label>
+                        <input type="number" id="payment-dias-pagar" class="payment-dias-input w-full border-gray-300 rounded-lg p-3 text-center font-bold text-gray-700" value="15" min="0" max="30">
                     </div>
                     <div class="flex items-end pb-3">
                          <span id="payment-salario-basico" class="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1.5 rounded-full w-full text-center border border-gray-200" 
                             data-value="${user.salarioBasico || 0}" 
                             data-aux-transporte="${_getPayrollConfig()?.auxilioTransporte || 0}">
                             ${currencyFormatter.format(user.salarioBasico || 0)}
+                        </span>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3 sm:gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Días Aux. Transp.</label>
+                        <input type="number" id="payment-dias-aux-transporte" class="payment-dias-input w-full border-gray-300 rounded-lg p-3 text-center font-bold text-gray-700" value="15" min="0" max="30">
+                    </div>
+                    <div class="flex items-end pb-3">
+                         <span id="payment-aux-transporte-valor" class="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1.5 rounded-full w-full text-center border border-gray-200">
+                            Aux: ${currencyFormatter.format(_getPayrollConfig()?.auxilioTransporte || 0)}
                         </span>
                     </div>
                 </div>
@@ -3951,33 +5098,95 @@ async function renderStandardPayrollForm(container, user) {
     const currentMonth = months[today.getMonth()];
     const year = today.getFullYear();
     
+    // Consulta inteligente de historial para sugerir el siguiente periodo contable
+    let suggestedConcept = null;
+    try {
+        const qLast = query(
+            collection(_db, "users", user.id, "paymentHistory"),
+            orderBy("createdAt", "desc"),
+            limit(1)
+        );
+        const lastSnap = await getDocs(qLast);
+        if (!lastSnap.empty) {
+            const lastPayment = lastSnap.docs[0].data();
+            suggestedConcept = getNextPeriodSuggestion(lastPayment.concepto);
+        }
+    } catch(e) {
+        console.warn("Error al sugerir periodo desde historial", e);
+    }
+    
+    let suggestedOptionHtml = '';
+    if (suggestedConcept) {
+        const defaultOptions = [
+            `Primera Quincena de ${currentMonth} ${year}`,
+            `Segunda Quincena de ${currentMonth} ${year}`,
+            `Nómina Mensual ${currentMonth} ${year}`
+        ];
+        
+        if (!defaultOptions.includes(suggestedConcept)) {
+            let shortLabel = suggestedConcept;
+            if (suggestedConcept.includes('Primera Quincena')) {
+                shortLabel = `1ª Quincena - ${suggestedConcept.replace('Primera Quincena de ', '')} (Sugerida)`;
+            } else if (suggestedConcept.includes('Segunda Quincena')) {
+                shortLabel = `2ª Quincena - ${suggestedConcept.replace('Segunda Quincena de ', '')} (Sugerida)`;
+            } else if (suggestedConcept.includes('Nómina Mensual')) {
+                shortLabel = `Mes Completo - ${suggestedConcept.replace('Nómina Mensual ', '')} (Sugerido)`;
+            }
+            suggestedOptionHtml = `<option value="${suggestedConcept}" selected>${shortLabel}</option>`;
+        }
+    }
+    
     conceptoSelect.innerHTML = `
+        ${suggestedOptionHtml}
         <option value="Primera Quincena de ${currentMonth} ${year}">1ª Quincena - ${currentMonth}</option>
         <option value="Segunda Quincena de ${currentMonth} ${year}">2ª Quincena - ${currentMonth}</option>
         <option value="Nómina Mensual ${currentMonth} ${year}">Mes Completo</option>
     `;
 
-    // Pre-selección inteligente basada en la fecha del día
-    const dayOfMonth = today.getDate();
-    if (dayOfMonth > 15) {
-        conceptoSelect.value = `Segunda Quincena de ${currentMonth} ${year}`;
+    // Pre-selección inteligente
+    if (suggestedConcept) {
+        conceptoSelect.value = suggestedConcept;
+    } else {
+        const dayOfMonth = today.getDate();
+        if (dayOfMonth > 15) {
+            conceptoSelect.value = `Segunda Quincena de ${currentMonth} ${year}`;
+        }
     }
 
-    // --- CORRECCIÓN: LISTENER PARA CAMBIAR DÍAS AUTOMÁTICAMENTE ---
+    // Configurar días iniciales según la opción pre-seleccionada
+    const daysInput = document.getElementById('payment-dias-pagar');
+    const transportDaysInput = document.getElementById('payment-dias-aux-transporte');
+    const initialVal = conceptoSelect.value;
+    let initialD = 15;
+    if (initialVal.includes('Mensual') || initialVal.includes('Completo')) {
+        initialD = 30;
+    }
+    daysInput.value = initialD;
+    transportDaysInput.value = initialD;
+
+    // --- LISTENER PARA CAMBIAR DÍAS AUTOMÁTICAMENTE ---
     conceptoSelect.addEventListener('change', function() {
         const val = this.value;
-        const daysInput = document.getElementById('payment-dias-pagar');
         
+        let d = 15;
         if (val.includes('Mensual') || val.includes('Completo')) {
-            daysInput.value = 30; // Siempre 30, incluso en Febrero
+            d = 30; // Siempre 30, incluso en Febrero
         } else if (val.includes('Segunda')) {
-            daysInput.value = 15; // La 2da quincena siempre cierra el mes contable de 30
+            d = 15; // La 2da quincena siempre cierra el mes contable de 30
         } else {
-            daysInput.value = 15; // 1ra quincena siempre es 15
+            d = 15; // 1ra quincena siempre es 15
         }
+        
+        daysInput.value = d;
+        transportDaysInput.value = d;
         
         // Importante: Recalcular totales inmediatamente
         updatePaymentTotal();
+    });
+
+    // Sincronización automática de Días Aux. Transp. al modificar Días Salario
+    daysInput.addEventListener('input', function() {
+        transportDaysInput.value = this.value;
     });
 
     // 4. Listeners Generales
@@ -4004,8 +5213,6 @@ async function renderStandardPayrollForm(container, user) {
     // Cálculo inicial
     updatePaymentTotal();
 }
-
-
 // --- B. FORMULARIO PRIMA DE SERVICIOS (CON FECHAS EXACTAS PARA EL RECIBO) ---
 async function renderPrimaForm(container, user) {
     const currentYear = new Date().getFullYear();
@@ -4040,7 +5247,7 @@ async function renderPrimaForm(container, user) {
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 <div>
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Periodo a Liquidar</label>
                     <select id="prima-periodo-select" class="w-full border-gray-300 rounded-lg p-3 text-sm font-bold text-gray-700 focus:ring-indigo-500 cursor-pointer bg-white shadow-sm">
@@ -4060,14 +5267,26 @@ async function renderPrimaForm(container, user) {
                 </div>
                 <div class="flex flex-col justify-end">
                     <div class="bg-white border-2 border-indigo-100 p-4 rounded-xl text-right shadow-sm">
-                        <p class="text-xs text-indigo-400 font-bold uppercase tracking-wider">Total Prima</p>
+                        <p class="text-xs text-indigo-400 font-bold uppercase tracking-wider">Total Prima (Bruta)</p>
                         <p id="prima-total" class="text-2xl font-black text-indigo-700">$ 0</p>
                     </div>
                 </div>
             </div>
 
+            <div id="prima-loan-management-placeholder" class="bg-red-50/50 rounded-xl p-5 border border-red-100">
+            </div>
+
+            <div class="bg-slate-800 text-white p-6 rounded-xl shadow-lg flex justify-between items-center transform transition-transform hover:scale-[1.01]">
+                <div>
+                    <p class="text-slate-400 text-xs font-bold uppercase tracking-wider">Neto a Pagar</p>
+                </div>
+                <div class="text-right">
+                    <p id="prima-neto-pagar" class="text-4xl font-black tracking-tight text-white">$ 0</p>
+                </div>
+            </div>
+
             <div class="flex justify-end pt-4">
-                <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-md transition-all flex items-center">
+                <button type="submit" id="prima-submit-button" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-md transition-all flex items-center">
                     <i class="fa-solid fa-gift mr-2"></i> Registrar Pago de Prima
                 </button>
             </div>
@@ -4133,9 +5352,6 @@ async function renderPrimaForm(container, user) {
         currentRange = { start: effectiveStart, end: effectiveEnd };
 
         // --- CAMBIO: USAR CÁLCULO 360 DÍAS ---
-        // Antes: const diffTime = Math.abs(effectiveEnd - effectiveStart);
-        // Antes: let days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; 
-        
         let days = calculateDays360(effectiveStart, effectiveEnd); 
         
         // Ajuste: Si el cálculo da 181 o más (por desfases de fechas), limitar a 180 (semestre)
@@ -4152,9 +5368,21 @@ async function renderPrimaForm(container, user) {
     const calcTotal = () => {
         const base = parseFloat(inputBase.value.replace(/[$. ]/g, '')) || 0;
         const dias = parseFloat(inputDias.value) || 0;
-        const total = (base * dias) / 360;
-        totalEl.textContent = currencyFormatter.format(total);
+        const totalPrimaBruta = (base * dias) / 360;
+        totalEl.textContent = currencyFormatter.format(totalPrimaBruta);
+
+        let loanDeduction = 0;
+        document.querySelectorAll('.prima-loan-deduction-input').forEach(input => {
+            const val = parseFloat(input.value.replace(/[$. ]/g, '')) || 0;
+            loanDeduction += val;
+        });
+
+        const totalNeto = totalPrimaBruta - loanDeduction;
+        const netoEl = document.getElementById('prima-neto-pagar');
+        if (netoEl) netoEl.textContent = currencyFormatter.format(totalNeto);
     };
+
+    window.recalculatePrimaTotal = calcTotal;
 
     selectPeriodo.addEventListener('change', calculateDays);
     inputBase.addEventListener('input', calcTotal);
@@ -4162,11 +5390,37 @@ async function renderPrimaForm(container, user) {
     
     calculateDays();
 
+    // 2. Cargar Préstamos para la Prima
+    await loadActiveLoansForForm(user.id, 'prima-loan-management-placeholder', 'prima-total-loan-deduction-display', true);
+
     document.getElementById('prima-form').onsubmit = async (e) => {
         e.preventDefault();
         const base = parseFloat(inputBase.value.replace(/[$. ]/g, '')) || 0;
         const dias = parseFloat(inputDias.value) || 0;
-        const total = (base * dias) / 360;
+        const totalPrimaBruta = (base * dias) / 360;
+        const submitButton = document.getElementById('prima-submit-button');
+
+        let loanDeduction = 0;
+        const loanPayments = []; 
+        document.querySelectorAll('.prima-loan-deduction-input').forEach(input => {
+            const val = parseFloat(input.value.replace(/[$. ]/g, '')) || 0;
+            if (val > 0) {
+                loanDeduction += val;
+                loanPayments.push({
+                    loanId: input.dataset.loanId,
+                    amount: val,
+                    previousBalance: parseFloat(input.dataset.balance)
+                });
+            }
+        });
+
+        const totalNeto = totalPrimaBruta - loanDeduction;
+        if (totalNeto < 0) {
+            if(window.showToast) window.showToast("El descuento de préstamos supera el valor de la prima.", "error");
+            else alert("El descuento supera el valor de la prima.");
+            return;
+        }
+
         const periodoTexto = selectPeriodo.options[selectPeriodo.selectedIndex].text;
 
         // Formatear fechas para guardar
@@ -4174,18 +5428,27 @@ async function renderPrimaForm(container, user) {
             ? `${currentRange.start.toLocaleDateString('es-CO')} al ${currentRange.end.toLocaleDateString('es-CO')}` 
             : 'N/A';
 
-        _openConfirmModal(`¿Pagar Prima (${periodoTexto}) por ${currencyFormatter.format(total)}?`, async () => {
-             await saveSpecialPayment(user.id, {
-                tipo: 'Prima de Servicios',
-                periodo: periodoTexto,
-                monto: total,
-                detalles: { 
-                    baseCalculo: base, 
-                    diasSemestre: dias, 
-                    semestre: selectPeriodo.value,
-                    rangoFechas: rangoTexto // <--- AQUÍ GUARDAMOS EL RANGO
-                }
-            });
+        _openConfirmModal(`¿Pagar Prima (${periodoTexto}) por ${currencyFormatter.format(totalNeto)}?`, async () => {
+             submitButton.disabled = true;
+             try {
+                 await saveSpecialPayment(user.id, {
+                    tipo: 'Prima de Servicios',
+                    periodo: periodoTexto,
+                    monto: totalNeto,
+                    detalles: { 
+                        baseCalculo: base, 
+                        diasSemestre: dias, 
+                        semestre: selectPeriodo.value,
+                        rangoFechas: rangoTexto,
+                        descuentoPrestamos: loanDeduction,
+                        detallesPrestamos: loanPayments
+                    }
+                 }, loanPayments);
+             } catch(error) {
+                 console.error("Error al registrar prima:", error);
+             } finally {
+                 submitButton.disabled = false;
+             }
         });
     };
 }
@@ -5018,7 +6281,7 @@ function calculateIndemnificationValue(type, startDate, endDate, contractEndDate
 }
 
 // --- HELPER PARA GUARDAR PAGOS ESPECIALES ---
-async function saveSpecialPayment(userId, data) {
+async function saveSpecialPayment(userId, data, loanPayments = []) {
     const paymentData = {
         userId: userId,
         paymentDate: new Date().toISOString().split('T')[0],
@@ -5030,7 +6293,23 @@ async function saveSpecialPayment(userId, data) {
         isSpecial: true // Flag para diferenciar en reportes
     };
 
-    await addDoc(collection(_db, "users", userId, "paymentHistory"), paymentData);
+    const batch = writeBatch(_db);
+    const paymentHistoryRef = doc(collection(_db, "users", userId, "paymentHistory"));
+    batch.set(paymentHistoryRef, paymentData);
+
+    // Amortizar préstamos si existen en la transacción
+    loanPayments.forEach(pago => {
+        const loanRef = doc(_db, "users", userId, "loans", pago.loanId);
+        const newBalance = pago.previousBalance - pago.amount;
+        const updateData = { balance: newBalance };
+        if (newBalance <= 0) { 
+            updateData.status = 'paid'; 
+            updateData.paidAt = serverTimestamp(); 
+        }
+        batch.update(loanRef, updateData);
+    });
+
+    await batch.commit();
     window.showToast("Pago registrado correctamente.", "success");
     loadPaymentHistoryView(userId); // Recargar
 }
@@ -5039,8 +6318,8 @@ async function saveSpecialPayment(userId, data) {
  * Carga los préstamos activos dentro del formulario de nómina para aplicar deducciones.
  * Se llama automáticamente al renderizar la pestaña "Nómina".
  */
-async function loadActiveLoansForForm(userId) {
-    const fieldset = document.getElementById('loan-management-fieldset-placeholder');
+async function loadActiveLoansForForm(userId, placeholderId = 'loan-management-fieldset-placeholder', displayId = 'payment-total-loan-deduction-display', isPrima = false) {
+    const fieldset = document.getElementById(placeholderId);
     if (!fieldset) return;
 
     // 1. Mostrar estado de carga
@@ -5071,7 +6350,9 @@ async function loadActiveLoansForForm(userId) {
         }
 
         // 4. Generar HTML de la lista
-        let html = `<div class="space-y-2">`;
+        let html = `
+            <h4 class="text-xs font-black text-rose-600 uppercase tracking-widest mb-4 border-b border-rose-100 pb-1 w-fit">Descontar Préstamos</h4>
+            <div class="space-y-2">`;
         let totalDebt = 0;
 
         snapshot.forEach(doc => {
@@ -5080,12 +6361,14 @@ async function loadActiveLoansForForm(userId) {
             
             totalDebt += (loan.balance || 0);
 
-            // Calcular Cuota Sugerida: (Monto Total / Cuotas Pactadas)
-            // Si la cuota sugerida es mayor al saldo restante, usamos el saldo.
+            // Calcular Cuota Sugerida
             let installmentVal = (loan.amount / (loan.installments || 1));
             if (installmentVal > loan.balance) {
                 installmentVal = loan.balance;
             }
+
+            const initialVal = isPrima ? 0 : installmentVal;
+            const inputClass = isPrima ? 'prima-loan-deduction-input' : 'loan-deduction-input';
 
             html += `
                 <div class="flex justify-between items-center bg-white p-2 rounded-lg border border-gray-200 shadow-sm hover:border-indigo-300 transition-colors">
@@ -5111,8 +6394,8 @@ async function loadActiveLoansForForm(userId) {
                     <div class="w-28">
                         <label class="block text-[9px] text-indigo-400 font-bold uppercase text-right mb-0.5">A Descontar</label>
                         <input type="text" 
-                            class="loan-deduction-input w-full border border-gray-300 rounded-md py-1 px-2 text-right text-xs font-bold text-gray-800 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none transition-all"
-                            value="${currencyFormatter.format(installmentVal)}"
+                            class="${inputClass} w-full border border-gray-300 rounded-md py-1 px-2 text-right text-xs font-bold text-gray-800 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none transition-all"
+                            value="${currencyFormatter.format(initialVal)}"
                             data-loan-id="${loanId}"
                             data-balance="${loan.balance}">
                     </div>
@@ -5122,13 +6405,13 @@ async function loadActiveLoansForForm(userId) {
 
         html += `</div>`;
         
-        // Agregar footer con totales dentro del recuadro
+        // Agregar footer con totales
         html += `
             <div class="mt-3 flex justify-between items-center pt-2 border-t border-red-100">
                 <span class="text-[10px] text-gray-500">Deuda Total: <strong>${currencyFormatter.format(totalDebt)}</strong></span>
                 <div class="text-right">
                     <span class="text-[10px] font-bold text-rose-500 uppercase mr-1">Total Descuento:</span>
-                    <span id="payment-total-loan-deduction-display" class="text-sm font-black text-rose-700">$ 0</span>
+                    <span id="${displayId}" class="text-sm font-black text-rose-700">$ 0</span>
                 </div>
             </div>
         `;
@@ -5136,22 +6419,49 @@ async function loadActiveLoansForForm(userId) {
         fieldset.innerHTML = html;
 
         // 5. Configurar Listeners e Inputs
-        const inputs = fieldset.querySelectorAll('.loan-deduction-input');
+        const inputClass = isPrima ? 'prima-loan-deduction-input' : 'loan-deduction-input';
+        const inputs = fieldset.querySelectorAll(`.${inputClass}`);
         inputs.forEach(input => {
-            // Aplicar formato de moneda al escribir
             if (_setupCurrencyInput) _setupCurrencyInput(input);
             
-            // Recalcular el total general de la nómina cuando cambia el valor
             input.addEventListener('input', () => {
-                if (typeof updatePaymentTotal === 'function') {
-                    updatePaymentTotal();
+                let loanDeduction = 0;
+                fieldset.querySelectorAll(`.${inputClass}`).forEach(inp => {
+                    const val = parseFloat(inp.value.replace(/[$. ]/g, '')) || 0;
+                    loanDeduction += val;
+                });
+                const display = document.getElementById(displayId);
+                if (display) display.textContent = currencyFormatter.format(loanDeduction);
+                
+                if (isPrima) {
+                    if (typeof window.recalculatePrimaTotal === 'function') {
+                        window.recalculatePrimaTotal();
+                    }
+                } else {
+                    if (typeof updatePaymentTotal === 'function') {
+                        updatePaymentTotal();
+                    }
                 }
             });
         });
 
-        // 6. Ejecutar cálculo inicial para que el input muestre el valor correcto en el total
-        if (typeof updatePaymentTotal === 'function') {
-            updatePaymentTotal();
+        // 6. Ejecutar cálculo inicial
+        let initialDeduction = 0;
+        fieldset.querySelectorAll(`.${inputClass}`).forEach(inp => {
+            const val = parseFloat(inp.value.replace(/[$. ]/g, '')) || 0;
+            initialDeduction += val;
+        });
+        const disp = document.getElementById(displayId);
+        if (disp) disp.textContent = currencyFormatter.format(initialDeduction);
+
+        if (isPrima) {
+            if (typeof window.recalculatePrimaTotal === 'function') {
+                window.recalculatePrimaTotal();
+            }
+        } else {
+            if (typeof updatePaymentTotal === 'function') {
+                updatePaymentTotal();
+            }
         }
 
     } catch (error) {
@@ -5284,6 +6594,7 @@ function updatePaymentTotal() {
     const salarioEl = document.getElementById('payment-salario-basico');
     const bonificacionEl = document.getElementById('payment-bonificacion-mes');
     const diasPagar = parseFloat(document.getElementById('payment-dias-pagar').value) || 0;
+    const diasAuxTransporte = parseFloat(document.getElementById('payment-dias-aux-transporte')?.value || diasPagar) || 0;
 
     // --- INICIO DE MODIFICACIÓN (FASE 3) ---
     // 1. Obtener el checkbox de liquidación
@@ -5297,7 +6608,7 @@ function updatePaymentTotal() {
 
     // 3. Calcular valores PRORRATEADOS
     const salarioProrrateado = (salarioMensual / 30) * diasPagar;
-    const auxTransporteProrrateado = (auxTransporteMensual / 30) * diasPagar;
+    const auxTransporteProrrateado = (auxTransporteMensual / 30) * diasAuxTransporte;
 
     // 4. Obtener valores que NO se prorratean
     const otros = parseFloat(document.getElementById('payment-otros').value.replace(/[$. ]/g, '')) || 0;
@@ -5376,15 +6687,16 @@ async function handleRegisterPayment(e, userId) {
 
     try {
         const diasPagar = parseFloat(document.getElementById('payment-dias-pagar').value) || 0;
+        const diasAuxTransporte = parseFloat(document.getElementById('payment-dias-aux-transporte')?.value || diasPagar) || 0;
         
         // 1. LEER DATOS BASE
         const salarioEl = document.getElementById('payment-salario-basico');
         const salarioMensual = parseFloat(salarioEl.dataset.value || 0);
         const auxTransporteMensual = parseFloat(salarioEl.dataset.auxTransporte || 0);
 
-        // 2. CÁLCULOS PRORRATEADOS (DEFINICIÓN DE VARIABLES FALTANTES)
+        // 2. CÁLCULOS PRORRATEADOS
         const salarioProrrateado = (salarioMensual / 30) * diasPagar;
-        const auxTransporteProrrateado = (auxTransporteMensual / 30) * diasPagar; // <--- AQUÍ SE DEFINE LA VARIABLE
+        const auxTransporteProrrateado = (auxTransporteMensual / 30) * diasAuxTransporte;
 
         const otros = parseMoney('payment-otros');
         // Aseguramos leer el texto del span de horas
@@ -5454,9 +6766,11 @@ async function handleRegisterPayment(e, userId) {
             concepto: concepto,
             monto: totalPagar,
             diasPagados: diasPagar,
+            diasAuxTransporte: diasAuxTransporte,
             desglose: {
                 salarioProrrateado: salarioProrrateado,
-                auxilioTransporteProrrateado: auxTransporteProrrateado, // <--- AHORA SÍ EXISTE
+                auxilioTransporteProrrateado: auxTransporteProrrateado,
+                diasAuxTransporte: diasAuxTransporte,
                 bonificacionM2: bonificacionPagada,
                 horasExtra: totalHorasExtra, 
                 otros: otros, 
@@ -5958,9 +7272,11 @@ function renderAttendanceChart(canvas, labels, data) {
     });
 }
 
-function renderAttendanceMap(points) {
+async function renderAttendanceMap(points) {
     const mapContainer = document.getElementById('attendance-map');
     if (!mapContainer) return;
+
+    await window.ensureLeaflet();
 
     // Si el mapa no está inicializado, crearlo
     if (!attendanceMapInstance) {

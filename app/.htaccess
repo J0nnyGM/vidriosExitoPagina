@@ -1,0 +1,27 @@
+# Enable browser caching using mod_expires
+<IfModule mod_expires.c>
+    ExpiresActive On
+    
+    # Cache Javascript, CSS, and HTML
+    ExpiresByType application/javascript "access plus 1 year"
+    ExpiresByType text/javascript "access plus 1 year"
+    ExpiresByType text/css "access plus 1 year"
+    ExpiresByType text/html "access plus 1 hour"
+    
+    # Cache Images and Webfonts
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType font/woff "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
+    ExpiresByType application/vnd.ms-fontobject "access plus 1 year"
+    ExpiresByType application/x-font-ttf "access plus 1 year"
+</IfModule>
+
+# Set public cache control header for static files using mod_headers
+<IfModule mod_headers.c>
+    <FilesMatch "\.(js|css|gif|png|jpg|jpeg|svg|woff|woff2|eot|ttf)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+</IfModule>

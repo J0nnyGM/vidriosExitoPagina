@@ -140,6 +140,12 @@ export async function handleReportEntry(db, storage, currentUser, userProfile, o
             // @ts-ignore
             if (typeof faceapi === 'undefined') throw new Error("Error: IA Facial no cargada.");
 
+            // Cargar los modelos bajo demanda si no se han cargado aún
+            if (window.loadFaceAPImodels) {
+                updateStatus(statusMsg, 'blue', 'Cargando modelos de IA...');
+                await window.loadFaceAPImodels();
+            }
+
             updateStatus(statusMsg, 'blue', 'Obteniendo ubicación GPS...');
             const location = await getCurrentLocation();
 

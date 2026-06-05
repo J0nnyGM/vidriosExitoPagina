@@ -8,24 +8,14 @@
     <title>Vidrios Exito Organizador</title>
 
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js"></script>
     <link rel="stylesheet" href="/app/css/all.min.css">
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" media="print" onload="this.media='all'" />
 
     <meta http-equiv="Content-Security-Policy"
         content="script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com/ https://www.google.com/recaptcha/ https://apis.google.com https://cdn.jsdelivr.net https://kit.fontawesome.com; frame-src 'self' https://www.google.com/recaptcha/ https://www.google.com/ https://accounts.google.com https://firebasestorage.googleapis.com https://apis.google.com https://vidriosexitoorganizador.firebaseapp.com;">
 
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
-    <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" media="print" onload="this.media='all'" />
     <link href="css/output.css" rel="stylesheet">
 </head>
 
@@ -41,9 +31,13 @@
 
             <div class="hidden lg:flex lg:w-1/2 relative bg-slate-900 overflow-hidden">
                 <div class="absolute inset-0 bg-gradient-to-br from-blue-900/40 to-slate-900/60 z-10"></div>
-                <img src="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=2070&auto=format&fit=crop"
-                    class="absolute inset-0 w-full h-full object-cover opacity-90 animate-fade-in-slow"
-                    alt="Arquitectura Vidrio">
+                <picture>
+                    <source media="(min-width: 1024px)" srcset="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=60&w=1000&auto=format&fit=crop">
+                    <source media="(max-width: 1023px)" srcset="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+                    <img src="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=60&w=1000&auto=format&fit=crop"
+                        class="absolute inset-0 w-full h-full object-cover opacity-90 animate-fade-in-slow"
+                        alt="Arquitectura Vidrio" loading="lazy">
+                </picture>
                 <div
                     class="relative z-20 flex flex-col justify-center items-center h-full text-white px-12 text-center">
                     <h1 class="text-5xl font-black mb-6 tracking-tight">Vidrios Exito</h1>
@@ -261,9 +255,13 @@
 
             <div class="hidden lg:flex lg:w-1/2 relative bg-slate-900 overflow-hidden">
                 <div class="absolute inset-0 bg-gradient-to-bl from-emerald-900/40 to-slate-900/60 z-10"></div>
-                <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=2069&auto=format&fit=crop"
-                    class="absolute inset-0 w-full h-full object-cover opacity-90 animate-pulse-slow"
-                    alt="Oficina Moderna Vidrio">
+                <picture>
+                    <source media="(min-width: 1024px)" srcset="https://images.unsplash.com/photo-1497366216548-37526070297c?q=60&w=1000&auto=format&fit=crop">
+                    <source media="(max-width: 1023px)" srcset="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+                    <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?q=60&w=1000&auto=format&fit=crop"
+                        class="absolute inset-0 w-full h-full object-cover opacity-90 animate-pulse-slow"
+                        alt="Oficina Moderna Vidrio" loading="lazy">
+                </picture>
                 <div
                     class="relative z-20 flex flex-col justify-center items-center h-full text-white px-12 text-center">
                     <h2 class="text-4xl font-bold mb-6">Únete al Equipo</h2>
@@ -277,9 +275,13 @@
         <div id="forgot-password-view" class="min-h-screen bg-white flex hidden">
             <div class="hidden lg:flex lg:w-1/2 relative bg-slate-900 overflow-hidden">
                 <div class="absolute inset-0 bg-gradient-to-tr from-indigo-900/50 to-slate-900/60 z-10"></div>
-                <img src="https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2070&auto=format&fit=crop"
-                    class="absolute inset-0 w-full h-full object-cover opacity-90 animate-pulse-slow"
-                    alt="Seguridad Digital">
+                <picture>
+                    <source media="(min-width: 1024px)" srcset="https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=60&w=1000&auto=format&fit=crop">
+                    <source media="(max-width: 1023px)" srcset="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+                    <img src="https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=60&w=1000&auto=format&fit=crop"
+                        class="absolute inset-0 w-full h-full object-cover opacity-90 animate-pulse-slow"
+                        alt="Seguridad Digital" loading="lazy">
+                </picture>
                 <div
                     class="relative z-20 flex flex-col justify-center items-center h-full text-white px-12 text-center">
                     <div
@@ -344,8 +346,32 @@
     </div>
 
     <div id="app-container" class="hidden">
+        <!-- Bottom Navbar for Mobile Screens -->
+        <div id="mobile-bottom-nav" class="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 text-slate-400 h-16 z-40 flex items-center justify-around md:hidden shadow-2xl px-2 font-sans pb-safe">
+            <a href="#" class="mobile-nav-link flex flex-col items-center justify-center flex-1 py-1 group transition-all" data-view="dashboard-general">
+                <i class="fa-solid fa-chart-pie text-lg transition-transform group-hover:scale-110"></i>
+                <span class="text-[10px] font-semibold mt-1">Inicio</span>
+            </a>
+            <a href="#" class="mobile-nav-link flex flex-col items-center justify-center flex-1 py-1 group transition-all" data-view="proyectos">
+                <i class="fa-solid fa-city text-lg transition-transform group-hover:scale-110"></i>
+                <span class="text-[10px] font-semibold mt-1">Proyectos</span>
+            </a>
+            <a href="#" class="mobile-nav-link flex flex-col items-center justify-center flex-1 py-1 group transition-all" data-view="tareas">
+                <i class="fa-solid fa-list-check text-lg transition-transform group-hover:scale-110"></i>
+                <span class="text-[10px] font-semibold mt-1">Tareas</span>
+            </a>
+            <a href="#" class="mobile-nav-link flex flex-col items-center justify-center flex-1 py-1 group transition-all" data-view="herramienta">
+                <i class="fa-solid fa-screwdriver-wrench text-lg transition-transform group-hover:scale-110"></i>
+                <span class="text-[10px] font-semibold mt-1">Herramientas</span>
+            </a>
+            <a href="#" id="mobile-more-menu-btn" class="mobile-nav-link flex flex-col items-center justify-center flex-1 py-1 group transition-all">
+                <i class="fa-solid fa-bars text-lg transition-transform group-hover:scale-110"></i>
+                <span class="text-[10px] font-semibold mt-1">Menú</span>
+            </a>
+        </div>
+
         <div id="sidebar"
-            class="fixed top-0 left-0 h-full bg-slate-900 text-slate-300 w-72 transform -translate-x-full md:translate-x-0 transition-transform duration-300 z-30 flex flex-col shadow-2xl border-r border-slate-800 font-sans">
+            class="fixed top-0 left-0 h-full bg-slate-900 text-slate-300 w-72 transform -translate-x-full md:translate-x-0 transition-transform duration-300 z-30 flex flex-col shadow-2xl border-r border-slate-800 font-sans is-collapsed">
 
             <div
                 class="logo-container p-6 flex flex-col items-center justify-center border-b border-slate-800/50 min-h-[100px]">
@@ -538,7 +564,7 @@
         </div>
 
 
-        <div id="main-content" class="md:ml-64 transition-all p-4 md:p-8">
+        <div id="main-content" class="md:ml-20 transition-all p-4 md:p-8 is-shifted">
             <header class="flex justify-between items-center mb-6 md:mb-8">
 
                 <div class="flex items-center">
@@ -704,25 +730,44 @@
                 </div>
             </div>
 
-            <div id="tareas-view" class="hidden">
-                <div class="flex justify-between items-center mb-6 flex-wrap gap-2">
-                    <h1 class="text-3xl font-bold text-gray-700">Mis Tareas Asignadas</h1>
+            <div id="tareas-view" class="hidden p-4 md:p-8">
+                <!-- CABECERA PREMIUM ALINEADA CON EL RESTO DE LA APP -->
+                <div
+                    class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6 flex flex-col lg:flex-row justify-between items-center gap-4 relative overflow-hidden">
 
-                    <div id="admin-task-toggle-container"
-                        class="hidden w-full md:w-auto flex items-center justify-end space-x-2 bg-gray-100 p-2 rounded-lg">
-                        <label for="admin-task-toggle-checkbox" class="text-sm font-medium text-gray-700">Ver todas las
-                            tareas (Admin)</label>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" id="admin-task-toggle-checkbox" class="sr-only peer">
-                            <div
-                                class="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600">
-                            </div>
-                        </label>
+                    <div
+                        class="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-16 -mt-16 opacity-50 pointer-events-none">
                     </div>
-                    <button id="new-task-btn" data-action="new-task"
-                        class="hidden bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md items-center transition-all">
-                        + Nueva Tarea
-                    </button>
+
+                    <div class="flex items-center gap-4 w-full lg:w-auto relative z-10">
+                        <div
+                            class="w-12 h-12 bg-gradient-to-br from-indigo-50 to-blue-50 text-indigo-600 rounded-xl flex items-center justify-center text-2xl shadow-sm border border-indigo-100">
+                            <i class="fa-solid fa-list-check"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-2xl font-black text-gray-800 tracking-tight leading-none">Mis Tareas Asignadas</h1>
+                            <p class="text-xs text-gray-500 font-medium mt-1">Seguimiento de tareas, materiales y avances de obra</p>
+                        </div>
+                    </div>
+
+                    <!-- ACCIONES DE CABECERA (Filtro Admin y Nueva Tarea) -->
+                    <div class="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto relative z-10">
+                        <div id="admin-task-toggle-container"
+                            class="hidden w-full sm:w-auto flex items-center justify-between sm:justify-end space-x-3 bg-gray-50 border border-gray-200/80 px-3 py-1.5 rounded-xl shadow-sm">
+                            <span class="text-xs font-semibold text-gray-600">Ver todas las tareas (Admin/Bodega)</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="admin-task-toggle-checkbox" class="sr-only peer">
+                                <div
+                                    class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600">
+                                </div>
+                            </label>
+                        </div>
+                        <button id="new-task-btn" data-action="new-task"
+                            class="hidden w-full sm:w-auto bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-5 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 group">
+                            <i class="fa-solid fa-plus group-hover:rotate-90 transition-transform duration-300"></i>
+                            <span>Nueva Tarea</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="mb-4 border-b border-gray-200">
@@ -993,7 +1038,7 @@
                 </div>
             </div>
 
-            <div id="solicitud-view" class="hidden">
+            <div id="solicitud-view" class="view-section hidden p-4 md:p-8 animate-fade-in">
                 <h1 class="text-3xl font-bold text-gray-700">Solicitud de Material</h1>
             </div>
 
@@ -1658,6 +1703,9 @@
                             </tbody>
                         </table>
                     </div>
+                    <!-- Paginación -->
+                    <div id="suppliers-pagination-container" class="bg-slate-50/50 px-6 py-4 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
+                    </div>
                 </div>
             </div>
 
@@ -1814,36 +1862,35 @@
             </div>
 
             <div id="project-details-view" class="hidden">
-                <header class="flex justify-between items-center mb-4">
+                <header class="mb-6 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div>
                         <button data-action="back-to-dashboard"
-                            class="text-blue-600 hover:text-blue-800 font-semibold mb-2 flex items-center">
-                            <i class="fa-solid fa-arrow-left h-5 w-5 mr-1"></i>
+                            class="text-indigo-600 hover:text-indigo-800 font-bold mb-2 flex items-center gap-1.5 transition-all hover:-translate-x-1">
+                            <i class="fa-solid fa-arrow-left"></i>
                             Volver a Proyectos
                         </button>
-                        <h1 id="project-details-name" class="text-3xl font-bold text-gray-800">Cargando...</h1>
-                        <p id="project-details-builder" class="text-gray-500"></p>
+                        <h1 id="project-details-name" class="text-3xl font-black text-slate-800 tracking-tight leading-none">Cargando...</h1>
+                        <p id="project-details-builder" class="text-sm text-slate-500 font-semibold mt-2"></p>
                     </div>
                 </header>
 
-                <div class="mb-6 border-b border-gray-200">
-                    <nav id="project-details-tabs" class="-mb-px hidden md:flex md:space-x-8" aria-label="Tabs">
-                        <button data-tab="info-general" class="tab-button">Información General</button>
-                        <button data-tab="documentos" class="tab-button">Documentos</button>
-                        <button data-tab="items" class="tab-button">Ítems</button>
-                        <button data-tab="cortes" class="tab-button">Cortes</button>
-                        <button data-tab="pagos" class="tab-button">Pagos</button>
-                        <button data-tab="materiales" class="tab-button">Materiales</button>
-
+                <div class="mb-6">
+                    <nav id="project-details-tabs" class="modern-project-tabs-container hidden md:flex md:space-x-2" aria-label="Tabs">
+                        <button data-tab="info-general" class="tab-button modern-tab-button active">Información General</button>
+                        <button data-tab="documentos" class="tab-button modern-tab-button">Documentos</button>
+                        <button data-tab="items" class="tab-button modern-tab-button">Ítems</button>
+                        <button data-tab="cortes" class="tab-button modern-tab-button">Cortes</button>
+                        <button data-tab="pagos" class="tab-button modern-tab-button">Pagos</button>
+                        <button data-tab="materiales" class="tab-button modern-tab-button">Materiales</button>
                     </nav>
-                    <div id="project-tabs-dropdown-container" class="relative md:hidden">
+                    <div id="project-tabs-dropdown-container" class="relative md:hidden w-full">
                         <button id="project-tabs-dropdown-btn"
-                            class="w-full flex justify-between items-center text-left py-2 px-3 border rounded-md shadow-sm bg-white">
+                            class="w-full flex justify-between items-center text-left py-3 px-4 border border-slate-200 rounded-xl shadow-sm bg-white font-bold text-slate-700">
                             <span id="dropdown-btn-text"></span>
-                            <i class="fa-solid fa-chevron-down ml-2 h-5 w-5"></i>
+                            <i class="fa-solid fa-chevron-down ml-2"></i>
                         </button>
                         <div id="project-tabs-dropdown-menu"
-                            class="origin-top-right absolute right-0 mt-2 w-full rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 hidden z-10">
+                            class="origin-top-right absolute right-0 mt-2 w-full rounded-xl shadow-lg bg-white border border-slate-100 hidden z-10">
                             <div id="dropdown-menu-items" class="py-1"></div>
                         </div>
                     </div>
@@ -2104,18 +2151,7 @@
                                 </div>
                             </div>
                         </div>
-                        <div id="documentos-content" class="tab-content hidden">
-                            <div class="bg-white p-6 rounded-lg shadow-md">
-                                <div class="flex justify-between items-center mb-4">
-                                    <h3 class="text-xl font-bold text-gray-800">Documentos</h3><button
-                                        data-action="manage-documents"
-                                        class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Gestionar</button>
-                                </div>
-                                <div id="documents-summary-container"
-                                    class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                </div>
-                            </div>
-                        </div>
+
 
                     </div>
                     <div id="pagos-content" class="tab-content hidden">
@@ -2220,46 +2256,49 @@
             </div>
 
             <div id="sub-items-view" class="hidden">
-                <header class="mb-6">
-                    <button data-action="back-to-project"
-                        class="text-blue-600 hover:text-blue-800 font-semibold mb-2 flex items-center">
-                        <i class="fa-solid fa-arrow-left h-5 w-5 mr-1"></i>
-                        Volver al Proyecto
-                    </button>
-                    <h1 id="item-name-header" class="text-3xl font-bold text-gray-700"></h1>
-                    <p id="item-summary-header" class="text-gray-500 mt-1"></p>
+                <header class="mb-6 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <button data-action="back-to-project"
+                            class="text-indigo-600 hover:text-indigo-800 font-bold mb-2 flex items-center gap-1.5 transition-all hover:-translate-x-1">
+                            <i class="fa-solid fa-arrow-left"></i>
+                            Volver al Proyecto
+                        </button>
+                        <h1 id="item-name-header" class="text-3xl font-black text-slate-800 tracking-tight leading-none"></h1>
+                        <p id="item-summary-header" class="text-sm text-slate-500 font-semibold mt-2"></p>
+                    </div>
                 </header>
 
                 <div class="mb-4">
                     <button id="register-multiple-progress-btn" disabled
-                        class="bg-green-500 text-white font-bold py-2 px-4 rounded-lg shadow-md disabled:bg-gray-300 disabled:cursor-not-allowed">
-                        Registrar Avance para Seleccionados
+                        class="premium-btn-confirm bg-gradient-to-r from-emerald-600 to-teal-600 shadow-emerald-100 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none">
+                        <i class="fa-solid fa-list-check"></i> Registrar Avance para Seleccionados
                     </button>
                 </div>
-                <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+                <div class="bg-white rounded-2xl border border-slate-100 shadow-xl overflow-hidden">
                     <div class="overflow-x-auto">
-                        <table class="w-full text-sm text-left text-gray-500 responsive-table">
-                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                        <table class="w-full text-sm text-left text-slate-500 responsive-table">
+                            <thead class="text-xs text-slate-600 uppercase bg-slate-50 border-b border-slate-100">
                                 <tr>
-                                    <th class="px-6 py-3">
+                                    <th class="px-6 py-4">
                                         <input type="checkbox" id="select-all-subitems-checkbox"
-                                            class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                                            class="h-4 w-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500">
                                     </th>
-                                    <th class="px-6 py-3">N°</th>
-                                    <th class="px-6 py-3">Lugar de Instalación</th>
+                                    <th class="px-6 py-4 font-bold">N°</th>
+                                    <th class="px-6 py-4 font-bold">Lugar de Instalación</th>
 
-                                    <th class="px-6 py-3">Fabricante</th>
-                                    <th class="px-6 py-3">Instalador</th>
-                                    <th class="px-6 py-3">Fecha de Instalación</th>
-                                    <th class="px-6 py-3 text-center">Estado</th>
-                                    <th class="px-6 py-3 text-center">Evidencia</th>
-                                    <th class="px-6 py-3 text-center">Acciones</th>
+                                    <th class="px-6 py-4 font-bold">Fabricante</th>
+                                    <th class="px-6 py-4 font-bold">Instalador</th>
+                                    <th class="px-6 py-4 font-bold">Fecha de Instalación</th>
+                                    <th class="px-6 py-4 font-bold text-center">Estado</th>
+                                    <th class="px-6 py-4 font-bold text-center">Evidencia</th>
+                                    <th class="px-6 py-4 font-bold text-center">Acciones</th>
                                 </tr>
                             </thead>
-                            <tbody id="sub-items-table-body"></tbody>
+                            <tbody id="sub-items-table-body" class="divide-y divide-slate-150"></tbody>
                         </table>
                         <div id="loading-sub-items" class="text-center py-10">
-                            <p class="text-gray-500">Cargando detalles...</p>
+                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto mb-2"></div>
+                            <p class="text-slate-500 font-medium">Cargando detalles...</p>
                         </div>
                     </div>
                 </div>
@@ -2337,11 +2376,8 @@
                         </table>
                     </div>
 
-                    <div id="catalog-loader-container" class="p-4 text-center border-t border-slate-50 bg-slate-50/50">
-                        <button id="load-more-catalog-btn"
-                            class="text-xs font-bold text-slate-500 hover:text-indigo-600 bg-white hover:bg-indigo-50 px-4 py-2 rounded-lg transition-all border border-slate-200 hover:border-indigo-200 shadow-sm">
-                            Cargar más resultados
-                        </button>
+                    <!-- Paginación -->
+                    <div id="catalog-pagination-container" class="bg-slate-50/50 px-6 py-4 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
                     </div>
                 </div>
             </div>
@@ -2438,12 +2474,18 @@
             </div>
 
             <div id="reports-view" class="view-section hidden p-4 md:p-8 animate-fade-in bg-gray-50 min-h-screen">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 mb-8 flex flex-col md:flex-row justify-between items-center gap-4 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-slate-50 rounded-full -mr-16 -mt-16 opacity-50 pointer-events-none"></div>
 
-                <div class="mb-8">
-                    <h2 class="text-2xl font-bold text-slate-800 flex items-center">
-                        <i class="fa-solid fa-chart-line mr-3 text-indigo-600"></i> Centro de Inteligencia
-                    </h2>
-                    <p class="text-slate-500">Análisis financiero, operativo y de rendimiento en tiempo real.</p>
+                    <div class="flex items-center gap-4 w-full md:w-auto relative z-10">
+                        <div class="w-12 h-12 bg-gradient-to-br from-indigo-50 to-purple-50 text-indigo-600 rounded-xl flex items-center justify-center text-2xl shadow-sm border border-indigo-100">
+                            <i class="fa-solid fa-chart-line"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-2xl font-black text-gray-800 tracking-tight leading-none">Centro de Inteligencia</h1>
+                            <p class="text-xs text-gray-500 font-medium mt-1">Análisis financiero, operativo y de rendimiento en tiempo real</p>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -2509,103 +2551,158 @@
                 </div>
             </div>
 
-            <div id="material-request-view" class="hidden">
-                <div class="mb-6 border-b pb-4">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-sm text-gray-500">Proyecto</p>
-                            <h1 id="material-request-project-name" class="text-3xl font-bold text-gray-800"></h1>
+            <div id="material-request-view" class="hidden animate-fade-in">
+                <!-- HERO CARD HEADER -->
+                <div class="mb-8 bg-white/95 backdrop-blur-md rounded-2xl shadow-sm border border-slate-200/80 p-6 relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-indigo-50/50 rounded-full -mr-12 -mt-12 pointer-events-none"></div>
+                    <div class="flex items-center gap-4 relative z-10">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-50 to-blue-50 text-indigo-600 flex items-center justify-center border border-indigo-100/50 shrink-0 shadow-inner">
+                            <i class="fa-solid fa-boxes-stacked text-xl"></i>
                         </div>
-                        <button data-action="back-to-project"
-                            class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">
-                            &larr; Volver al Proyecto
-                        </button>
+                        <div>
+                            <span class="text-[10px] font-bold text-indigo-600 uppercase tracking-widest block mb-0.5">Centro de Suministros</span>
+                            <h1 id="material-request-project-name" class="text-2xl font-black text-slate-800 tracking-tight leading-none"></h1>
+                            <p class="text-xs text-slate-400 font-medium mt-1">Crea una solicitud de materiales y asignación a ítems de obra</p>
+                        </div>
                     </div>
+                    
+                    <button data-action="back-to-project"
+                        class="relative z-10 px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm bg-white hover:bg-slate-50 transition-all duration-300 shadow-sm flex items-center gap-2 hover:-translate-x-1">
+                        <i class="fa-solid fa-arrow-left text-xs"></i> Volver a Tareas
+                    </button>
                 </div>
 
-                <h2 class="text-2xl font-bold text-gray-700 mb-6">Crear Nueva Solicitud de Material</h2>
-
-                <form id="material-request-form">
+                <form id="material-request-form" class="space-y-6">
                     <input type="hidden" id="material-request-task-id" name="taskId">
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <!-- COLUMNA IZQUIERDA: SELECCION DE MATERIALES -->
+                        <div class="lg:col-span-2 space-y-6">
+                            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 relative z-30">
+                                <div class="absolute top-0 left-0 w-1.5 h-full bg-indigo-500 rounded-l-2xl"></div>
+                                <h4 class="text-lg font-black text-slate-800 mb-6 flex items-center gap-2">
+                                    <span class="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-bold">1</span>
+                                    Seleccionar Materiales
+                                </h4>
 
-                        <div class="lg:col-span-2 bg-white p-6 rounded-lg shadow-md">
-                            <h4 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">1. Seleccionar
-                                Materiales
-                            </h4>
+                                <div class="space-y-6">
+                                    <!-- Selector principal -->
+                                    <div class="w-full relative z-40">
+                                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">Buscar en el Catálogo de Inventario</label>
+                                        <div class="relative rounded-xl border border-slate-200/80 bg-slate-50/50 p-1">
+                                            <select id="material-choices-select-view" class="w-full bg-transparent border-0 outline-none text-slate-700"></select>
+                                        </div>
+                                    </div>
 
-                            <div class="flex-grow w-full mb-4">
-                                <label class="block text-sm font-medium text-gray-600 mb-1">Buscar Material</label>
-                                <select id="material-choices-select-view"></select>
-                            </div>
+                                    <!-- Sección unidades completas -->
+                                    <div id="units-section-view" class="hidden bg-slate-50/50 border border-slate-100 rounded-2xl p-5 flex flex-col sm:flex-row items-end gap-4 transition-all duration-300">
+                                        <div class="flex-grow w-full">
+                                            <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Cantidad de Unidades Completas</label>
+                                            <input type="number" id="new-request-quantity-view"
+                                                class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all font-semibold text-slate-700 bg-white"
+                                                placeholder="Ej: 5">
+                                        </div>
+                                        <button type="button" id="add-material-to-request-btn-view"
+                                            class="w-full sm:w-auto bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-md hover:shadow-lg transition-all text-sm flex items-center justify-center gap-2 transform hover:-translate-y-0.5">
+                                            <i class="fa-solid fa-plus text-xs"></i> Añadir
+                                        </button>
+                                    </div>
 
-                            <div id="units-section-view" class="hidden flex items-end gap-2 mb-4">
-                                <div class="flex-grow">
-                                    <label class="block text-sm font-medium text-gray-600">Unidades
-                                        Completas</label>
-                                    <input type="number" id="new-request-quantity-view"
-                                        class="mt-1 w-full border p-2 rounded-md">
+                                    <!-- Sección cortes a medida -->
+                                    <div id="divisible-section-view" class="hidden bg-slate-50/50 border border-slate-100 rounded-2xl p-5 transition-all duration-300">
+                                        <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
+                                            <p class="text-sm font-bold text-slate-700">Añadir Cortes a Medida</p>
+                                            <span class="bg-indigo-50 text-indigo-600 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md">Material Fraccionable</span>
+                                        </div>
+                                        
+                                        <div id="cuts-container-view" class="space-y-3"></div>
+                                        
+                                        <button type="button" id="add-cut-btn-view"
+                                            class="w-full border-2 border-dashed border-slate-200 hover:border-indigo-400 text-slate-500 hover:text-indigo-600 bg-white hover:bg-indigo-50/10 py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 mt-4 shadow-sm">
+                                            <i class="fa-solid fa-circle-plus"></i> + Añadir Medida de Corte (cm)
+                                        </button>
+                                    </div>
+
+                                    <!-- Sección retazos disponibles -->
+                                    <div id="remnants-container-view" class="hidden bg-amber-50/40 border border-amber-100 rounded-2xl p-5 transition-all duration-300">
+                                        <h5 class="text-sm font-bold text-amber-800 mb-3 flex items-center gap-2">
+                                            <i class="fa-solid fa-recycle text-amber-600"></i>
+                                            Retazos Disponibles en Obra
+                                        </h5>
+                                        <div id="remnants-list-view" class="space-y-2.5 max-h-40 overflow-y-auto pr-2 custom-scrollbar"></div>
+                                    </div>
                                 </div>
-                                <button type="button" id="add-material-to-request-btn-view"
-                                    class="flex-shrink-0 bg-blue-500 text-white py-2 px-4 rounded-md">Añadir</button>
-                            </div>
-
-                            <div id="divisible-section-view" class="hidden mt-2 pt-4 border-t">
-                                <p class="text-sm text-gray-600 mb-2">Añadir cortes a medida (en cm):</p>
-                                <div id="cuts-container-view" class="space-y-2"></div>
-                                <button type="button" id="add-cut-btn-view"
-                                    class="text-sm text-blue-600 font-semibold mt-2">+ Añadir Medida de
-                                    Corte</button>
-                            </div>
-
-                            <div id="remnants-container-view" class="hidden mt-4 pt-4 border-t">
-                                <h5 class="text-sm font-semibold text-gray-700 mb-2">Retazos Disponibles</h5>
-                                <div id="remnants-list-view" class="space-y-2 max-h-32 overflow-y-auto pr-2"></div>
                             </div>
                         </div>
 
-                        <div class="bg-white p-6 rounded-lg shadow-md">
-                            <h4 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">2. Resumen de
-                                Solicitud
-                            </h4>
-                            <div id="request-items-list-view" class="space-y-2 max-h-60 overflow-y-auto mb-4">
-                                <p class="text-sm text-gray-400 text-center">Añade materiales para verlos aquí.</p>
+                        <!-- COLUMNA DERECHA: RESUMEN Y DETALLES -->
+                        <div class="space-y-6">
+                            <!-- 2. Resumen de Solicitud -->
+                            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 relative overflow-hidden">
+                                <div class="absolute top-0 left-0 w-1.5 h-full bg-emerald-500 rounded-l-2xl"></div>
+                                <h4 class="text-lg font-black text-slate-800 mb-6 flex items-center gap-2">
+                                    <span class="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-xs font-bold">2</span>
+                                    Resumen de Pedido
+                                </h4>
+                                
+                                <div id="request-items-list-view" class="space-y-3 max-h-60 overflow-y-auto mb-2 pr-1 custom-scrollbar min-h-[100px] flex flex-col justify-center">
+                                    <p class="text-sm text-gray-400 text-center italic">No has añadido materiales a la solicitud.</p>
+                                </div>
                             </div>
 
-                            <h4 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">3. ¿Para qué se
-                                usará?
-                            </h4>
-                            <div class="mb-4">
-                                <input type="text" id="request-item-search-view" placeholder="Buscar ítem por nombre..."
-                                    class="w-full border p-2 rounded-md text-sm">
-                            </div>
-                            <div id="request-item-list-container-view" class="max-h-48 overflow-y-auto space-y-2 pr-2">
+                            <!-- 3. ¿Para qué se usará? -->
+                            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 relative overflow-hidden">
+                                <div class="absolute top-0 left-0 w-1.5 h-full bg-purple-500 rounded-l-2xl"></div>
+                                <h4 class="text-lg font-black text-slate-800 mb-4 flex items-center gap-2">
+                                    <span class="w-6 h-6 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center text-xs font-bold">3</span>
+                                    Destinación en Obra
+                                </h4>
+                                <p class="text-xs text-slate-400 font-medium mb-4">Vincula los materiales solicitados a los ítems del proyecto:</p>
+                                
+                                <div class="relative mb-4">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                                        <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                                    </div>
+                                    <input type="text" id="request-item-search-view" placeholder="Buscar ítem del proyecto..."
+                                        class="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-100 focus:border-purple-500 outline-none transition-all bg-slate-50/50">
+                                </div>
+                                <div id="request-item-list-container-view" class="max-h-56 overflow-y-auto space-y-2.5 pr-2 custom-scrollbar">
+                                </div>
                             </div>
 
-                            <div id="request-user-selector-container-view" class="mt-4 pt-4 border-t"></div>
+                            <!-- 4. ¿Quién solicita? (Se rellena dinámicamente) -->
+                            <div id="request-user-selector-container-view" class="transition-all duration-300"></div>
                         </div>
-
                     </div>
 
-                    <div class="mt-6 text-right">
+                    <!-- Botón Enviar -->
+                    <div class="mt-8 pt-4 border-t border-slate-100 flex justify-end">
                         <button type="submit"
-                            class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg text-lg">
-                            Enviar Solicitud
+                            class="w-full sm:w-auto bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black py-4 px-10 rounded-xl shadow-lg shadow-emerald-100 hover:shadow-emerald-200 hover:-translate-y-0.5 transition-all text-base flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-paper-plane"></i> Enviar Solicitud de Suministros
                         </button>
                     </div>
                 </form>
             </div>
 
             <div id="cotizaciones-view" class="view-section hidden p-4 md:p-8 animate-fade-in">
-                <div class="mb-8 flex flex-col sm:flex-row justify-between items-center gap-4">
-                    <div>
-                        <h2 class="text-2xl font-bold text-slate-800">Gestión de Cotizaciones</h2>
-                        <p class="text-slate-500">Crea, edita y descarga tus propuestas comerciales</p>
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 mb-8 flex flex-col md:flex-row justify-between items-center gap-4 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-slate-50 rounded-full -mr-16 -mt-16 opacity-50 pointer-events-none"></div>
+
+                    <div class="flex items-center gap-4 w-full md:w-auto relative z-10">
+                        <div class="w-12 h-12 bg-gradient-to-br from-blue-50 to-indigo-50 text-blue-600 rounded-xl flex items-center justify-center text-2xl shadow-sm border border-blue-100">
+                            <i class="fa-solid fa-file-contract"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-2xl font-black text-gray-800 tracking-tight leading-none">Gestión de Cotizaciones</h1>
+                            <p class="text-xs text-gray-500 font-medium mt-1">Crea, edita y descarga tus propuestas comerciales</p>
+                        </div>
                     </div>
+
                     <button id="btn-nueva-cotizacion" type="button"
-                        class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl shadow-lg shadow-blue-200 transition-all flex items-center cursor-pointer z-10">
-                        <i class="fa-solid fa-plus mr-2"></i>
-                        Nueva Cotización
+                        class="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer z-10 text-xs font-bold group">
+                        <i class="fa-solid fa-plus text-xs group-hover:rotate-90 transition-transform duration-300"></i>
+                        <span>Nueva Cotización</span>
                     </button>
                 </div>
 
@@ -2629,6 +2726,7 @@
                             <option value="Aprobada">✅ Aprobada</option>
                             <option value="Rechazada">❌ Rechazada</option>
                             <option value="Facturada">💰 Facturada</option>
+                            <option value="Archivado">📁 Archivado</option>
                         </select>
                     </div>
                 </div>
@@ -2651,66 +2749,84 @@
                             </tbody>
                         </table>
                     </div>
+                    <!-- Paginación -->
+                    <div id="cotizaciones-pagination-container" class="bg-slate-50/50 px-6 py-4 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
+                    </div>
                 </div>
             </div>
 
             <div id="cotizacion-detalle-view" class="view-section hidden p-4 md:p-8 animate-fade-in">
-                <div class="mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
-                    <button id="btn-volver-cotizacion" type="button"
-                        class="flex items-center text-slate-500 hover:text-blue-600 transition-colors font-medium cursor-pointer self-start md:self-auto">
-                        <i class="fa-solid fa-arrow-left mr-2"></i> Volver
-                    </button>
-
-                    <div class="flex items-center gap-2">
-                        <button id="btn-exportar-pdf" type="button"
-                            class="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center">
-                            <i class="fa-solid fa-file-pdf mr-2"></i> PDF
+                <div class="mb-8 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                    <div class="flex items-center gap-4">
+                        <button id="btn-volver-cotizacion" type="button"
+                            class="w-10 h-10 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-blue-600 rounded-xl transition-all flex items-center justify-center shadow-sm cursor-pointer">
+                            <i class="fa-solid fa-arrow-left"></i>
                         </button>
-                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider"
+                        <div>
+                            <div class="flex items-center gap-3">
+                                <h2 class="text-2xl font-bold text-slate-800" id="titulo-pagina-cot">Nueva Cotización</h2>
+                                <span class="bg-yellow-100 text-yellow-700 py-1 px-3 rounded-full text-xs font-bold uppercase"
+                                    id="estado-cotizacion-badge">Borrador</span>
+                            </div>
+                            <p class="text-slate-500 text-sm mt-0.5">Crea o edita la cotización ingresando los detalles de tu propuesta</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm self-start lg:self-auto">
+                        <button id="btn-exportar-pdf" type="button"
+                            class="bg-red-50 hover:bg-red-100 text-red-600 px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 border border-red-100 cursor-pointer">
+                            <i class="fa-solid fa-file-pdf"></i> PDF
+                        </button>
+                        <div class="h-6 w-[1px] bg-slate-200"></div>
+                        <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2"
                             id="label-modo-cobro">MODO: AIU</span>
+                        <div class="h-6 w-[1px] bg-slate-200"></div>
                         <button id="btn-editar-config-header" type="button"
-                            class="text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-lg text-xs font-bold transition-colors">
-                            <i class="fa-solid fa-gear mr-1"></i> Ajustar
+                            class="text-slate-600 hover:text-blue-600 hover:bg-blue-50/50 px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer">
+                            <i class="fa-solid fa-gear"></i> Ajustar
                         </button>
                     </div>
                 </div>
 
                 <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 md:p-8">
-                    <div class="border-b pb-6 mb-6 flex justify-between items-center">
-                        <h2 class="text-2xl font-bold text-slate-800" id="titulo-pagina-cot">Nueva Cotización</h2>
-                        <span class="bg-yellow-100 text-yellow-700 py-1 px-3 rounded-full text-xs font-bold uppercase"
-                            id="estado-cotizacion-badge">Borrador</span>
-                    </div>
-
                     <form id="form-cotizacion" class="space-y-8">
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div>
-                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Cliente</label>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 bg-slate-50/50 p-5 rounded-2xl border border-slate-100/80 mb-6">
+                            <div class="relative">
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-user text-slate-400 text-[10px]"></i> Cliente
+                                </label>
                                 <input type="text" id="cot-cliente" required
-                                    class="w-full border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                    class="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none text-slate-700 font-medium placeholder-slate-400"
+                                    placeholder="Nombre del cliente">
                             </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Proyecto</label>
+                            <div class="relative">
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-folder-open text-slate-400 text-[10px]"></i> Proyecto
+                                </label>
                                 <input type="text" id="cot-proyecto"
-                                    class="w-full border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                    class="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none text-slate-700 font-medium placeholder-slate-400"
+                                    placeholder="Nombre del proyecto">
                             </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Fecha</label>
+                            <div class="relative">
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-calendar-days text-slate-400 text-[10px]"></i> Fecha
+                                </label>
                                 <input type="date" id="cot-fecha" required
-                                    class="w-full border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                    class="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none text-slate-700 font-medium">
                             </div>
-                        </div>
-
-                        <div class="flex flex-col">
-                            <label class="text-xs font-bold text-slate-500 uppercase mb-1">Estado</label>
-                            <select id="cot-estado"
-                                class="border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                                <option value="Borrador">📝 Borrador</option>
-                                <option value="Enviada">🚀 Enviada</option>
-                                <option value="Aprobada">✅ Aprobada</option>
-                                <option value="Rechazada">❌ Rechazada</option>
-                                <option value="Facturada">💰 Facturada</option>
-                            </select>
+                            <div class="relative">
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-circle-info text-slate-400 text-[10px]"></i> Estado
+                                </label>
+                                <select id="cot-estado"
+                                    class="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none text-slate-700 font-semibold cursor-pointer">
+                                    <option value="Borrador">📝 Borrador</option>
+                                    <option value="Enviada">🚀 Enviada</option>
+                                    <option value="Aprobada">✅ Aprobada</option>
+                                    <option value="Rechazada">❌ Rechazada</option>
+                                    <option value="Facturada">💰 Facturada</option>
+                                </select>
+                            </div>
                         </div>
 
                         <div class="overflow-x-auto border border-slate-200 rounded-xl">
@@ -2727,46 +2843,57 @@
                             <i class="fa-solid fa-circle-plus"></i> Agregar Ítem
                         </button>
 
-                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-6 border-t border-slate-100">
-                            <div class="space-y-4">
-                                <h4 class="text-xs font-bold text-slate-400 uppercase">Condiciones Comerciales</h4>
-                                <div class="grid grid-cols-1 gap-3">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-8 border-t border-slate-100">
+                            <div class="space-y-6 bg-slate-50/30 p-6 rounded-2xl border border-slate-100">
+                                <h4 class="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                                    <i class="fa-solid fa-file-contract text-slate-400 text-sm"></i> Condiciones Comerciales
+                                </h4>
+                                <div class="grid grid-cols-1 gap-4">
                                     <div>
-                                        <label class="text-[10px] uppercase font-bold text-slate-400">Forma de
-                                            Pago</label>
+                                        <label class="block text-[10px] uppercase font-bold text-slate-500 mb-1 flex items-center gap-1">
+                                            <i class="fa-solid fa-wallet text-slate-400"></i> Forma de Pago
+                                        </label>
                                         <input type="text" id="term-pago"
-                                            class="w-full border-slate-200 rounded p-2 text-xs font-medium text-slate-700">
+                                            class="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs font-medium text-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition-all">
                                     </div>
-                                    <div class="grid grid-cols-2 gap-3">
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div>
-                                            <label class="text-[10px] uppercase font-bold text-slate-400">Validez
-                                                Oferta</label>
+                                            <label class="block text-[10px] uppercase font-bold text-slate-500 mb-1 flex items-center gap-1">
+                                                <i class="fa-solid fa-clock text-slate-400"></i> Validez Oferta
+                                            </label>
                                             <input type="text" id="term-validez"
-                                                class="w-full border-slate-200 rounded p-2 text-xs font-medium text-slate-700">
+                                                class="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs font-medium text-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition-all">
                                         </div>
                                         <div>
-                                            <label class="text-[10px] uppercase font-bold text-slate-400">Tiempo
-                                                Entrega</label>
+                                            <label class="block text-[10px] uppercase font-bold text-slate-500 mb-1 flex items-center gap-1">
+                                                <i class="fa-solid fa-truck text-slate-400"></i> Tiempo Entrega
+                                            </label>
                                             <input type="text" id="term-entrega"
-                                                class="w-full border-slate-200 rounded p-2 text-xs font-medium text-slate-700">
+                                                class="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs font-medium text-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition-all">
                                         </div>
                                     </div>
                                     <div>
-                                        <label class="text-[10px] uppercase font-bold text-slate-400">Notas
-                                            Adicionales</label>
+                                        <label class="block text-[10px] uppercase font-bold text-slate-500 mb-1 flex items-center gap-1">
+                                            <i class="fa-solid fa-comment-dots text-slate-400"></i> Notas Adicionales
+                                        </label>
                                         <textarea id="term-notas" rows="2"
-                                            class="w-full border-slate-200 rounded p-2 text-xs resize-none"></textarea>
+                                            class="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none resize-none transition-all"></textarea>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 h-fit">
-                                <div id="resumen-financiero-body" class="space-y-2 text-sm text-right">
+                            <div class="bg-gradient-to-br from-slate-50 to-slate-100 p-8 rounded-2xl border border-slate-200 h-fit flex flex-col justify-between shadow-inner">
+                                <div>
+                                    <h4 class="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                        <i class="fa-solid fa-receipt text-slate-400 text-sm"></i> Resumen de Valores
+                                    </h4>
+                                    <div id="resumen-financiero-body" class="space-y-3 text-sm text-right">
+                                    </div>
                                 </div>
                                 <div
-                                    class="border-t border-slate-200 mt-4 pt-4 flex justify-between items-center text-xl font-black text-slate-800">
-                                    <span>TOTAL NETO:</span>
-                                    <span id="display-total-final">$0</span>
+                                    class="border-t border-slate-200/80 mt-6 pt-5 flex justify-between items-center text-2xl font-black text-slate-800">
+                                    <span class="tracking-tight text-slate-500 text-lg font-bold">TOTAL NETO:</span>
+                                    <span id="display-total-final" class="text-slate-900 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm font-black">$0</span>
                                 </div>
                             </div>
                         </div>
@@ -2782,6 +2909,7 @@
                     </form>
                 </div>
             </div>
+        </div>
 
             <div id="modal-config-cotizacion"
                 class="fixed inset-0 z-[9999] hidden items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
@@ -2834,7 +2962,7 @@
                                         class="col-check rounded text-blue-600" value="total_global" checked>
                                     <span>Total</span></label>
 
-                                <div class="col-span-2 md:col-span-5 border-t border-blue-200 mt-2 pt-2">
+                                <div id="config-desglose-section" class="col-span-2 md:col-span-5 border-t border-blue-200 mt-2 pt-2">
                                     <p class="text-xs text-blue-600 font-bold mb-2">Desglose Financiero (Opcional)</p>
                                     <div class="flex gap-4">
                                         <label class="flex items-center space-x-2"><input type="checkbox"
@@ -2857,6 +2985,7 @@
                                     <option value="AIU">AIU (Construcción - IVA s/Utilidad)</option>
                                     <option value="IVA_GLOBAL">IVA Global (Ventas - 19% Pleno)</option>
                                     <option value="MIXTO">Mixto (Suministro + IVA / Inst + AIU)</option>
+                                    <option value="SOLO_TOTAL">Solo Total (Sin Impuestos / Exento)</option>
                                 </select>
 
                                 <h4 class="text-xs font-bold text-slate-500 uppercase mb-3">Numeración de Ítems</h4>
@@ -2928,7 +3057,6 @@
             </div>
 
         </div>
-    </div>
 
     <div id="safety-checkin-modal"
         class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-900/90 backdrop-blur-sm transition-opacity duration-300">
@@ -2984,70 +3112,81 @@
             </div>
 
             <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 text-center">
-                <button id="safety-checkin-close-btn"
-                    class="text-slate-400 hover:text-slate-600 text-sm font-semibold transition-colors">
-                    Cancelar Operación
-                </button>
+                <button id="safety-checkin-close-btn" type="button"
+                    class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl transition-all text-sm cursor-pointer">Cerrar</button>
             </div>
         </div>
     </div>
 
     <div id="documents-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto p-6 max-h-[90vh] flex flex-col">
-            <h3 id="documents-modal-title" class="text-xl font-bold mb-4">Gestionar Documentos</h3>
-            <div id="documents-modal-body" class="overflow-y-auto space-y-4">
+        <div class="bg-white rounded-2xl border border-slate-100 shadow-2xl w-11/12 md:max-w-2xl mx-auto p-6 max-h-[90vh] flex flex-col animate-scale-up premium-modal-card">
+            <div class="flex justify-between items-center pb-4 border-b border-slate-100 mb-4 bg-white">
+                <h3 id="documents-modal-title" class="text-xl font-bold text-slate-800">Gestionar Documentos</h3>
+                <button type="button" id="documents-modal-close-icon" onclick="document.getElementById('documents-modal').style.display='none'"
+                    class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div id="documents-modal-body" class="overflow-y-auto space-y-4 pr-1 custom-scrollbar">
                 <div class="grid grid-cols-2 gap-4">
-                    <div><label class="block text-sm font-medium">Contrato</label><input type="file"
-                            data-doc-type="contrato" class="document-upload-input mt-1 w-full text-sm"></div>
-                    <div><label class="block text-sm font-medium">Cotización</label><input type="file"
-                            data-doc-type="cotizacion" class="document-upload-input mt-1 w-full text-sm"></div>
-                    <div><label class="block text-sm font-medium">Pólizas</label><input type="file"
-                            data-doc-type="polizas" class="document-upload-input mt-1 w-full text-sm"></div>
-                    <div><label class="block text-sm font-medium">Pago de Pólizas</label><input type="file"
-                            data-doc-type="pago_polizas" class="document-upload-input mt-1 w-full text-sm"></div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Contrato</label>
+                        <input type="file" data-doc-type="contrato" class="document-upload-input premium-input">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Cotización</label>
+                        <input type="file" data-doc-type="cotizacion" class="document-upload-input premium-input">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Pólizas</label>
+                        <input type="file" data-doc-type="polizas" class="document-upload-input premium-input">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Pago de Pólizas</label>
+                        <input type="file" data-doc-type="pago_polizas" class="document-upload-input premium-input">
+                    </div>
                 </div>
-                <div class="border-t pt-4"><label class="block text-sm font-medium">Añadir "Otro Sí"</label><input
-                        type="file" data-doc-type="otros_si" class="document-upload-input mt-1 w-full text-sm">
+                <div class="border-t border-slate-100 pt-4">
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Añadir "Otro Sí"</label>
+                    <input type="file" data-doc-type="otros_si" class="document-upload-input premium-input">
                 </div>
-                <div id="documents-list-container" class="border-t pt-4">
-                    <p class="font-semibold mb-2">Documentos Cargados</p>
+                <div id="documents-list-container" class="border-t border-slate-100 pt-4">
+                    <p class="font-bold text-sm text-slate-700 mb-2">Documentos Cargados</p>
                     <div id="documents-list" class="space-y-2"></div>
                 </div>
             </div>
-            <div class="mt-6 flex justify-end gap-3"><button type="button" id="documents-modal-close-btn"
-                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cerrar</button>
+            <div class="mt-6 flex justify-end gap-3 pt-4 border-t border-slate-100 bg-white">
+                <button type="button" id="documents-modal-close-btn" class="premium-btn-cancel">Cerrar</button>
             </div>
         </div>
     </div>
 
 
     <div id="main-modal" style="z-index: 60;"
-        class="fixed inset-0 hidden items-center justify-center modal-backdrop bg-gray-900 bg-opacity-50 p-4 backdrop p-4"
+        class="fixed inset-0 hidden items-center justify-center modal-backdrop p-4"
         aria-labelledby="modal-title" role="dialog" aria-modal="true"
         onclick="if(event.target === this) closeMainModal()">
 
         <div id="main-modal-content"
-            class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden transform transition-all">
+            class="bg-white w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up premium-modal-card">
 
             <form id="modal-form" class="flex-1 flex flex-col min-h-0">
-                <div class="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-white">
-                    <h2 id="modal-title" class="text-xl font-bold text-gray-800">Cargando...</h2>
+                <div class="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-white">
+                    <h2 id="modal-title" class="text-xl font-bold text-slate-800">Cargando...</h2>
                     <button type="button" id="modal-cancel-btn"
-                        class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-colors">
-                        <span class="text-2xl leading-none">&times;</span>
+                        class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                        <i class="fa-solid fa-xmark text-lg"></i>
                     </button>
                 </div>
 
-                <div id="modal-body" class="p-6 flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-gray-50/50">
+                <div id="modal-body" class="p-6 flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-slate-50/30">
                 </div>
 
-                <div id="main-modal-footer" class="px-6 py-4 bg-white border-t border-gray-100 flex justify-end gap-3">
-                    <button type="button" id="modal-cancel-btn-footer"
-                        class="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 font-bold py-2.5 px-5 rounded-xl transition-all shadow-sm">
+                <div id="main-modal-footer" class="px-6 py-4 bg-white border-t border-slate-100 flex justify-end gap-3">
+                    <button type="button" id="modal-cancel-btn-footer" class="premium-btn-cancel">
                         Cancelar
                     </button>
-                    <button type="submit" id="modal-confirm-btn"
-                        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md hover:shadow-lg transition-all">
+                    <button type="submit" id="modal-confirm-btn" class="premium-btn-confirm">
                         Confirmar
                     </button>
                 </div>
@@ -3057,149 +3196,162 @@
     </div>
 
     <div id="progress-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
-            <form id="progress-modal-form">
-                <h3 id="progress-modal-title" class="text-xl font-bold mb-4">Registrar Avance</h3>
+        <div class="bg-white w-11/12 md:max-w-md mx-auto p-6 animate-scale-up premium-modal-card">
+            <form id="progress-modal-form" class="space-y-4">
+                <div class="flex justify-between items-center pb-3 border-b border-slate-100">
+                    <h3 id="progress-modal-title" class="text-xl font-bold text-slate-800">Registrar Avance</h3>
+                    <button type="button" id="progress-modal-close-icon" onclick="document.getElementById('progress-modal').style.display='none'"
+                        class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
                 <div class="space-y-4">
                     <div>
-                        <label for="sub-item-location" class="block text-sm font-medium text-gray-700">Lugar de
-                            Instalación</label>
-                        <input type="text" id="sub-item-location" class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        <label for="sub-item-location" class="block text-xs font-bold text-slate-500 uppercase mb-1">Lugar de Instalación</label>
+                        <input type="text" id="sub-item-location" class="premium-input">
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label for="sub-item-real-width" class="block text-sm font-medium text-gray-700">Ancho
-                                Real
-                                (cm)</label>
-                            <input type="number" step="0.01" id="sub-item-real-width" placeholder="Ej: 1.52"
-                                class="mt-1 block w-full px-3 py-2 border rounded-md">
+                            <label for="sub-item-real-width" class="block text-xs font-bold text-slate-500 uppercase mb-1">Ancho Real (cm)</label>
+                            <input type="number" step="0.01" id="sub-item-real-width" placeholder="Ej: 1.52" class="premium-input">
                         </div>
                         <div>
-                            <label for="sub-item-real-height" class="block text-sm font-medium text-gray-700">Alto
-                                Real
-                                (cm)</label>
-                            <input type="number" step="0.01" id="sub-item-real-height" placeholder="Ej: 2.21"
-                                class="mt-1 block w-full px-3 py-2 border rounded-md">
+                            <label for="sub-item-real-height" class="block text-xs font-bold text-slate-500 uppercase mb-1">Alto Real (cm)</label>
+                            <input type="number" step="0.01" id="sub-item-real-height" placeholder="Ej: 2.21" class="premium-input">
                         </div>
                     </div>
                     <div>
-                        <label for="sub-item-manufacturer"
-                            class="block text-sm font-medium text-gray-700">Fabricante</label>
-                        <select id="sub-item-manufacturer"
-                            class="mt-1 block w-full px-3 py-2 border rounded-md bg-white"></select>
+                        <label for="sub-item-manufacturer" class="block text-xs font-bold text-slate-500 uppercase mb-1">Fabricante</label>
+                        <select id="sub-item-manufacturer" class="premium-input"></select>
                     </div>
                     <div>
-                        <label for="sub-item-installer"
-                            class="block text-sm font-medium text-gray-700">Instalador</label>
-                        <select id="sub-item-installer"
-                            class="mt-1 block w-full px-3 py-2 border rounded-md bg-white"></select>
+                        <label for="sub-item-installer" class="block text-xs font-bold text-slate-500 uppercase mb-1">Instalador</label>
+                        <select id="sub-item-installer" class="premium-input"></select>
                     </div>
                     <div>
-                        <label for="sub-item-date" class="block text-sm font-medium text-gray-700">Fecha de
-                            Instalación</label>
-                        <input type="date" id="sub-item-date" class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        <label for="sub-item-date" class="block text-xs font-bold text-slate-500 uppercase mb-1">Fecha de Instalación</label>
+                        <input type="date" id="sub-item-date" class="premium-input">
                     </div>
                     <div>
-                        <label for="sub-item-photo" class="block text-sm font-medium text-gray-700">Foto de
-                            Evidencia</label>
-                        <input type="file" id="sub-item-photo" accept="image/*" capture="environment"
-                            class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                        <label for="sub-item-photo" class="block text-xs font-bold text-slate-500 uppercase mb-1">Foto de Evidencia</label>
+                        <input type="file" id="sub-item-photo" accept="image/*" capture="environment" class="premium-input">
                         <div id="photo-preview" class="mt-2"></div>
                     </div>
                 </div>
-                <p id="progress-feedback" class="text-sm mt-4 text-center"></p>
-                <div class="mt-6 flex justify-end gap-3">
-                    <button type="button" id="progress-modal-cancel-btn"
-                        class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button>
-                    <button type="submit" id="progress-modal-confirm-btn"
-                        class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Guardar</button>
+                <p id="progress-feedback" class="text-sm text-center font-semibold"></p>
+                <div class="mt-6 flex justify-end gap-3 pt-3 border-t border-slate-100">
+                    <button type="button" id="progress-modal-cancel-btn" class="premium-btn-cancel">Cancelar</button>
+                    <button type="submit" id="progress-modal-confirm-btn" class="premium-btn-confirm">Guardar</button>
                 </div>
             </form>
         </div>
     </div>
 
     <div id="import-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-lg mx-auto p-6">
-            <h3 class="text-xl font-bold mb-4">Importar Ítems</h3>
-            <p class="text-sm text-gray-600 mb-4">Selecciona un archivo .xlsx con: 'nombre', 'cantidad', 'ancho',
-                'alto'.</p>
-            <div class="flex justify-between items-center mb-4"><input type="file" id="excel-file-input"
-                    accept=".xlsx, .xls"
-                    class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" /><button
-                    id="download-template-btn"
-                    class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg text-sm">Plantilla</button>
+        <div class="bg-white w-11/12 md:max-w-lg mx-auto p-6 relative animate-scale-up premium-modal-card">
+            <div class="flex justify-between items-center pb-4 border-b border-slate-100 mb-4 bg-white">
+                <h3 class="text-xl font-bold text-slate-800">Importar Ítems</h3>
+                <button type="button" id="import-modal-close-icon" onclick="document.getElementById('import-modal').style.display='none'"
+                    class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
             </div>
-            <div id="import-feedback" class="text-sm mt-2"></div>
-            <div class="mt-6 flex justify-end gap-3"><button type="button" id="import-modal-cancel-btn"
-                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cerrar</button><button
-                    type="button" id="import-modal-confirm-btn"
-                    class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Importar</button>
+            <p class="text-xs text-slate-500 mb-4 font-medium leading-relaxed">Selecciona un archivo .xlsx con las columnas obligatorias: 'nombre', 'cantidad', 'ancho', 'alto'.</p>
+            <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center mb-4">
+                <input type="file" id="excel-file-input" accept=".xlsx, .xls" class="premium-input flex-1" />
+                <button id="download-template-btn" class="premium-btn-cancel shrink-0 flex items-center gap-2">
+                    <i class="fa-solid fa-download"></i> Plantilla
+                </button>
+            </div>
+            <div id="import-feedback" class="text-sm font-semibold mt-2"></div>
+            <div class="mt-6 flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button type="button" id="import-modal-cancel-btn" class="premium-btn-cancel">Cerrar</button>
+                <button type="button" id="import-modal-confirm-btn" class="premium-btn-confirm bg-gradient-to-r from-emerald-600 to-teal-600 shadow-emerald-100">Importar</button>
             </div>
         </div>
     </div>
 
     <div id="confirm-modal" style="z-index: 70;"
         class="fixed inset-0 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-md mx-auto p-6">
-            <h3 id="confirm-modal-title" class="text-xl font-bold mb-4">Confirmar Acción</h3>
-            <p id="confirm-modal-body" class="mb-6 text-gray-600"></p>
-            <div class="flex justify-end gap-3"><button type="button" id="confirm-modal-cancel-btn"
-                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button><button
-                    type="button" id="confirm-modal-confirm-btn"
-                    class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Confirmar</button>
+        <div class="bg-white w-11/12 md:max-w-md mx-auto p-6 animate-scale-up premium-modal-card">
+            <div class="flex justify-between items-center pb-3 border-b border-slate-100 mb-4">
+                <h3 id="confirm-modal-title" class="text-lg font-bold text-slate-800">Confirmar Acción</h3>
+                <button type="button" onclick="document.getElementById('confirm-modal').style.display='none'"
+                    class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <p id="confirm-modal-body" class="mb-6 text-sm text-slate-600 leading-relaxed font-medium"></p>
+            <div class="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button type="button" id="confirm-modal-cancel-btn" class="premium-btn-cancel">Cancelar</button>
+                <button type="button" id="confirm-modal-confirm-btn" class="premium-btn-confirm bg-gradient-to-r from-rose-600 to-red-600 shadow-rose-100">Confirmar</button>
             </div>
         </div>
     </div>
 
-    <div id="image-modal" class="fixed inset-0 z-[200] items-center justify-center hidden modal-backdrop p-4">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-auto p-4 relative">
-            <button id="image-modal-close-btn"
-                class="absolute -top-2 -right-2 bg-white rounded-full p-1 text-gray-600 hover:text-gray-900 z-10 shadow-sm">
-                <i class="fa-solid fa-xmark h-6 w-6"></i>
+    <div id="image-modal" class="fixed inset-0 z-[200] items-center justify-center hidden modal-backdrop p-4"
+        onclick="if(event.target === this) this.style.display='none'">
+        <div class="bg-white w-full max-w-4xl mx-auto p-4 relative animate-scale-up premium-modal-card">
+            <button id="image-modal-close-btn" onclick="document.getElementById('image-modal').style.display='none'"
+                class="absolute top-4 right-4 bg-white/90 backdrop-blur text-slate-500 hover:text-slate-800 p-2 rounded-full shadow-lg border border-slate-100 transition-all z-10">
+                <i class="fa-solid fa-xmark text-lg"></i>
             </button>
-            <img id="modal-image" src="" alt="Evidencia" class="max-w-full max-h-[85vh] mx-auto object-contain">
+            <img id="modal-image" src="" alt="Evidencia" class="max-w-full max-h-[85vh] mx-auto object-contain rounded-xl">
         </div>
     </div>
 
     <div id="multiple-progress-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-4xl mx-auto p-6 max-h-[90vh] flex flex-col">
-            <h3 id="multiple-progress-modal-title" class="text-xl font-bold mb-4">Registrar Avance en Lote</h3>
+        <div class="bg-white w-11/12 md:max-w-4xl mx-auto p-6 max-h-[90vh] flex flex-col animate-scale-up premium-modal-card">
+            <div class="flex justify-between items-center pb-4 border-b border-slate-100 bg-white mb-4">
+                <h3 id="multiple-progress-modal-title" class="text-xl font-bold text-slate-800">Registrar Avance en Lote</h3>
+                <button type="button" id="multiple-progress-modal-close-icon" onclick="if(window.closeMultipleProgressModal) window.closeMultipleProgressModal(); else document.getElementById('multiple-progress-modal').style.display='none';"
+                    class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 border rounded-lg bg-gray-50">
-                <div class="md:col-span-1">
-                    <div>
-                        <label for="multiple-sub-item-date" class="block text-sm font-medium text-gray-700">Fecha de
-                            Instalación (para todos)</label>
-                        <input type="date" id="multiple-sub-item-date"
-                            class="mt-1 block w-full px-3 py-2 border rounded-md">
+            <div id="multiple-progress-bulk-card" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 p-4 border border-slate-100 rounded-xl bg-slate-50/50">
+                <div id="multiple-date-container" class="col-span-1">
+                    <label for="multiple-sub-item-date" class="block text-xs font-bold text-slate-500 uppercase mb-1">Fecha de Instalación</label>
+                    <input type="date" id="multiple-sub-item-date" class="premium-input text-xs">
+                </div>
+                <div id="multiple-group-photo-container" class="col-span-1">
+                    <label for="multiple-group-photo" class="block text-xs font-bold text-slate-500 uppercase mb-1">Foto Grupal (Fallback)</label>
+                    <input type="file" id="multiple-group-photo" accept="image/*" class="premium-input text-xs bg-white">
+                </div>
+                <div id="multiple-bulk-filling-container" class="md:col-span-2 flex items-end gap-2">
+                    <div class="flex-grow">
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Lugar / Medidas Grupales (Llenado Rápido)</label>
+                        <div class="flex gap-1.5">
+                            <input type="text" id="bulk-location" placeholder="Ubicación" class="premium-input text-xs w-1/3">
+                            <input type="number" id="bulk-width" placeholder="Ancho (cm)" class="premium-input text-xs w-1/3">
+                            <input type="number" id="bulk-height" placeholder="Alto (cm)" class="premium-input text-xs w-1/3">
+                        </div>
                     </div>
+                    <button type="button" id="btn-apply-group-settings" class="premium-btn-confirm py-2 px-4 shrink-0 text-xs shadow-sm bg-gradient-to-r from-indigo-600 to-blue-600">Aplicar</button>
                 </div>
             </div>
 
-
-            <div class="flex-1 overflow-y-auto border rounded-lg min-h-0">
-                <table class="w-full text-sm text-left text-gray-500">
-                    <thead class="text-xs text-gray-700 uppercase bg-gray-100 sticky top-0">
+            <div class="flex-1 overflow-y-auto border border-slate-100 rounded-xl min-h-0 bg-white">
+                <table class="w-full text-sm text-left text-slate-500">
+                    <thead class="text-xs text-slate-600 uppercase bg-slate-50 border-b border-slate-100 sticky top-0">
                         <tr>
-                            <th class="px-4 py-2">N°</th>
-                            <th class="px-4 py-2">Lugar de Instalación</th>
-                            <th class="px-4 py-2">Ancho Real (cm)</th>
-                            <th class="px-4 py-2">Alto Real (cm)</th>
-                            <th class="px-4 py-2">Evidencia (Foto)</th>
+                            <th class="px-5 py-3 font-bold">N°</th>
+                            <th class="px-5 py-3 font-bold">Lugar de Instalación</th>
+                            <th class="px-5 py-3 font-bold">Ancho Real (cm)</th>
+                            <th class="px-5 py-3 font-bold">Alto Real (cm)</th>
+                            <th class="px-5 py-3 font-bold">Evidencia (Foto)</th>
                         </tr>
                     </thead>
-                    <tbody id="multiple-progress-table-body">
+                    <tbody id="multiple-progress-table-body" class="divide-y divide-slate-100">
                     </tbody>
                 </table>
             </div>
 
-            <p id="multiple-progress-feedback" class="text-sm mt-4 text-center"></p>
-            <div class="mt-6 flex justify-end gap-3">
-                <button type="button" id="multiple-progress-modal-cancel-btn"
-                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button>
-                <button type="button" id="multiple-progress-modal-confirm-btn"
-                    class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Guardar
-                    Cambios</button>
+            <p id="multiple-progress-feedback" class="text-sm mt-4 text-center font-semibold"></p>
+            <div class="mt-6 flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button type="button" id="multiple-progress-modal-cancel-btn" onclick="if(window.closeMultipleProgressModal) window.closeMultipleProgressModal(); else document.getElementById('multiple-progress-modal').style.display='none';" class="premium-btn-cancel">Cancelar</button>
+                <button type="button" id="multiple-progress-modal-confirm-btn" class="premium-btn-confirm">Guardar Cambios</button>
             </div>
         </div>
     </div>
@@ -3225,165 +3377,166 @@
 
 
     <div id="document-viewer-modal"
-        class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-            <div class="flex justify-between items-center p-4 border-b">
-                <h3 id="document-viewer-title" class="text-xl font-bold text-gray-800"></h3>
-                <button id="document-viewer-close-btn" class="text-gray-500 hover:text-gray-800">&times;</button>
+        class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50 modal-backdrop">
+        <div class="bg-white w-full max-w-2xl max-h-[80vh] flex flex-col animate-scale-up premium-modal-card">
+            <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-white">
+                <h3 id="document-viewer-title" class="text-xl font-bold text-slate-800"></h3>
+                <button id="document-viewer-close-btn" class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
             </div>
 
-            <div id="document-viewer-list" class="p-6 overflow-y-auto">
+            <div id="document-viewer-list" class="p-6 overflow-y-auto custom-scrollbar bg-slate-50/20">
             </div>
         </div>
     </div>
 
     <div id="document-display-modal"
-        class="fixed inset-0 bg-black bg-opacity-75 hidden items-center justify-center p-4 z-[200]">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center p-3 border-b bg-gray-50 rounded-t-lg">
-                <h3 id="document-display-title" class="text-lg font-bold text-gray-800 truncate pr-4">Vista Previa</h3>
-                <button id="document-display-close-btn"
-                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold px-2">&times;</button>
+        class="fixed inset-0 bg-black bg-opacity-75 hidden items-center justify-center p-4 z-[200] modal-backdrop">
+        <div class="bg-white w-full max-w-4xl h-[90vh] flex flex-col animate-scale-up premium-modal-card">
+            <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50/50 rounded-t-2xl">
+                <h3 id="document-display-title" class="text-lg font-bold text-slate-850 truncate pr-4">Vista Previa</h3>
+                <button id="document-display-close-btn" class="text-slate-400 hover:text-slate-600 hover:bg-slate-150 p-1.5 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
             </div>
-            <div class="flex-grow p-1 bg-gray-200 relative">
+            <div class="flex-grow p-1 bg-slate-100 relative flex items-center justify-center overflow-hidden">
                 <iframe id="document-iframe" src="about:blank" class="w-full h-full border-0"
                     title="Vista previa del documento"></iframe>
+                <img id="document-image" src="" class="hidden max-w-full max-h-full object-contain"
+                    alt="Vista previa del plano o documento" />
             </div>
         </div>
     </div>
 
-    <div id="otro-si-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center p-4 border-b">
-                <h3 class="text-xl font-bold text-gray-800">Gestionar "Otro Sí" del Contrato</h3>
-                <button id="otro-si-modal-close-btn"
-                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
+    <div id="otro-si-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50 modal-backdrop">
+        <div class="bg-white w-full max-w-3xl max-h-[90vh] flex flex-col animate-scale-up premium-modal-card">
+            <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-white">
+                <h3 class="text-xl font-bold text-slate-800">Gestionar "Otro Sí" del Contrato</h3>
+                <button id="otro-si-modal-close-btn" onclick="document.getElementById('otro-si-modal').style.display='none'" class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
             </div>
 
-            <div class="p-6 border-b">
+            <div class="p-6 border-b border-slate-100 bg-slate-50/30">
                 <form id="otro-si-form" class="space-y-4">
                     <div>
-                        <label for="otro-si-concept" class="block text-sm font-medium text-gray-700">Concepto o
-                            Descripción</label>
-                        <textarea id="otro-si-concept" rows="3" required class="mt-1 w-full border rounded-md p-2"
+                        <label for="otro-si-concept" class="block text-xs font-bold text-slate-500 uppercase mb-1">Concepto o Descripción</label>
+                        <textarea id="otro-si-concept" rows="3" required class="premium-input"
                             placeholder="Ej: Adición de presupuesto para fachada sur..."></textarea>
                     </div>
                     <div>
-                        <label for="otro-si-file" class="block text-sm font-medium text-gray-700">Archivo del "Otro
-                            Sí"
-                            (PDF, Imagen, etc.)</label>
-                        <input type="file" id="otro-si-file" required
-                            class="mt-1 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                        <label for="otro-si-file" class="block text-xs font-bold text-slate-500 uppercase mb-1">Archivo del "Otro Sí" (PDF, Imagen, etc.)</label>
+                        <input type="file" id="otro-si-file" required class="premium-input bg-white" />
                     </div>
                     <div class="text-right">
-                        <button type="submit" id="otro-si-submit-btn"
-                            class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Guardar
-                            Otro Sí</button>
+                        <button type="submit" id="otro-si-submit-btn" class="premium-btn-confirm">
+                            Guardar Otro Sí
+                        </button>
                     </div>
                 </form>
             </div>
 
-            <div class="p-6 overflow-y-auto flex-grow">
-                <h4 class="text-lg font-semibold text-gray-700 mb-4">Historial de "Otro Sí"</h4>
+            <div class="p-6 overflow-y-auto flex-grow bg-white custom-scrollbar">
+                <h4 class="text-base font-bold text-slate-700 mb-4">Historial de "Otro Sí"</h4>
                 <div id="otro-si-list-container" class="space-y-3">
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="varios-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center p-4 border-b">
-                <h3 class="text-xl font-bold text-gray-800">Gestionar Documentos Varios</h3>
-                <button id="varios-modal-close-btn"
-                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
+    <div id="varios-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50 modal-backdrop">
+        <div class="bg-white w-full max-w-3xl max-h-[90vh] flex flex-col animate-scale-up premium-modal-card">
+            <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-white">
+                <h3 class="text-xl font-bold text-slate-800">Gestionar Documentos Varios</h3>
+                <button id="varios-modal-close-btn" onclick="document.getElementById('varios-modal').style.display='none'" class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
             </div>
 
-            <div class="p-6 border-b">
+            <div class="p-6 border-b border-slate-100 bg-slate-50/30">
                 <form id="varios-form" class="space-y-4">
                     <div>
-                        <label for="varios-concept" class="block text-sm font-medium text-gray-700">Concepto o
-                            Descripción</label>
-                        <textarea id="varios-concept" rows="3" required class="mt-1 w-full border rounded-md p-2"
+                        <label for="varios-concept" class="block text-xs font-bold text-slate-500 uppercase mb-1">Concepto o Descripción</label>
+                        <textarea id="varios-concept" rows="3" required class="premium-input"
                             placeholder="Ej: Factura de materiales extra..."></textarea>
                     </div>
                     <div>
-                        <label for="varios-file" class="block text-sm font-medium text-gray-700">Archivo (PDF,
-                            Imagen,
-                            etc.)</label>
-                        <input type="file" id="varios-file" required
-                            class="mt-1 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                        <label for="varios-file" class="block text-xs font-bold text-slate-500 uppercase mb-1">Archivo (PDF, Imagen, etc.)</label>
+                        <input type="file" id="varios-file" required class="premium-input bg-white" />
                     </div>
                     <div class="text-right">
-                        <button type="submit" id="varios-submit-btn"
-                            class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Guardar
-                            Documento</button>
+                        <button type="submit" id="varios-submit-btn" class="premium-btn-confirm">
+                            Guardar Documento
+                        </button>
                     </div>
                 </form>
             </div>
 
-            <div class="p-6 overflow-y-auto flex-grow">
-                <h4 class="text-lg font-semibold text-gray-700 mb-4">Historial de Documentos Varios</h4>
+            <div class="p-6 overflow-y-auto flex-grow bg-white custom-scrollbar">
+                <h4 class="text-base font-bold text-slate-700 mb-4">Historial de Documentos Varios</h4>
                 <div id="varios-list-container" class="space-y-3">
                 </div>
             </div>
         </div>
     </div>
     <div id="request-details-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center p-4 border-b">
-                <h3 id="request-details-title" class="text-xl font-bold">Detalles de la Solicitud</h3>
+        <div class="bg-white w-11/12 md:max-w-2xl mx-auto max-h-[90vh] flex flex-col animate-scale-up premium-modal-card">
+            <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-white">
+                <h3 id="request-details-title" class="text-xl font-bold text-slate-800">Detalles de la Solicitud</h3>
                 <button id="request-details-close-btn" data-action="close-details-modal"
-                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
-
+                    class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
             </div>
 
-            <div id="request-details-content" class="p-4 sm:p-6 overflow-y-auto bg-gray-50 space-y-4">
+            <div id="request-details-content" class="p-4 sm:p-6 overflow-y-auto bg-slate-50/50 space-y-4 custom-scrollbar">
             </div>
 
-            <div id="request-details-footer" class="mt-auto p-4 border-t flex flex-wrap justify-end gap-2">
+            <div id="request-details-footer" class="mt-auto p-4 border-t border-slate-100 flex flex-wrap justify-end gap-2 bg-white">
                 <button type="button" id="request-details-cancel-btn" data-action="close-details-modal"
-                    class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg">Cerrar</button>
+                    class="premium-btn-cancel">Cerrar</button>
             </div>
         </div>
     </div>
+
     <div id="po-details-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center p-4 border-b">
-                <h3 id="po-details-title" class="text-xl font-bold">Detalle de Orden de Compra</h3>
+        <div class="bg-white w-11/12 md:max-w-2xl mx-auto max-h-[90vh] flex flex-col animate-scale-up premium-modal-card">
+            <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-white">
+                <h3 id="po-details-title" class="text-xl font-bold text-slate-800">Detalle de Orden de Compra</h3>
                 <button id="po-details-close-btn"
-                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
+                    class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
             </div>
 
-            <div id="po-details-content" class="p-4 sm:p-6 overflow-y-auto bg-gray-50 space-y-4">
+            <div id="po-details-content" class="p-4 sm:p-6 overflow-y-auto bg-slate-50/50 space-y-4 custom-scrollbar">
             </div>
 
-            <div id="po-details-actions" class="mt-auto p-6 border-t flex justify-end gap-3">
-                <button type="button" id="po-details-cancel-btn"
-                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cerrar</button>
+            <div id="po-details-actions" class="mt-auto p-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
+                <button type="button" id="po-details-cancel-btn" class="premium-btn-cancel">Cerrar</button>
             </div>
         </div>
     </div>
 
     <div id="delivery-modal" class="fixed inset-0 z-[60] items-center justify-center hidden modal-backdrop p-4">
-        <div class="bg-white w-11/12 md:max-w-2xl mx-auto max-h-[90vh] flex flex-col rounded-lg shadow-xl">
-            <div class="flex justify-between items-center p-4 border-b">
-                <h3 id="delivery-modal-title" class="text-xl font-bold">Registrar Entrega de Material</h3>
+        <div class="bg-white w-11/12 md:max-w-2xl mx-auto max-h-[90vh] flex flex-col animate-scale-up premium-modal-card">
+            <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-white">
+                <h3 id="delivery-modal-title" class="text-xl font-bold text-slate-800">Registrar Entrega de Material</h3>
                 <button id="delivery-modal-close-btn"
-                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
+                    class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
             </div>
 
-            <form id="delivery-modal-form">
-                <div id="delivery-modal-body" class="p-4 sm:p-6 overflow-y-auto bg-gray-50 space-y-4">
-                    <p class="text-center text-gray-500">Cargando ítems de la solicitud...</p>
+            <form id="delivery-modal-form" class="flex-1 flex flex-col min-h-0">
+                <div id="delivery-modal-body" class="p-4 sm:p-6 overflow-y-auto bg-slate-50/50 space-y-4 flex-1 custom-scrollbar">
+                    <p class="text-center text-slate-500 font-semibold">Cargando ítems de la solicitud...</p>
                 </div>
 
-                <div id="delivery-modal-actions" class="mt-auto p-4 border-t flex justify-end gap-3">
-                    <button type="button" id="delivery-modal-cancel-btn"
-                        class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button>
-                    <button type="submit" id="delivery-modal-confirm-btn"
-                        class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Confirmar
-                        Entrega</button>
+                <div id="delivery-modal-actions" class="mt-auto p-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
+                    <button type="button" id="delivery-modal-cancel-btn" class="premium-btn-cancel">Cancelar</button>
+                    <button type="submit" id="delivery-modal-confirm-btn" class="premium-btn-confirm bg-gradient-to-r from-emerald-600 to-teal-600 shadow-emerald-100">Confirmar Entrega</button>
                 </div>
             </form>
         </div>
@@ -3484,49 +3637,56 @@
 
     <div id="task-details-modal" data-action="close-task-details"
         class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop p-4">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-2xl mx-auto max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center p-4 border-b">
-                <h3 id="task-details-title" class="text-xl font-bold text-gray-800">Detalles de la Tarea</h3>
+        <div class="bg-white w-11/12 md:max-w-2xl mx-auto max-h-[90vh] flex flex-col animate-scale-up premium-modal-card">
+            <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-white">
+                <h3 id="task-details-title" class="text-xl font-bold text-slate-800">Detalles de la Tarea</h3>
                 <button id="task-details-close-btn" data-action="close-task-details"
-                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
+                    class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
             </div>
-            <div id="task-details-body" class="p-6 overflow-y-auto space-y-4">
+            <div id="task-details-body" class="p-6 overflow-y-auto space-y-4 custom-scrollbar bg-slate-50/20">
                 <div class="text-center py-8">
                     <div class="loader mx-auto"></div>
                 </div>
             </div>
-            <div id="task-details-actions" class="mt-auto p-4 border-t flex justify-end gap-3">
+            <div id="task-details-actions" class="mt-auto p-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
                 <button type="button" id="task-details-cancel-btn" data-action="close-task-details"
-                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cerrar</button>
+                    class="premium-btn-cancel">Cerrar</button>
             </div>
         </div>
     </div>
 
     <div id="tool-history-modal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop p-4">
-        <div class="bg-white rounded-lg shadow-xl w-11/12 md:max-w-xl mx-auto p-6 max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center mb-4">
-                <h3 id="tool-history-title" class="text-xl font-bold">Historial de Herramienta</h3>
-                <button id="tool-history-close-btn"
-                    class="text-gray-600 hover:text-gray-900 text-2xl font-bold">&times;</button>
+        <div class="bg-white w-11/12 md:max-w-xl mx-auto p-6 max-h-[90vh] flex flex-col animate-scale-up premium-modal-card">
+            <div class="flex justify-between items-center pb-4 border-b border-slate-100 bg-white mb-4">
+                <h3 id="tool-history-title" class="text-xl font-bold text-slate-800">Historial de Herramienta</h3>
+                <button id="tool-history-close-btn" onclick="document.getElementById('tool-history-modal').style.display='none'"
+                    class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
             </div>
-            <div id="tool-history-body" class="flex-grow overflow-y-auto pr-2 space-y-3">
+            <div id="tool-history-body" class="flex-grow overflow-y-auto pr-2 space-y-3 custom-scrollbar">
             </div>
         </div>
     </div>
 
     <div id="camera-modal" class="fixed inset-0 z-60 items-center justify-center hidden modal-backdrop p-4">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-auto p-4 relative flex flex-col">
-            <h3 class="text-xl font-bold mb-4">Tomar Foto</h3>
-            <div class="aspect-video bg-gray-200 rounded overflow-hidden">
+        <div class="bg-white w-full max-w-lg mx-auto p-6 relative flex flex-col animate-scale-up premium-modal-card">
+            <div class="flex justify-between items-center pb-4 border-b border-slate-100 bg-white mb-4">
+                <h3 class="text-xl font-bold text-slate-800">Tomar Foto</h3>
+                <button type="button" id="camera-close-icon" onclick="document.getElementById('camera-modal').style.display='none'"
+                    class="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="aspect-video bg-slate-900 rounded-xl overflow-hidden shadow-inner">
                 <video id="camera-feed" class="w-full h-full object-cover" autoplay playsinline></video>
                 <canvas id="camera-canvas" class="hidden"></canvas>
             </div>
-            <div class="mt-4 flex justify-end gap-3">
-                <button type="button" id="camera-cancel-btn"
-                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancelar</button>
-                <button type="button" id="camera-capture-btn"
-                    class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Tomar
-                    Foto</button>
+            <div class="mt-6 flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button type="button" id="camera-cancel-btn" class="premium-btn-cancel">Cancelar</button>
+                <button type="button" id="camera-capture-btn" class="premium-btn-confirm">Tomar Foto</button>
             </div>
         </div>
     </div>
@@ -3703,43 +3863,6 @@
         </div>
     </div>
 
-    <div id="main-modal" style="z-index: 60;" class="fixed inset-0 hidden overflow-y-auto" aria-labelledby="modal-title"
-        role="dialog" aria-modal="true">
-        <div class="flex items-end justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-
-            <div class="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" aria-hidden="true"
-                onclick="closeMainModal()"></div>
-
-            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-
-            <div
-                class="inline-block w-full overflow-hidden text-left align-bottom transition-all transform bg-white rounded-lg shadow-xl sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-
-                <div class="px-4 pt-5 pb-4 bg-white sm:p-6 sm:pb-4">
-                    <div class="sm:flex sm:items-start">
-                        <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                            <h3 class="text-lg font-medium leading-6 text-gray-900" id="main-modal-title">
-                                Título del Modal
-                            </h3>
-                            <div class="mt-2" id="main-modal-body">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="px-4 py-3 bg-gray-50 sm:px-6 sm:flex sm:flex-row-reverse" id="main-modal-footer">
-                    <button type="button"
-                        class="inline-flex justify-center w-full px-4 py-2 text-base font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm">
-                        Confirmar
-                    </button>
-                    <button type="button" onclick="closeMainModal()"
-                        class="mt-3 inline-flex justify-center w-full px-4 py-2 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
-                        Cancelar
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <div id="admin-alert-overlay"
         class="fixed inset-0 z-[100] hidden bg-red-600 flex-col items-center justify-center text-white p-6 transition-all duration-300">
@@ -3784,14 +3907,6 @@
         class="fixed top-5 right-5 z-[9999] space-y-3 flex flex-col items-end pointer-events-none">
     </div>
 
-    <script type="module" src="js/informes.js"></script>
-    <script type="module" src="js/solicitudes.js"></script>
-    <script type="module" src="js/empleados.js"></script>
-    <script type="module" src="js/herramientas.js"></script>
-    <script type="module" src="js/dotacion.js"></script>
-    <script src="js/vendor/face-api.min.js"></script>
-    <script src="js/vendor/jszip.min.js"></script>
-    <script src="js/vendor/FileSaver.min.js"></script>
     <script type="module" src="js/app.js"></script>
 
 </body>

@@ -1,5 +1,5 @@
 import { initializeApp, getApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
-import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js"; // <--- Necesario para llamar al backend
+import { getFunctions, httpsCallable } from "../core/firebase-config.js"; // <--- Necesario para llamar al backend
 import {
     collection,
     query,
@@ -97,10 +97,10 @@ function loadAdminDashboard(container) {
     let isInitializing = false;
 
     // Helper para renderizar y evitar código duplicado
-    const renderData = (data) => {
+    const renderData = async (data) => {
         destroyExistingCharts();
         renderAdminDashboard(data, container);
-        createDashboardCharts(data);
+        await createDashboardCharts(data);
     };
 
     const unsubStats = onSnapshot(statsRef, (docSnap) => {
@@ -612,8 +612,8 @@ async function handleReportEntry() {
     // pero cambiamos el título y comportamiento.
 
     const modal = document.getElementById('main-modal');
-    const modalTitle = document.getElementById('main-modal-title');
-    const modalBody = document.getElementById('main-modal-body');
+    const modalTitle = document.getElementById('modal-title');
+    const modalBody = document.getElementById('modal-body');
     const modalFooter = document.getElementById('main-modal-footer'); // Si existe
 
     if (modalTitle) modalTitle.textContent = "Verificación Biométrica de Ingreso";
@@ -669,6 +669,17 @@ async function handleReportEntry() {
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Procesando...';
         statusMsg.textContent = "Obteniendo ubicación y validando rostro...";
         statusMsg.className = "text-sm font-bold text-blue-600 h-6 animate-pulse";
+
+        // Cargar modelos de IA bajo demanda si no están cargados
+        if (window.loadFaceAPImodels) {
+            statusMsg.textContent = "Cargando modelos de IA...";
+            try {
+                await window.loadFaceAPImodels();
+            } catch (err) {
+                console.error("Error al cargar modelos de IA en Dashboard:", err);
+                throw new Error("No se pudieron cargar los modelos de reconocimiento facial.");
+            }
+        }
 
         try {
             // A. Obtener Ubicación GPS
@@ -780,13 +791,19 @@ function getCurrentLocation() {
 // Asegurarnos de limpiar la cámara al cerrar modal
 const originalCloseMainModal = window.closeMainModal; // Guardamos la original si existe globalmente
 window.closeMainModal = function () {
-    const video = document.getElementById('camera-video');
+    const video = document.getElementById('camera-video') || document.getElementById('entry-camera-video');
     if (video && video.srcObject) {
         video.srcObject.getTracks().forEach(track => track.stop());
     }
-    // Llamar a la función original de cierre (lógica de ocultar div)
+    // Llamar a la función original de cierre
+    if (typeof originalCloseMainModal === 'function') {
+        originalCloseMainModal();
+    }
     const modal = document.getElementById('main-modal');
-    if (modal) modal.classList.add('hidden');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
     // Restaurar cualquier estado necesario
     currentCameraAction = null;
 };
@@ -1044,7 +1061,14 @@ function createDonutChart(ctx, label, data, labels, colors) {
     activeDashboardCharts.push(chart);
 }
 
-function createDashboardCharts(stats) {
+async function createDashboardCharts(stats) {
+    if (typeof window.ensureChart === 'function') {
+        try {
+            await window.ensureChart();
+        } catch (err) {
+            console.error("Error al cargar Chart.js en createDashboardCharts:", err);
+        }
+    }
     const toolCtx = document.getElementById('tools-chart-canvas');
     if (toolCtx && stats.tools) {
         const ts = stats.tools;
@@ -1254,6 +1278,9 @@ async function renderBodegaDashboard(container) {
         `;
 
         // 3. Crear Gráfica
+        if (typeof window.ensureChart === 'function') {
+            await window.ensureChart();
+        }
         const ctx = document.getElementById('bodega-stock-chart').getContext('2d');
         const chart = new Chart(ctx, {
             type: 'doughnut',
@@ -1469,6 +1496,9 @@ async function renderSSTDashboard(container) {
         `;
 
         // 4. CREAR GRÁFICA
+        if (typeof window.ensureChart === 'function') {
+            await window.ensureChart();
+        }
         const ctx = document.getElementById('sst-tools-chart').getContext('2d');
         const chart = new Chart(ctx, {
             type: 'doughnut',

@@ -914,3 +914,195 @@ dl dd span.block:last-child {
         color: #000 !important; /* Texto negro forzado */
     }
 }
+
+/* ==========================================================================
+   DISEÑO RESPONSIVO: NAVBAR INFERIOR MÓVIL
+   ========================================================================== */
+@media (max-width: 768px) {
+    #main-content {
+        padding-bottom: 5.5rem !important; /* Margen para evitar solapamiento con el navbar inferior */
+    }
+}
+
+.mobile-nav-link {
+    color: #94a3b8; /* slate-400 */
+    transition: all 0.2s ease-in-out;
+}
+
+.mobile-nav-link.active {
+    color: #3b82f6 !important; /* blue-500 */
+}
+
+.mobile-nav-link.active i {
+    transform: translateY(-2px);
+    color: #3b82f6 !important;
+}
+
+.mobile-nav-link:active {
+    transform: scale(0.92);
+}
+
+/* ==========================================================================
+   ESTILOS PREMIUM: MODALES ESTANDARIZADOS Y MODERNIZADOS
+   ========================================================================== */
+
+/* Anulación de backdrop global con desenfoque de cristal (Glassmorphism) */
+.modal-backdrop {
+    background-color: rgba(15, 23, 42, 0.5) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Animación de entrada para los contenidos de los modales */
+@keyframes modalScaleUp {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.animate-scale-up {
+    animation: modalScaleUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Estilo unificado para tarjetas modales premium */
+.premium-modal-card {
+    background-color: #ffffff;
+    border-radius: 1rem !important; /* esquinas redondeadas elegantes 16px */
+    border: 1px solid #f1f5f9;
+    box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.15) !important;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Formulario moderno: inputs y selects estándar */
+.premium-input {
+    width: 100%;
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    color: #334155;
+    border-radius: 0.75rem !important; /* 12px rounded-xl */
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+    outline: none;
+    transition: all 0.2s ease-in-out;
+}
+
+.premium-input:focus {
+    background-color: #ffffff;
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+/* Botones de modales estandarizados */
+.premium-btn-confirm {
+    background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 0.875rem;
+    padding: 0.625rem 1.5rem;
+    border-radius: 0.75rem !important; /* 12px rounded-xl */
+    box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2), 0 2px 4px -1px rgba(79, 70, 229, 0.1);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.premium-btn-confirm:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3), 0 4px 6px -2px rgba(79, 70, 229, 0.15);
+    background: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
+}
+
+.premium-btn-confirm:active {
+    transform: translateY(0);
+    scale: 0.98;
+}
+
+.premium-btn-cancel {
+    background-color: #ffffff;
+    border: 1px solid #cbd5e1;
+    color: #475569;
+    font-weight: 600;
+    font-size: 0.875rem;
+    padding: 0.625rem 1.25rem;
+    border-radius: 0.75rem !important; /* 12px rounded-xl */
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease-in-out;
+}
+
+.premium-btn-cancel:hover {
+    background-color: #f8fafc;
+    border-color: #94a3b8;
+    color: #1e293b;
+}
+
+.premium-btn-cancel:active {
+    scale: 0.98;
+}
+
+/* Rediseño de pestañas flotantes del proyecto */
+.modern-project-tabs-container {
+    background-color: #f1f5f9;
+    padding: 0.375rem;
+    border-radius: 0.875rem; /* rounded-2xl-ish */
+    display: inline-flex;
+    width: 100%;
+    overflow-x: auto;
+}
+
+.modern-tab-button {
+    flex: 1;
+    text-align: center;
+    white-space: nowrap;
+    padding: 0.5rem 1rem;
+    border-radius: 0.625rem; /* rounded-xl-ish */
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #64748b; /* slate-500 */
+    transition: all 0.25s ease;
+}
+
+.modern-tab-button:hover {
+    color: #334155;
+    background-color: rgba(255, 255, 255, 0.4);
+}
+
+.modern-tab-button.active {
+    background-color: #ffffff;
+    color: #4f46e5 !important; /* Indigo text */
+    font-weight: 600;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+}
+
+/* Badges de estado estilizados HSL */
+.badge-premium-emerald {
+    background-color: #f0fdf4;
+    color: #166534;
+    border: 1px solid #dcfce7;
+}
+
+.badge-premium-amber {
+    background-color: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+}
+
+.badge-premium-rose {
+    background-color: #fff1f2;
+    color: #9f1239;
+    border: 1px solid #ffe4e6;
+}
+
+.badge-premium-indigo {
+    background-color: #e0e7ff;
+    color: #3730a3;
+    border: 1px solid #c7d2fe;
+}

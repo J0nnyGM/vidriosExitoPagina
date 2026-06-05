@@ -46,6 +46,8 @@ let getCurrentUserRole;
 let unsubscribeDotacion = null;
 let dotacionAssigneeChoices = null; // Para filtro de historial
 let dotacionCategoryChoices = null; // Para filtro de inventario
+let currentFetchedCatalogList = []; // Catálogo cargado en tiempo real en memoria
+let dotacionHistoryCache = null; // Caché inteligente para métricas del historial de dotación
 
 // --- INICIO: Funciones de Helper (Copiadas de herramientas.js) ---
 function resizeImage(file, maxWidth = 800) {
@@ -386,61 +388,85 @@ export function loadDotacionView() {
     tabsNav.classList.toggle('hidden', !isAdminView);
 
     if (role === 'operario') {
-        // Vista Operario
+        // Vista Operario (Carga de inmediato sin suscribirse al catálogo)
         const currentUser = getCurrentUser();
         titleElement.textContent = `Mi Dotación`;
         historyContainer.classList.remove('hidden');
         loadDotacionAsignaciones(currentUser.uid, 'dotacion-history-container');
+        return;
+    }
 
-    } else {
-        // Vista Admin
-        titleElement.textContent = 'Gestión de Dotación';
-        const activeTab = document.querySelector('#dotacion-tabs-nav .active')?.dataset.statusFilter || 'resumen';
+    // Vista Admin/Bodega/SST
+    titleElement.textContent = 'Gestión de Dotación';
+    const activeTab = document.querySelector('#dotacion-tabs-nav .active')?.dataset.statusFilter || 'resumen';
 
+    if (activeTab === 'resumen') {
+        // PESTAÑA RESUMEN
+        dashboardContainer.classList.remove('hidden');
+    } else if (activeTab === 'inventario') {
+        // PESTAÑA INVENTARIO
+        filterBar.classList.remove('hidden', 'block'); // Reset
+        filterBar.classList.add('block'); // Mostrar bloque
+
+        // Configurar inputs visibles
+        searchContainer.classList.remove('hidden');
+        searchContainer.className = "md:col-span-3"; // Ocupa más espacio
+
+        categoryContainer.classList.remove('hidden');
+        categoryContainer.className = "md:col-span-1";
+
+        assigneeContainer.classList.add('hidden'); // Ocultar filtro empleado
+
+        if (inventarioActions) inventarioActions.classList.remove('hidden');
+
+        gridContainer.classList.remove('hidden');
+    } else if (activeTab === 'asignaciones') {
+        // PESTAÑA ASIGNACIONES
+        filterBar.classList.remove('hidden', 'block');
+        filterBar.classList.add('block');
+
+        searchContainer.classList.add('hidden');
+        categoryContainer.classList.add('hidden');
+
+        // Mostrar solo filtro empleado y hacerlo ancho completo
+        assigneeContainer.classList.remove('hidden');
+        assigneeContainer.className = "md:col-span-4 w-full"; 
+
+        if (asignacionesActions) asignacionesActions.classList.remove('hidden');
+
+        historyContainer.classList.remove('hidden');
+    }
+
+    // 6. Suscripción Única a dotacionCatalog para optimización de lecturas y renderizado reactivo
+    const queryKey = "admin_catalog";
+    if (unsubscribeDotacion && window.lastDotacionQueryKey === queryKey) {
         if (activeTab === 'resumen') {
-            // PESTAÑA RESUMEN
-            dashboardContainer.classList.remove('hidden');
             loadDotacionDashboard(dashboardContainer);
-
         } else if (activeTab === 'inventario') {
-            // PESTAÑA INVENTARIO
-            filterBar.classList.remove('hidden', 'block'); // Reset
-            filterBar.classList.add('block'); // Mostrar bloque
-
-            // Configurar inputs visibles
-            searchContainer.classList.remove('hidden');
-            searchContainer.className = "md:col-span-3"; // Ocupa más espacio
-
-            categoryContainer.classList.remove('hidden');
-            categoryContainer.className = "md:col-span-1";
-
-            assigneeContainer.classList.add('hidden'); // Ocultar filtro empleado
-
-            if (inventarioActions) inventarioActions.classList.remove('hidden');
-
-            gridContainer.classList.remove('hidden');
-            loadDotacionCatalog();
-
+            renderFilteredDotacionCatalog();
         } else if (activeTab === 'asignaciones') {
-            // PESTAÑA ASIGNACIONES
-            filterBar.classList.remove('hidden', 'block');
-            filterBar.classList.add('block');
-
-            searchContainer.classList.add('hidden');
-            categoryContainer.classList.add('hidden');
-
-            // Mostrar solo filtro empleado y hacerlo ancho completo
-            assigneeContainer.classList.remove('hidden');
-            assigneeContainer.className = "md:col-span-4 w-full"; 
-
-            if (asignacionesActions) asignacionesActions.classList.remove('hidden');
-
-            historyContainer.classList.remove('hidden');
-            
             const assigneeFilter = (dotacionAssigneeChoices && dotacionAssigneeChoices.getValue(true)) ? dotacionAssigneeChoices.getValue(true) : 'all';
             loadDotacionAsignaciones(assigneeFilter, 'dotacion-history-container');
         }
+        return;
     }
+
+    window.lastDotacionQueryKey = queryKey;
+    if (unsubscribeDotacion) unsubscribeDotacion();
+
+    unsubscribeDotacion = onSnapshot(query(collection(db, "dotacionCatalog"), orderBy("itemName")), (snapshot) => {
+        currentFetchedCatalogList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        const currentTab = document.querySelector('#dotacion-tabs-nav .active')?.dataset.statusFilter || 'resumen';
+        if (currentTab === 'resumen') {
+            loadDotacionDashboard(dashboardContainer);
+        } else if (currentTab === 'inventario') {
+            renderFilteredDotacionCatalog();
+        }
+    }, (error) => {
+        console.error("Error al cargar catálogo de dotación:", error);
+        gridContainer.innerHTML = `<p class="text-red-500 text-center md:col-span-2">Error al cargar datos.</p>`;
+    });
 }
 
 
@@ -448,44 +474,41 @@ export function loadDotacionView() {
  * Carga el catálogo de inventario desde `dotacionCatalog`.
  */
 function loadDotacionCatalog() {
+    renderFilteredDotacionCatalog();
+}
+
+/**
+ * Renderiza el catálogo de inventario filtrando localmente en memoria sin tocar Firestore.
+ */
+function renderFilteredDotacionCatalog() {
     const gridContainer = document.getElementById('dotacion-grid-container');
-    gridContainer.innerHTML = '<div class="loader-container col-span-full"><div class="loader mx-auto"></div></div>';
+    if (!gridContainer) return;
 
-    if (unsubscribeDotacion) unsubscribeDotacion();
-
-    const searchTerm = document.getElementById('dotacion-search-input').value.toLowerCase();
+    gridContainer.innerHTML = '';
+    const searchTerm = document.getElementById('dotacion-search-input')?.value.toLowerCase() || '';
     const categoryFilter = (dotacionCategoryChoices && dotacionCategoryChoices.getValue(true)) ? dotacionCategoryChoices.getValue(true) : 'all';
 
-    let dotacionQuery = query(collection(db, "dotacionCatalog"), orderBy("itemName"));
+    let items = [...currentFetchedCatalogList];
 
-    unsubscribeDotacion = onSnapshot(dotacionQuery, (snapshot) => {
-        gridContainer.innerHTML = '';
-        let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // Filtrado JS en memoria local
+    if (searchTerm) {
+        items = items.filter(item =>
+            item.itemName.toLowerCase().includes(searchTerm) ||
+            (item.reference && item.reference.toLowerCase().includes(searchTerm))
+        );
+    }
+    if (categoryFilter !== 'all') {
+        items = items.filter(item => item.category === categoryFilter);
+    }
 
-        // Filtrado JS
-        if (searchTerm) {
-            items = items.filter(item =>
-                item.itemName.toLowerCase().includes(searchTerm) ||
-                (item.reference && item.reference.toLowerCase().includes(searchTerm))
-            );
-        }
-        if (categoryFilter !== 'all') {
-            items = items.filter(item => item.category === categoryFilter);
-        }
+    if (items.length === 0) {
+        gridContainer.innerHTML = `<div class="md:col-span-2 min-h-[300px] flex items-center justify-center"><p class="text-gray-500 text-center text-lg">No hay ítems en el inventario que coincidan.</p></div>`;
+        return;
+    }
 
-        if (items.length === 0) {
-            gridContainer.innerHTML = `<div class="md:col-span-2 min-h-[300px] flex items-center justify-center"><p class="text-gray-500 text-center text-lg">No hay ítems en el inventario que coincidan.</p></div>`;
-            return;
-        }
-
-        items.forEach(item => {
-            const card = createDotacionCatalogCard(item);
-            gridContainer.appendChild(card);
-        });
-
-    }, (error) => {
-        console.error("Error al cargar catálogo de dotación:", error);
-        gridContainer.innerHTML = `<p class="text-red-500 text-center md:col-span-2">Error al cargar datos.</p>`;
+    items.forEach(item => {
+        const card = createDotacionCatalogCard(item);
+        gridContainer.appendChild(card);
     });
 }
 
@@ -881,48 +904,22 @@ function createDotacionCatalogCard(item) {
 }
 
 /**
- * Carga el dashboard de resumen de dotación.
- * (MEJORADO con reportes de Consumo y Descarte)
+ * Carga el dashboard de resumen de dotación de forma reactiva e instantánea, cargando el historial asíncronamente.
  */
 export async function loadDotacionDashboard(container) {
-    container.innerHTML = `<div class="text-center p-10"><p class="text-gray-500">Calculando estadísticas...</p><div class="loader mx-auto mt-4"></div></div>`;
-
     try {
         const usersMap = getUsersMap();
 
-        // Consultas en paralelo (AÑADIMOS 'historyFullSnapshot')
-        const [catalogSnapshot, historyActiveSnapshot, historyFullSnapshot] = await Promise.all([
-            getDocs(query(collection(db, "dotacionCatalog"))),
-
-            // 1. Historial ACTIVO (para reporte de Vencimiento)
-            getDocs(query(
-                collection(db, "dotacionHistory"),
-                where("action", "==", "asignada"),
-                where("status", "==", "activo")
-            )),
-
-            // --- INICIO DE NUEVA CONSULTA ---
-            // 2. Historial COMPLETO (para reportes de Consumo y Descarte)
-            getDocs(query(collection(db, "dotacionHistory")))
-            // --- FIN DE NUEVA CONSULTA ---
-        ]);
-
+        // 1. Calcular KPIs de Inventario síncronamente desde memoria (< 1ms)
         let kpi = { totalTipos: 0, totalStock: 0, totalAsignado: 0 };
         const tallaStockMap = new Map();
-        const catalogVidaUtilMap = new Map(); // Para Vencimiento
+        const catalogVidaUtilMap = new Map();
 
-        // --- INICIO DE NUEVOS MAPS ---
-        const consumoMap = new Map(); // Nuevo: Para "Top Consumo"
-        const descarteMap = new Map(); // Nuevo: Para "Top Descarte"
-        // --- FIN DE NUEVOS MAPS ---
-
-        catalogSnapshot.forEach(doc => {
-            const item = doc.data();
+        currentFetchedCatalogList.forEach(item => {
             kpi.totalTipos++;
             const stock = item.quantityInStock || 0;
             kpi.totalStock += stock;
 
-            // (Lógica de tallaStockMap - Sin cambios)
             if (stock > 0) {
                 const baseName = item.itemName;
                 const talla = item.talla || 'N/A';
@@ -934,13 +931,79 @@ export async function loadDotacionDashboard(container) {
                 group.tallas.push({ talla: talla, stock: stock });
             }
 
-            // (Lógica de catalogVidaUtilMap - Sin cambios)
             if (item.vidaUtilDias) {
-                catalogVidaUtilMap.set(doc.id, item.vidaUtilDias);
+                catalogVidaUtilMap.set(item.id, item.vidaUtilDias);
             }
         });
 
-        // --- Lógica de Vencimiento (Sin cambios) ---
+        // 2. Generar HTML de Stock por Tallas síncronamente
+        let tallasHtml = '<div class="flex flex-col items-center justify-center h-40 text-slate-400"><i class="fa-solid fa-ruler-combined mb-2 text-2xl opacity-20"></i><span class="text-xs">Sin detalle de tallas</span></div>';
+        if (tallaStockMap.size > 0) {
+            tallasHtml = '<div class="space-y-3">';
+            const sortedTallaGroups = [...tallaStockMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+            for (const [baseName, group] of sortedTallaGroups) {
+                tallasHtml += `
+                <div class="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">
+                    <div class="px-3 py-2 bg-white border-b border-slate-100 flex justify-between items-center">
+                        <span class="text-xs font-bold text-slate-700 uppercase">${baseName}</span>
+                        <span class="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">${group.total} total</span>
+                    </div>
+                    <div class="p-2 flex flex-wrap gap-2">`;
+
+                group.tallas.sort((a, b) => a.talla.localeCompare(b.talla, undefined, { numeric: true, sensitivity: 'base' }));
+                for (const item of group.tallas) {
+                    const stockLevel = Math.min(item.stock, 20) * 5;
+                    const stockColor = item.stock < 3 ? 'bg-red-500' : 'bg-blue-500';
+
+                    tallasHtml += `
+                        <div class="flex-1 min-w-[80px] bg-white border border-slate-200 rounded p-1.5 text-center relative overflow-hidden group" title="Stock: ${item.stock}">
+                            <div class="absolute bottom-0 left-0 h-1 ${stockColor} opacity-20 w-full"></div>
+                            <div class="absolute bottom-0 left-0 h-1 ${stockColor} transition-all duration-500" style="width: ${stockLevel}%"></div>
+                            <p class="text-[10px] text-slate-400 uppercase font-bold">Talla ${item.talla}</p>
+                            <p class="text-sm font-bold text-slate-700">${item.stock}</p>
+                        </div>`;
+                }
+                tallasHtml += `</div></div>`;
+            }
+            tallasHtml += '</div>';
+        }
+
+        // 3. Renderizar Estructura del Dashboard Instantáneamente
+        renderDotacionDashboardHTML(container, kpi, tallasHtml);
+
+        // 4. Carga Inteligente de Historial en segundo plano (perezosa)
+        const CACHE_DURATION = 30000; // 30 segundos
+        if (dotacionHistoryCache && (Date.now() - dotacionHistoryCache.timestamp < CACHE_DURATION)) {
+            console.log("Cargando métricas de historial de dotación desde caché inteligente...");
+            injectDotacionHistoryData(dotacionHistoryCache.totalAsignado, dotacionHistoryCache.consumoHtml, dotacionHistoryCache.vencimientoReportHtml, dotacionHistoryCache.descarteHtml, kpi.totalStock);
+        } else {
+            loadDotacionHistoryInBackground(catalogVidaUtilMap, kpi.totalStock);
+        }
+
+    } catch (error) {
+        console.error("Error al cargar el dashboard de dotación:", error);
+        container.innerHTML = `<p class="text-red-500 text-center p-10">Error al cargar las estadísticas: ${error.message}</p>`;
+    }
+}
+
+/**
+ * Consulta las colecciones de historial en segundo plano e inyecta la información.
+ */
+async function loadDotacionHistoryInBackground(catalogVidaUtilMap, totalStock) {
+    try {
+        const usersMap = getUsersMap();
+
+        // Consultas asíncronas concurrentes de Firestore
+        const [historyActiveSnapshot, historyFullSnapshot] = await Promise.all([
+            getDocs(query(
+                collection(db, "dotacionHistory"),
+                where("action", "==", "asignada"),
+                where("status", "==", "activo")
+            )),
+            getDocs(query(collection(db, "dotacionHistory")))
+        ]);
+
+        let totalAsignado = 0;
         const vencimientoList = [];
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -948,9 +1011,8 @@ export async function loadDotacionDashboard(container) {
         historyActiveSnapshot.forEach(doc => {
             const entry = doc.data();
             const quantity = entry.quantity || 0;
-            kpi.totalAsignado += quantity; // <-- Esto se queda aquí
+            totalAsignado += quantity;
 
-            // (Lógica de vencimientoList - Sin cambios)
             const vidaUtilDias = catalogVidaUtilMap.get(entry.itemId);
             const deliveryDateStr = entry.fechaEntrega;
             if (vidaUtilDias && deliveryDateStr) {
@@ -973,74 +1035,24 @@ export async function loadDotacionDashboard(container) {
             }
         });
 
-        // --- INICIO DE NUEVA LÓGICA (Reportes de Consumo y Descarte) ---
-        // 5. Procesar el historial COMPLETO
+        const consumoMap = new Map();
+        const descarteMap = new Map();
+
         historyFullSnapshot.forEach(doc => {
             const entry = doc.data();
             const userId = entry.userId;
 
             if (userId) {
-                // Contar Consumo (cada vez que se 'asigna')
                 if (entry.action === 'asignada') {
                     consumoMap.set(userId, (consumoMap.get(userId) || 0) + (entry.quantity || 0));
                 }
-
-                // Contar Descarte (cada vez que se 'devuelve' como descarte)
                 if (entry.action === 'devuelto') {
                     descarteMap.set(userId, (descarteMap.get(userId) || 0) + (entry.quantity || 0));
                 }
             }
         });
-        // --- FIN DE NUEVA LÓGICA ---
 
-
-        // HTML para KPIs (Sin cambios)
-        // HTML para KPIs (Tarjetas modernas con iconos)
-        const kpiHtml = `
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 text-xl">
-                        <i class="fa-solid fa-tags"></i>
-                    </div>
-                    <div>
-                        <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Referencias</p>
-                        <p class="text-2xl font-black text-slate-800">${kpi.totalTipos}</p>
-                    </div>
-                </div>
-
-                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 text-xl">
-                        <i class="fa-solid fa-boxes-stacked"></i>
-                    </div>
-                    <div>
-                        <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">En Bodega</p>
-                        <p class="text-2xl font-black text-slate-800">${kpi.totalStock}</p>
-                    </div>
-                </div>
-
-                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 text-xl">
-                        <i class="fa-solid fa-user-shield"></i>
-                    </div>
-                    <div>
-                        <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Asignado</p>
-                        <p class="text-2xl font-black text-slate-800">${kpi.totalAsignado}</p>
-                    </div>
-                </div>
-
-                <div class="bg-slate-800 p-5 rounded-xl shadow-md border border-slate-700 flex items-center gap-4 text-white">
-                    <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white text-xl">
-                        <i class="fa-solid fa-layer-group"></i>
-                    </div>
-                    <div>
-                        <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Activos</p>
-                        <p class="text-2xl font-black">${kpi.totalStock + kpi.totalAsignado}</p>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        // Reporte 1: Top Consumo (Mejorado visualmente)
+        // Top Consumo
         let consumoHtml = '<div class="flex flex-col items-center justify-center h-40 text-slate-400"><i class="fa-solid fa-chart-bar mb-2 text-2xl opacity-20"></i><span class="text-xs">Sin datos de consumo</span></div>';
         if (consumoMap.size > 0) {
             consumoHtml = '<ul class="divide-y divide-slate-100">';
@@ -1062,7 +1074,7 @@ export async function loadDotacionDashboard(container) {
             consumoHtml += '</ul>';
         }
 
-        // Reporte 2: Top Descarte (Mejorado visualmente)
+        // Top Descarte
         let descarteHtml = '<div class="flex flex-col items-center justify-center h-40 text-slate-400"><i class="fa-solid fa-recycle mb-2 text-2xl opacity-20"></i><span class="text-xs">Sin datos de descarte</span></div>';
         if (descarteMap.size > 0) {
             descarteHtml = '<ul class="divide-y divide-slate-100">';
@@ -1084,7 +1096,7 @@ export async function loadDotacionDashboard(container) {
             descarteHtml += '</ul>';
         }
 
-        // Reporte 3: Vencimiento (Estilo alerta)
+        // Alertas de Vencimiento
         let vencimientoReportHtml = '<div class="flex flex-col items-center justify-center h-40 text-slate-400"><i class="fa-solid fa-calendar-check mb-2 text-2xl opacity-20"></i><span class="text-xs">Todo al día</span></div>';
         if (vencimientoList.length > 0) {
             vencimientoList.sort((a, b) => a.diffDays - b.diffDays);
@@ -1109,81 +1121,163 @@ export async function loadDotacionDashboard(container) {
             vencimientoReportHtml += '</ul>';
         }
 
-        // Reporte 4: Tallas (Acordeón visual)
-        let tallasHtml = '<div class="flex flex-col items-center justify-center h-40 text-slate-400"><i class="fa-solid fa-ruler-combined mb-2 text-2xl opacity-20"></i><span class="text-xs">Sin detalle de tallas</span></div>';
-        if (tallaStockMap.size > 0) {
-            tallasHtml = '<div class="space-y-3">';
-            const sortedTallaGroups = [...tallaStockMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-            for (const [baseName, group] of sortedTallaGroups) {
-                tallasHtml += `
-                <div class="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">
-                    <div class="px-3 py-2 bg-white border-b border-slate-100 flex justify-between items-center">
-                        <span class="text-xs font-bold text-slate-700 uppercase">${baseName}</span>
-                        <span class="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">${group.total} total</span>
-                    </div>
-                    <div class="p-2 flex flex-wrap gap-2">`;
+        // Guardar en caché inteligente
+        dotacionHistoryCache = {
+            totalAsignado: totalAsignado,
+            consumoHtml: consumoHtml,
+            vencimientoReportHtml: vencimientoReportHtml,
+            descarteHtml: descarteHtml,
+            timestamp: Date.now()
+        };
 
-                group.tallas.sort((a, b) => a.talla.localeCompare(b.talla, undefined, { numeric: true, sensitivity: 'base' }));
-                for (const item of group.tallas) {
-                    // Barra de progreso visual para el stock de la talla
-                    const stockLevel = Math.min(item.stock, 20) * 5; // Max 100%
-                    const stockColor = item.stock < 3 ? 'bg-red-500' : 'bg-blue-500';
-
-                    tallasHtml += `
-                        <div class="flex-1 min-w-[80px] bg-white border border-slate-200 rounded p-1.5 text-center relative overflow-hidden group" title="Stock: ${item.stock}">
-                            <div class="absolute bottom-0 left-0 h-1 ${stockColor} opacity-20 w-full"></div>
-                            <div class="absolute bottom-0 left-0 h-1 ${stockColor} transition-all duration-500" style="width: ${stockLevel}%"></div>
-                            <p class="text-[10px] text-slate-400 uppercase font-bold">Talla ${item.talla}</p>
-                            <p class="text-sm font-bold text-slate-700">${item.stock}</p>
-                        </div>`;
-                }
-                tallasHtml += `</div></div>`;
-            }
-            tallasHtml += '</div>';
+        // Inyectar en el DOM si el usuario sigue en la pestaña de resumen (dashboard)
+        const currentActiveFilter = document.querySelector('#dotacion-tabs-nav .active')?.dataset.statusFilter || 'resumen';
+        if (currentActiveFilter === 'resumen') {
+            injectDotacionHistoryData(totalAsignado, consumoHtml, vencimientoReportHtml, descarteHtml, totalStock);
         }
 
-        // Renderizar Grid de Reportes
-const reportsHtml = `
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                
-                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
-                    <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2 shrink-0">
-                        <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-box-open text-blue-500"></i> Más Solicitados</h3>
-                    </div>
-                    <div class="h-60 overflow-y-auto custom-scrollbar pr-1 grow">${consumoHtml}</div>
-                </div>
-
-                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
-                    <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2 shrink-0">
-                        <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-bell text-amber-500"></i> Alertas de Vencimiento</h3>
-                        <span class="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-bold">Próximos 30 días</span>
-                    </div>
-                    <div class="h-60 overflow-y-auto custom-scrollbar pr-1 grow">${vencimientoReportHtml}</div>
-                </div>
-
-                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
-                    <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2 shrink-0">
-                        <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-arrow-rotate-left text-red-500"></i> Mayor Rotación (Descarte)</h3>
-                    </div>
-                    <div class="h-60 overflow-y-auto custom-scrollbar pr-1 grow">${descarteHtml}</div>
-                </div>
-
-                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
-                    <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2 shrink-0">
-                        <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-ruler text-slate-500"></i> Stock por Tallas</h3>
-                    </div>
-                    <div class="h-60 overflow-y-auto custom-scrollbar pr-1 grow">${tallasHtml}</div>
-                </div>
-
-            </div>
-        `;
-
-        container.innerHTML = kpiHtml + reportsHtml;
-
     } catch (error) {
-        console.error("Error al cargar el dashboard de dotación:", error);
-        container.innerHTML = `<p class="text-red-500 text-center p-10">Error al cargar las estadísticas: ${error.message}</p>`;
+        console.error("Error al cargar historial de dotación en segundo plano:", error);
+        const asignadoContainer = document.getElementById('kpi-dotacion-asignado-container');
+        const totalContainer = document.getElementById('kpi-dotacion-total-container');
+        const consumoContainer = document.getElementById('dashboard-dotacion-consumo-container');
+        const vencimientoContainer = document.getElementById('dashboard-dotacion-vencimiento-container');
+        const descarteContainer = document.getElementById('dashboard-dotacion-descarte-container');
+
+        if (asignadoContainer) asignadoContainer.innerHTML = `<span class="text-red-500 text-xs">Error</span>`;
+        if (totalContainer) totalContainer.innerHTML = `<span class="text-red-500 text-xs">Error</span>`;
+        if (consumoContainer) consumoContainer.innerHTML = `<p class="text-red-500 text-xs text-center py-4">Error de conexión.</p>`;
+        if (vencimientoContainer) vencimientoContainer.innerHTML = `<p class="text-red-500 text-xs text-center py-4">Error de conexión.</p>`;
+        if (descarteContainer) descarteContainer.innerHTML = `<p class="text-red-500 text-xs text-center py-4">Error de conexión.</p>`;
     }
+}
+
+/**
+ * Inyecta los datos de historial calculados directamente en las tarjetas y listas del dashboard.
+ */
+function injectDotacionHistoryData(totalAsignado, consumoHtml, vencimientoReportHtml, descarteHtml, totalStock) {
+    const asignadoContainer = document.getElementById('kpi-dotacion-asignado-container');
+    const totalContainer = document.getElementById('kpi-dotacion-total-container');
+    const consumoContainer = document.getElementById('dashboard-dotacion-consumo-container');
+    const vencimientoContainer = document.getElementById('dashboard-dotacion-vencimiento-container');
+    const descarteContainer = document.getElementById('dashboard-dotacion-descarte-container');
+
+    if (asignadoContainer) {
+        asignadoContainer.innerHTML = `
+            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Asignado</p>
+            <p class="text-2xl font-black text-slate-800 mt-1 transition-all duration-500 ease-out">${totalAsignado}</p>
+        `;
+    }
+
+    if (totalContainer) {
+        totalContainer.innerHTML = `
+            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Activos</p>
+            <p class="text-2xl font-black mt-1 transition-all duration-500 ease-out">${totalStock + totalAsignado}</p>
+        `;
+    }
+
+    if (consumoContainer) consumoContainer.innerHTML = consumoHtml;
+    if (vencimientoContainer) vencimientoContainer.innerHTML = vencimientoReportHtml;
+    if (descarteContainer) descarteContainer.innerHTML = descarteHtml;
+}
+
+/**
+ * Renderiza el HTML estructural del dashboard de dotación instantáneamente con esqueletos de carga.
+ */
+function renderDotacionDashboardHTML(container, kpi, tallasHtml) {
+    container.innerHTML = `
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
+                <div class="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 text-xl">
+                    <i class="fa-solid fa-tags"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Referencias</p>
+                    <p class="text-2xl font-black text-slate-800">${kpi.totalTipos}</p>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
+                <div class="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 text-xl">
+                    <i class="fa-solid fa-boxes-stacked"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">En Bodega</p>
+                    <p class="text-2xl font-black text-slate-800">${kpi.totalStock}</p>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
+                <div class="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 text-xl">
+                    <i class="fa-solid fa-user-shield"></i>
+                </div>
+                <div id="kpi-dotacion-asignado-container" class="flex-1">
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Asignado</p>
+                    <div class="animate-pulse h-6 bg-slate-200 rounded w-16 mt-1"></div>
+                </div>
+            </div>
+
+            <div class="bg-slate-800 p-5 rounded-xl shadow-md border border-slate-700 flex items-center gap-4 text-white">
+                <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white text-xl">
+                    <i class="fa-solid fa-layer-group"></i>
+                </div>
+                <div id="kpi-dotacion-total-container" class="flex-1">
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Activos</p>
+                    <div class="animate-pulse h-6 bg-slate-700 rounded w-16 mt-1"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
+                <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2 shrink-0">
+                    <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-box-open text-blue-500"></i> Más Solicitados</h3>
+                </div>
+                <div id="dashboard-dotacion-consumo-container" class="h-60 overflow-y-auto custom-scrollbar pr-1 grow">
+                    <div class="animate-pulse space-y-3">
+                        <div class="h-10 bg-slate-100 rounded-lg"></div>
+                        <div class="h-10 bg-slate-100 rounded-lg"></div>
+                        <div class="h-10 bg-slate-100 rounded-lg"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
+                <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2 shrink-0">
+                    <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-bell text-amber-500"></i> Alertas de Vencimiento</h3>
+                    <span class="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-bold">Próximos 30 días</span>
+                </div>
+                <div id="dashboard-dotacion-vencimiento-container" class="h-60 overflow-y-auto custom-scrollbar pr-1 grow">
+                    <div class="animate-pulse space-y-3">
+                        <div class="h-14 bg-slate-100 rounded-lg"></div>
+                        <div class="h-14 bg-slate-100 rounded-lg"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
+                <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2 shrink-0">
+                    <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-arrow-rotate-left text-red-500"></i> Mayor Rotación (Descarte)</h3>
+                </div>
+                <div id="dashboard-dotacion-descarte-container" class="h-60 overflow-y-auto custom-scrollbar pr-1 grow">
+                    <div class="animate-pulse space-y-3">
+                        <div class="h-10 bg-slate-100 rounded-lg"></div>
+                        <div class="h-10 bg-slate-100 rounded-lg"></div>
+                        <div class="h-10 bg-slate-100 rounded-lg"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
+                <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2 shrink-0">
+                    <h3 class="font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-ruler text-slate-500"></i> Stock por Tallas</h3>
+                </div>
+                <div class="h-60 overflow-y-auto custom-scrollbar pr-1 grow">${tallasHtml}</div>
+            </div>
+
+        </div>
+    `;
 }
 
 /**
@@ -1431,6 +1525,7 @@ async function handleSaveDotacion(form) {
             }
         }
 
+        dotacionHistoryCache = null; // Invalida el caché de historial de dotación
         await batch.commit();
 
         if (userIdToRefresh) loadDotacionAsignaciones(userIdToRefresh);
@@ -2053,6 +2148,9 @@ async function exportInventarioPDF() {
     if (loadingOverlay) loadingOverlay.classList.remove('hidden');
 
     try {
+        if (window.ensurePDF) {
+            await window.ensurePDF();
+        }
         // Verificamos que jsPDF y autoTable estén cargados (como en app.js)
         const { jsPDF } = window.jspdf;
         if (!jsPDF || !jsPDF.API.autoTable) {
@@ -2187,6 +2285,9 @@ async function exportAsignacionesPDF() {
     const loadingOverlay = document.getElementById('loading-overlay');
     if (loadingOverlay) loadingOverlay.classList.remove('hidden');
     try {
+        if (window.ensurePDF) {
+            await window.ensurePDF();
+        }
         const { jsPDF } = window.jspdf;
         if (!jsPDF || !jsPDF.API.autoTable) {
             throw new Error("La librería jsPDF o jsPDF-AutoTable no está cargada.");

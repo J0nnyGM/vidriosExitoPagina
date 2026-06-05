@@ -47,6 +47,8 @@ let getCurrentUserRole; // <-- AÑADE ESTA LÍNEA
 let unsubscribeTools = null;
 let toolAssigneeChoices = null;
 let toolCategoryChoices = null;
+let currentFetchedToolsList = [];
+let toolHistoryCache = null; // Caché inteligente para métricas históricas del dashboard
 
 // --- INICIO: Nueva Función de Helper para Redimensionar ---
 /**
@@ -234,8 +236,7 @@ export function initHerramientas(
 
         // 4d. (Era 4c) Conectar el 'change' event A LA INSTANCIA de Choices.js
         assigneeFilterSelect.addEventListener('change', () => {
-            console.log('Filtro de Asignación CAMBIÓ'); // <-- Para depurar
-            loadHerramientaView();
+            renderFilteredTools();
         });
         // --- INICIO DE CÓDIGO AÑADIDO (CATEGORÍA) ---
         // 4e. Inicializar el filtro de Categoría
@@ -258,8 +259,7 @@ export function initHerramientas(
 
             // 4f. Conectar el 'change' event
             categoryFilterSelect.addEventListener('change', () => {
-                console.log('Filtro de Categoría CAMBIÓ'); // <-- Para depurar
-                loadHerramientaView();
+                renderFilteredTools();
             });
         }
     }
@@ -296,9 +296,8 @@ export function initHerramientas(
     if (searchInput) {
         searchInput.addEventListener('input', () => {
             clearTimeout(searchTimeout);
-            // Espera 300ms después de que el usuario deja de teclear
             searchTimeout = setTimeout(() => {
-                loadHerramientaView();
+                renderFilteredTools();
             }, 300);
         });
     }
@@ -340,6 +339,7 @@ export function updateToolFilterOptions(usersMap) {
  * Esta función es llamada por app.js cuando se hace clic en el menú.
  */
 export function resetToolViewAndLoad() {
+    window.lastToolsQueryKey = null; // Invalida el queryKey para forzar subscripción fresca al reabrir la vista
     const role = getCurrentUserRole();
 
     // 1. Obtenemos el elemento del título
@@ -426,9 +426,7 @@ export function loadHerramientaView() {
     const filtersBar = document.getElementById('tool-filter-bar');
 
     if (!gridContainer || !searchContainer || !assigneeContainer || !toolAssigneeChoices || !dashboardContainer || !filtersBar || !categoryContainer) return;
-    if (unsubscribeTools) unsubscribeTools();
 
-    // --- INICIO DE LA CORRECCIÓN ---
     // 1. Obtener el ROL y el USUARIO primero
     const role = getCurrentUserRole();
     const currentUser = getCurrentUser();
@@ -442,11 +440,6 @@ export function loadHerramientaView() {
         statusFilter = document.querySelector('#tool-tabs-nav .active')?.dataset.statusFilter || 'resumen';
     }
 
-    // 3. Leer los filtros restantes
-    const searchTerm = document.getElementById('tool-search-input').value.toLowerCase();
-    const categoryFilter = (toolCategoryChoices && toolCategoryChoices.getValue(true)) ? toolCategoryChoices.getValue(true) : 'all';
-    let assigneeFilter = (toolAssigneeChoices && toolAssigneeChoices.getValue(true)) ? toolAssigneeChoices.getValue(true) : 'all';
-
     // 4. Lógica de Layout (basada en el statusFilter determinado)
     if (statusFilter === 'resumen') {
         // Esta rama ahora solo será ejecutada por Admin/Bodega
@@ -456,10 +449,6 @@ export function loadHerramientaView() {
         categoryContainer.classList.add('hidden');
         gridContainer.classList.add('hidden');
         dashboardContainer.classList.remove('hidden');
-
-        loadToolDashboard(dashboardContainer);
-        return;
-
     } else {
         // Esta rama es para Admin/Bodega (en otras pestañas) Y para Operario
         searchContainer.classList.remove('hidden');
@@ -488,17 +477,12 @@ export function loadHerramientaView() {
         searchContainer.classList.remove('md:col-span-2');
         searchContainer.classList.add('md:col-span-3');
         assigneeContainer.classList.add('hidden');
-        if (toolAssigneeChoices) {
-            toolAssigneeChoices.setChoiceByValue('all');
-        }
     }
 
-    // 6. Query a Firestore (condicional por rol)
+    // 6. Query a Firestore (condicional por rol - Suscripción Única)
     let toolsQuery;
 
     if (role === 'operario') {
-        // El operario solo ve sus herramientas asignadas
-        // El statusFilter ya es 'asignada', pero la consulta es MÁS específica
         toolsQuery = query(
             collection(db, "tools"),
             where("status", "==", "asignada"),
@@ -506,67 +490,38 @@ export function loadHerramientaView() {
             orderBy("name")
         );
     } else {
-        // Admin/Bodega ve la pestaña seleccionada
+        // Suscribirse a todas las herramientas para filtrar localmente en el cliente
         toolsQuery = query(
             collection(db, "tools"),
-            where("status", "==", statusFilter), // Usa el 'statusFilter' de las pestañas
             orderBy("name")
         );
     }
-    // --- FIN DE LA CORRECCIÓN ---
+
+    // Evitar rehacer subscripción si la consulta y el rol son los mismos
+    const queryKey = `${role}`;
+    if (unsubscribeTools && window.lastToolsQueryKey === queryKey) {
+        // Si ya está la suscripción activa, cargar la pestaña correspondiente directamente
+        if (statusFilter === 'resumen') {
+            loadToolDashboard(dashboardContainer);
+        } else {
+            renderFilteredTools();
+        }
+        return;
+    }
+
+    window.lastToolsQueryKey = queryKey;
+    if (unsubscribeTools) unsubscribeTools();
 
     unsubscribeTools = onSnapshot(toolsQuery, (snapshot) => {
-        gridContainer.innerHTML = '';
-        const usersMap = getUsersMap();
-
-        // 7. Filtrado JS (modificado para que el operario no filtre)
-        let tools = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        // Aplicar filtros solo si no es operario
-        if (role !== 'operario') {
-            if (assigneeFilter !== 'all') {
-                tools = tools.filter(tool => tool.assignedTo === assigneeFilter);
-            }
-            if (searchTerm) {
-                tools = tools.filter(tool =>
-                    tool.name.toLowerCase().includes(searchTerm) ||
-                    (tool.reference && tool.reference.toLowerCase().includes(searchTerm))
-                );
-            }
-            if (categoryFilter !== 'all') {
-                tools = tools.filter(tool => tool.category === categoryFilter);
-            }
+        currentFetchedToolsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Determinar pestaña activa actual
+        const currentActiveFilter = role === 'operario' ? 'asignada' : (document.querySelector('#tool-tabs-nav .active')?.dataset.statusFilter || 'resumen');
+        if (role !== 'operario' && currentActiveFilter === 'resumen') {
+            loadToolDashboard(dashboardContainer);
+        } else {
+            renderFilteredTools();
         }
-
-        // 8. Renderizar los resultados filtrados
-        if (tools.length === 0) {
-            let emptyMessage = "No se encontraron herramientas con esos filtros.";
-
-            // --- INICIO CORRECCIÓN MENSAJE OPERARIO ---
-            if (role === 'operario') {
-                emptyMessage = "No tienes herramientas asignadas en este momento.";
-            }
-            // --- FIN CORRECCIÓN MENSAJE OPERARIO ---
-            else if (!searchTerm && assigneeFilter === 'all') {
-                if (statusFilter === 'disponible') emptyMessage = "No hay herramientas disponibles en bodega.";
-                if (statusFilter === 'asignada') emptyMessage = "No hay herramientas asignadas.";
-                if (statusFilter === 'en_reparacion') emptyMessage = "No hay herramientas en reparación.";
-                if (statusFilter === 'dada_de_baja') emptyMessage = "No hay herramientas retiradas.";
-            }
-
-            gridContainer.innerHTML = `
-                <div class="md:col-span-2 min-h-[300px] flex items-center justify-center">
-                    <p class="text-gray-500 text-center text-lg">${emptyMessage}</p>
-                </div>
-            `;
-            return;
-        }
-
-        tools.forEach(tool => {
-            const card = createToolCard(tool, usersMap);
-            gridContainer.appendChild(card);
-        });
-
     }, (error) => {
         console.error("Error al cargar herramientas:", error);
         gridContainer.innerHTML = `<p class="text-red-500 text-center md:col-span-2">Error al cargar datos.</p>`;
@@ -941,6 +896,7 @@ async function handleSaveTool(form) {
         }
 
         await batch.commit();
+        toolHistoryCache = null; // Invalida el cache inteligente del dashboard
         closeMainModalCallback();
 
     } catch (error) {
@@ -962,6 +918,7 @@ async function handleDeleteTool(toolId) {
     try {
         const toolRef = doc(db, "tools", toolId);
         await deleteDoc(toolRef);
+        toolHistoryCache = null; // Invalida el cache inteligente del dashboard
     } catch (error) {
         console.error("Error al eliminar herramienta:", error);
         alert("Error al eliminar la herramienta.");
@@ -994,6 +951,7 @@ async function handleDecommissionTool(toolId) {
         });
 
         await batch.commit();
+        toolHistoryCache = null; // Invalida el cache inteligente del dashboard
 
     } catch (error) {
         console.error("Error al dar de baja la herramienta:", error);
@@ -1185,42 +1143,24 @@ function closeToolHistoryModal() {
 }
 
 /**
- * Carga los datos y renderiza el dashboard de resumen de herramientas.
- * @param {HTMLElement} container - El elemento <div> donde se inyectará el HTML.
+ * Carga los datos y renderiza el dashboard de herramientas de forma reactiva e instantánea, cargando el historial asíncronamente.
  */
 async function loadToolDashboard(container) {
-    // 0. Estado de Carga (Diseño limpio)
-    container.innerHTML = `
-        <div class="flex flex-col items-center justify-center py-20 h-full">
-            <div class="loader mb-4"></div>
-            <p class="text-gray-400 font-medium text-sm animate-pulse">Consolidando inventario y costos...</p>
-        </div>`;
-
     try {
         const usersMap = getUsersMap();
-        const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
-        // 1. Consultas en paralelo (Lógica original conservada)
-        const [toolsSnapshot, maintenanceSnapshot, damagedReturnsSnapshot] = await Promise.all([
-            getDocs(query(collection(db, "tools"))), 
-            getDocs(query(collectionGroup(db, "history"), where("action", "==", "mantenimiento"))), 
-            getDocs(query(collectionGroup(db, "history"), where("returnStatus", "in", ["dañado", "con_defecto"]))) 
-        ]);
-
-        // 2. Procesar KPIs (Lógica original conservada)
+        // 1. Calcular KPIs de Inventario Síncronamente desde memoria (< 1ms)
         let kpi = {
             total: 0,
             disponible: 0,
             asignada: 0,
             en_reparacion: 0,
             dada_de_baja: 0,
-            totalMaintenanceCost: 0,
-            totalAssetValue: 0 
+            totalAssetValue: 0
         };
         const assignedToMap = new Map();
 
-        toolsSnapshot.forEach(doc => {
-            const tool = doc.data();
+        currentFetchedToolsList.forEach(tool => {
             kpi.total++;
 
             if (tool.status !== 'dada_de_baja') {
@@ -1242,26 +1182,7 @@ async function loadToolDashboard(container) {
             }
         });
 
-        maintenanceSnapshot.forEach(doc => {
-            kpi.totalMaintenanceCost += doc.data().maintenanceCost || 0;
-        });
-
-        // 3. Procesar Devoluciones Dañadas (Lógica original conservada)
-        const damagedReturnsMap = new Map(); 
-        damagedReturnsSnapshot.forEach(doc => {
-            const historyEntry = doc.data();
-            const returnedById = historyEntry.returnedByUserId;
-            if (returnedById) {
-                const count = (damagedReturnsMap.get(returnedById) || 0) + 1;
-                damagedReturnsMap.set(returnedById, count);
-            }
-        });
-
-        // 4. Renderizar el HTML (DISEÑO MEJORADO)
-
-        // A. Generar Listas HTML (Estilizadas)
-        
-        // Lista de Asignaciones
+        // 2. Generar HTML de Colaboradores Asignados
         let assignedHtml = `
             <div class="flex flex-col items-center justify-center h-32 text-gray-400">
                 <i class="fa-solid fa-clipboard-check text-2xl mb-2 opacity-50"></i>
@@ -1274,7 +1195,6 @@ async function loadToolDashboard(container) {
             sortedAssigned.forEach(([userId, count]) => {
                 const user = usersMap.get(userId);
                 const userName = user ? `${user.firstName} ${user.lastName}` : 'Usuario Desconocido';
-                // Avatar con iniciales
                 const initials = userName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
                 
                 assignedHtml += `
@@ -1294,7 +1214,59 @@ async function loadToolDashboard(container) {
             assignedHtml += '</ul>';
         }
 
-        // Lista de Daños
+        // 3. Renderizar el HTML Estructural del Dashboard Instantáneamente
+        renderToolDashboardHTML(container, kpi, assignedHtml);
+
+        // 4. Lógica Inteligente para el Historial (Mantenimiento y Reportes de Daños)
+        const CACHE_DURATION = 30000; // 30 segundos
+        if (toolHistoryCache && (Date.now() - toolHistoryCache.timestamp < CACHE_DURATION)) {
+            console.log("Cargando métricas de historial de herramientas desde caché inteligente...");
+            injectHistoryData(toolHistoryCache.totalMaintenanceCost, toolHistoryCache.damagedHtml);
+        } else {
+            // Cargar en segundo plano sin congelar la interfaz
+            loadHistoryInBackground();
+        }
+
+    } catch (error) {
+        console.error("Error al calcular estadísticas en memoria:", error);
+        container.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-full text-red-500 p-8 bg-red-50 rounded-xl border border-red-100">
+                <i class="fa-solid fa-bug text-4xl mb-3"></i>
+                <p class="font-bold">Error al procesar inventario</p>
+                <p class="text-sm mt-1">${error.message}</p>
+            </div>`;
+    }
+}
+
+/**
+ * Consulta las colecciones de historial en segundo plano e inyecta la información.
+ */
+async function loadHistoryInBackground() {
+    try {
+        const usersMap = getUsersMap();
+
+        // Consultas asíncronas concurrentes de Firestore
+        const [maintenanceSnapshot, damagedReturnsSnapshot] = await Promise.all([
+            getDocs(query(collectionGroup(db, "history"), where("action", "==", "mantenimiento"))), 
+            getDocs(query(collectionGroup(db, "history"), where("returnStatus", "in", ["dañado", "con_defecto"]))) 
+        ]);
+
+        let totalMaintenanceCost = 0;
+        maintenanceSnapshot.forEach(doc => {
+            totalMaintenanceCost += doc.data().maintenanceCost || 0;
+        });
+
+        const damagedReturnsMap = new Map(); 
+        damagedReturnsSnapshot.forEach(doc => {
+            const historyEntry = doc.data();
+            const returnedById = historyEntry.returnedByUserId;
+            if (returnedById) {
+                const count = (damagedReturnsMap.get(returnedById) || 0) + 1;
+                damagedReturnsMap.set(returnedById, count);
+            }
+        });
+
+        // Crear el HTML de reportes de daños
         let damagedHtml = `
             <div class="flex flex-col items-center justify-center h-32 text-gray-400">
                 <i class="fa-regular fa-thumbs-up text-2xl mb-2 opacity-50"></i>
@@ -1322,112 +1294,239 @@ async function loadToolDashboard(container) {
             damagedHtml += '</ul>';
         }
 
-        // B. Estructura Principal del Dashboard
-        container.innerHTML = `
-            <div class="space-y-6 animate-fade-in-up">
+        // Guardar datos en el caché inteligente
+        toolHistoryCache = {
+            totalMaintenanceCost: totalMaintenanceCost,
+            damagedHtml: damagedHtml,
+            timestamp: Date.now()
+        };
+
+        // Inyectar datos dinámicamente si el usuario sigue en la pestaña de resumen (dashboard)
+        const currentActiveFilter = document.querySelector('#tool-tabs-nav .active')?.dataset.statusFilter || 'resumen';
+        if (currentActiveFilter === 'resumen') {
+            injectHistoryData(totalMaintenanceCost, damagedHtml);
+        }
+
+    } catch (error) {
+        console.error("Error al cargar historial en segundo plano:", error);
+        const costContainer = document.getElementById('kpi-maintenance-cost-container');
+        const damagedContainer = document.getElementById('dashboard-damaged-reports-container');
+        if (costContainer) costContainer.innerHTML = `<span class="text-red-500 text-xs">Error al cargar</span>`;
+        if (damagedContainer) damagedContainer.innerHTML = `<p class="text-red-500 text-xs text-center py-4">Error de conexión.</p>`;
+    }
+}
+
+/**
+ * Inyecta los datos de historial calculados directamente en las tarjetas del dashboard con transiciones limpias.
+ */
+function injectHistoryData(totalMaintenanceCost, damagedHtml) {
+    const costContainer = document.getElementById('kpi-maintenance-cost-container');
+    const damagedContainer = document.getElementById('dashboard-damaged-reports-container');
+    const countBadge = document.getElementById('dashboard-damaged-count-badge');
+
+    if (costContainer) {
+        const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        costContainer.innerHTML = `
+            <p class="text-3xl font-black text-gray-700 tracking-tight transition-all duration-500 ease-out">${currencyFormatter.format(totalMaintenanceCost)}</p>
+            <p class="text-xs text-gray-400 mt-1">Acumulado histórico</p>
+        `;
+    }
+
+    if (damagedContainer) {
+        damagedContainer.innerHTML = damagedHtml;
+    }
+
+    if (countBadge) {
+        const reportsCount = damagedHtml.includes('li') ? (damagedHtml.split('</li>').length - 1) : 0;
+        countBadge.textContent = `${reportsCount} Reportes`;
+    }
+}
+
+/**
+ * Renderiza el HTML del dashboard consolidado a partir de los datos calculados.
+ */
+function renderToolDashboardHTML(container, kpi, assignedHtml) {
+    const currencyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    
+    container.innerHTML = `
+        <div class="space-y-6 animate-fade-in-up">
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    
-                    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden group">
-                        <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
-                            <i class="fa-solid fa-toolbox text-4xl text-gray-800"></i>
-                        </div>
-                        <p class="text-xs font-bold text-gray-500 uppercase tracking-wider">Total Herramientas</p>
-                        <p class="text-2xl font-black text-gray-800 mt-1">${kpi.total}</p>
-                        <div class="mt-2 w-full bg-gray-100 h-1 rounded-full overflow-hidden">
-                            <div class="bg-gray-600 h-full" style="width: 100%"></div>
-                        </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
+                        <i class="fa-solid fa-toolbox text-4xl text-gray-800"></i>
                     </div>
-
-                    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden group">
-                        <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
-                            <i class="fa-solid fa-circle-check text-4xl text-green-600"></i>
-                        </div>
-                        <p class="text-xs font-bold text-green-600 uppercase tracking-wider">Disponibles</p>
-                        <p class="text-2xl font-black text-gray-800 mt-1">${kpi.disponible}</p>
-                        <p class="text-[10px] text-gray-400 mt-1">En bodega</p>
-                    </div>
-
-                    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden group">
-                        <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
-                            <i class="fa-solid fa-hand-holding-hand text-4xl text-blue-600"></i>
-                        </div>
-                        <p class="text-xs font-bold text-blue-600 uppercase tracking-wider">Asignadas</p>
-                        <p class="text-2xl font-black text-gray-800 mt-1">${kpi.asignada}</p>
-                        <p class="text-[10px] text-gray-400 mt-1">En campo</p>
-                    </div>
-
-                    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden group">
-                        <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
-                            <i class="fa-solid fa-triangle-exclamation text-4xl text-orange-500"></i>
-                        </div>
-                        <p class="text-xs font-bold text-orange-500 uppercase tracking-wider">En Reparación</p>
-                        <p class="text-2xl font-black text-gray-800 mt-1">${kpi.en_reparacion}</p>
-                        <p class="text-[10px] text-gray-400 mt-1">Mantenimiento</p>
+                    <p class="text-xs font-bold text-gray-500 uppercase tracking-wider">Total Herramientas</p>
+                    <p class="text-2xl font-black text-gray-800 mt-1">${kpi.total}</p>
+                    <div class="mt-2 w-full bg-gray-100 h-1 rounded-full overflow-hidden">
+                        <div class="bg-gray-600 h-full" style="width: 100%"></div>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    
-                    <div class="bg-gradient-to-br from-indigo-50 to-white p-6 rounded-xl shadow-sm border border-indigo-100 flex items-center justify-between">
-                        <div>
-                            <p class="text-xs font-bold text-indigo-500 uppercase mb-1">Valor Total Activos</p>
-                            <p class="text-3xl font-black text-indigo-900 tracking-tight">${currencyFormatter.format(kpi.totalAssetValue)}</p>
-                            <p class="text-xs text-indigo-400 mt-1">Costo de adquisición histórico</p>
-                        </div>
-                        <div class="h-12 w-12 rounded-full bg-white border border-indigo-100 flex items-center justify-center shadow-sm">
-                            <i class="fa-solid fa-sack-dollar text-indigo-600 text-xl"></i>
-                        </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
+                        <i class="fa-solid fa-circle-check text-4xl text-green-600"></i>
                     </div>
+                    <p class="text-xs font-bold text-green-600 uppercase tracking-wider">Disponibles</p>
+                    <p class="text-2xl font-black text-gray-800 mt-1">${kpi.disponible}</p>
+                    <p class="text-[10px] text-gray-400 mt-1">En bodega</p>
+                </div>
 
-                    <div class="bg-gradient-to-br from-gray-50 to-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
-                        <div>
-                            <p class="text-xs font-bold text-gray-500 uppercase mb-1">Gasto en Mantenimiento</p>
-                            <p class="text-3xl font-black text-gray-700 tracking-tight">${currencyFormatter.format(kpi.totalMaintenanceCost)}</p>
-                            <p class="text-xs text-gray-400 mt-1">Acumulado histórico</p>
-                        </div>
-                        <div class="h-12 w-12 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm">
-                            <i class="fa-solid fa-screwdriver text-gray-500 text-xl"></i>
-                        </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
+                        <i class="fa-solid fa-hand-holding-hand text-4xl text-blue-600"></i>
+                    </div>
+                    <p class="text-xs font-bold text-blue-600 uppercase tracking-wider">Asignadas</p>
+                    <p class="text-2xl font-black text-gray-800 mt-1">${kpi.asignada}</p>
+                    <p class="text-[10px] text-gray-400 mt-1">En campo</p>
+                </div>
+
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
+                        <i class="fa-solid fa-triangle-exclamation text-4xl text-orange-500"></i>
+                    </div>
+                    <p class="text-xs font-bold text-orange-500 uppercase tracking-wider">En Reparación</p>
+                    <p class="text-2xl font-black text-gray-800 mt-1">${kpi.en_reparacion}</p>
+                    <p class="text-[10px] text-gray-400 mt-1">Mantenimiento</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                <div class="bg-gradient-to-br from-indigo-50 to-white p-6 rounded-xl shadow-sm border border-indigo-100 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-bold text-indigo-500 uppercase mb-1">Valor Total Activos</p>
+                        <p class="text-3xl font-black text-indigo-900 tracking-tight">${currencyFormatter.format(kpi.totalAssetValue)}</p>
+                        <p class="text-xs text-indigo-400 mt-1">Costo de adquisición histórico</p>
+                    </div>
+                    <div class="h-12 w-12 rounded-full bg-white border border-indigo-100 flex items-center justify-center shadow-sm">
+                        <i class="fa-solid fa-sack-dollar text-indigo-600 text-xl"></i>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    
-                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
-                        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
-                            <h3 class="font-bold text-gray-700 text-sm">
-                                <i class="fa-solid fa-users-gear mr-2 text-blue-500"></i>Herramientas Asignadas
-                            </h3>
-                            <span class="text-xs bg-white px-2 py-1 rounded border border-gray-200 text-gray-500 font-mono">${assignedToMap.size} Colab.</span>
-                        </div>
-                        <div class="p-4 flex-1 max-h-80 overflow-y-auto custom-scrollbar">
-                            ${assignedHtml}
+                <div class="bg-gradient-to-br from-gray-50 to-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-bold text-gray-500 uppercase mb-1">Gasto en Mantenimiento</p>
+                        <div id="kpi-maintenance-cost-container" class="mt-1">
+                            <div class="animate-pulse space-y-2 py-1">
+                                <div class="h-7 bg-gray-200 rounded-md w-28"></div>
+                                <div class="h-3 bg-gray-200 rounded-md w-20"></div>
+                            </div>
                         </div>
                     </div>
+                    <div class="h-12 w-12 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm">
+                        <i class="fa-solid fa-screwdriver text-gray-500 text-xl"></i>
+                    </div>
+                </div>
+            </div>
 
-                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
-                        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
-                            <h3 class="font-bold text-gray-700 text-sm">
-                                <i class="fa-solid fa-circle-exclamation mr-2 text-red-500"></i>Reportes de Daños
-                            </h3>
-                            <span class="text-xs bg-white px-2 py-1 rounded border border-gray-200 text-gray-500 font-mono">Histórico</span>
-                        </div>
-                        <div class="p-4 flex-1 max-h-80 overflow-y-auto custom-scrollbar">
-                            ${damagedHtml}
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
+                    <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                        <h3 class="font-bold text-gray-700 text-sm">
+                            <i class="fa-solid fa-users-gear mr-2 text-blue-500"></i>Herramientas Asignadas
+                        </h3>
+                        <span class="text-xs bg-white px-2 py-1 rounded border border-gray-200 text-gray-500 font-mono">${assignedHtml.includes('li') ? assignedHtml.split('</li>').length - 1 : 0} Colab.</span>
+                    </div>
+                    <div class="p-4 flex-1 max-h-80 overflow-y-auto custom-scrollbar">
+                        ${assignedHtml}
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
+                    <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                        <h3 class="font-bold text-gray-700 text-sm">
+                            <i class="fa-solid fa-circle-exclamation mr-2 text-red-500"></i>Reportes de Daños
+                        </h3>
+                        <span id="dashboard-damaged-count-badge" class="text-xs bg-white px-2 py-1 rounded border border-gray-200 text-gray-500 font-mono">Cargando...</span>
+                    </div>
+                    <div id="dashboard-damaged-reports-container" class="p-4 flex-1 max-h-80 overflow-y-auto custom-scrollbar">
+                        <div class="animate-pulse space-y-3">
+                            <div class="flex justify-between items-center py-3 border-b border-gray-100">
+                                <div class="flex items-center gap-3 w-full">
+                                    <div class="w-8 h-8 rounded-full bg-gray-100"></div>
+                                    <div class="h-4 bg-gray-100 rounded-lg w-1/2"></div>
+                                </div>
+                                <div class="h-6 bg-gray-100 rounded w-16"></div>
+                            </div>
+                            <div class="flex justify-between items-center py-3 border-b border-gray-100">
+                                <div class="flex items-center gap-3 w-full">
+                                    <div class="w-8 h-8 rounded-full bg-gray-100"></div>
+                                    <div class="h-4 bg-gray-100 rounded-lg w-1/3"></div>
+                                </div>
+                                <div class="h-6 bg-gray-100 rounded w-12"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        `;
+        </div>
+    `;
+}
 
-    } catch (error) {
-        console.error("Error al cargar el dashboard de herramientas:", error);
-        container.innerHTML = `
-            <div class="flex flex-col items-center justify-center h-full text-red-500 p-8 bg-red-50 rounded-xl border border-red-100">
-                <i class="fa-solid fa-bug text-4xl mb-3"></i>
-                <p class="font-bold">Error al calcular estadísticas</p>
-                <p class="text-sm mt-1">${error.message}</p>
-            </div>`;
+/**
+ * Renderiza en memoria y actualiza la lista de herramientas en base a los filtros cliente sin tocar Firestore.
+ */
+function renderFilteredTools() {
+    const gridContainer = document.getElementById('tools-grid-container');
+    if (!gridContainer) return;
+
+    gridContainer.innerHTML = '';
+    const usersMap = getUsersMap();
+    const role = getCurrentUserRole();
+
+    const searchTerm = document.getElementById('tool-search-input')?.value.toLowerCase() || '';
+    const categoryFilter = (toolCategoryChoices && toolCategoryChoices.getValue(true)) ? toolCategoryChoices.getValue(true) : 'all';
+    const assigneeFilter = (toolAssigneeChoices && toolAssigneeChoices.getValue(true)) ? toolAssigneeChoices.getValue(true) : 'all';
+    const statusFilter = role === 'operario' ? 'asignada' : (document.querySelector('#tool-tabs-nav .active')?.dataset.statusFilter || 'resumen');
+
+    let tools = [...currentFetchedToolsList];
+
+    // Aplicar filtros solo si no es operario
+    if (role !== 'operario') {
+        if (statusFilter && statusFilter !== 'resumen' && statusFilter !== 'all') {
+            tools = tools.filter(tool => tool.status === statusFilter);
+        }
+        if (assigneeFilter !== 'all') {
+            tools = tools.filter(tool => tool.assignedTo === assigneeFilter);
+        }
+        if (searchTerm) {
+            tools = tools.filter(tool =>
+                tool.name.toLowerCase().includes(searchTerm) ||
+                (tool.reference && tool.reference.toLowerCase().includes(searchTerm))
+            );
+        }
+        if (categoryFilter !== 'all') {
+            tools = tools.filter(tool => tool.category === categoryFilter);
+        }
     }
+
+    // Renderizar los resultados filtrados
+    if (tools.length === 0) {
+        let emptyMessage = "No se encontraron herramientas con esos filtros.";
+
+        if (role === 'operario') {
+            emptyMessage = "No tienes herramientas asignadas en este momento.";
+        }
+        else if (!searchTerm && assigneeFilter === 'all' && categoryFilter === 'all') {
+            if (statusFilter === 'disponible') emptyMessage = "No hay herramientas disponibles en bodega.";
+            if (statusFilter === 'asignada') emptyMessage = "No hay herramientas asignadas.";
+            if (statusFilter === 'en_reparacion') emptyMessage = "No hay herramientas en reparación.";
+            if (statusFilter === 'dada_de_baja') emptyMessage = "No hay herramientas retiradas.";
+        }
+
+        gridContainer.innerHTML = `
+            <div class="md:col-span-2 min-h-[300px] flex items-center justify-center">
+                <p class="text-gray-500 text-center text-lg">${emptyMessage}</p>
+            </div>
+        `;
+        return;
+    }
+
+    tools.forEach(tool => {
+        const card = createToolCard(tool, usersMap);
+        gridContainer.appendChild(card);
+    });
 }

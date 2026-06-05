@@ -1,0 +1,4 @@
+<IfModule mod_headers.c>
+    # Cache all neural network weights and manifest files served from this folder for 1 year
+    Header set Cache-Control "public, max-age=31536000, immutable"
+</IfModule>

@@ -34,6 +34,42 @@ const REPORT_DESCRIPTIONS = {
     'danos_herramienta': 'Historial detallado de herramientas reportadas como dañadas, perdidas o en mantenimiento por cada empleado.'
 };
 
+function showReportEmptyState(message) {
+    const container = document.getElementById('report-visual-container');
+    const tableContainer = document.getElementById('report-table-container');
+    const tableCard = document.getElementById('report-table-card');
+    const canvas = document.getElementById('report-chart-canvas');
+
+    if (reportChartInstance) {
+        reportChartInstance.destroy();
+        reportChartInstance = null;
+    }
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    if (tableContainer) {
+        tableContainer.innerHTML = '';
+    }
+    if (tableCard) {
+        tableCard.classList.add('hidden');
+    }
+
+    if (container) {
+        container.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center animate-fade-in">
+                <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 shadow-sm border border-slate-100">
+                    <i class="fa-solid fa-chart-pie text-3xl text-indigo-500/80"></i>
+                </div>
+                <h3 class="text-base font-bold text-slate-700 mb-1">Sin información registrada</h3>
+                <p class="text-xs text-slate-500 max-w-sm leading-relaxed bg-white p-3.5 rounded-xl border border-slate-100 shadow-sm font-medium">
+                    ${message}
+                </p>
+            </div>
+        `;
+    }
+}
+
 // =============================================================================
 // 1. INICIALIZACIÓN Y NAVEGACIÓN
 // =============================================================================
@@ -661,7 +697,8 @@ async function generateSupplierExpensesReport() {
     const snapshot = await getDocs(q);
 
     if (snapshot.empty) {
-        throw new Error("No se encontraron compras recibidas en este periodo.");
+        showReportEmptyState("No se registraron compras recibidas en el rango de fechas seleccionado.");
+        return;
     }
 
     // 2. PROCESAMIENTO: Agrupar por Proveedor
@@ -1045,7 +1082,8 @@ async function generateRemnantTraceabilityReport(projectId) {
     const requestsSnap = await getDocs(requestsQuery);
 
     if (requestsSnap.empty) {
-        throw new Error("No hay movimientos de material en este proyecto.");
+        showReportEmptyState("No se registran solicitudes de materiales o movimientos de inventario en este proyecto.");
+        return;
     }
 
     // 2. PROCESAMIENTO
@@ -1197,7 +1235,8 @@ async function generateInstallerPerformanceReport() {
     const snapshot = await getDocs(q);
 
     if (snapshot.empty) {
-        throw new Error("No se encontraron instalaciones registradas en este periodo.");
+        showReportEmptyState("No se encontraron instalaciones de material registradas por los operarios en este periodo.");
+        return;
     }
 
     // 2. PROCESAMIENTO Y AGRUPACIÓN
@@ -1308,6 +1347,86 @@ async function generateInstallerPerformanceReport() {
     );
 }
 
+// --- AUXILIAR: CÁLCULO DE FESTIVOS COLOMBIANOS (LEY EMILIANI) ---
+function getEasterSunday(year) {
+    const a = year % 19;
+    const b = Math.floor(year / 100);
+    const c = year % 100;
+    const d = Math.floor(b / 4);
+    const e = b % 4;
+    const f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3);
+    const h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4);
+    const k = c % 4;
+    const L = (32 + 2 * e + 2 * i - h - k) % 7;
+    const m = Math.floor((a + 11 * h + 22 * L) / 451);
+    const month = Math.floor((h + L - 7 * m + 114) / 31);
+    const day = ((h + L - 7 * m + 114) % 31) + 1;
+    return new Date(year, month - 1, day);
+}
+
+function getObservedMonday(date) {
+    const day = date.getDay();
+    if (day === 1) return date;
+    const daysToAdd = (day === 0) ? 1 : (8 - day);
+    const newDate = new Date(date);
+    newDate.setDate(newDate.getDate() + daysToAdd);
+    return newDate;
+}
+
+function getColombianHolidays(year) {
+    const holidays = [];
+    const format = (d) => d.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+
+    // 1. Festivos Fijos
+    holidays.push(format(new Date(year, 0, 1)));   // Año Nuevo
+    holidays.push(format(new Date(year, 4, 1)));   // Día del Trabajo
+    holidays.push(format(new Date(year, 6, 20)));  // Independencia
+    holidays.push(format(new Date(year, 7, 7)));   // Batalla de Boyacá
+    holidays.push(format(new Date(year, 11, 8)));  // Inmaculada Concepción
+    holidays.push(format(new Date(year, 11, 25))); // Navidad
+
+    // 2. Festivos con Ley Emiliani (se trasladan al lunes siguiente)
+    const emilianiDates = [
+        new Date(year, 0, 6),   // Reyes Magos
+        new Date(year, 2, 19),  // San José
+        new Date(year, 5, 29),  // San Pedro y San Pablo
+        new Date(year, 7, 15),  // Asunción
+        new Date(year, 9, 12),  // Día de la Raza
+        new Date(year, 10, 1),  // Todos los Santos
+        new Date(year, 10, 11)  // Independencia de Cartagena
+    ];
+    emilianiDates.forEach(d => {
+        holidays.push(format(getObservedMonday(d)));
+    });
+
+    // 3. Festivos móviles asociados a Pascua
+    const easter = getEasterSunday(year);
+
+    const juevesSanto = new Date(easter);
+    juevesSanto.setDate(easter.getDate() - 3);
+    holidays.push(format(juevesSanto));
+
+    const viernesSanto = new Date(easter);
+    viernesSanto.setDate(easter.getDate() - 2);
+    holidays.push(format(viernesSanto));
+
+    const ascension = new Date(easter);
+    ascension.setDate(easter.getDate() + 43); // 39 días + 4 traslado
+    holidays.push(format(ascension));
+
+    const corpus = new Date(easter);
+    corpus.setDate(easter.getDate() + 64); // 60 días + 4 traslado
+    holidays.push(format(corpus));
+
+    const sagrado = new Date(easter);
+    sagrado.setDate(easter.getDate() + 71); // 68 días + 3 traslado
+    holidays.push(format(sagrado));
+
+    return holidays;
+}
+
 // --- H. REPORTE DE AUSENTISMO Y PUNTUALIDAD ---
 async function generateAttendanceReport() {
     const startInput = document.getElementById('report-start-date');
@@ -1319,6 +1438,13 @@ async function generateAttendanceReport() {
 
     const startDate = new Date(startInput.value);
     const endDate = new Date(endInput.value + 'T23:59:59');
+
+    const startYear = startDate.getFullYear();
+    const endYear = endDate.getFullYear();
+    const holidaysSet = new Set();
+    for (let y = startYear; y <= endYear; y++) {
+        getColombianHolidays(y).forEach(h => holidaysSet.add(h));
+    }
 
     // Configuración de Jornada
     const WORK_START_HOUR = 8;
@@ -1388,6 +1514,9 @@ async function generateAttendanceReport() {
         if (d.getDay() === 0) continue; 
         
         const dateKey = d.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+        
+        // Excluir Festivos Colombianos
+        if (holidaysSet.has(dateKey)) continue;
 
         activeUsers.forEach(u => {
             const entryTime = attendanceMap[u.id] ? attendanceMap[u.id][dateKey] : null;
@@ -1510,7 +1639,8 @@ async function generateToolDamageReport() {
     const snapshot = await getDocs(q);
 
     if (snapshot.empty) {
-        throw new Error("¡Excelentes noticias! No se reportaron daños ni pérdidas en este periodo.");
+        showReportEmptyState("¡Excelentes noticias! No se reportaron daños, pérdidas ni devoluciones con defectos en el periodo seleccionado.");
+        return;
     }
 
     // 2. PROCESAMIENTO
@@ -1776,3 +1906,156 @@ window.resizeChartForPrint = function() {
         reportChartInstance.resize();
     }
 };
+
+// --- EXTRACTION FROM APP.JS (OLA 6 MODULARIZATION) ---
+
+export async function loadReportsView() {
+    const projectFilter = document.getElementById('report-project-filter');
+    const startDateInput = document.getElementById('report-start-date');
+    const endDateInput = document.getElementById('report-end-date');
+    const generateReportBtn = document.getElementById('generate-report-btn');
+    const reportContainer = document.getElementById('report-results-container');
+    const reportSummary = document.getElementById('report-summary');
+    const reportTableBody = document.getElementById('report-table-body');
+
+    if (!projectFilter) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    endDateInput.value = today;
+
+    projectFilter.innerHTML = '<option value="">Cargando proyectos...</option>';
+    try {
+        const projectsQuery = query(collection(db, "projects"), orderBy("name"));
+        const snapshot = await getDocs(projectsQuery);
+
+        projectFilter.innerHTML = '<option value="all">Todos los Proyectos</option>';
+        if (snapshot.empty) {
+            console.warn("No se encontraron proyectos para el reporte.");
+        } else {
+            snapshot.forEach(doc => {
+                const project = { id: doc.id, ...doc.data() };
+                if (project.name) {
+                    const option = document.createElement('option');
+                    option.value = project.id;
+                    option.textContent = project.name;
+                    projectFilter.appendChild(option);
+                }
+            });
+        }
+    } catch (error) {
+        console.error("Error al cargar la lista de proyectos:", error);
+        projectFilter.innerHTML = '<option value="all">Error al cargar</option>';
+    }
+
+    if (generateReportBtn && !generateReportBtn.dataset.listenerAttached) {
+        generateReportBtn.dataset.listenerAttached = 'true';
+        generateReportBtn.addEventListener('click', async () => {
+            const selectedProjectId = projectFilter.value;
+            const startDate = startDateInput.value;
+            const endDate = endDateInput.value;
+
+            if (!startDate) {
+                alert("Por favor, selecciona una fecha de inicio.");
+                return;
+            }
+
+            reportContainer.classList.remove('hidden');
+            reportTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4">Generando reporte...</td></tr>`;
+            reportSummary.innerHTML = '';
+
+            try {
+                let baseQuery = selectedProjectId === 'all'
+                    ? collectionGroup(db, 'materialRequests')
+                    : collection(db, "projects", selectedProjectId, "materialRequests");
+
+                const requestsQuery = query(baseQuery,
+                    where("createdAt", ">=", new Date(startDate)),
+                    where("createdAt", "<=", new Date(endDate + 'T23:59:59'))
+                );
+
+                const requestsSnapshot = await getDocs(requestsQuery);
+                if (requestsSnapshot.empty) {
+                    reportTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">No se encontraron datos.</td></tr>`;
+                    reportSummary.innerHTML = '';
+                    return;
+                }
+
+                const projectsMap = new Map();
+                const materialsMap = new Map();
+                let totalCost = 0;
+                let reportRowsHtml = '';
+
+                // =================== INICIO DE LA CORRECCIÓN ===================
+                // Se cambió la variable 'doc' por 'requestDoc' para evitar conflictos.
+                for (const requestDoc of requestsSnapshot.docs) {
+                    const request = requestDoc.data();
+                    const items = request.consumedItems || request.materials || [];
+                    const projectId = requestDoc.ref.parent.parent.id;
+                    let projectName = projectsMap.get(projectId);
+
+                    if (!projectName) {
+                        const projectSnap = await getDoc(requestDoc.ref.parent.parent);
+                        projectName = projectSnap.exists() ? projectSnap.data().name : 'Proyecto Desconocido';
+                        projectsMap.set(projectId, projectName);
+                    }
+                    totalCost += request.totalCost || 0;
+
+                    for (const item of items) {
+                        let materialInfo = materialsMap.get(item.materialId);
+                        if (item.materialId && !materialInfo) {
+                            // Aquí ocurría el error. Ahora 'doc' se refiere a la función de Firebase.
+                            const materialSnap = await getDoc(doc(db, "materialCatalog", item.materialId));
+                            materialInfo = materialSnap.exists() ? materialSnap.data() : { name: 'Material Desconocido', unit: '' };
+                            materialsMap.set(item.materialId, materialInfo);
+                        }
+
+                        const quantity = item.quantityConsumed || item.quantity || 0;
+                        const materialName = materialInfo ? materialInfo.name : (item.itemName || 'N/A');
+                        const materialUnit = materialInfo ? materialInfo.unit : '';
+
+                        reportRowsHtml += `
+                            <tr class="bg-white border-b">
+                                <td class="px-6 py-4">${request.createdAt.toDate().toLocaleDateString('es-CO')}</td>
+                                <td class="px-6 py-4 font-medium">${projectName}</td>
+                                <td class="px-6 py-4">${materialName}</td>
+                                <td class="px-6 py-4 text-center">${quantity} ${materialUnit}</td>
+                                <td class="px-6 py-4 text-right">${currencyFormatter.format(request.totalCost || 0)}</td>
+                            </tr>
+                        `;
+                    }
+                }
+                // =================== FIN DE LA CORRECCIÓN ===================
+
+                reportTableBody.innerHTML = reportRowsHtml;
+                reportSummary.innerHTML = `
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <p class="text-sm text-blue-800">Costo Total de Materiales (aproximado)</p>
+                        <p class="text-2xl font-bold text-blue-900">${currencyFormatter.format(totalCost)}</p>
+                    </div>
+                `;
+
+            } catch (e) {
+                console.error("Error al generar el reporte:", e);
+                reportTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-red-500">Error: ${e.message}</td></tr>`;
+            }
+        });
+    }
+}
+
+export async function getCompanyData() {
+    try {
+        const docRef = doc(db, "system", "generalConfig");
+        const snapshot = await getDoc(docRef);
+        if (snapshot.exists()) {
+            return snapshot.data().empresa || {};
+        }
+    } catch (error) {
+        console.error("Error cargando datos de empresa:", error);
+    }
+    // Valores por defecto si falla la carga o no hay config
+    return {
+        nombre: "Vidrios Éxito S.A.S",
+        nit: "",
+        logoURL: null
+    };
+}

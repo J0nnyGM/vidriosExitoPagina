@@ -1,17 +1,52 @@
-import { db, auth, storage, messaging, functions, VAPID_KEY } from './core/firebase-config.js';
+const fs = require('fs');
+const path = require('path');
 
-// --- CORE & UI MODULAR IMPORTS (OLA 5 & 6) ---
-import { normalizeString, resizeImage, loadFaceAPImodels, generateProfileFaceDescriptor, formatTimeAgo, fetchMunicipalities, loadScript, timeAgoFormat, numeroALetras, registerSupplierPayment, setupCurrencyInput, loadPeopleOfInterest, initThemeToggle } from './core/utils.js';
-import { getRoleDefaultPermissions, applySidebarPermissions, closeSidebar, showView, initializePushNotifications, updatePermissionUI, requestCameraPermission, requestLocationPermission, requestPushPermission, checkAllPermissionsOnLogin, SIDEBAR_CONFIG, loadNotifications } from './core/permissions.js';
+const baseFile = 'C:\\Users\\johny\\OneDrive\\Escritorio\\PROGRAMAS FINALES\\VidriosExito\\app\\js\\app.js';
+const outputFile = 'C:\\Users\\johny\\OneDrive\\Escritorio\\PROGRAMAS FINALES\\VidriosExito\\app\\js\\app.js';
+
+function extractFunction(content, name) {
+    const regex = new RegExp(`(async\\s+)?function\\s+${name}\\s*\\(`, 'g');
+    const match = regex.exec(content);
+    if (!match) return null;
+    
+    const startIdx = match.index;
+    let braceCount = 0;
+    let foundStart = false;
+    let endIdx = -1;
+    
+    for (let i = startIdx; i < content.length; i++) {
+        if (content[i] === '{') {
+            braceCount++;
+            foundStart = true;
+        } else if (content[i] === '}') {
+            braceCount--;
+            if (foundStart && braceCount === 0) {
+                endIdx = i;
+                break;
+            }
+        }
+    }
+    
+    if (endIdx === -1) return null;
+    return content.substring(startIdx, endIdx + 1);
+}
+
+function runRebuild() {
+    console.log('Rebuilding app.js with modular architecture...');
+    let content = fs.readFileSync(baseFile, 'utf8');
+
+    // 1. Define modular imports and window bindings
+    const header = `import { db, auth, storage, messaging, functions, VAPID_KEY } from './core/firebase-config.js';
+
+// --- IMPORTACIONES DE MÓDULOS DEL CORE Y UI (OLA 5) ---
+import { normalizeString, resizeImage, loadFaceAPImodels, generateProfileFaceDescriptor, formatTimeAgo, fetchMunicipalities, loadScript } from './core/utils.js';
+import { getRoleDefaultPermissions, applySidebarPermissions, closeSidebar, showView, initializePushNotifications, updatePermissionUI, requestCameraPermission, requestLocationPermission, requestPushPermission, checkAllPermissionsOnLogin, SIDEBAR_CONFIG } from './core/permissions.js';
 import { handleLogin, handleRegister, handleLogout, showAuthView, isRegistering, setIsRegistering } from './core/auth.js';
 import { openCameraModal, closeCameraModal, capturePhoto, handlePhotoFile } from './ui/camera.js';
 import { openDocumentsModal, closeDocumentsModal, isMobileDevice, viewDocument, openDocumentViewerModal, closeDocumentViewerModal, uploadProjectDocument, deleteProjectDocument, subirDocumento, setupDocumentos, openOtroSiModal, closeOtroSiModal, handleOtroSiSubmit, loadOtroSiList, deleteOtroSi, openVariosModal, closeVariosModal, handleVariosSubmit, loadVariosList, deleteVarios, renderInteractiveDocumentCards, loadProjectDocuments } from './ui/documents.js';
-import { openMainModal, closeMainModal, openConfirmModal, closeConfirmModal, openImageModal, closeImageModal, openRegisterSuccessModal, closeRegisterSuccessModal } from './ui/modals.js';
-import { loadItems, fetchMoreItems, renderSortedItems, createItemRow, createItem, updateItem, deleteItem, showSubItems, loadSubItems, createSubItemRow, updateSubItem, exportProjectToPDF, handleDeletePhoto } from './ui/project-items.js';
-import { initFormHandlers } from './ui/form-handlers.js';
-import { initClickHandlers } from './ui/click-handlers.js';
+import { openMainModal, closeMainModal } from './ui/modals.js';
 
-// Expose core utils and permission tools to window for HTML compat
+// Exponer a window para mantener compatibilidad total con HTML y sub-módulos
 window.normalizeString = normalizeString;
 window.resizeImage = resizeImage;
 window.loadFaceAPImodels = loadFaceAPImodels;
@@ -19,13 +54,6 @@ window.generateProfileFaceDescriptor = generateProfileFaceDescriptor;
 window.formatTimeAgo = formatTimeAgo;
 window.fetchMunicipalities = fetchMunicipalities;
 window.loadScript = loadScript;
-window.timeAgoFormat = timeAgoFormat;
-window.numeroALetras = numeroALetras;
-window.registerSupplierPayment = registerSupplierPayment;
-window.setupCurrencyInput = setupCurrencyInput;
-window.loadPeopleOfInterest = loadPeopleOfInterest;
-window.initThemeToggle = initThemeToggle;
-
 window.getRoleDefaultPermissions = getRoleDefaultPermissions;
 window.applySidebarPermissions = applySidebarPermissions;
 window.closeSidebar = closeSidebar;
@@ -95,19 +123,15 @@ window.requestLocationPermission = requestLocationPermission;
 window.requestPushPermission = requestPushPermission;
 window.checkAllPermissionsOnLogin = checkAllPermissionsOnLogin;
 window.SIDEBAR_CONFIG = SIDEBAR_CONFIG;
-window.loadNotifications = loadNotifications;
-
 window.handleLogin = handleLogin;
 window.handleRegister = handleRegister;
 window.handleLogout = handleLogout;
 window.showAuthView = showAuthView;
 window.isRegistering = isRegistering;
-
 window.openCameraModal = openCameraModal;
 window.closeCameraModal = closeCameraModal;
 window.capturePhoto = capturePhoto;
 window.handlePhotoFile = handlePhotoFile;
-
 window.openDocumentsModal = openDocumentsModal;
 window.closeDocumentsModal = closeDocumentsModal;
 window.isMobileDevice = isMobileDevice;
@@ -130,15 +154,13 @@ window.loadVariosList = loadVariosList;
 window.deleteVarios = deleteVarios;
 window.renderInteractiveDocumentCards = renderInteractiveDocumentCards;
 window.loadProjectDocuments = loadProjectDocuments;
-
 window.openMainModal = openMainModal;
 window.closeMainModal = closeMainModal;
-window.openConfirmModal = openConfirmModal;
-window.closeConfirmModal = closeConfirmModal;
-window.openImageModal = openImageModal;
-window.closeImageModal = closeImageModal;
-window.openRegisterSuccessModal = openRegisterSuccessModal;
-window.closeRegisterSuccessModal = closeRegisterSuccessModal;
+
+// --- NUEVOS MÓDULOS MODULARIZADOS (OLA 6) ---
+import { loadItems, fetchMoreItems, renderSortedItems, createItemRow, createItem, updateItem, deleteItem, showSubItems, loadSubItems, createSubItemRow, updateSubItem, exportProjectToPDF, handleDeletePhoto } from './ui/project-items.js';
+import { initFormHandlers } from './ui/form-handlers.js';
+import { initClickHandlers } from './ui/click-handlers.js';
 
 window.loadItems = loadItems;
 window.fetchMoreItems = fetchMoreItems;
@@ -154,29 +176,33 @@ window.updateSubItem = updateSubItem;
 window.exportProjectToPDF = exportProjectToPDF;
 window.handleDeletePhoto = handleDeletePhoto;
 
-// Import dynamic Firebase operations
-import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
-import { doc, getDoc, addDoc, collection, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+// Importamos funciones operativas de Firebase
+import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateEmail, updateProfile, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
+import { doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch, getDocs, arrayUnion, orderBy, runTransaction, collectionGroup, increment, limit, serverTimestamp, arrayRemove, documentId } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
+import { getToken, onMessage } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-messaging.js";
+`;
 
-// --- DYNAMIC MODULE VARIABLES AND LOADERS ---
+    const loadersCode = `// --- DYNAMIC MODULE VARIABLES AND LOADERS ---
 let initDotacion, loadDotacionView, updateDotacionFilterOptions, loadDotacionAsignaciones;
 let initHerramientas, resetToolViewAndLoad, updateToolFilterOptions, TOOL_CATEGORIES;
 let initDashboard, showGeneralDashboard;
 let initEmpleados, loadEmpleadosView, showEmpleadoDetails, loadPaymentHistoryView;
 let initConfiguracion, loadConfiguracionView;
 let initCartera, loadCarteraView;
-let initSolicitudes, loadSolicitudesView, closeRequestDetailsModal, setupAddMaterialButton, setupRequestItemSearch, resetMaterialRequestForm, handleViewRequestDetails, handleOpenDeliveryModal, showMaterialRequestView;
+let initSolicitudes, loadSolicitudesView;
 let handleReportEntry;
 let initCotizaciones, loadCotizacionesView;
-let initInformes, loadInformesView, loadReportsView, getCompanyData;
+let initInformes, loadInformesView;
 let initProyectos, loadProjects, createProject, deleteProject, archiveProject, restoreProject;
 let initProyectoDetalles, showProjectDetails, switchProjectTab, calculateItemUnitPrice, calculateItemTotal, calculateProjectContractedValue;
-let initCatalogo, loadCatalogView, fetchMoreCatalogItems, openImportModal, generateMaterialTemplate, importMaterialsFromExcel;
+let initCatalogo, loadCatalogView, fetchMoreCatalogItems;
 let initCortes, loadCortes, setupCorteSelection, generateCorte, closeCorteSelectionView, approveCorte, denyCorte, showCorteDetails, exportCorteToPDF, cleanupCortesSubscription;
 let initProveedores, loadProveedoresView, loadSupplierDetailsView, findLastPurchasePrice, currentSupplierId;
 let initCompras, loadComprasView, validatePoDateRange, openPurchaseOrderModal, closePurchaseOrderModal;
 let initUsuarios, loadUsers;
-let initTareas, openNewTaskModal, openEditTaskModal, openProgressModal, completeTask, openMultipleProgressModal, loadTasksView, loadAndDisplayTasks, createTaskCard, closeTaskDetailsModal, loadTaskMaterialStatus, openTaskDetailsModal, openSafetyCheckInModal, checkIfSafetyCheckInNeeded;
+let initTareas, openNewTaskModal, openEditTaskModal, openProgressModal, completeTask, openMultipleProgressModal;
 
 let modulesLoadedPromise = null;
 async function ensureModulesLoaded() {
@@ -185,7 +211,6 @@ async function ensureModulesLoaded() {
     console.log("Iniciando carga de módulos bajo demanda...");
     modulesLoadedPromise = (async () => {
         try {
-            await window.ensureChoices();
             const [
                 dotacion, herramientas, dashboard, empleados, configuracion, cartera, solicitudes,
                 ingresopersonal, cotizaciones, informes, proyectos, proyectoDetalles, catalogo,
@@ -211,29 +236,28 @@ async function ensureModulesLoaded() {
                 import('./modules/tareas.js')
             ]);
 
-            // Assign destructured modules
+            // Asignamos las variables destructuradas
             ({ initDotacion, loadDotacionView, updateDotacionFilterOptions, loadDotacionAsignaciones } = dotacion);
             ({ initHerramientas, resetToolViewAndLoad, updateToolFilterOptions, TOOL_CATEGORIES } = herramientas);
             ({ initDashboard, showGeneralDashboard } = dashboard);
             ({ initEmpleados, loadEmpleadosView, showEmpleadoDetails, loadPaymentHistoryView } = empleados);
             ({ initConfiguracion, loadConfiguracionView } = configuracion);
             ({ initCartera, loadCarteraView } = cartera);
-            ({ initSolicitudes, loadSolicitudesView, closeRequestDetailsModal, setupAddMaterialButton, setupRequestItemSearch, resetMaterialRequestForm, handleViewRequestDetails, handleOpenDeliveryModal, showMaterialRequestView } = solicitudes);
+            ({ initSolicitudes, loadSolicitudesView } = solicitudes);
             ({ handleReportEntry } = ingresopersonal);
             ({ initCotizaciones, loadCotizacionesView } = cotizaciones);
-            ({ initInformes, loadInformesView, loadReportsView, getCompanyData } = informes);
+            ({ initInformes, loadInformesView } = informes);
             ({ initProyectos, loadProjects, createProject, deleteProject, archiveProject, restoreProject } = proyectos);
             ({ initProyectoDetalles, showProjectDetails, switchProjectTab, calculateItemUnitPrice, calculateItemTotal, calculateProjectContractedValue } = proyectoDetalles);
-            ({ initCatalogo, loadCatalogView, fetchMoreCatalogItems, openImportModal, generateMaterialTemplate, importMaterialsFromExcel } = catalogo);
+            ({ initCatalogo, loadCatalogView, fetchMoreCatalogItems } = catalogo);
             ({ initCortes, loadCortes, setupCorteSelection, generateCorte, closeCorteSelectionView, approveCorte, denyCorte, showCorteDetails, exportCorteToPDF, cleanupCortesSubscription } = cortes);
             ({ initProveedores, loadProveedoresView, loadSupplierDetailsView, findLastPurchasePrice, currentSupplierId } = proveedores);
             ({ initCompras, loadComprasView, validatePoDateRange, openPurchaseOrderModal, closePurchaseOrderModal } = compras);
             ({ initUsuarios, loadUsers } = usuarios);
-            ({ initTareas, openNewTaskModal, openEditTaskModal, openProgressModal, completeTask, openMultipleProgressModal, loadTasksView, loadAndDisplayTasks, createTaskCard, closeTaskDetailsModal, loadTaskMaterialStatus, openTaskDetailsModal, openSafetyCheckInModal, checkIfSafetyCheckInNeeded } = tareas);
+            ({ initTareas, openNewTaskModal, openEditTaskModal, openProgressModal, completeTask, openMultipleProgressModal } = tareas);
 
-            // Expose dynamically loaded functions to window for SPA routers
+            // Exponer a window para compatibilidad
             window.loadDotacionView = loadDotacionView;
-            window.resetToolViewAndLoad = resetToolViewAndLoad;
             window.loadDotacionAsignaciones = loadDotacionAsignaciones;
             window.showGeneralDashboard = showGeneralDashboard;
             window.loadEmpleadosView = loadEmpleadosView;
@@ -243,23 +267,7 @@ async function ensureModulesLoaded() {
             window.loadCarteraView = loadCarteraView;
             window.loadConfiguracionView = loadConfiguracionView;
             window.loadCotizacionesView = loadCotizacionesView;
-            
             window.loadReportsView = loadInformesView;
-            window.getCompanyData = getCompanyData;
-            
-            window.closeRequestDetailsModal = closeRequestDetailsModal;
-            window.setupAddMaterialButton = setupAddMaterialButton;
-            window.setupRequestItemSearch = setupRequestItemSearch;
-            window.resetMaterialRequestForm = resetMaterialRequestForm;
-            window.openRequestDetailsModal = handleViewRequestDetails;
-            window.openDeliveryModal = handleOpenDeliveryModal;
-            window.showMaterialRequestView = showMaterialRequestView;
-            window.loadSolicitudesView = loadSolicitudesView;
-
-            window.openImportModal = openImportModal;
-            window.generateMaterialTemplate = generateMaterialTemplate;
-            window.importMaterialsFromExcel = importMaterialsFromExcel;
-
             window.loadProjects = loadProjects;
             window.createProject = createProject;
             window.deleteProject = deleteProject;
@@ -272,36 +280,19 @@ async function ensureModulesLoaded() {
             window.calculateProjectContractedValue = calculateProjectContractedValue;
             window.loadCatalogView = loadCatalogView;
             window.loadCortes = loadCortes;
-            window.setupCorteSelection = setupCorteSelection;
-            window.generateCorte = generateCorte;
-            window.closeCorteSelectionView = closeCorteSelectionView;
-            window.approveCorte = approveCorte;
-            window.denyCorte = denyCorte;
-            window.showCorteDetails = showCorteDetails;
             window.exportCorteToPDF = exportCorteToPDF;
             window.cleanupCortesSubscription = cleanupCortesSubscription;
             window.loadProveedoresView = loadProveedoresView;
             window.loadSupplierDetailsView = loadSupplierDetailsView;
             window.loadComprasView = loadComprasView;
-            window.openPurchaseOrderModal = openPurchaseOrderModal;
-            window.closePurchaseOrderModal = closePurchaseOrderModal;
             window.loadUsers = loadUsers;
-            
             window.openNewTaskModal = openNewTaskModal;
             window.openEditTaskModal = openEditTaskModal;
             window.openProgressModal = openProgressModal;
             window.completeTask = completeTask;
             window.openMultipleProgressModal = openMultipleProgressModal;
-            window.loadTasksView = loadTasksView;
-            window.loadAndDisplayTasks = loadAndDisplayTasks;
-            window.createTaskCard = createTaskCard;
-            window.closeTaskDetailsModal = closeTaskDetailsModal;
-            window.loadTaskMaterialStatus = loadTaskMaterialStatus;
-            window.openTaskDetailsModal = openTaskDetailsModal;
-            window.openSafetyCheckInModal = openSafetyCheckInModal;
-            window.checkIfSafetyCheckInNeeded = checkIfSafetyCheckInNeeded;
 
-            console.log("Todos los módulos dinámicos se han cargado e inyectado correctamente.");
+            console.log("Todos los módulos de la aplicación se han cargado correctamente.");
         } catch (error) {
             console.error("Error al cargar los módulos dinámicos:", error);
             modulesLoadedPromise = null;
@@ -312,7 +303,6 @@ async function ensureModulesLoaded() {
     return modulesLoadedPromise;
 }
 
-// Global script helpers
 window.ensureXLSX = async function() {
     if (window.XLSX) return window.XLSX;
     console.log("Cargando XLSX...");
@@ -376,8 +366,9 @@ window.ensureChoices = async function() {
     await loadScript("https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js");
     return window.Choices;
 };
+`;
 
-// --- CONFIGURACIÓN Y ESTADO DE LA APP ---
+    const stateVariables = `// --- CONFIGURACIÓN Y ESTADO DE LA APP ---
 let unsubscribeTasks = null;
 let unsubscribeReports = null;
 let unsubscribeInventory = null;
@@ -392,7 +383,6 @@ let unsubscribePayments = null;
 let activeListeners = [];
 let currentUser = null;
 let currentUserRole = null;
-let currentUserFaceDescriptor = null;
 let processedPhotoFile = null;
 let usersMap = new Map();
 let payrollConfig = null;
@@ -411,43 +401,14 @@ let pendingProfileUpdateData = null;
 let lastVisibleItemDoc = null;
 let isFetchingItems = false;
 const ITEMS_PER_PAGE = 20;
-let views = {
-    'dashboard-general': document.getElementById('dashboard-general-view'),
-    proyectos: document.getElementById('dashboard-view'),
-    tareas: document.getElementById('tareas-view'),
-    herramienta: document.getElementById('herramienta-view'),
-    dotacion: document.getElementById('dotacion-view'),
-    'cartera': document.getElementById('cartera-view'),
-    cotizaciones: document.getElementById('cotizaciones-view'),
-    'cotizacion-detalle': document.getElementById('cotizacion-detalle-view'),
-    solicitud: document.getElementById('solicitud-view'),
-    empleados: document.getElementById('empleados-view'),
-    'empleado-details': document.getElementById('empleado-details-view'),
-    'payment-history-view': document.getElementById('payment-history-view'),
-    'configuracion': document.getElementById('configuracion-view'),
-    proveedores: document.getElementById('proveedores-view'),
-    supplierDetails: document.getElementById('supplier-details-view'),
-    adminPanel: document.getElementById('admin-panel-view'),
-    'project-details': document.getElementById('project-details-view'),
-    subItems: document.getElementById('sub-items-view'),
-    corteDetails: document.getElementById('corte-details-view'),
-    catalog: document.getElementById('catalog-view'),
-    compras: document.getElementById('compras-view'),
-    reports: document.getElementById('reports-view'),
-    'material-request-view': document.getElementById('material-request-view'),
-};
+let views = {};
 
 // --- BINDINGS DE ESTADO DINÁMICOS PARA WINDOW ---
-Object.defineProperty(window, 'views', { get: () => views, set: (val) => { views = val; } });
-Object.defineProperty(window, 'materialStatusListeners', { get: () => materialStatusListeners });
-Object.defineProperty(window, 'taskCommentListeners', { get: () => taskCommentListeners });
 Object.defineProperty(window, 'currentUser', { get: () => currentUser, set: (val) => { currentUser = val; } });
 Object.defineProperty(window, 'currentUserRole', { get: () => currentUserRole, set: (val) => { currentUserRole = val; } });
-Object.defineProperty(window, 'currentUserFaceDescriptor', { get: () => currentUserFaceDescriptor, set: (val) => { currentUserFaceDescriptor = val; } });
 Object.defineProperty(window, 'currentProject', { get: () => currentProject, set: (val) => { currentProject = val; } });
 Object.defineProperty(window, 'currentItem', { get: () => currentItem, set: (val) => { currentItem = val; } });
 Object.defineProperty(window, 'usersMap', { get: () => usersMap, set: (val) => { usersMap = val; } });
-Object.defineProperty(window, 'activeListeners', { get: () => activeListeners, set: (val) => { activeListeners = val; } });
 Object.defineProperty(window, 'payrollConfig', { get: () => payrollConfig, set: (val) => { payrollConfig = val; } });
 Object.defineProperty(window, 'materialRequestReturnContext', { get: () => materialRequestReturnContext, set: (val) => { materialRequestReturnContext = val; } });
 Object.defineProperty(window, 'itemSortState', { get: () => itemSortState, set: (val) => { itemSortState = val; } });
@@ -461,33 +422,106 @@ Object.defineProperty(window, 'videoStream', { get: () => videoStream, set: (val
 Object.defineProperty(window, 'verifiedCanvas', { get: () => verifiedCanvas, set: (val) => { verifiedCanvas = val; } });
 Object.defineProperty(window, 'pendingProfileUpdateData', { get: () => pendingProfileUpdateData, set: (val) => { pendingProfileUpdateData = val; } });
 Object.defineProperty(window, 'processedPhotoFile', { get: () => processedPhotoFile, set: (val) => { processedPhotoFile = val; } });
+`;
 
-// --- LÓGICA DE INICIO GENERAL ---
-async function loadUsersMap() {
-    try {
-        const usersQuery = query(collection(db, "users"));
-        const snapshot = await getDocs(usersQuery);
-        usersMap.clear();
-        snapshot.forEach(doc => {
-            usersMap.set(doc.id, doc.data());
-        });
-        console.log("UsersMap loaded successfully.");
-    } catch (e) {
-        console.error("Error loading usersMap:", e);
+    // List of core functions to extract and keep
+    const functionsToKeep = [
+        'loadProfileHistory',
+        'showDashboard',
+        'openConfirmModal',
+        'closeConfirmModal',
+        'openImageModal',
+        'closeImageModal',
+        'openRegisterSuccessModal',
+        'closeRegisterSuccessModal',
+        'timeAgoFormat',
+        'loadNotifications',
+        'setupCurrencyInput',
+        'loadPeopleOfInterest',
+        'closeRequestDetailsModal',
+        'setupAddMaterialButton',
+        'setupRequestItemSearch',
+        'resetMaterialRequestForm',
+        'loadTasksView',
+        'loadAndDisplayTasks',
+        'createTaskCard',
+        'closeTaskDetailsModal',
+        'loadTaskMaterialStatus',
+        'initThemeToggle',
+        'numeroALetras',
+        'openImportModal',
+        'generateMaterialTemplate',
+        'importMaterialsFromExcel',
+        'loadReportsView',
+        'getCompanyData',
+        'registerSupplierPayment',
+        'loadUsersMap'
+    ];
+
+    let extractedCode = '\n// --- FUNCIONES LÓGICAS CORE --- \n';
+    for (const name of functionsToKeep) {
+        const body = extractFunction(content, name);
+        if (body) {
+            extractedCode += `\n${body}\nwindow.${name} = ${name};\n`;
+        } else {
+            console.warn(`Could not extract function: ${name}`);
+        }
     }
-}
-window.loadUsersMap = loadUsersMap;
 
-function loadProfileHistory(userId) {
-    console.log("loadProfileHistory loaded for:", userId);
-}
-window.loadProfileHistory = loadProfileHistory;
+    // Extract auth state listener
+    const onAuthRegex = /onAuthStateChanged\s*\(\s*auth\s*,\s*async\s*\(user\)\s*=>\s*\{/g;
+    const authMatch = onAuthRegex.exec(content);
+    let authListenerCode = '';
+    if (authMatch) {
+        const startIdx = authMatch.index;
+        let braceCount = 0;
+        let foundStart = false;
+        let endIdx = -1;
+        for (let i = startIdx; i < content.length; i++) {
+            if (content[i] === '{') {
+                braceCount++;
+                foundStart = true;
+            } else if (content[i] === '}') {
+                braceCount--;
+                if (foundStart && braceCount === 0) {
+                    endIdx = i;
+                    break;
+                }
+            }
+        }
+        if (endIdx !== -1) {
+            authListenerCode = `\n${content.substring(startIdx, endIdx + 1)}\n`;
+        }
+    }
 
-function showDashboard() {
-    console.log("showDashboard loaded.");
-}
-window.showDashboard = showDashboard;
+    // Reconstruct the DOMContentLoaded event listener (General UI, no monolithic clics/submits)
+    const domLoadedRegex = /document\.addEventListener\(\s*['"]DOMContentLoaded['"]\s*,\s*\(\)\s*=>\s*\{/g;
+    const domLoadedMatch = domLoadedRegex.exec(content);
+    let domLoadedCode = '';
+    if (domLoadedMatch) {
+        const startIdx = domLoadedMatch.index;
+        let braceCount = 0;
+        let foundStart = false;
+        let endIdx = -1;
+        for (let i = startIdx; i < content.length; i++) {
+            if (content[i] === '{') {
+                braceCount++;
+                foundStart = true;
+            } else if (content[i] === '}') {
+                braceCount--;
+                if (foundStart && braceCount === 0) {
+                    endIdx = i;
+                    break;
+                }
+            }
+        }
+        if (endIdx !== -1) {
+            domLoadedCode = `\n${content.substring(startIdx, endIdx + 1)}\n`;
+        }
+    }
 
+    // Custom initializeAllModules definition
+    const initAllModulesCode = `
 let modulesInitialized = false;
 function initializeAllModules() {
     if (modulesInitialized) return;
@@ -612,265 +646,77 @@ function initializeAllModules() {
 
     initSolicitudes(db, showView, currentUserRole, usersMap, openMainModal);
 
-    // --- INITIALIZE NEW OLA 6 FORM AND CLICK LISTENERS Dynamically ---
+    // --- INICIALIZACIÓN DE FORM HANDLERS Y CLICK HANDLERS UNIFICADOS (OLA 6) ---
     initFormHandlers();
     initClickHandlers();
 }
 window.initializeAllModules = initializeAllModules;
+`;
 
-// HTML elements references
-const authContainer = document.getElementById('auth-container') || document.getElementById('auth-view') || document.getElementById('login-view');
-const appContainer = document.getElementById('app-container') || document.getElementById('app-view');
-const loadingOverlay = document.getElementById('loading-overlay') || { classList: { add: () => {} } };
+    // 7. Assemble the final modular app.js
+    let finalContent = ``;
+    finalContent += header;
+    finalContent += loadersCode;
+    finalContent += stateVariables;
+    finalContent += extractedCode;
+    finalContent += authListenerCode;
+    finalContent += initAllModulesCode;
+    finalContent += domLoadedCode;
 
-onAuthStateChanged(auth, async (user) => {
-    try {
-        if (isRegistering) {
-            console.log("Registro en proceso, onAuthStateChanged en pausa...");
-            return;
-        }
-
-        if (user) {
-            const userDoc = await getDoc(doc(db, "users", user.uid));
-
-            if (userDoc.exists() && userDoc.data().status === 'active') {
-                currentUser = user;
-                const userData = userDoc.data();
-                currentUserRole = userData.role;
-
-                // 1. CARGA DINÁMICA DE MÓDULOS OBLIGATORIA POST-LOGIN (OLA 6 HACK)
-                await ensureModulesLoaded();
-                initializeAllModules();
-
-                // 2. Cargar mapa de usuarios
-                await loadUsersMap();
-
-                // --- UI HEADER ACTUALIZACIÓN ---
-                const nombre = userData.firstName || 'Usuario';
-                const apellido = userData.lastName || '';
-                const rolFormateado = currentUserRole.charAt(0).toUpperCase() + currentUserRole.slice(1);
-                const profilePhotoURL = userData.profilePhotoURL || null;
-                const initials = `${nombre.charAt(0)}${apellido.charAt(0) || ''}`.toUpperCase();
-
-                const nameEl = document.getElementById('header-user-name');
-                const roleEl = document.getElementById('header-user-role');
-                const photoEl = document.getElementById('header-profile-photo');
-                const initialsEl = document.getElementById('header-profile-initials');
-
-                const mobileNameEl = document.getElementById('mobile-user-name');
-                const mobileEmailEl = document.getElementById('mobile-user-email');
-
-                if (nameEl) nameEl.textContent = `${nombre} ${apellido}`;
-                if (roleEl) roleEl.textContent = rolFormateado;
-                if (mobileNameEl) mobileNameEl.textContent = `${nombre} ${apellido}`;
-                if (mobileEmailEl) mobileEmailEl.textContent = userData.email;
-
-                if (photoEl && initialsEl) {
-                    if (profilePhotoURL) {
-                        photoEl.src = profilePhotoURL;
-                        photoEl.classList.remove('hidden');
-                        initialsEl.classList.add('hidden');
-                        if (photoEl.parentElement) photoEl.parentElement.classList.remove('bg-gray-200');
-                    } else {
-                        photoEl.classList.add('hidden');
-                        initialsEl.textContent = initials;
-                        initialsEl.classList.remove('hidden');
-                        if (photoEl.parentElement) photoEl.parentElement.classList.add('bg-gray-200');
-                    }
+    // Remove any leftover document.body click listener inside DOMContentLoaded
+    const clickRegex = /document\.body\.addEventListener\(\s*['"]click['"]\s*,\s*async\s*\(e\)\s*=>\s*\{/;
+    const clickMatch = clickRegex.exec(finalContent);
+    if (clickMatch) {
+        const startIdx = clickMatch.index;
+        let braceCount = 0;
+        let foundStart = false;
+        let endIdx = -1;
+        for (let i = startIdx; i < finalContent.length; i++) {
+            if (finalContent[i] === '{') {
+                braceCount++;
+                foundStart = true;
+            } else if (finalContent[i] === '}') {
+                braceCount--;
+                if (foundStart && braceCount === 0) {
+                    endIdx = i;
+                    break;
                 }
-
-                // 3. Generar descriptor facial
-                if (profilePhotoURL) {
-                    try {
-                        currentUserFaceDescriptor = await generateProfileFaceDescriptor(profilePhotoURL);
-                    } catch (e) {
-                        console.warn("No se pudo generar descriptor facial:", e);
-                        currentUserFaceDescriptor = null;
-                    }
-                } else {
-                    currentUserFaceDescriptor = null;
-                }
-
-                authContainer.classList.add('hidden');
-                appContainer.classList.remove('hidden');
-
-                try {
-                    const payrollConfigRef = doc(db, "system", "payrollConfig");
-                    const payrollConfigSnap = await getDoc(payrollConfigRef);
-                    payrollConfig = payrollConfigSnap.exists() ? payrollConfigSnap.data() : {};
-                } catch (error) {
-                    console.error("Error cargando nómina:", error);
-                    payrollConfig = {};
-                }
-
-                applySidebarPermissions(currentUserRole, userData.customPermissions || {});
-                checkAllPermissionsOnLogin();
-
-                // Cargar vista inicial según el hash de la URL o dashboard por defecto
-                const initialHash = window.location.hash ? window.location.hash.substring(1) : '';
-                if (initialHash && initialHash !== 'dashboard-general') {
-                    window.navigateToView(initialHash);
-                } else {
-                    showGeneralDashboard();
-                }
-                loadNotifications();
-
-            } else {
-                await signOut(auth);
             }
-        } else {
-            currentUser = null;
-            currentUserRole = null;
-            authContainer.classList.remove('hidden');
-            appContainer.classList.add('hidden');
         }
-    } catch (error) {
-        console.error("Error crítico en onAuthStateChanged:", error);
-        authContainer.classList.remove('hidden');
-        appContainer.classList.add('hidden');
-    } finally {
-        loadingOverlay.classList.add('hidden');
+        if (endIdx !== -1) {
+            const fullClickBlock = finalContent.substring(startIdx, endIdx + 1);
+            finalContent = finalContent.replace(fullClickBlock, `// --- EL MANEJADOR DE CLICS DELEGADOS FUE MODULARIZADO A click-handlers.js ---`);
+        }
     }
-});
 
-document.addEventListener('DOMContentLoaded', () => {
-    // Initialize theme toggle
-    initThemeToggle();
-
-    // --- MÉTODOS DE AUTENTICACIÓN Y NAVEGACIÓN DE LOGIN ---
-    document.getElementById('login-form')?.addEventListener('submit', handleLogin);
-    document.getElementById('register-form')?.addEventListener('submit', handleRegister);
-    document.getElementById('show-register')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        showAuthView('register');
-    });
-    document.getElementById('show-login')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        showAuthView('login');
-    });
-    document.getElementById('back-to-login')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        showAuthView('login');
-    });
-
-
-
-    // Load FaceAPI models on demand
-    loadFaceAPImodels();
-
-    document.getElementById('po-details-close-btn')?.addEventListener('click', () => {
-        if (typeof closePurchaseOrderModal === 'function') closePurchaseOrderModal();
-    });
-    document.getElementById('po-details-cancel-btn')?.addEventListener('click', () => {
-        if (typeof closePurchaseOrderModal === 'function') closePurchaseOrderModal();
-    });
-
-    // Setup lost password view listeners
-    const loginViewLinks = document.getElementById('login-view')?.querySelectorAll('a');
-    if (loginViewLinks) {
-        loginViewLinks.forEach(link => {
-            if (link.textContent.includes('Olvidaste') || link.textContent.includes('contraseña')) {
-                link.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    document.getElementById('login-view')?.classList.add('hidden');
-                    document.getElementById('forgot-password-view')?.classList.remove('hidden');
-                    const resetEmail = document.getElementById('reset-email');
-                    if (resetEmail) resetEmail.value = '';
-                    document.getElementById('reset-feedback')?.classList.add('hidden');
-                });
+    // Remove any leftover modalForm submit listener inside DOMContentLoaded
+    const submitRegex = /modalForm\.addEventListener\(\s*['"]submit['"]\s*,\s*async\s*\(e\)\s*=>\s*\{/;
+    const submitMatch = submitRegex.exec(finalContent);
+    if (submitMatch) {
+        const startIdx = submitMatch.index;
+        let braceCount = 0;
+        let foundStart = false;
+        let endIdx = -1;
+        for (let i = startIdx; i < finalContent.length; i++) {
+            if (finalContent[i] === '{') {
+                braceCount++;
+                foundStart = true;
+            } else if (finalContent[i] === '}') {
+                braceCount--;
+                if (foundStart && braceCount === 0) {
+                    endIdx = i;
+                    break;
+                }
             }
-        });
-    }
-
-    document.getElementById('back-to-login-btn')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        document.getElementById('forgot-password-view')?.classList.add('hidden');
-        document.getElementById('login-view')?.classList.remove('hidden');
-    });
-
-    document.getElementById('forgot-password-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const email = document.getElementById('reset-email').value;
-        const feedback = document.getElementById('reset-feedback');
-        const submitBtn = e.target.querySelector('button[type="submit"]');
-
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Enviando...';
-
-        try {
-            await auth.sendPasswordResetEmail(email);
-            feedback.textContent = 'Enlace de recuperación enviado. Revisa tu bandeja de entrada.';
-            feedback.className = 'text-green-600 text-sm mt-2';
-            feedback.classList.remove('hidden');
-        } catch (error) {
-            console.error(error);
-            feedback.textContent = 'Error: ' + error.message;
-            feedback.className = 'text-red-500 text-sm mt-2';
-            feedback.classList.remove('hidden');
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Enviar Enlace';
         }
-    });
-});
-
-// --- SISTEMA DE NOTIFICACIONES (TOASTS) ---
-window.showToast = function (message, type = 'success') {
-    const container = document.getElementById('toast-container');
-    if (!container) return; // Salida de seguridad si no existe
-
-    // Colores según tipo
-    const colors = type === 'error'
-        ? 'bg-red-100 border-l-4 border-red-500 text-red-700'
-        : 'bg-green-100 border-l-4 border-green-500 text-green-700';
-
-    const icon = type === 'error'
-        ? '<i class="fa-solid fa-circle-exclamation mr-2"></i>'
-        : '<i class="fa-solid fa-circle-check mr-2"></i>';
-
-    // Crear elemento
-    const toast = document.createElement('div');
-    toast.className = `${colors} p-4 rounded shadow-lg flex items-center transform transition-all duration-300 translate-x-10 opacity-0 pointer-events-auto min-w-[300px]`;
-    toast.innerHTML = `
-        ${icon}
-        <p class="font-bold text-sm">${message}</p>
-    `;
-
-    container.appendChild(toast);
-
-    // Animación de entrada
-    requestAnimationFrame(() => {
-        toast.classList.remove('translate-x-10', 'opacity-0');
-    });
-
-    // Eliminar después de 3.5 segundos
-    setTimeout(() => {
-        toast.classList.add('translate-x-10', 'opacity-0');
-        setTimeout(() => toast.remove(), 300); // Esperar a que termine la transición
-    }, 3500);
-};
-
-// --- SISTEMA DE AUDITORÍA (LOGS) ---
-window.logAuditAction = async function (action, description, targetId, previousData = null, newData = null) {
-    try {
-        const user = auth.currentUser;
-        if (!user) return;
-
-        // Consultar datos del admin actual para guardar su nombre
-        const adminSnap = await getDoc(doc(db, "users", user.uid));
-        const adminName = adminSnap.exists() ? `${adminSnap.data().firstName} ${adminSnap.data().lastName}` : user.email;
-
-        await addDoc(collection(db, "audit_logs"), {
-            action: action,           // Ej: "Eliminar Pago"
-            description: description, // Ej: "Se eliminó el pago de $500.000"
-            targetId: targetId,       // ID del empleado afectado
-            adminId: user.uid,
-            adminName: adminName,
-            createdAt: new Date(),
-            previousData: previousData,
-            newData: newData
-        });
-    } catch (e) {
-        console.error("Error al registrar acción de auditoría:", e);
+        if (endIdx !== -1) {
+            const fullSubmitBlock = finalContent.substring(startIdx, endIdx + 1);
+            finalContent = finalContent.replace(fullSubmitBlock, `// --- EL MANEJADOR DE ENVIOS DE FORMULARIO FUE MODULARIZADO A form-handlers.js ---`);
+        }
     }
-};
+
+    fs.writeFileSync(outputFile, finalContent);
+    console.log(`Rebuild complete! Reconstructed app.js size: ${finalContent.length} chars, ${finalContent.split('\n').length} lines.`);
+}
+
+runRebuild();

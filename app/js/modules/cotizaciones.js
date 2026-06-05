@@ -14,6 +14,8 @@ let _currencyFormatter;
 let cotizacionEditandoId = null;
 let empresaInfo = null; // <--- NUEVA VARIABLE PARA DATOS DE EMPRESA
 let allQuotesCache = []; // <--- NUEVA VARIABLE PARA FILTRADO LOCAL
+let cotizacionesCurrentPage = 1;
+const cotizacionesItemsPerPage = 10;
 
 // Configuración por defecto
 let currentConfig = {
@@ -32,7 +34,8 @@ const ESTADOS_CONFIG = {
     'Enviada':   { class: 'bg-blue-50 text-blue-600 border-blue-200', icon: '<i class="fa-solid fa-paper-plane"></i>' },
     'Aprobada':  { class: 'bg-emerald-50 text-emerald-600 border-emerald-200', icon: '<i class="fa-solid fa-check"></i>' },
     'Rechazada': { class: 'bg-red-50 text-red-600 border-red-200', icon: '<i class="fa-solid fa-xmark"></i>' },
-    'Facturada': { class: 'bg-purple-50 text-purple-600 border-purple-200', icon: '<i class="fa-solid fa-file-invoice-dollar"></i>' }
+    'Facturada': { class: 'bg-purple-50 text-purple-600 border-purple-200', icon: '<i class="fa-solid fa-file-invoice-dollar"></i>' },
+    'Archivado': { class: 'bg-slate-100 text-slate-500 border-slate-200', icon: '<i class="fa-solid fa-box-archive"></i>' }
 };
 
 // =============================================================================
@@ -51,6 +54,11 @@ export function initCotizaciones(db, storage, showView, currentUser) {
         minimumFractionDigits: 0,
         maximumFractionDigits: 0 
     });
+
+    const configModoEl = document.getElementById('config-modo');
+    if (configModoEl) {
+        configModoEl.addEventListener('change', actualizarVisibilidadConfigModal);
+    }
 
     document.addEventListener('click', (e) => {
         const btn = e.target.closest('button');
@@ -93,11 +101,13 @@ export function initCotizaciones(db, storage, showView, currentUser) {
 
     if (searchInput) {
         searchInput.addEventListener('input', () => {
+            cotizacionesCurrentPage = 1; // Reset a primera página al buscar
             renderizarTablaCotizaciones(); // Filtra al escribir
         });
     }
     if (statusFilter) {
         statusFilter.addEventListener('change', () => {
+            cotizacionesCurrentPage = 1; // Reset a primera página al cambiar estado
             renderizarTablaCotizaciones(); // Filtra al cambiar estado
         });
     }
@@ -110,6 +120,9 @@ export function initCotizaciones(db, storage, showView, currentUser) {
         container.addEventListener('input', (e) => {
             const t = e.target;
             if (t.classList.contains('inputs-calc')) {
+                if (['val_suministro', 'val_instalacion', 'valor_unitario'].includes(t.name)) {
+                    formatInputAsCurrency(t);
+                }
                 const tr = t.closest('tr');
                 if (tr) calcularFila(tr, t);
             }
@@ -186,6 +199,33 @@ if (container) {
     });
 }
 
+function formatInputAsCurrency(input) {
+    const selectionStart = input.selectionStart;
+    const selectionEnd = input.selectionEnd;
+    const originalLength = input.value.length;
+
+    let val = input.value.replace(/\D/g, '');
+    if (!val) {
+        input.value = '';
+        return;
+    }
+    
+    const formatted = new Intl.NumberFormat('es-CO', {
+        style: 'currency',
+        currency: 'COP',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    }).format(parseFloat(val));
+
+    input.value = formatted;
+
+    const newLength = formatted.length;
+    const diff = newLength - originalLength;
+    let newCursorPos = selectionStart + diff;
+    if (newCursorPos < 2) newCursorPos = formatted.length;
+    input.setSelectionRange(newCursorPos, newCursorPos);
+}
+
 // =============================================================================
 // 2. LÓGICA DE CÁLCULO
 // =============================================================================
@@ -198,21 +238,33 @@ function recalcularTodo() {
 }
 
 function calcularFila(tr, inputChanged = null, skipTotals = false) {
-    const getVal = (n) => parseFloat(tr.querySelector(`[name="${n}"]`)?.value) || 0;
+    const getVal = (n) => {
+        const input = tr.querySelector(`[name="${n}"]`);
+        if (!input) return 0;
+        if (['val_suministro', 'val_instalacion', 'valor_unitario'].includes(n)) {
+            const cleanStr = input.value.replace(/\D/g, '');
+            return parseFloat(cleanStr) || 0;
+        }
+        return parseFloat(input.value) || 0;
+    };
 
     const setVal = (n, v) => {
         const el = tr.querySelector(`[name="${n}"]`);
         if (el) {
             // Redondeo para evitar decimales en los inputs visuales
             const valorSeguro = isNaN(v) ? 0 : Math.round(v);
-            el.value = valorSeguro;
+            if (['val_suministro', 'val_instalacion', 'valor_unitario'].includes(n)) {
+                el.value = valorSeguro === 0 ? '' : _currencyFormatter.format(valorSeguro);
+            } else {
+                el.value = valorSeguro;
+            }
         }
     };
 
     // Factores de Impuestos
     const { modo, aiu } = currentConfig;
-    const factorIVA = 1.19;
-    const factorAIU = 1 + (aiu.admin / 100) + (aiu.imprev / 100) + (aiu.util / 100) + ((aiu.util / 100) * 0.19);
+    const factorIVA = modo === 'SOLO_TOTAL' ? 1.0 : 1.19;
+    const factorAIU = modo === 'SOLO_TOTAL' ? 1.0 : (1 + (aiu.admin / 100) + (aiu.imprev / 100) + (aiu.util / 100) + ((aiu.util / 100) * 0.19));
 
     // --- 1. Lógica de Desglose (Solo aplica en Modo Mixto) ---
     // Si cambio el Unitario Global, reparto y quito impuestos para llenar Suministro/Instalación
@@ -323,14 +375,20 @@ function calcularTotalesGenerales() {
     const bodyResumen = document.getElementById('resumen-financiero-body');
     let data = { totalFinal: 0 };
 
-    if (modo === 'IVA_GLOBAL') {
+    if (modo === 'IVA_GLOBAL' || modo === 'SOLO_TOTAL') {
         const subtotal = totalBaseSum;
-        const iva = subtotal * 0.19;
+        const iva = modo === 'SOLO_TOTAL' ? 0 : subtotal * 0.19;
         data.totalFinal = subtotal + iva;
-        data.html = `
-            <div class="flex justify-between"><span>Subtotal Base:</span> <span class="font-medium">${_currencyFormatter.format(subtotal)}</span></div>
-            <div class="flex justify-between text-slate-500"><span>IVA (19%):</span> <span>${_currencyFormatter.format(iva)}</span></div>
-        `;
+        if (modo === 'SOLO_TOTAL') {
+            data.html = `
+                <div class="flex justify-between font-bold text-slate-700"><span>Total Neto:</span> <span class="font-bold">${_currencyFormatter.format(subtotal)}</span></div>
+            `;
+        } else {
+            data.html = `
+                <div class="flex justify-between"><span>Subtotal Base:</span> <span class="font-medium">${_currencyFormatter.format(subtotal)}</span></div>
+                <div class="flex justify-between text-slate-500"><span>IVA (19%):</span> <span>${_currencyFormatter.format(iva)}</span></div>
+            `;
+        }
         data.breakdown = { subtotal, iva };
     }
     else if (modo === 'AIU') {
@@ -408,6 +466,7 @@ const getBase64ImageFromURL = (url) => {
 async function generarPDF(datosExternos = null) {
     if (!empresaInfo) await cargarDatosEmpresa();
 
+    await window.ensurePDF();
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF('p', 'mm', 'letter');
 
@@ -449,8 +508,9 @@ async function generarPDF(datosExternos = null) {
 
     // --- B. DATOS CLIENTE ---
     const rawFecha = leerDato('cot-fecha', 'fecha');
-    const cliente = leerDato('cot-cliente', 'cliente').toUpperCase();
-    const proyecto = leerDato('cot-proyecto', 'proyecto').toUpperCase();
+    const cliente = (leerDato('cot-cliente', 'cliente') || '').toUpperCase();
+    const rawProyecto = leerDato('cot-proyecto', 'proyecto');
+    const proyecto = rawProyecto ? rawProyecto.trim().toUpperCase() : '';
 
     let fechaTexto = rawFecha;
     if (rawFecha) {
@@ -471,7 +531,7 @@ async function generarPDF(datosExternos = null) {
     doc.text(cliente, MARGIN_LEFT, yPos); yPos += 5;
 
     doc.setFont("times", "normal");
-    if (proyecto) {
+    if (proyecto && proyecto !== "") {
         doc.text(`Proyecto: ${proyecto}`, MARGIN_LEFT, yPos); yPos += 5;
     }
     doc.text("Ciudad", MARGIN_LEFT, yPos);
@@ -480,8 +540,10 @@ async function generarPDF(datosExternos = null) {
     doc.text("Apreciados Señores", MARGIN_LEFT, yPos);
     yPos += 10;
 
-    const textoProyecto = proyecto ? proyecto : "________________";
-    doc.text(`Adjunto cotización según solicitud para el proyecto ${textoProyecto}:`, MARGIN_LEFT, yPos);
+    const introText = (proyecto && proyecto !== "")
+        ? `Adjunto cotización según solicitud para el proyecto ${proyecto}:`
+        : "Adjunto cotización según solicitud:";
+    doc.text(introText, MARGIN_LEFT, yPos);
     yPos += 8;
 
     // --- C. TABLA DE ÍTEMS ---
@@ -519,9 +581,9 @@ async function generarPDF(datosExternos = null) {
     let accumBaseInst = 0;
 
     // Factores de Impuestos
-    const factorIVA = 1.19;
+    const factorIVA = configUsada.modo === 'SOLO_TOTAL' ? 1.0 : 1.19;
     const aiuConf = configUsada.aiu || { admin:10, imprev:5, util:5 };
-    const factorAIU = 1 + (aiuConf.admin/100) + (aiuConf.imprev/100) + (aiuConf.util/100) + ((aiuConf.util/100)*0.19);
+    const factorAIU = configUsada.modo === 'SOLO_TOTAL' ? 1.0 : (1 + (aiuConf.admin/100) + (aiuConf.imprev/100) + (aiuConf.util/100) + ((aiuConf.util/100)*0.19));
 
     listaItems.forEach((itemObj, idx) => {
         const row = [];
@@ -611,7 +673,7 @@ async function generarPDF(datosExternos = null) {
 
     if (configCols.includes('item')) { colStyles[colIdx] = { cellWidth: 9, halign: 'center' }; colIdx++; }
     if (configCols.includes('ubicacion')) { colStyles[colIdx] = { cellWidth: 16, halign: 'center' }; colIdx++; }
-    if (configCols.includes('descripcion')) { colStyles[colIdx] = { cellWidth: 'auto', halign: 'center' }; colIdx++; }
+    if (configCols.includes('descripcion')) { colStyles[colIdx] = { cellWidth: 'auto', halign: 'left' }; colIdx++; }
     if (configCols.includes('ancho')) { colStyles[colIdx] = { cellWidth: 12, halign: 'center' }; colIdx++; }
     if (configCols.includes('alto')) { colStyles[colIdx] = { cellWidth: 12, halign: 'center' }; colIdx++; }
     if (configCols.includes('m2')) { colStyles[colIdx] = { cellWidth: 11, halign: 'center' }; colIdx++; }
@@ -682,6 +744,11 @@ async function generarPDF(datosExternos = null) {
         bd.vUtil = bd.directo * (aiu.util / 100);
         bd.vIvaUtil = bd.vUtil * 0.19;
         totalFinalCalc = bd.directo + bd.vAdmin + bd.vImpr + bd.vUtil + bd.vIvaUtil;
+    }
+    else if (configUsada.modo === 'SOLO_TOTAL') {
+        bd.subtotal = accumBaseSum;
+        bd.iva = 0;
+        totalFinalCalc = bd.subtotal;
     }
     else { // IVA GLOBAL
         // Modo simple: accumBaseSum es el subtotal limpio
@@ -769,7 +836,7 @@ async function generarPDF(datosExternos = null) {
             totalsBody.push([`IMPREVISTOS ${aiu.imprev}%:`, _currencyFormatter.format(bd.vImpr)]);
             totalsBody.push([`UTILIDAD ${aiu.util}%:`, _currencyFormatter.format(bd.vUtil)]);
             totalsBody.push(["IVA (Sobre Utilidad):", _currencyFormatter.format(bd.vIvaUtil)]);
-        } else {
+        } else if (configUsada.modo === 'IVA_GLOBAL') {
             totalsBody.push(["SUB TOTAL:", _currencyFormatter.format(bd.subtotal)]);
             totalsBody.push(["IVA (19%):", _currencyFormatter.format(bd.iva)]);
         }
@@ -801,10 +868,17 @@ async function generarPDF(datosExternos = null) {
         showHead: totalsHead ? 'everyPage' : 'never'
     });
 
-    finalY = doc.lastAutoTable.finalY + 10;
+    finalY = doc.lastAutoTable.finalY + 4;
 
     // --- E. CONDICIONES Y FIRMA ---
-    if (finalY > PAGE_HEIGHT - 60) { doc.addPage(); finalY = 20; }
+    // En lugar de hacer doc.addPage() obligatorio, revisamos si cabe en la página actual
+    const espacioRequerido = 45; // mm estimados para términos y firmas
+    if (finalY + espacioRequerido > PAGE_HEIGHT - 25) {
+        doc.addPage();
+        finalY = 25;
+    } else {
+        finalY += 2; // Un espacio prudente desde la tabla anterior
+    }
 
     doc.setFontSize(11);
     doc.setFont("times", "normal");
@@ -821,15 +895,24 @@ async function generarPDF(datosExternos = null) {
         `Validez de la oferta: ${terminosObj.validez || ''}`,
         `Tiempo de entrega: ${terminosObj.entrega || ''}`
     ];
-    if (terminosObj.notas) terminosArr.push(`Nota: ${terminosObj.notas}`);
+
+    const maxTextWidth = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
 
     terminosArr.forEach(t => {
-        doc.text(t, MARGIN_LEFT, finalY);
-        finalY += 5;
+        const lines = doc.splitTextToSize(t, maxTextWidth);
+        doc.text(lines, MARGIN_LEFT, finalY);
+        finalY += lines.length * 5;
     });
 
-    finalY += 10;
-    if (finalY + 40 > PAGE_HEIGHT - 25) { doc.addPage(); finalY = 30; }
+    if (terminosObj.notas) {
+        const notasTexto = `Nota: ${terminosObj.notas}`;
+        const lines = doc.splitTextToSize(notasTexto, maxTextWidth);
+        doc.text(lines, MARGIN_LEFT, finalY);
+        finalY += lines.length * 5;
+    }
+
+    finalY += 5;
+    if (finalY + 30 > PAGE_HEIGHT - 25) { doc.addPage(); finalY = 25; }
 
     doc.text("Atentamente,", MARGIN_LEFT, finalY);
     const firmaY = finalY + 5;
@@ -841,7 +924,7 @@ async function generarPDF(datosExternos = null) {
         } catch (e) { }
     }
 
-    const textFirmaY = firmaY + 25;
+    const textFirmaY = firmaY + 20;
     doc.setFont("times", "bold");
     doc.text(empresaInfo.gerente || "Gerente General", MARGIN_LEFT, textFirmaY);
     doc.setFont("times", "normal");
@@ -909,29 +992,52 @@ function abrirModalConfiguracion(esEdicion = false) {
     modal.classList.remove('hidden');
     modal.classList.add('flex');
 
-    if (esEdicion || cotizacionEditandoId) {
-        document.getElementById('config-modo').value = currentConfig.modo;
+    document.getElementById('config-modo').value = currentConfig.modo;
+    document.getElementById('config-numeracion').value = currentConfig.numeracion || 'auto';
+    document.getElementById('conf-admin').value = currentConfig.aiu.admin;
+    document.getElementById('conf-imprev').value = currentConfig.aiu.imprev;
+    document.getElementById('conf-util').value = currentConfig.aiu.util;
 
-        document.getElementById('config-numeracion').value = currentConfig.numeracion || 'auto';
+    if (currentConfig.split) {
+        document.getElementById('conf-split-sum').value = currentConfig.split.sum;
+        document.getElementById('conf-split-inst').value = currentConfig.split.inst;
+    }
 
-        document.getElementById('conf-admin').value = currentConfig.aiu.admin;
-        document.getElementById('conf-imprev').value = currentConfig.aiu.imprev;
-        document.getElementById('conf-util').value = currentConfig.aiu.util;
+    if (currentConfig.terminos) {
+        document.getElementById('conf-pago').value = currentConfig.terminos.pago;
+        document.getElementById('conf-validez').value = currentConfig.terminos.validez;
+        document.getElementById('conf-entrega').value = currentConfig.terminos.entrega;
+    }
 
-        if (currentConfig.split) {
-            document.getElementById('conf-split-sum').value = currentConfig.split.sum;
-            document.getElementById('conf-split-inst').value = currentConfig.split.inst;
-        }
+    document.querySelectorAll('.col-check').forEach(chk => {
+        chk.checked = currentConfig.columnas.includes(chk.value);
+    });
 
-        if (currentConfig.terminos) {
-            document.getElementById('conf-pago').value = currentConfig.terminos.pago;
-            document.getElementById('conf-validez').value = currentConfig.terminos.validez;
-            document.getElementById('conf-entrega').value = currentConfig.terminos.entrega;
-        }
+    actualizarVisibilidadConfigModal();
+}
 
-        document.querySelectorAll('.col-check').forEach(chk => {
-            chk.checked = currentConfig.columnas.includes(chk.value);
-        });
+function actualizarVisibilidadConfigModal() {
+    const configModoEl = document.getElementById('config-modo');
+    if (!configModoEl) return;
+    const modo = configModoEl.value;
+    const aiuDiv = document.getElementById('config-aiu-inputs');
+    const splitDiv = document.getElementById('config-split-inputs');
+    const desgloseDiv = document.getElementById('config-desglose-section');
+
+    if (modo === 'MIXTO') {
+        if (aiuDiv) aiuDiv.classList.remove('hidden');
+        if (splitDiv) splitDiv.classList.remove('hidden');
+        if (desgloseDiv) desgloseDiv.classList.remove('hidden');
+    } else if (modo === 'AIU') {
+        if (aiuDiv) aiuDiv.classList.remove('hidden');
+        if (splitDiv) splitDiv.classList.add('hidden');
+        if (desgloseDiv) desgloseDiv.classList.add('hidden');
+        document.querySelectorAll('.col-check[value="suministro"], .col-check[value="instalacion"]').forEach(c => c.checked = false);
+    } else { // IVA_GLOBAL or SOLO_TOTAL
+        if (aiuDiv) aiuDiv.classList.add('hidden');
+        if (splitDiv) splitDiv.classList.add('hidden');
+        if (desgloseDiv) desgloseDiv.classList.add('hidden');
+        document.querySelectorAll('.col-check[value="suministro"], .col-check[value="instalacion"]').forEach(c => c.checked = false);
     }
 }
 
@@ -1188,7 +1294,7 @@ function agregarFilaItem(data = {}) {
                 // Si es manual, mostramos un input pequeño
                 // Si ya viene data.item_id lo usamos, si no, sugerimos el índice
                 const valorId = data.item_id || indiceAuto;
-                html += `<td class="p-2"><input type="text" name="item_id" class="w-12 p-1 border rounded text-xs text-center font-bold text-slate-700 bg-yellow-50 focus:bg-white" value="${valorId}"></td>`;
+                html += `<td class="p-2"><input type="text" name="item_id" class="w-12 p-1.5 border border-slate-200 rounded-md text-xs text-center font-bold text-slate-700 bg-yellow-50/50 focus:bg-white focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400/10 outline-none transition-all" value="${valorId}"></td>`;
             } else {
                 // Si es automático, mostramos el número y un input oculto para guardarlo siempre
                 html += `<td class="p-2"><span class="text-xs font-bold text-slate-400 block text-center">${indiceAuto}</span><input type="hidden" name="item_id" value="${indiceAuto}"></td>`;
@@ -1199,28 +1305,40 @@ function agregarFilaItem(data = {}) {
             // --- CAMBIO 1: Ubicación pequeña (w-20) y centrada ---
             html += `<td class="p-2">
                         <input type="text" name="ubicacion" 
-                        class="w-20 p-1 border rounded text-xs text-center" 
+                        class="w-20 p-1.5 border border-slate-200 rounded-md text-xs text-center focus:border-blue-500 focus:ring-1 focus:ring-blue-500/10 outline-none transition-all" 
                         value="${v('ubicacion')}" 
                         placeholder="Ubic.">
-                     </td>`;
+                      </td>`;
         }
         else if (col === 'descripcion') {
                 // CORRECCIÓN: Celda de descripción
                 html += `<td class="p-2">
                     <textarea name="descripcion" rows="1" 
-                        class="w-full min-w-[200px] p-1.5 border border-slate-200 rounded text-xs text-gray-700 resize-none overflow-hidden focus:ring-1 focus:ring-blue-500 outline-none" 
+                        class="w-full min-w-[200px] p-1.5 border border-slate-200 rounded-md text-xs text-slate-700 resize-none overflow-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500/10 outline-none transition-all" 
                         style="min-height: 34px;"
                         placeholder="Descripción técnica del ítem...">${v('descripcion')}</textarea>
                 </td>`;
             }
-        else if (col === 'ancho') html += `<td class="p-2"><input type="number" step="0.01" name="ancho" class="inputs-calc w-full p-1 border rounded text-right text-xs" placeholder="0.00" value="${v('ancho')}"></td>`;
-        else if (col === 'alto') html += `<td class="p-2"><input type="number" step="0.01" name="alto" class="inputs-calc w-full p-1 border rounded text-right text-xs" placeholder="0.00" value="${v('alto')}"></td>`;
-        else if (col === 'm2') html += `<td class="p-2"><input type="text" name="m2" readonly class="w-full p-1 bg-slate-100 text-slate-500 rounded text-right text-xs" value="0.00"></td>`;
-        else if (col === 'cantidad') html += `<td class="p-2"><input type="number" name="cantidad" class="inputs-calc w-full p-1 border rounded text-center text-xs font-bold" value="${vn('cantidad') || 1}"></td>`;
-        else if (col === 'total_m2') html += `<td class="p-2"><input type="text" name="total_m2" readonly class="w-full p-1 bg-slate-100 text-slate-500 rounded text-right text-xs" value="0.00"></td>`;
-        else if (col === 'suministro') html += `<td class="p-2"><input type="number" name="val_suministro" class="inputs-calc w-full p-1 border border-blue-200 bg-blue-50/50 rounded text-right text-xs" value="${vn('val_suministro')}"></td>`;
-        else if (col === 'instalacion') html += `<td class="p-2"><input type="number" name="val_instalacion" class="inputs-calc w-full p-1 border border-emerald-200 bg-emerald-50/50 rounded text-right text-xs" value="${vn('val_instalacion')}"></td>`;
-        else if (col === 'valor_unitario') html += `<td class="p-2"><input type="number" name="valor_unitario" class="inputs-calc w-full p-1 border rounded text-right text-xs font-bold" value="${vn('valor_unitario')}"></td>`;
+        else if (col === 'ancho') html += `<td class="p-2"><input type="number" step="0.01" name="ancho" class="inputs-calc w-full p-1.5 border border-slate-200 rounded-md text-right text-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500/10 outline-none transition-all" placeholder="0.00" value="${v('ancho')}"></td>`;
+        else if (col === 'alto') html += `<td class="p-2"><input type="number" step="0.01" name="alto" class="inputs-calc w-full p-1.5 border border-slate-200 rounded-md text-right text-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500/10 outline-none transition-all" placeholder="0.00" value="${v('alto')}"></td>`;
+        else if (col === 'm2') html += `<td class="p-2"><input type="text" name="m2" readonly class="w-full p-1.5 bg-slate-50 text-slate-400 border border-slate-100 rounded-md text-right text-xs select-none" value="0.00"></td>`;
+        else if (col === 'cantidad') html += `<td class="p-2"><input type="number" name="cantidad" class="inputs-calc w-full p-1.5 border border-slate-200 rounded-md text-center text-xs font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500/10 outline-none transition-all" value="${vn('cantidad') || 1}"></td>`;
+        else if (col === 'total_m2') html += `<td class="p-2"><input type="text" name="total_m2" readonly class="w-full p-1.5 bg-slate-50 text-slate-400 border border-slate-100 rounded-md text-right text-xs select-none" value="0.00"></td>`;
+        else if (col === 'suministro') {
+            const rawVal = vn('val_suministro');
+            const displayVal = rawVal ? _currencyFormatter.format(rawVal) : '';
+            html += `<td class="p-2"><input type="text" name="val_suministro" class="inputs-calc w-full p-1.5 border border-blue-200 bg-blue-50/30 rounded-md text-right text-xs text-blue-700 font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500/10 outline-none transition-all" value="${displayVal}" placeholder="$0"></td>`;
+        }
+        else if (col === 'instalacion') {
+            const rawVal = vn('val_instalacion');
+            const displayVal = rawVal ? _currencyFormatter.format(rawVal) : '';
+            html += `<td class="p-2"><input type="text" name="val_instalacion" class="inputs-calc w-full p-1.5 border border-emerald-200 bg-emerald-50/30 rounded-md text-right text-xs text-emerald-700 font-semibold focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/10 outline-none transition-all" value="${displayVal}" placeholder="$0"></td>`;
+        }
+        else if (col === 'valor_unitario') {
+            const rawVal = vn('valor_unitario');
+            const displayVal = rawVal ? _currencyFormatter.format(rawVal) : '';
+            html += `<td class="p-2"><input type="text" name="valor_unitario" class="inputs-calc w-full p-1.5 border border-slate-200 rounded-md text-right text-xs font-black text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/10 outline-none transition-all" value="${displayVal}" placeholder="$0"></td>`;
+        }
         else if (col === 'total_global') html += `<td class="p-2"><div class="display-total text-right text-xs font-bold text-slate-700" data-raw="0">$0</div></td>`;
     });
 
@@ -1261,7 +1379,26 @@ async function guardarCotizacion(e) {
         document.querySelectorAll('#items-container tr').forEach(tr => {
             const item = {};
             // Recoger todos los inputs y textareas de la fila
-            tr.querySelectorAll('input, textarea').forEach(i => item[i.name] = i.value);
+            tr.querySelectorAll('input, textarea').forEach(i => {
+                let val = i.value;
+                // Si es un campo de dinero, limpiar formato para guardarlo como número puro
+                if (['val_suministro', 'val_instalacion', 'valor_unitario'].includes(i.name)) {
+                    val = parseFloat(val.replace(/\D/g, '')) || 0;
+                }
+                // Si son campos numéricos estándar, guardarlos como números
+                else if (['ancho', 'alto', 'cantidad'].includes(i.name)) {
+                    val = parseFloat(val) || 0;
+                }
+                else if (i.name === 'ubicacion') {
+                    val = (val || '').trim().toUpperCase();
+                    i.value = val; // Actualizar interfaz
+                }
+                else if (i.name === 'descripcion') {
+                    val = formatParagraph(val);
+                    i.value = val; // Actualizar interfaz
+                }
+                item[i.name] = val;
+            });
             // Solo agregar si tiene descripción
             if (item.descripcion) items.push(item);
         });
@@ -1292,10 +1429,23 @@ async function guardarCotizacion(e) {
         // 'archivosExistentes' es la variable global que llenamos al abrir el formulario
         const listaCompletaArchivos = [...archivosExistentes, ...nuevosArchivos];
 
+        // Formatear campos principales del formulario
+        const elCliente = document.getElementById('cot-cliente');
+        const formattedCliente = formatCliente(elCliente ? elCliente.value : '');
+        if (elCliente) elCliente.value = formattedCliente;
+
+        const elProyecto = document.getElementById('cot-proyecto');
+        const formattedProyecto = (elProyecto ? elProyecto.value : '').trim().toUpperCase();
+        if (elProyecto) elProyecto.value = formattedProyecto;
+
+        const elNotas = document.getElementById('term-notas');
+        const formattedNotas = formatParagraph(elNotas ? elNotas.value : '');
+        if (elNotas) elNotas.value = formattedNotas;
+
         // 5. Preparar el Objeto de Datos
         const data = {
-            cliente: document.getElementById('cot-cliente').value,
-            proyecto: document.getElementById('cot-proyecto').value,
+            cliente: formattedCliente,
+            proyecto: formattedProyecto,
             fecha: document.getElementById('cot-fecha').value,
             estado: document.getElementById('cot-estado').value, // <--- Guardamos el estado
             config: currentConfig,
@@ -1304,7 +1454,7 @@ async function guardarCotizacion(e) {
                 pago: document.getElementById('term-pago').value,
                 validez: document.getElementById('term-validez').value,
                 entrega: document.getElementById('term-entrega').value,
-                notas: document.getElementById('term-notas').value
+                notas: formattedNotas
             },
             totalFinal: total,
             archivos: listaCompletaArchivos, // <--- Guardamos la lista de archivos
@@ -1404,18 +1554,73 @@ function renderizarTablaCotizaciones() {
             (item.proyecto || '').toLowerCase().includes(searchVal) ||
             (item.fecha || '').toLowerCase().includes(searchVal);
         
-        const statusMatch = statusVal === 'all' || (item.estado || 'Borrador') === statusVal;
+        const statusMatch = statusVal === 'all' ? (item.estado !== 'Archivado') : (item.estado || 'Borrador') === statusVal;
 
         return textMatch && statusMatch;
     });
 
+    const pagContainer = document.getElementById('cotizaciones-pagination-container');
+
     if (filtered.length === 0) {
         tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-400">No se encontraron cotizaciones.</td></tr>';
+        if (pagContainer) pagContainer.innerHTML = '';
         return;
     }
 
-    // B. GENERACIÓN DE FILAS
-    filtered.forEach(d => {
+    // B. PAGINACIÓN EN MEMORIA
+    const totalPages = Math.ceil(filtered.length / cotizacionesItemsPerPage);
+    if (cotizacionesCurrentPage > totalPages) {
+        cotizacionesCurrentPage = totalPages;
+    }
+    if (cotizacionesCurrentPage < 1) {
+        cotizacionesCurrentPage = 1;
+    }
+
+    const startIdx = (cotizacionesCurrentPage - 1) * cotizacionesItemsPerPage;
+    const endIdx = startIdx + cotizacionesItemsPerPage;
+    const paginatedItems = filtered.slice(startIdx, endIdx);
+
+    // Pintar controles de paginación
+    if (pagContainer) {
+        const regStart = startIdx + 1;
+        const regEnd = Math.min(endIdx, filtered.length);
+        
+        pagContainer.innerHTML = `
+            <div>
+                Mostrando <span class="font-bold text-slate-700">${regStart}</span> a <span class="font-bold text-slate-700">${regEnd}</span> de <span class="font-bold text-slate-700">${filtered.length}</span> cotizaciones
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="btn-cot-pag-prev" ${cotizacionesCurrentPage === 1 ? 'disabled' : ''} 
+                    class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 font-bold transition-all disabled:opacity-40 disabled:hover:bg-white cursor-pointer disabled:cursor-not-allowed text-xs flex items-center gap-1">
+                    <i class="fa-solid fa-angle-left"></i> Anterior
+                </button>
+                <span class="text-xs font-bold text-slate-400 px-2">Página ${cotizacionesCurrentPage} de ${totalPages}</span>
+                <button id="btn-cot-pag-next" ${cotizacionesCurrentPage === totalPages ? 'disabled' : ''} 
+                    class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 font-bold transition-all disabled:opacity-40 disabled:hover:bg-white cursor-pointer disabled:cursor-not-allowed text-xs flex items-center gap-1">
+                    Siguiente <i class="fa-solid fa-angle-right"></i>
+                </button>
+            </div>
+        `;
+
+        const btnPrev = document.getElementById('btn-cot-pag-prev');
+        const btnNext = document.getElementById('btn-cot-pag-next');
+
+        if (btnPrev && cotizacionesCurrentPage > 1) {
+            btnPrev.onclick = () => {
+                cotizacionesCurrentPage--;
+                renderizarTablaCotizaciones();
+            };
+        }
+        if (btnNext && cotizacionesCurrentPage < totalPages) {
+            btnNext.onclick = () => {
+                cotizacionesCurrentPage++;
+                renderizarTablaCotizaciones();
+            };
+        }
+    }
+
+    // C. GENERACIÓN DE FILAS
+    paginatedItems.forEach(d => {
         const tr = document.createElement('tr');
         tr.className = "hover:bg-slate-50 border-b border-slate-100 transition-colors";
         
@@ -1439,6 +1644,15 @@ function renderizarTablaCotizaciones() {
                 ${optionsHtml}
             </select>
         `;
+
+        const isArchived = d.estado === 'Archivado';
+        const delBtnHtml = isArchived 
+            ? `<button class="btn-del text-amber-600 hover:bg-amber-50 p-2 rounded transition-colors" title="Desarchivar">
+                   <i class="fa-solid fa-box-open"></i>
+               </button>`
+            : `<button class="btn-del text-red-600 hover:bg-red-50 p-2 rounded transition-colors" title="Archivar">
+                   <i class="fa-solid fa-box-archive"></i>
+               </button>`;
 
         tr.innerHTML = `
             <td class="px-6 py-4 font-bold text-slate-700">${d.cliente || 'Sin Cliente'}</td>
@@ -1465,9 +1679,7 @@ function renderizarTablaCotizaciones() {
                 <button class="btn-edit text-blue-600 hover:bg-blue-50 p-2 rounded transition-colors" title="Editar">
                     <i class="fa-solid fa-pen"></i>
                 </button>
-                <button class="btn-del text-red-600 hover:bg-red-50 p-2 rounded transition-colors" title="Eliminar">
-                    <i class="fa-solid fa-trash"></i>
-                </button>
+                ${delBtnHtml}
             </td>
         `;
         
@@ -1492,7 +1704,7 @@ function renderizarTablaCotizaciones() {
                 alert("Error actualizando estado."); 
             }
         });
-
+ 
         // 2. Botones
         tr.querySelector('.btn-launch').onclick = (e) => { e.stopPropagation(); if (window.openMainModal) window.openMainModal('init-project-from-quote', d); };
         
@@ -1504,10 +1716,22 @@ function renderizarTablaCotizaciones() {
             btnPdf.disabled = true;
             try { await generarPDF(d); } catch (err) { alert(err.message); } finally { btnPdf.innerHTML = originalHtml; btnPdf.disabled = false; }
         };
-
+ 
         tr.querySelector('.btn-clone').onclick = async (e) => { e.stopPropagation(); if(confirm(`¿Clonar "${d.proyecto}"?`)) await clonarCotizacion(d); };
         tr.querySelector('.btn-edit').onclick = () => abrirFormularioDetalle(d.id);
-        tr.querySelector('.btn-del').onclick = async (e) => { e.stopPropagation(); if(confirm('¿Borrar permanentemente?')) await deleteDoc(d.ref); };
+        
+        tr.querySelector('.btn-del').onclick = async (e) => { 
+            e.stopPropagation(); 
+            if (isArchived) {
+                if (confirm('¿Deseas desarchivar esta cotización? Volverá al estado Borrador.')) {
+                    await updateDoc(d.ref, { estado: 'Borrador', updatedAt: serverTimestamp() });
+                }
+            } else {
+                if (confirm('¿Deseas archivar esta cotización? No aparecerá en el listado general.')) {
+                    await updateDoc(d.ref, { estado: 'Archivado', updatedAt: serverTimestamp() });
+                }
+            }
+        };
         
         tbody.appendChild(tr);
     });
@@ -1551,40 +1775,15 @@ function refrescarTablaItems() {
     });
 
     // 2. Reconstruir Encabezados (THEAD)
-    const headerRow = document.querySelector('#items-table thead tr');
-    if (headerRow) {
-        let html = '';
-        const cols = currentConfig.columnas;
-
-        if (cols.includes('item')) html += '<th class="px-2 py-2 text-center">Item</th>';
-        if (cols.includes('ubicacion')) html += '<th class="px-2 py-2 text-center">Ubicación</th>';
-        if (cols.includes('descripcion')) html += '<th class="px-2 py-2 text-center w-1/3">Descripción</th>';
-        if (cols.includes('ancho')) html += '<th class="px-2 py-2 text-center">Ancho</th>';
-        if (cols.includes('alto')) html += '<th class="px-2 py-2 text-center">Alto</th>';
-        if (cols.includes('m2')) html += '<th class="px-2 py-2 text-center">M2</th>';
-        if (cols.includes('cantidad')) html += '<th class="px-2 py-2 text-center">Cant</th>';
-
-        // Columnas Financieras Dinámicas
-        if (cols.includes('suministro') && cols.includes('instalacion')) {
-            html += '<th class="px-2 py-2 text-center">Vr. Sum (Base)</th>';
-            html += '<th class="px-2 py-2 text-center">Vr. Inst (Base)</th>';
-        } else if (cols.includes('valor_unitario')) {
-            html += '<th class="px-2 py-2 text-center">V. Unitario</th>';
-        }
-
-        html += '<th class="px-2 py-2 text-center">Total</th>';
-        html += '<th class="px-2 py-2 text-center">...</th>';
-
-        headerRow.innerHTML = html;
-    }
+    reconstruirTabla();
 
     // 3. Limpiar y Reconstruir Filas (TBODY)
     tbody.innerHTML = '';
 
     // Factores para conversión (Mismos que usamos en calcularFila)
     const { modo, aiu } = currentConfig;
-    const factorIVA = 1.19;
-    const factorAIU = 1 + (aiu.admin / 100) + (aiu.imprev / 100) + (aiu.util / 100) + ((aiu.util / 100) * 0.19);
+    const factorIVA = modo === 'SOLO_TOTAL' ? 1.0 : 1.19;
+    const factorAIU = modo === 'SOLO_TOTAL' ? 1.0 : (1 + (aiu.admin / 100) + (aiu.imprev / 100) + (aiu.util / 100) + ((aiu.util / 100) * 0.19));
     const split = currentConfig.split || { sum: 85, inst: 15 };
 
     savedData.forEach(data => {
@@ -1971,8 +2170,8 @@ function indexToLetter(c) {
 }
 
 // --- B. EXPORTAR EXCEL CON FÓRMULAS E INFORMACIÓN ---
-window.exportarExcelConFormulas = () => {
-    if (!window.XLSX) return alert("Error: Librería XLSX no cargada.");
+window.exportarExcelConFormulas = async () => {
+    await window.ensureXLSX();
 
     // 1. Configurar Columnas Activas
     const cols = currentConfig.columnas; 
@@ -2146,7 +2345,7 @@ function actualizarFilaExistente(tr, data) {
 async function procesarArchivoExcel(e) {
     const file = e.target.files[0];
     if (!file) return;
-    if (!window.XLSX) return alert("Error: Librería XLSX no cargada.");
+    await window.ensureXLSX();
 
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -2256,7 +2455,7 @@ async function clonarCotizacion(dataOriginal) {
     nuevaData.fecha = hoy;
 
     // b) Proyecto: Le agregamos "(Copia)" para diferenciarla visualmente
-    nuevaData.proyecto = `${nuevaData.proyecto} (Copia)`;
+    nuevaData.proyecto = `${nuevaData.proyecto} (Copia)`.toUpperCase();
 
     // c) Versionamiento: Reiniciamos a Versión 1
     nuevaData.version = 1;
@@ -2290,5 +2489,35 @@ async function clonarCotizacion(dataOriginal) {
         console.error("Error al clonar:", error);
         alert("Hubo un error al intentar clonar la cotización.");
     }
+}
+
+// =============================================================================
+// 8. TEXT STANDARDIZATION HELPERS
+// =============================================================================
+function formatCliente(str) {
+    if (!str) return '';
+    return str.trim().split(/\s+/).map(word => {
+        const clean = word.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        if (clean === 'sas') {
+            return word.includes('.') ? 'S.A.S.' : 'SAS';
+        }
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    }).join(' ');
+}
+
+function formatParagraph(str) {
+    if (!str) return '';
+    let text = str.trim();
+    if (!text) return '';
+    
+    // Capitalize first letter of the whole text
+    text = text.charAt(0).toUpperCase() + text.slice(1);
+    
+    // Capitalize first letter after any sentence punctuation (. ! ?) followed by whitespace
+    text = text.replace(/([.!?]\s+)([a-z])/g, (match, separator, letter) => {
+        return separator + letter.toUpperCase();
+    });
+    
+    return text;
 }
 
