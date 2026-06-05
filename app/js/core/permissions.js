@@ -6,7 +6,7 @@ import { getToken } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-mes
 
 // --- CONFIGURACIÓN DE MÓDULOS DEL SIDEBAR ---
 export const SIDEBAR_CONFIG = [
-    { key: 'dashboard', selector: '#dashboard-general', label: 'Dashboard General' },
+    { key: 'dashboard', selector: '#dashboard-general-nav-link', label: 'Dashboard General' },
     { key: 'proyectos', selector: '#proyectos-nav-link', label: 'Proyectos' },
     { key: 'tareas', selector: 'a[data-view="tareas"]', label: 'Tareas Asignadas' },
     { key: 'herramienta', selector: 'a[data-view="herramienta"]', label: 'Herramienta' },
@@ -55,25 +55,43 @@ export function getRoleDefaultPermissions(role) {
 }
 
 /**
- * Aplica los permisos de visibilidad visualmente al sidebar de la interfaz.
+ * Aplica los permisos de visibilidad visualmente al sidebar y al navbar móvil de la interfaz.
  */
 export function applySidebarPermissions(role, customPermissions = {}) {
     const defaultVisibility = getRoleDefaultPermissions(role);
 
     SIDEBAR_CONFIG.forEach(module => {
-        const element = document.querySelector(module.selector);
-        if (!element) return;
-
         let shouldShow = defaultVisibility[module.key];
 
         if (customPermissions[module.key] === 'show') shouldShow = true;
         if (customPermissions[module.key] === 'hide') shouldShow = false;
 
-        if (shouldShow) {
-            element.classList.remove('hidden');
-            if (element.parentElement.tagName === 'LI') element.parentElement.classList.remove('hidden');
-        } else {
-            element.classList.add('hidden');
+        const viewValue = module.key === 'dashboard' ? 'dashboard-general' : module.key;
+
+        // 1. Aplicar en Sidebar
+        const sidebarElement = document.querySelector(`#sidebar [data-view="${viewValue}"]`) || document.querySelector(module.selector);
+        if (sidebarElement) {
+            if (shouldShow) {
+                sidebarElement.classList.remove('hidden');
+                if (sidebarElement.parentElement && sidebarElement.parentElement.tagName === 'LI') {
+                    sidebarElement.parentElement.classList.remove('hidden');
+                }
+            } else {
+                sidebarElement.classList.add('hidden');
+                if (sidebarElement.parentElement && sidebarElement.parentElement.tagName === 'LI') {
+                    sidebarElement.parentElement.classList.add('hidden');
+                }
+            }
+        }
+
+        // 2. Aplicar en Barra de navegación Móvil (Bottom Navbar)
+        const mobileElement = document.querySelector(`#mobile-bottom-nav [data-view="${viewValue}"]`);
+        if (mobileElement) {
+            if (shouldShow) {
+                mobileElement.classList.remove('hidden');
+            } else {
+                mobileElement.classList.add('hidden');
+            }
         }
     });
 }

@@ -182,61 +182,76 @@ let initTareas, openNewTaskModal, openEditTaskModal, openProgressModal, complete
 let setupDespieceEvents;
 
 let modulesLoadedPromise = null;
-async function ensureModulesLoaded() {
+async function ensureModulesLoaded(role) {
     if (modulesLoadedPromise) return modulesLoadedPromise;
 
-    console.log("Iniciando carga de módulos bajo demanda...");
+    console.log(`Iniciando carga de módulos bajo demanda para el rol: ${role || 'desconocido'}...`);
     modulesLoadedPromise = (async () => {
         try {
             await window.ensureChoices();
-            const [
-                dotacion, herramientas, dashboard, empleados, configuracion, cartera, solicitudes,
-                ingresopersonal, cotizaciones, informes, proyectos, proyectoDetalles, catalogo,
-                cortes, proveedores, compras, usuarios, tareas, despiece
-            ] = await Promise.all([
-                import('./modules/dotacion.js'),
-                import('./modules/herramientas.js'),
-                import('./modules/dashboard.js'),
-                import('./modules/empleados.js'),
-                import('./modules/configuracion.js'),
-                import('./modules/cartera.js'),
-                import('./modules/solicitudes.js'),
-                import('./modules/ingresopersonal.js'),
-                import('./modules/cotizaciones.js'),
-                import('./modules/informes.js'),
-                import('./modules/proyectos.js'),
-                import('./modules/proyecto-detalles.js'),
-                import('./modules/catalogo.js'),
-                import('./modules/cortes.js'),
-                import('./modules/proveedores.js'),
-                import('./modules/compras.js'),
-                import('./modules/usuarios.js'),
-                import('./modules/tareas.js'),
-                import('./modules/despiece2d.js')
-            ]);
 
-            // Assign destructured modules
-            ({ initDotacion, loadDotacionView, updateDotacionFilterOptions, loadDotacionAsignaciones } = dotacion);
-            ({ initHerramientas, resetToolViewAndLoad, updateToolFilterOptions, TOOL_CATEGORIES } = herramientas);
-            ({ initDashboard, showGeneralDashboard } = dashboard);
-            ({ initEmpleados, loadEmpleadosView, showEmpleadoDetails, loadPaymentHistoryView } = empleados);
-            ({ initConfiguracion, loadConfiguracionView } = configuracion);
-            ({ initCartera, loadCarteraView } = cartera);
-            ({ initSolicitudes, loadSolicitudesView, closeRequestDetailsModal, setupAddMaterialButton, setupRequestItemSearch, resetMaterialRequestForm, handleViewRequestDetails, handleOpenDeliveryModal, showMaterialRequestView } = solicitudes);
-            ({ handleReportEntry } = ingresopersonal);
-            ({ initCotizaciones, loadCotizacionesView } = cotizaciones);
-            ({ initInformes, loadInformesView, loadReportsView, getCompanyData } = informes);
-            ({ initProyectos, loadProjects, createProject, deleteProject, archiveProject, restoreProject } = proyectos);
-            ({ initProyectoDetalles, showProjectDetails, switchProjectTab, calculateItemUnitPrice, calculateItemTotal, calculateProjectContractedValue } = proyectoDetalles);
-            ({ initCatalogo, loadCatalogView, fetchMoreCatalogItems, openImportModal, generateMaterialTemplate, importMaterialsFromExcel } = catalogo);
-            ({ initCortes, loadCortes, setupCorteSelection, generateCorte, closeCorteSelectionView, approveCorte, denyCorte, showCorteDetails, exportCorteToPDF, cleanupCortesSubscription } = cortes);
-            ({ initProveedores, loadProveedoresView, loadSupplierDetailsView, findLastPurchasePrice, currentSupplierId } = proveedores);
-            ({ initCompras, loadComprasView, validatePoDateRange, openPurchaseOrderModal, closePurchaseOrderModal } = compras);
-            ({ initUsuarios, loadUsers } = usuarios);
-            ({ initTareas, openNewTaskModal, openEditTaskModal, openProgressModal, completeTask, openMultipleProgressModal, loadTasksView, loadAndDisplayTasks, createTaskCard, closeTaskDetailsModal, loadTaskMaterialStatus, openTaskDetailsModal, openSafetyCheckInModal, checkIfSafetyCheckInNeeded } = tareas);
-            ({ setupDespieceEvents } = despiece);
+            const permissions = getRoleDefaultPermissions(role || 'operario');
 
-            // Expose dynamically loaded functions to window for SPA routers
+            // Definimos cuáles módulos cargar según los permisos del rol del usuario
+            const toLoad = {
+                dashboard: { path: './modules/dashboard.js', test: true },
+                tareas: { path: './modules/tareas.js', test: true },
+                dotacion: { path: './modules/dotacion.js', test: permissions.dotacion },
+                herramientas: { path: './modules/herramientas.js', test: permissions.herramienta },
+                empleados: { path: './modules/empleados.js', test: permissions.empleados },
+                configuracion: { path: './modules/configuracion.js', test: permissions.configuracion },
+                cartera: { path: './modules/cartera.js', test: permissions.cartera },
+                solicitudes: { path: './modules/solicitudes.js', test: permissions.solicitud },
+                ingresopersonal: { path: './modules/ingresopersonal.js', test: permissions.empleados || permissions.sst },
+                cotizaciones: { path: './modules/cotizaciones.js', test: permissions.cotizaciones },
+                informes: { path: './modules/informes.js', test: permissions.reports },
+                proyectos: { path: './modules/proyectos.js', test: permissions.proyectos },
+                proyectoDetalles: { path: './modules/proyecto-detalles.js', test: permissions.proyectos },
+                catalogo: { path: './modules/catalogo.js', test: permissions.catalog },
+                cortes: { path: './modules/cortes.js', test: permissions.proyectos },
+                proveedores: { path: './modules/proveedores.js', test: permissions.proveedores },
+                compras: { path: './modules/compras.js', test: permissions.compras },
+                usuarios: { path: './modules/usuarios.js', test: permissions.adminPanel },
+                despiece: { path: './modules/despiece2d.js', test: permissions.despiece }
+            };
+
+            const promises = [];
+            const loadedKeys = [];
+            for (const [key, modInfo] of Object.entries(toLoad)) {
+                if (modInfo.test) {
+                    promises.push(import(modInfo.path));
+                    loadedKeys.push(key);
+                }
+            }
+
+            const results = await Promise.all(promises);
+            const loadedModules = {};
+            loadedKeys.forEach((key, index) => {
+                loadedModules[key] = results[index];
+            });
+
+            // Asignación segura de propiedades destructuradas si el módulo fue cargado
+            if (loadedModules.dotacion) ({ initDotacion, loadDotacionView, updateDotacionFilterOptions, loadDotacionAsignaciones } = loadedModules.dotacion);
+            if (loadedModules.herramientas) ({ initHerramientas, resetToolViewAndLoad, updateToolFilterOptions, TOOL_CATEGORIES } = loadedModules.herramientas);
+            if (loadedModules.dashboard) ({ initDashboard, showGeneralDashboard } = loadedModules.dashboard);
+            if (loadedModules.empleados) ({ initEmpleados, loadEmpleadosView, showEmpleadoDetails, loadPaymentHistoryView } = loadedModules.empleados);
+            if (loadedModules.configuracion) ({ initConfiguracion, loadConfiguracionView } = loadedModules.configuracion);
+            if (loadedModules.cartera) ({ initCartera, loadCarteraView } = loadedModules.cartera);
+            if (loadedModules.solicitudes) ({ initSolicitudes, loadSolicitudesView, closeRequestDetailsModal, setupAddMaterialButton, setupRequestItemSearch, resetMaterialRequestForm, handleViewRequestDetails, handleOpenDeliveryModal, showMaterialRequestView } = loadedModules.solicitudes);
+            if (loadedModules.ingresopersonal) ({ handleReportEntry } = loadedModules.ingresopersonal);
+            if (loadedModules.cotizaciones) ({ initCotizaciones, loadCotizacionesView } = loadedModules.cotizaciones);
+            if (loadedModules.informes) ({ initInformes, loadInformesView, loadReportsView, getCompanyData } = loadedModules.informes);
+            if (loadedModules.proyectos) ({ initProyectos, loadProjects, createProject, deleteProject, archiveProject, restoreProject } = loadedModules.proyectos);
+            if (loadedModules.proyectoDetalles) ({ initProyectoDetalles, showProjectDetails, switchProjectTab, calculateItemUnitPrice, calculateItemTotal, calculateProjectContractedValue } = loadedModules.proyectoDetalles);
+            if (loadedModules.catalogo) ({ initCatalogo, loadCatalogView, fetchMoreCatalogItems, openImportModal, generateMaterialTemplate, importMaterialsFromExcel } = loadedModules.catalogo);
+            if (loadedModules.cortes) ({ initCortes, loadCortes, setupCorteSelection, generateCorte, closeCorteSelectionView, approveCorte, denyCorte, showCorteDetails, exportCorteToPDF, cleanupCortesSubscription } = loadedModules.cortes);
+            if (loadedModules.proveedores) ({ initProveedores, loadProveedoresView, loadSupplierDetailsView, findLastPurchasePrice, currentSupplierId } = loadedModules.proveedores);
+            if (loadedModules.compras) ({ initCompras, loadComprasView, validatePoDateRange, openPurchaseOrderModal, closePurchaseOrderModal } = loadedModules.compras);
+            if (loadedModules.usuarios) ({ initUsuarios, loadUsers } = loadedModules.usuarios);
+            if (loadedModules.tareas) ({ initTareas, openNewTaskModal, openEditTaskModal, openProgressModal, completeTask, openMultipleProgressModal, loadTasksView, loadAndDisplayTasks, createTaskCard, closeTaskDetailsModal, loadTaskMaterialStatus, openTaskDetailsModal, openSafetyCheckInModal, checkIfSafetyCheckInNeeded } = loadedModules.tareas);
+            if (loadedModules.despiece) ({ setupDespieceEvents } = loadedModules.despiece);
+
+            // Expose dynamically loaded functions to window for SPA routers (only if defined)
             window.loadDotacionView = loadDotacionView;
             window.resetToolViewAndLoad = resetToolViewAndLoad;
             window.loadDotacionAsignaciones = loadDotacionAsignaciones;
@@ -307,7 +322,7 @@ async function ensureModulesLoaded() {
             window.checkIfSafetyCheckInNeeded = checkIfSafetyCheckInNeeded;
             window.setupDespieceEvents = setupDespieceEvents;
 
-            console.log("Todos los módulos dinámicos se han cargado e inyectado correctamente.");
+            console.log("Módulos del rol cargados e inyectados correctamente.");
         } catch (error) {
             console.error("Error al cargar los módulos dinámicos:", error);
             modulesLoadedPromise = null;
@@ -500,126 +515,160 @@ function initializeAllModules() {
     if (modulesInitialized) return;
     modulesInitialized = true;
 
-    console.log("Inicializando todos los módulos de la aplicación...");
+    console.log("Inicializando módulos cargados del rol...");
 
-    initHerramientas(
-        db,
-        storage,
-        openMainModal,
-        closeMainModal,
-        openConfirmModal,
-        null,
-        openImageModal,
-        () => currentUser,
-        () => usersMap,
-        () => currentUserRole
-    );
+    if (typeof initHerramientas === 'function') {
+        initHerramientas(
+            db,
+            storage,
+            openMainModal,
+            closeMainModal,
+            openConfirmModal,
+            null,
+            openImageModal,
+            () => currentUser,
+            () => usersMap,
+            () => currentUserRole
+        );
+    }
 
-    initProyectos(
-        db, 
-        functions, 
-        () => currentUser, 
-        () => currentUserRole
-    );
+    if (typeof initProyectos === 'function') {
+        initProyectos(
+            db, 
+            functions, 
+            () => currentUser, 
+            () => currentUserRole
+        );
+    }
 
-    initTareas(db, storage, {
-        showView: showView,
-        closeMainModal: closeMainModal,
-        openConfirmModal: openConfirmModal,
-        getCurrentUser: () => currentUser,
-        getCurrentProject: () => currentProject,
-        getUsersMap: () => usersMap,
-        loadTasksView: () => loadTasksView()
-    });
+    if (typeof initTareas === 'function') {
+        initTareas(db, storage, {
+            showView: showView,
+            closeMainModal: closeMainModal,
+            openConfirmModal: openConfirmModal,
+            getCurrentUser: () => currentUser,
+            getCurrentProject: () => currentProject,
+            getUsersMap: () => usersMap,
+            loadTasksView: () => loadTasksView()
+        });
+    }
 
-    initProyectoDetalles(db, {
-        showView: showView,
-        setCurrentProject: (proj) => { currentProject = proj; },
-        setReturnContext: (ctx) => { materialRequestReturnContext = ctx; },
-        formatCurrency: (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val),
-        openTaskDetailsModal: (typeof openTaskDetailsModal !== 'undefined' ? openTaskDetailsModal : null),
-        loaders: {
-            loadItems: loadItems,
-            loadMaterialsTab: (projectId) => { console.log('loadMaterialsTab'); },
-            loadCortes: loadCortes,
-            loadPayments: (projectId) => { console.log('loadPayments'); },
-            loadPeopleOfInterest: loadPeopleOfInterest,
-            renderInteractiveDocumentCards: renderInteractiveDocumentCards
-        }
-    });
+    if (typeof initProyectoDetalles === 'function') {
+        initProyectoDetalles(db, {
+            showView: showView,
+            setCurrentProject: (proj) => { currentProject = proj; },
+            setReturnContext: (ctx) => { materialRequestReturnContext = ctx; },
+            formatCurrency: (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val),
+            openTaskDetailsModal: (typeof openTaskDetailsModal !== 'undefined' ? openTaskDetailsModal : null),
+            loaders: {
+                loadItems: loadItems,
+                loadMaterialsTab: (projectId) => { console.log('loadMaterialsTab'); },
+                loadCortes: loadCortes,
+                loadPayments: (projectId) => { console.log('loadPayments'); },
+                loadPeopleOfInterest: loadPeopleOfInterest,
+                renderInteractiveDocumentCards: renderInteractiveDocumentCards
+            }
+        });
+    }
 
-    initCortes(db, {
-        formatCurrency: (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val),
-        getCurrentProject: () => currentProject,
-        showView: showView,
-        openConfirmModal: openConfirmModal,
-        calculateItemTotal: calculateItemTotal,
-        calculateProjectContractedValue: calculateProjectContractedValue,
-        getUsersMap: () => usersMap
-    });
+    if (typeof initCortes === 'function') {
+        initCortes(db, {
+            formatCurrency: (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val),
+            getCurrentProject: () => currentProject,
+            showView: showView,
+            openConfirmModal: openConfirmModal,
+            calculateItemTotal: calculateItemTotal,
+            calculateProjectContractedValue: calculateProjectContractedValue,
+            getUsersMap: () => usersMap
+        });
+    }
 
-    initProveedores(db, {
-        showView: showView,
-        formatCurrency: (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val)
-    });
+    if (typeof initProveedores === 'function') {
+        initProveedores(db, {
+            showView: showView,
+            formatCurrency: (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val)
+        });
+    }
 
-    initCompras(db, {
-        formatCurrency: (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val),
-        getCurrentUserRole: () => currentUserRole
-    });
+    if (typeof initCompras === 'function') {
+        initCompras(db, {
+            formatCurrency: (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val),
+            getCurrentUserRole: () => currentUserRole
+        });
+    }
 
-    initCatalogo(db);
+    if (typeof initCatalogo === 'function') {
+        initCatalogo(db);
+    }
 
-    initDotacion(
-        db,
-        storage,
-        openMainModal,
-        closeMainModal,
-        openConfirmModal,
-        null,
-        openImageModal,
-        () => currentUser,
-        () => usersMap,
-        () => currentUserRole
-    );
+    if (typeof initDotacion === 'function') {
+        initDotacion(
+            db,
+            storage,
+            openMainModal,
+            closeMainModal,
+            openConfirmModal,
+            null,
+            openImageModal,
+            () => currentUser,
+            () => usersMap,
+            () => currentUserRole
+        );
+    }
 
-    initDashboard(
-        db,
-        showView,
-        () => usersMap,
-        () => currentUserRole,
-        () => currentUser ? currentUser.uid : null
-    );
+    if (typeof initDashboard === 'function') {
+        initDashboard(
+            db,
+            showView,
+            () => usersMap,
+            () => currentUserRole,
+            () => currentUser ? currentUser.uid : null
+        );
+    }
 
-    initUsuarios(db, {
-        openMainModal: openMainModal,
-        openConfirmModal: openConfirmModal
-    });
+    if (typeof initUsuarios === 'function') {
+        initUsuarios(db, {
+            openMainModal: openMainModal,
+            openConfirmModal: openConfirmModal
+        });
+    }
 
-    initInformes(db);
+    if (typeof initInformes === 'function') {
+        initInformes(db);
+    }
 
-    initEmpleados(
-        db,
-        () => usersMap,
-        () => currentUserRole,
-        showView,
-        storage,
-        openConfirmModal,
-        (userId, containerId) => loadDotacionAsignaciones(userId, containerId),
-        () => payrollConfig,
-        () => currentUser ? currentUser.uid : null,
-        setupCurrencyInput
-    );
+    if (typeof initEmpleados === 'function') {
+        initEmpleados(
+            db,
+            () => usersMap,
+            () => currentUserRole,
+            showView,
+            storage,
+            openConfirmModal,
+            (userId, containerId) => loadDotacionAsignaciones(userId, containerId),
+            () => payrollConfig,
+            () => currentUser ? currentUser.uid : null,
+            setupCurrencyInput
+        );
+    }
 
-    initCartera(db, showView);
+    if (typeof initCartera === 'function') {
+        initCartera(db, showView);
+    }
 
-    initConfiguracion(db, setupCurrencyInput);
+    if (typeof initConfiguracion === 'function') {
+        initConfiguracion(db, setupCurrencyInput);
+    }
 
-    initCotizaciones(db, storage, showView, currentUser);
+    if (typeof initCotizaciones === 'function') {
+        initCotizaciones(db, storage, showView, currentUser);
+    }
 
-    initSolicitudes(db, showView, currentUserRole, usersMap, openMainModal);
+    if (typeof initSolicitudes === 'function') {
+        initSolicitudes(db, showView, currentUserRole, usersMap, openMainModal);
+    }
 
-    // --- INITIALIZE NEW OLA 6 FORM AND CLICK LISTENERS Dynamically ---
+    // --- INITIALIZE FORM AND CLICK LISTENERS ---
     initFormHandlers();
     initClickHandlers();
 }
@@ -646,7 +695,7 @@ onAuthStateChanged(auth, async (user) => {
                 currentUserRole = userData.role;
 
                 // 1. CARGA DINÁMICA DE MÓDULOS OBLIGATORIA POST-LOGIN (OLA 6 HACK)
-                await ensureModulesLoaded();
+                await ensureModulesLoaded(currentUserRole);
                 initializeAllModules();
 
                 // 2. Cargar mapa de usuarios
