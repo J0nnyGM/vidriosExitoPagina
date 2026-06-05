@@ -206,49 +206,44 @@ export function initClickHandlers() {
                     return;
                 }
 
-                const originalBtnText = '<i class="fa-solid fa-check"></i> Autorizar Avance';
-                const originalText = target.innerHTML;
+                // Cerrar modal e iniciar la callback inmediatamente
+                localStorage.setItem('lastSafetyCheckIn', new Date().toISOString());
 
-                target.disabled = true;
-                target.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Autorizando...';
+                if (window.videoStream) window.videoStream.getTracks().forEach(track => track.stop());
+                document.getElementById('safety-checkin-modal').style.display = 'none';
 
-                try {
-                    if (taskId) {
-                        const selfieBlob = await new Promise(resolve => window.verifiedCanvas.toBlob(resolve, 'image/jpeg', 0.80));
+                if (typeof window.onSafetyCheckInSuccess === 'function') {
+                    window.onSafetyCheckInSuccess();
+                }
 
-                        const timestamp = Date.now();
-                        const selfiePath = `checkin_evidence/${taskId}/${window.currentUser.uid}_${timestamp}.jpg`;
-                        const selfieStorageRef = ref(storage, selfiePath);
+                // Guardar la evidencia en segundo plano
+                if (taskId) {
+                    (async () => {
+                        try {
+                            const selfieBlob = await new Promise(resolve => window.verifiedCanvas.toBlob(resolve, 'image/jpeg', 0.80));
+                            if (!selfieBlob) throw new Error("No se pudo obtener el blob de la imagen");
 
-                        await uploadBytes(selfieStorageRef, selfieBlob);
-                        const downloadURL = await getDownloadURL(selfieStorageRef);
+                            const timestamp = Date.now();
+                            const selfiePath = `checkin_evidence/${taskId}/${window.currentUser.uid}_${timestamp}.jpg`;
+                            const selfieStorageRef = ref(storage, selfiePath);
 
-                        await addDoc(collection(db, "tasks", taskId, "comments"), {
-                            type: 'log',
-                            text: `<b>Identidad Verificada.</b> El usuario autorizó un avance.`,
-                            photoURL: downloadURL,
-                            userId: window.currentUser.uid,
-                            userName: `${window.usersMap.get(window.currentUser.uid)?.firstName || 'Usuario'} ${window.usersMap.get(window.currentUser.uid)?.lastName || ''}`,
-                            createdAt: new Date()
-                        });
+                            await uploadBytes(selfieStorageRef, selfieBlob);
+                            const downloadURL = await getDownloadURL(selfieStorageRef);
 
-                        console.log("Evidencia biométrica guardada correctamente.");
-                    }
+                            await addDoc(collection(db, "tasks", taskId, "comments"), {
+                                type: 'log',
+                                text: `<b>Identidad Verificada.</b> El usuario autorizó un avance.`,
+                                photoURL: downloadURL,
+                                userId: window.currentUser.uid,
+                                userName: `${window.usersMap.get(window.currentUser.uid)?.firstName || 'Usuario'} ${window.usersMap.get(window.currentUser.uid)?.lastName || ''}`,
+                                createdAt: new Date()
+                            });
 
-                    localStorage.setItem('lastSafetyCheckIn', new Date().toISOString());
-
-                    if (window.videoStream) window.videoStream.getTracks().forEach(track => track.stop());
-                    document.getElementById('safety-checkin-modal').style.display = 'none';
-
-                    if (typeof window.onSafetyCheckInSuccess === 'function') {
-                        window.onSafetyCheckInSuccess();
-                    }
-
-                } catch (err) {
-                    console.error("Error crítico en autorización:", err);
-                    alert("Error al autorizar: " + (err.message || "Error desconocido"));
-                    target.disabled = false;
-                    target.innerHTML = originalText || originalBtnText;
+                            console.log("Evidencia biométrica guardada en segundo plano correctamente.");
+                        } catch (bgError) {
+                            console.error("Error al guardar evidencia biométrica en segundo plano:", bgError);
+                        }
+                    })();
                 }
             }
 
@@ -524,8 +519,7 @@ export function initClickHandlers() {
                 window.openMainModal('create-daily-report');
                 break;
             case 'view-my-payment-history':
-                window.showView('my-payment-history');
-                window.loadPaymentHistoryView(window.currentUser.uid);
+                window.openMainModal('view-my-payment-history', { userId: window.currentUser.uid });
                 break;
             case 'send-admin-alert':
                 window.openMainModal('send-admin-alert');

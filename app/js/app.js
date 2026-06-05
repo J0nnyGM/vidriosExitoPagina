@@ -70,6 +70,8 @@ function navigateToView(viewName, fromHistory = false) {
         if (typeof window.loadComprasView === 'function') window.loadComprasView();
     } else if (viewName === 'reports') {
         if (typeof window.loadReportsView === 'function') window.loadReportsView();
+    } else if (viewName === 'despiece') {
+        if (typeof window.setupDespieceEvents === 'function') window.setupDespieceEvents();
     } else if (viewName === 'adminPanel') {
         if (typeof window.loadUsers === 'function') window.loadUsers('active');
     } else if (viewName === 'dashboard-general') {
@@ -177,6 +179,7 @@ let initProveedores, loadProveedoresView, loadSupplierDetailsView, findLastPurch
 let initCompras, loadComprasView, validatePoDateRange, openPurchaseOrderModal, closePurchaseOrderModal;
 let initUsuarios, loadUsers;
 let initTareas, openNewTaskModal, openEditTaskModal, openProgressModal, completeTask, openMultipleProgressModal, loadTasksView, loadAndDisplayTasks, createTaskCard, closeTaskDetailsModal, loadTaskMaterialStatus, openTaskDetailsModal, openSafetyCheckInModal, checkIfSafetyCheckInNeeded;
+let setupDespieceEvents;
 
 let modulesLoadedPromise = null;
 async function ensureModulesLoaded() {
@@ -189,7 +192,7 @@ async function ensureModulesLoaded() {
             const [
                 dotacion, herramientas, dashboard, empleados, configuracion, cartera, solicitudes,
                 ingresopersonal, cotizaciones, informes, proyectos, proyectoDetalles, catalogo,
-                cortes, proveedores, compras, usuarios, tareas
+                cortes, proveedores, compras, usuarios, tareas, despiece
             ] = await Promise.all([
                 import('./modules/dotacion.js'),
                 import('./modules/herramientas.js'),
@@ -208,7 +211,8 @@ async function ensureModulesLoaded() {
                 import('./modules/proveedores.js'),
                 import('./modules/compras.js'),
                 import('./modules/usuarios.js'),
-                import('./modules/tareas.js')
+                import('./modules/tareas.js'),
+                import('./modules/despiece2d.js')
             ]);
 
             // Assign destructured modules
@@ -230,6 +234,7 @@ async function ensureModulesLoaded() {
             ({ initCompras, loadComprasView, validatePoDateRange, openPurchaseOrderModal, closePurchaseOrderModal } = compras);
             ({ initUsuarios, loadUsers } = usuarios);
             ({ initTareas, openNewTaskModal, openEditTaskModal, openProgressModal, completeTask, openMultipleProgressModal, loadTasksView, loadAndDisplayTasks, createTaskCard, closeTaskDetailsModal, loadTaskMaterialStatus, openTaskDetailsModal, openSafetyCheckInModal, checkIfSafetyCheckInNeeded } = tareas);
+            ({ setupDespieceEvents } = despiece);
 
             // Expose dynamically loaded functions to window for SPA routers
             window.loadDotacionView = loadDotacionView;
@@ -300,6 +305,7 @@ async function ensureModulesLoaded() {
             window.openTaskDetailsModal = openTaskDetailsModal;
             window.openSafetyCheckInModal = openSafetyCheckInModal;
             window.checkIfSafetyCheckInNeeded = checkIfSafetyCheckInNeeded;
+            window.setupDespieceEvents = setupDespieceEvents;
 
             console.log("Todos los módulos dinámicos se han cargado e inyectado correctamente.");
         } catch (error) {
@@ -435,6 +441,7 @@ let views = {
     compras: document.getElementById('compras-view'),
     reports: document.getElementById('reports-view'),
     'material-request-view': document.getElementById('material-request-view'),
+    despiece: document.getElementById('view-despiece'),
 };
 
 // --- BINDINGS DE ESTADO DINÁMICOS PARA WINDOW ---

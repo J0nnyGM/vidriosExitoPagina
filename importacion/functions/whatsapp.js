@@ -1,4 +1,4 @@
-const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
+const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const axios = require("axios");
 const sharp = require("sharp"); // 🔥 NUEVA LIBRERÍA DE CONVERSIÓN
@@ -114,7 +114,7 @@ async function downloadAndUploadMedia(mediaId, mimeType, phoneNumber) {
 }
 
 // --- WEBHOOK (RECIBIR + BOT) ---
-const webhook = onRequest({ timeoutSeconds: 60 }, async (req, res) => {
+const webhook = functions.https.onRequest(async (req, res) => {
     if (req.method === "GET") {
         if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === VERIFY_TOKEN) {
             console.log("✅ Webhook verificado por Meta correctamente.");
@@ -367,25 +367,25 @@ const webhook = onRequest({ timeoutSeconds: 60 }, async (req, res) => {
 });
 
 // --- FUNCIÓN DE ENVÍO MANUAL (PANEL ADMIN) ---
-const sendMessage = onCall(async (request) => {
-    if (!request.auth) throw new HttpsError('unauthenticated', 'Login requerido.');
+const sendMessage = functions.https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login requerido.');
     
     // Soportar tanto variables de MiSmartech (phoneNumber) como VidriosExito (telefonoDestino)
-    const phoneNumber = request.data.phoneNumber || request.data.telefonoDestino;
-    const message = request.data.message || request.data.contenido;
-    const type = request.data.type || request.data.tipo;
-    const mediaUrl = request.data.mediaUrl;
-    const fileName = request.data.fileName;
+    const phoneNumber = data.phoneNumber || data.telefonoDestino;
+    const message = data.message || data.contenido;
+    const type = data.type || data.tipo;
+    const mediaUrl = data.mediaUrl;
+    const fileName = data.fileName;
 
-    if (!phoneNumber || !type) throw new HttpsError('invalid-argument', 'Faltan datos requeridos (número o tipo).');
+    if (!phoneNumber || !type) throw new functions.https.HttpsError('invalid-argument', 'Faltan datos requeridos (número o tipo).');
     
-    let agentName = request.auth.token.name;
+    let agentName = context.auth.token.name;
     if (!agentName) {
         try {
-            const userDoc = await db.collection('users').doc(request.auth.uid).get();
+            const userDoc = await db.collection('users').doc(context.auth.uid).get();
             if (userDoc.exists && userDoc.data().name) agentName = userDoc.data().name;
-            else agentName = request.auth.token.email.split('@')[0];
-        } catch (e) { agentName = request.auth.token.email.split('@')[0]; }
+            else agentName = context.auth.token.email.split('@')[0];
+        } catch (e) { agentName = context.auth.token.email.split('@')[0]; }
     }
     
     let finalType = type;
@@ -445,7 +445,7 @@ const sendMessage = onCall(async (request) => {
             direccion: 'saliente',
             fecha: admin.firestore.FieldValue.serverTimestamp(),
             estadoEnvio: 'sent',
-            enviadoPor: request.auth.uid, // Guardamos ID de usuario original
+            enviadoPor: context.auth.uid, // Guardamos ID de usuario original
             texto: message || (finalType === 'image' ? 'Imagen enviada' : ''),
             mediaUrl: finalMedia || null,
             fileName: finalType === 'document' ? (fileName || 'Documento') : null
@@ -453,16 +453,16 @@ const sendMessage = onCall(async (request) => {
 
         return { success: true, messageId: waId };
     } catch (error) {
-        throw new HttpsError('internal', error.message);
+        throw new functions.https.HttpsError('internal', error.message);
     }
 });
 
 // --- FUNCIÓN PARA MARCAR MENSAJES COMO LEÍDOS (CHULOS AZULES) ---
-const marcarChatComoLeido = onCall(async (request) => {
-    if (!request.auth) throw new HttpsError('unauthenticated', 'Login requerido.');
+const marcarChatComoLeido = functions.https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login requerido.');
 
-    const { telefono, messageId } = request.data;
-    if (!telefono) throw new HttpsError('invalid-argument', 'Falta el teléfono.');
+    const { telefono, messageId } = data;
+    if (!telefono) throw new functions.https.HttpsError('invalid-argument', 'Falta el teléfono.');
 
     try {
         // 1. Avisarle a Meta que leímos el mensaje (esto pone los chulos azules al cliente)
@@ -489,24 +489,24 @@ const marcarChatComoLeido = onCall(async (request) => {
         return { success: true };
     } catch (error) {
         console.error(`Error marcando como leido el chat ${telefono}:`, error.message);
-        throw new HttpsError('internal', error.message);
+        throw new functions.https.HttpsError('internal', error.message);
     }
 });
 
 // --- PRUEBA DE PLANTILLA ---
-const sendTestTemplate = onCall(async (request) => {
-    if (!request.auth) throw new HttpsError('unauthenticated', 'Login requerido.');
+const sendTestTemplate = functions.https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login requerido.');
     try {
-        const waId = await sendToMeta(request.data.phoneNumber, null, 'template', null, 'hello_world', 'en_US');
+        const waId = await sendToMeta(data.phoneNumber, null, 'template', null, 'hello_world', 'en_US');
         return { success: true, waId: waId };
-    } catch (error) { throw new HttpsError('internal', error.message); }
+    } catch (error) { throw new functions.https.HttpsError('internal', error.message); }
 });
 
 // --- FUNCIÓN DE MARKETING MASIVO (CAMPAÑAS) ---
-const sendMassTemplate = onCall(async (request) => {
-    if (!request.auth) throw new HttpsError('unauthenticated', 'Login requerido.');
+const sendMassTemplate = functions.https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login requerido.');
     
-    const { phoneNumber, templateName, imageUrl, clientName, customMessage, linkPath } = request.data;
+    const { phoneNumber, templateName, imageUrl, clientName, customMessage, linkPath } = data;
     
     try {
         // 🔥 PROCESAR LA IMAGEN DE LA CAMPAÑA (Solo se procesa 1 vez gracias a la caché)
@@ -595,7 +595,7 @@ const sendMassTemplate = onCall(async (request) => {
         return { success: true, waId: response.data.messages[0].id };
     } catch (error) {
         console.error("❌ Error Meta API (Campaña Masiva):", JSON.stringify(error.response?.data || error.message));
-        throw new HttpsError('internal', error.response?.data?.error?.message || "Fallo al enviar campaña a Meta");
+        throw new functions.https.HttpsError('internal', error.response?.data?.error?.message || "Fallo al enviar campaña a Meta");
     }
 });
 

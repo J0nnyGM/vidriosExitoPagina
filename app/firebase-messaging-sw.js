@@ -1,7 +1,15 @@
 // EN app/firebase-messaging-sw.js
 
+const SW_VERSION = 'v1.0.1'; // Versión del Service Worker para forzar actualizaciones y evitar cachés obsoletas
+
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
+
+// Evento de Instalación: Fuerza al Service Worker a activarse inmediatamente
+self.addEventListener('install', (event) => {
+    console.log(`[Service Worker] Instalando versión: ${SW_VERSION}`);
+    self.skipWaiting();
+});
 
 // --- 1. CONFIGURACIÓN DE FIREBASE (Para Notificaciones) ---
 const firebaseConfig = {
@@ -23,7 +31,7 @@ messaging.onBackgroundMessage((payload) => {
   const notificationTitle = payload.notification.title;
   const notificationOptions = {
     body: payload.notification.body,
-    icon: '/importacion/recursos/LOGO VIDRIO EXPRESS.png',
+    icon: '/app/recursos/logo.png',
     data: payload.data
   };
   self.registration.showNotification(notificationTitle, notificationOptions);
@@ -52,8 +60,9 @@ self.addEventListener('notificationclick', function(event) {
 // Toda la caché de datos (ahorro de lecturas de base de datos) está delegada
 // en la persistencia nativa local de Firestore (IndexedDB).
 
-// Evento de Activación: Se encarga de purgar por completo cualquier caché antigua de archivos
+// Evento de Activación: Se encarga de purgar por completo cualquier caché antigua de archivos y reclamar control
 self.addEventListener('activate', (event) => {
+    console.log(`[Service Worker] Activando versión: ${SW_VERSION}`);
     event.waitUntil(
         caches.keys().then((keyList) => {
             return Promise.all(keyList.map((key) => {

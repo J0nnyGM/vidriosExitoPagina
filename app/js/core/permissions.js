@@ -6,7 +6,7 @@ import { getToken } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-mes
 
 // --- CONFIGURACIÓN DE MÓDULOS DEL SIDEBAR ---
 export const SIDEBAR_CONFIG = [
-    { key: 'dashboard', selector: '#dashboard-general-nav-link', label: 'Dashboard General' },
+    { key: 'dashboard', selector: '#dashboard-general', label: 'Dashboard General' },
     { key: 'proyectos', selector: '#proyectos-nav-link', label: 'Proyectos' },
     { key: 'tareas', selector: 'a[data-view="tareas"]', label: 'Tareas Asignadas' },
     { key: 'herramienta', selector: 'a[data-view="herramienta"]', label: 'Herramienta' },
@@ -19,6 +19,7 @@ export const SIDEBAR_CONFIG = [
     { key: 'catalog', selector: 'a[data-view="catalog"]', label: 'Catálogo Materiales' },
     { key: 'compras', selector: 'a[data-view="compras"]', label: 'Órdenes Compra' },
     { key: 'reports', selector: 'a[data-view="reports"]', label: 'Reportes' },
+    { key: 'despiece', selector: 'a[data-view="despiece"]', label: 'Despiece 2D' },
     { key: 'adminPanel', selector: 'a[data-view="adminPanel"]', label: 'Gestionar Usuarios' },
     { key: 'configuracion', selector: '#configuracion-nav-link', label: 'Configuración' }
 ];
@@ -47,6 +48,7 @@ export function getRoleDefaultPermissions(role) {
         catalog: isAdmin || isBodega,
         compras: isAdmin || isBodega || isNomina,
         reports: isAdmin || isNomina,
+        despiece: isAdmin,
         adminPanel: isAdmin,
         configuracion: isAdmin
     };

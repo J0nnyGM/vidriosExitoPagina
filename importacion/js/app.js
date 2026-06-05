@@ -1249,26 +1249,56 @@ function saveUrlCache(cache) {
     } catch (e) {}
 }
 
+// Limpieza única: purgar entradas viejas sin expiración (migración de caché v1 a v2)
+(function migrateUrlCache() {
+    try {
+        const cache = loadUrlCache();
+        let dirty = false;
+        for (const key of Object.keys(cache)) {
+            if (!cache[key].expiresAt) {
+                delete cache[key];
+                dirty = true;
+            }
+        }
+        if (dirty) saveUrlCache(cache);
+    } catch(e) {}
+})();
+
 const activePrefetches = new Map();
 
 // Resolver enlace de Storage (con pool de promesas y caché inteligente)
-async function getSecureFileUrl(filePath) {
-    if (!filePath) return '';
+function invalidateFileCache(filePath) {
     const cache = loadUrlCache();
-    const cachedEntry = cache[filePath];
+    if (cache[filePath]) {
+        delete cache[filePath];
+        saveUrlCache(cache);
+    }
+}
+
+async function getSecureFileUrl(filePath, forceRefresh = false) {
+    if (!filePath) return '';
     
-    // Verificar si el enlace está en caché y sigue siendo válido
-    if (cachedEntry) {
-        if (cachedEntry.type === 'direct') {
-            return cachedEntry.url;
+    if (!forceRefresh) {
+        const cache = loadUrlCache();
+        const cachedEntry = cache[filePath];
+        
+        // Verificar si el enlace está en caché y sigue siendo válido
+        if (cachedEntry) {
+            // URLs directas: válidas por 30 min (los tokens se invalidan al regenerar PDFs)
+            if (cachedEntry.type === 'direct' && cachedEntry.expiresAt && cachedEntry.expiresAt > Date.now()) {
+                return cachedEntry.url;
+            }
+            if (cachedEntry.type === 'signed' && cachedEntry.expiresAt > Date.now()) {
+                return cachedEntry.url;
+            }
         }
-        if (cachedEntry.type === 'signed' && cachedEntry.expiresAt > Date.now()) {
-            return cachedEntry.url;
-        }
+    } else {
+        // Forzar refresh: limpiar la entrada del caché
+        invalidateFileCache(filePath);
     }
     
     // Si ya hay una solicitud en vuelo para este mismo archivo, reutilizar su promesa
-    if (activePrefetches.has(filePath)) {
+    if (!forceRefresh && activePrefetches.has(filePath)) {
         return activePrefetches.get(filePath);
     }
     
@@ -1282,7 +1312,7 @@ async function getSecureFileUrl(filePath) {
             freshCache[filePath] = {
                 url: url,
                 type: 'direct',
-                expiresAt: null
+                expiresAt: Date.now() + 30 * 60 * 1000 // Válido por 30 minutos
             };
             saveUrlCache(freshCache);
             return url;
@@ -1290,8 +1320,8 @@ async function getSecureFileUrl(filePath) {
             console.warn(`Fallo al obtener enlace directo para ${filePath}, reintentando con Cloud Function...`, error);
             try {
                 // Método 2: Respaldo de Cloud Function (Expiración en 10 minutos)
-                const getSignedUrl = httpsCallable(functions, 'getSignedUrl');
-                const result = await getSignedUrl({ filePath: filePath });
+                const getSignedUrl = httpsCallable(functions, 'getSignedUrlForPath');
+                const result = await getSignedUrl({ path: filePath });
                 const url = result.data.url;
                 
                 const freshCache = loadUrlCache();
@@ -1381,15 +1411,15 @@ document.body.addEventListener('touchstart', (e) => {
 async function viewSecureFile(filePath, title) {
     if (!filePath) return;
     
-    // Verificar si ya está cargado en el caché para abrir de manera inmediata
+    // Si el caché tiene una URL válida (no expirada), usarla de inmediato
     const cache = loadUrlCache();
     const cachedEntry = cache[filePath];
-    if (cachedEntry && (cachedEntry.type === 'direct' || (cachedEntry.type === 'signed' && cachedEntry.expiresAt > Date.now()))) {
+    if (cachedEntry && cachedEntry.expiresAt && cachedEntry.expiresAt > Date.now()) {
         showPdfModal(cachedEntry.url, title);
         return;
     }
     
-    // Si no está en caché, mostrar modal SweetAlert mientras se resuelve
+    // Si no hay caché válido, mostrar loader y obtener URL fresca
     if (window.Swal) {
         window.Swal.fire({
             title: 'Generando enlace...',
@@ -1399,9 +1429,9 @@ async function viewSecureFile(filePath, title) {
     }
     
     try {
-        const url = await getSecureFileUrl(filePath);
-        showPdfModal(url, title);
+        const url = await getSecureFileUrl(filePath, true);
         if (window.Swal) window.Swal.close();
+        showPdfModal(url, title);
     } catch (error) {
         if (window.Swal) {
             window.Swal.fire('Error', 'No se pudo obtener el enlace del archivo.', 'error');

@@ -163,5 +163,10 @@ service cloud.firestore {
       allow write: if isSstOrAdmin();
     }
     
+    // --- HISTORIAL DE DESPIECE 2D ---
+    match /despiece2d_history/{docId} {
+      allow write: if isAdmin();
+    }
+    
   }
 }

@@ -2226,7 +2226,6 @@ exports.checkLateEntriesWarning = onSchedule({
             .get();
 
         const notificationsBatch = db.batch();
-        const messagingPromises = [];
         let pendingCount = 0;
 
         for (const userDoc of usersSnapshot.docs) {
@@ -2255,34 +2254,6 @@ exports.checkLateEntriesWarning = onSchedule({
                     createdAt: FieldValue.serverTimestamp(),
                     link: "/dashboard-general"
                 });
-
-                // B. Push Notification - Tono amable
-                if (userData.fcmToken) {
-                    const message = {
-                        notification: {
-                            title: "⏰ Ingreso Pendiente",
-                            body: "Son las 8:25 AM. Por favor registra tu ingreso pronto para evitar retardos."
-                        },
-                        android: {
-                            notification: { sound: 'default', priority: 'high', clickAction: 'FLUTTER_NOTIFICATION_CLICK' },
-                            priority: 'high'
-                        },
-                        apns: {
-                            headers: { "apns-priority": "10" },
-                            payload: { aps: { sound: 'default', contentAvailable: true } }
-                        },
-                        token: userData.fcmToken,
-                        data: { url: "/dashboard-general", type: "late_entry_warning" }
-                    };
-
-                    messagingPromises.push(
-                        getMessaging().send(message).catch(e => {
-                            if (e.code === 'messaging/registration-token-not-registered') {
-                                return db.doc(`users/${userId}`).update({ fcmToken: FieldValue.delete() });
-                            }
-                        })
-                    );
-                }
             }
         }
 
@@ -2322,7 +2293,6 @@ exports.checkLateEntries = onSchedule({
             .get();
 
         const notificationsBatch = db.batch();
-        const messagingPromises = [];
         let lateCount = 0;
 
         // 2. Verificar cada usuario
@@ -2353,49 +2323,12 @@ exports.checkLateEntries = onSchedule({
                     createdAt: FieldValue.serverTimestamp(),
                     link: "/dashboard-general"
                 });
-
-                // B. Enviar Notificación Push al celular
-                if (userData.fcmToken) {
-                    const message = {
-                        notification: {
-                            title: "⚠️ Reporte Pendiente",
-                            body: "Son las 8:30 AM y no has registrado tu ingreso. Toca aquí para reportar."
-                        },
-                        android: {
-                            notification: {
-                                sound: 'default',
-                                priority: 'high',
-                                channelId: 'urgent_alerts',
-                                clickAction: 'FLUTTER_NOTIFICATION_CLICK'
-                            },
-                            priority: 'high'
-                        },
-                        apns: {
-                            headers: { "apns-priority": "10" },
-                            payload: { aps: { sound: 'default', contentAvailable: true } }
-                        },
-                        token: userData.fcmToken,
-                        data: { url: "/dashboard-general", type: "late_entry_alert" }
-                    };
-
-                    messagingPromises.push(
-                        getMessaging().send(message)
-                            .then(() => console.log(`Push enviado a ${userId}`))
-                            .catch(e => {
-                                console.error(`Error push a ${userId}:`, e.message);
-                                if (e.code === 'messaging/registration-token-not-registered') {
-                                    return db.doc(`users/${userId}`).update({ fcmToken: FieldValue.delete() });
-                                }
-                            })
-                    );
-                }
             }
         }
 
-        // 3. Ejecutar escrituras en DB y envíos Push
+        // 3. Ejecutar escrituras en DB
         if (lateCount > 0) {
             await notificationsBatch.commit();
-            await Promise.all(messagingPromises);
         }
 
         console.log(`Verificación completada. ${lateCount} usuarios marcados como tarde.`);
@@ -2573,7 +2506,6 @@ exports.checkDailyReportWarning = onSchedule({
             .get();
 
         const notificationsBatch = db.batch();
-        const messagingPromises = [];
         let pendingCount = 0;
 
         for (const userDoc of usersSnapshot.docs) {
@@ -2600,27 +2532,11 @@ exports.checkDailyReportWarning = onSchedule({
                     createdAt: FieldValue.serverTimestamp(),
                     link: "/dashboard-general" // O la vista donde tengan el botón
                 });
-
-                // B. Push Notification
-                if (userData.fcmToken) {
-                    const message = {
-                        notification: {
-                            title: "📝 Reporte Pendiente",
-                            body: "Son las 6:30 PM. Por favor reporta tus actividades del día."
-                        },
-                        android: { notification: { sound: 'default', priority: 'high', clickAction: 'FLUTTER_NOTIFICATION_CLICK' } },
-                        apns: { payload: { aps: { sound: 'default', contentAvailable: true } } },
-                        token: userData.fcmToken,
-                        data: { url: "/dashboard-general", type: "daily_report_alert" }
-                    };
-                    messagingPromises.push(getMessaging().send(message).catch(() => { }));
-                }
             }
         }
 
         if (pendingCount > 0) {
             await notificationsBatch.commit();
-            await Promise.all(messagingPromises);
         }
 
         console.log(`Recordatorio 6:30 PM enviado a ${pendingCount} usuarios.`);
@@ -2650,7 +2566,6 @@ exports.checkDailyReportFinal = onSchedule({
             .get();
 
         const notificationsBatch = db.batch();
-        const messagingPromises = [];
         let pendingCount = 0;
 
         for (const userDoc of usersSnapshot.docs) {
@@ -2677,27 +2592,11 @@ exports.checkDailyReportFinal = onSchedule({
                     createdAt: FieldValue.serverTimestamp(),
                     link: "/dashboard-general"
                 });
-
-                // B. Push Notification
-                if (userData.fcmToken) {
-                    const message = {
-                        notification: {
-                            title: "⚠️ Acción Requerida",
-                            body: "7:00 PM: No has enviado tu reporte diario. Toca aquí para hacerlo ahora."
-                        },
-                        android: { notification: { sound: 'default', priority: 'high', clickAction: 'FLUTTER_NOTIFICATION_CLICK' } },
-                        apns: { payload: { aps: { sound: 'default', contentAvailable: true } } },
-                        token: userData.fcmToken,
-                        data: { url: "/dashboard-general", type: "daily_report_urgent" }
-                    };
-                    messagingPromises.push(getMessaging().send(message).catch(() => { }));
-                }
             }
         }
 
         if (pendingCount > 0) {
             await notificationsBatch.commit();
-            await Promise.all(messagingPromises);
         }
 
         console.log(`Alerta Final 7:00 PM enviada a ${pendingCount} usuarios.`);
