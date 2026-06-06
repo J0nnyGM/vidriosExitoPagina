@@ -1,0 +1,25 @@
+{
+  "name": "Vidrios Exito Organizador",
+  "short_name": "VidriosExito",
+  "description": "Sistema Organizador y de Gestión para Vidrios Éxito.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#1e40af",
+  "orientation": "portrait",
+  "scope": "./",
+  "icons": [
+    {
+      "src": "recursos/logove.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "recursos/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

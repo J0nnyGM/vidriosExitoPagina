@@ -790,6 +790,25 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Registrar Service Worker para PWA (Aspecto nativo de aplicación y carga instantánea)
+    if ('serviceWorker' in navigator) {
+        const registerSW = () => {
+            navigator.serviceWorker.register('./firebase-messaging-sw.js')
+                .then(reg => {
+                    console.log('[App] Service Worker PWA registrado con éxito en el ámbito:', reg.scope);
+                })
+                .catch(err => {
+                    console.error('[App] Error al registrar Service Worker PWA:', err);
+                });
+        };
+        
+        if (document.readyState === 'complete') {
+            registerSW();
+        } else {
+            window.addEventListener('load', registerSW);
+        }
+    }
+
     // Initialize theme toggle
     initThemeToggle();
 

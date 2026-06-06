@@ -214,6 +214,10 @@ async function generateSelectedReport() {
     container.innerHTML = '<div class="loader mx-auto my-10"></div>';
     tableContainer.innerHTML = '';
 
+    if (typeof window.ensureChart === 'function') {
+        await window.ensureChart();
+    }
+
     await injectCompanyHeader();
 
     try {

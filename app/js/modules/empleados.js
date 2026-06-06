@@ -3750,6 +3750,9 @@ async function loadEmpleadoResumenTab(userId) {
 
         const ctx = document.getElementById('empleado-productivity-chart');
         if (ctx) {
+            if (typeof window.ensureChart === 'function') {
+                await window.ensureChart();
+            }
             createProductivityChart(ctx.getContext('2d'), labels, dataBonificacion, dataEnTiempo, dataFueraTiempo);
         }
 
@@ -7202,6 +7205,9 @@ async function loadAttendanceTab(userId, days = 7) {
         });
 
         // 4. Renderizar Gráfica
+        if (typeof window.ensureChart === 'function') {
+            await window.ensureChart();
+        }
         renderAttendanceChart(chartCanvas, chartLabels, chartData);
 
         // 5. Renderizar Mapa (con pequeño delay para asegurar que el div es visible)

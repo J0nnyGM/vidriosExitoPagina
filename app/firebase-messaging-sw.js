@@ -1,15 +1,77 @@
 // EN app/firebase-messaging-sw.js
 
-const SW_VERSION = 'v1.1.0'; // Versión del Service Worker para forzar actualizaciones y evitar cachés obsoletas
+const SW_VERSION = 'v1.2.0'; // Versión del Service Worker para forzar actualizaciones y evitar cachés obsoletas
 const CACHE_NAME = `vidrios-exito-cache-${SW_VERSION}`;
+
+// Recursos principales que se descargan inmediatamente en la instalación para carga instantánea
+const PRECACHE_ASSETS = [
+    './',
+    './index.html',
+    './manifest.json',
+    './css/output.css',
+    './css/all.min.css',
+    './js/app.js',
+    './js/core/firebase-config.js',
+    './js/core/utils.js',
+    './js/core/permissions.js',
+    './js/core/auth.js',
+    './js/ui/camera.js',
+    './js/ui/documents.js',
+    './js/ui/modals.js',
+    './js/ui/project-items.js',
+    './js/ui/form-handlers.js',
+    './js/ui/click-handlers.js',
+    './js/modules/dashboard.js',
+    './js/modules/tareas.js',
+    './recursos/logo.png',
+    './recursos/logove.png',
+    './webfonts/fa-brands-400.woff2',
+    './webfonts/fa-regular-400.woff2',
+    './webfonts/fa-solid-900.woff2',
+    './webfonts/fa-v4compatibility.woff2',
+    'https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css',
+    'https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js',
+    'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+    'https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js',
+    'https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js',
+    'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=60&w=1000&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1497366216548-37526070297c?q=60&w=1000&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=60&w=1000&auto=format&fit=crop'
+];
 
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
-// Evento de Instalación: Fuerza al Service Worker a activarse inmediatamente
+// Evento de Instalación: Fuerza al Service Worker a activarse inmediatamente y precarga recursos
 self.addEventListener('install', (event) => {
     console.log(`[Service Worker] Instalando versión: ${SW_VERSION}`);
-    self.skipWaiting();
+    event.waitUntil(
+        caches.open(CACHE_NAME)
+            .then(async (cache) => {
+                console.log('[Service Worker] Precachando recursos principales...');
+                // Intentamos precachar en lote; si falla, precachamos uno por uno para guardar los disponibles
+                try {
+                    await cache.addAll(PRECACHE_ASSETS);
+                } catch (e) {
+                    console.warn('[Service Worker] Error en precarga masiva, reintentando de forma individual:', e);
+                    for (const asset of PRECACHE_ASSETS) {
+                        try {
+                            await cache.add(asset);
+                        } catch (singleErr) {
+                            console.error(`[Service Worker] Falló precarga de: ${asset}`, singleErr);
+                        }
+                    }
+                }
+            })
+            .then(() => {
+                console.log('[Service Worker] Recursos principales precachados correctamente.');
+                return self.skipWaiting();
+            })
+            .catch((err) => {
+                console.error('[Service Worker] Error al precachar recursos principales:', err);
+                return self.skipWaiting();
+            })
+    );
 });
 
 // --- 1. CONFIGURACIÓN DE FIREBASE (Para Notificaciones) ---
@@ -86,6 +148,7 @@ self.addEventListener('fetch', (event) => {
             url.pathname.endsWith('.jpeg') || 
             url.pathname.endsWith('.svg') || 
             url.pathname.endsWith('.ico') || 
+            url.pathname.endsWith('.json') || // manifest.json
             url.pathname.endsWith('.woff') || 
             url.pathname.endsWith('.woff2') || 
             url.pathname.endsWith('.ttf') || 
@@ -96,9 +159,16 @@ self.addEventListener('fetch', (event) => {
             url.hostname.includes('unpkg.com') ||
             url.hostname.includes('kit.fontawesome.com') ||
             url.hostname.includes('fonts.googleapis.com') ||
-            url.hostname.includes('fonts.gstatic.com');
+            url.hostname.includes('fonts.gstatic.com') ||
+            url.hostname.includes('images.unsplash.com');
 
-        if (isStaticAsset || url.pathname === '/app/' || url.pathname === '/app/index.html') {
+        const isAppPath = 
+            url.pathname === '/' || 
+            url.pathname === '/index.html' || 
+            url.pathname === '/app/' || 
+            url.pathname === '/app/index.html';
+
+        if (isStaticAsset || isAppPath) {
             event.respondWith(
                 caches.open(CACHE_NAME).then((cache) => {
                     return cache.match(event.request).then((cachedResponse) => {
