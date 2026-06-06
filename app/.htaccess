@@ -25,3 +25,15 @@
         Header set Cache-Control "public, max-age=31536000, immutable"
     </FilesMatch>
 </IfModule>
+
+# Prevent caching for the Service Worker itself so updates are detected immediately
+<Files "firebase-messaging-sw.js">
+    <IfModule mod_expires.c>
+        ExpiresActive Off
+    </IfModule>
+    <IfModule mod_headers.c>
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "-1"
+    </IfModule>
+</Files>

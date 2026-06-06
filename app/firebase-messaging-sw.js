@@ -135,7 +135,8 @@ self.addEventListener('fetch', (event) => {
             url.hostname.includes('firestore.googleapis.com') ||
             url.hostname.includes('identitytoolkit.googleapis.com') ||
             url.hostname.includes('securetoken.googleapis.com') ||
-            url.pathname.includes('/__/auth/')
+            url.pathname.includes('/__/auth/') ||
+            url.pathname.includes('firebase-messaging-sw.js')
         ) {
             return;
         }
