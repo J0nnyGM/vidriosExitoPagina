@@ -86,14 +86,28 @@ export function initClickHandlers() {
             return;
         }
 
-        // Abrir sidebar (menú de cajón en móvil)
+        // Abrir/cerrar sidebar (menú de cajón en móvil)
         const toggleMenuBtn = target.closest('#menu-toggle-btn, #mobile-more-menu-btn');
         if (toggleMenuBtn) {
             e.preventDefault();
             e.stopPropagation();
             const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
             if (sidebar) {
-                sidebar.classList.remove('-translate-x-full');
+                const isCollapsed = sidebar.classList.contains('-translate-x-full');
+                if (isCollapsed) {
+                    sidebar.classList.remove('-translate-x-full');
+                    if (overlay) {
+                        overlay.classList.remove('opacity-0', 'pointer-events-none');
+                        overlay.classList.add('opacity-100', 'pointer-events-auto');
+                    }
+                } else {
+                    sidebar.classList.add('-translate-x-full');
+                    if (overlay) {
+                        overlay.classList.remove('opacity-100', 'pointer-events-auto');
+                        overlay.classList.add('opacity-0', 'pointer-events-none');
+                    }
+                }
             }
             return;
         }

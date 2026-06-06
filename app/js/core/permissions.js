@@ -104,6 +104,11 @@ export function closeSidebar() {
     if (sidebar) {
         sidebar.classList.add('-translate-x-full');
     }
+    const overlay = document.getElementById('sidebar-overlay');
+    if (overlay) {
+        overlay.classList.remove('opacity-100', 'pointer-events-auto');
+        overlay.classList.add('opacity-0', 'pointer-events-none');
+    }
 }
 
 /**
