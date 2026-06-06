@@ -792,6 +792,16 @@ onAuthStateChanged(auth, async (user) => {
 document.addEventListener('DOMContentLoaded', () => {
     // Registrar Service Worker para PWA (Aspecto nativo de aplicación y carga instantánea)
     if ('serviceWorker' in navigator) {
+        // Recargar automáticamente la aplicación para aplicar actualizaciones en caliente
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (!refreshing) {
+                refreshing = true;
+                console.log('[App] Detectado nuevo Service Worker. Recargando para aplicar cambios...');
+                window.location.reload();
+            }
+        });
+
         const registerSW = () => {
             navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.2.4')
                 .then(reg => {
