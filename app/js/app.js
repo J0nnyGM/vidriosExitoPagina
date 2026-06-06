@@ -698,8 +698,8 @@ onAuthStateChanged(auth, async (user) => {
                 await ensureModulesLoaded(currentUserRole);
                 initializeAllModules();
 
-                // 2. Cargar mapa de usuarios
-                await loadUsersMap();
+                // 2. Cargar mapa de usuarios (en segundo plano, no bloqueante)
+                loadUsersMap();
 
                 // --- UI HEADER ACTUALIZACIÓN ---
                 const nombre = userData.firstName || 'Usuario';
@@ -735,14 +735,16 @@ onAuthStateChanged(auth, async (user) => {
                     }
                 }
 
-                // 3. Generar descriptor facial
+                // 3. Generar descriptor facial (en segundo plano, no bloqueante)
                 if (profilePhotoURL) {
-                    try {
-                        currentUserFaceDescriptor = await generateProfileFaceDescriptor(profilePhotoURL);
-                    } catch (e) {
-                        console.warn("No se pudo generar descriptor facial:", e);
-                        currentUserFaceDescriptor = null;
-                    }
+                    generateProfileFaceDescriptor(profilePhotoURL)
+                        .then(descriptor => {
+                            currentUserFaceDescriptor = descriptor;
+                        })
+                        .catch(e => {
+                            console.warn("No se pudo generar descriptor facial en segundo plano:", e);
+                            currentUserFaceDescriptor = null;
+                        });
                 } else {
                     currentUserFaceDescriptor = null;
                 }
@@ -750,14 +752,15 @@ onAuthStateChanged(auth, async (user) => {
                 authContainer.classList.add('hidden');
                 appContainer.classList.remove('hidden');
 
-                try {
-                    const payrollConfigRef = doc(db, "system", "payrollConfig");
-                    const payrollConfigSnap = await getDoc(payrollConfigRef);
-                    payrollConfig = payrollConfigSnap.exists() ? payrollConfigSnap.data() : {};
-                } catch (error) {
-                    console.error("Error cargando nómina:", error);
-                    payrollConfig = {};
-                }
+                // Cargar configuración de nómina (en segundo plano, no bloqueante)
+                getDoc(doc(db, "system", "payrollConfig"))
+                    .then(payrollConfigSnap => {
+                        payrollConfig = payrollConfigSnap.exists() ? payrollConfigSnap.data() : {};
+                    })
+                    .catch(error => {
+                        console.error("Error cargando nómina:", error);
+                        payrollConfig = {};
+                    });
 
                 applySidebarPermissions(currentUserRole, userData.customPermissions || {});
                 checkAllPermissionsOnLogin();
@@ -803,7 +806,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const registerSW = () => {
-            navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.2.4')
+            navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.2.5')
                 .then(reg => {
                     console.log('[App] Service Worker PWA registrado con éxito en el ámbito:', reg.scope);
                 })

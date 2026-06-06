@@ -77,7 +77,7 @@ export function initClickHandlers() {
 
         // Manejador de clics para enlaces de navegación del Sidebar (#main-nav .nav-link y .mobile-nav-link)
         const navLink = target.closest('#main-nav .nav-link, .mobile-nav-link');
-        if (navLink) {
+        if (navLink && navLink.id !== 'mobile-more-menu-btn') {
             e.preventDefault();
             const viewName = navLink.dataset.view;
             if (viewName && typeof window.navigateToView === 'function') {
