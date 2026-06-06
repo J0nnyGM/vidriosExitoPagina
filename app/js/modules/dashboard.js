@@ -11,6 +11,7 @@ import {
     collectionGroup,
     doc,
     getDoc,
+    getDocFromServer,
     onSnapshot
     // setDoc Eliminado: El frontend solo lee, no escribe en system.
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
@@ -131,9 +132,9 @@ function loadAdminDashboard(container) {
 
             runRecalculation()
                 .then(() => {
-                    console.log("✅ Servidor terminó. Forzando lectura de datos...");
-                    // CORRECCIÓN CRÍTICA: Leemos manualmente, no esperamos al listener
-                    return getDoc(statsRef);
+                    console.log("✅ Servidor terminó. Forzando lectura de datos desde servidor...");
+                    // CORRECCIÓN CRÍTICA: Leemos manualmente desde el servidor para evitar caché fuera de línea obsoleta
+                    return getDocFromServer(statsRef);
                 })
                 .then((forcedSnap) => {
                     if (forcedSnap.exists()) {

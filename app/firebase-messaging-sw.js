@@ -1,6 +1,6 @@
 // EN app/firebase-messaging-sw.js
 
-const SW_VERSION = 'v1.2.2'; // Versión del Service Worker para forzar actualizaciones y evitar cachés obsoletas
+const SW_VERSION = 'v1.2.4'; // Versión del Service Worker para forzar actualizaciones y evitar cachés obsoletas
 const CACHE_NAME = `vidrios-exito-cache-${SW_VERSION}`;
 
 // Recursos principales que se descargan inmediatamente en la instalación para carga instantánea
@@ -175,7 +175,25 @@ self.addEventListener('fetch', (event) => {
             event.respondWith(
                 caches.open(CACHE_NAME).then((cache) => {
                     return cache.match(event.request).then((cachedResponse) => {
-                        const fetchPromise = fetch(event.request).then((networkResponse) => {
+                        // Construir la petición de red. Si es un archivo JS/CSS propio de nuestra app,
+                        // le agregamos un parámetro de consulta de versión para evadir la caché HTTP de cPanel.
+                        let fetchRequest = event.request;
+                        if (url.origin === location.origin && 
+                            !url.pathname.includes('firebase-messaging-sw.js') &&
+                            (url.pathname.endsWith('.js') || url.pathname.endsWith('.css'))
+                        ) {
+                            const newUrl = new URL(event.request.url);
+                            newUrl.searchParams.set('sw-bypass', SW_VERSION);
+                            fetchRequest = new Request(newUrl.toString(), {
+                                method: event.request.method,
+                                headers: event.request.headers,
+                                credentials: event.request.credentials,
+                                mode: event.request.mode === 'navigate' ? 'same-origin' : event.request.mode,
+                                redirect: event.request.redirect
+                            });
+                        }
+
+                        const fetchPromise = fetch(fetchRequest).then((networkResponse) => {
                             if (networkResponse.status === 200) {
                                 cache.put(event.request, networkResponse.clone());
                             }

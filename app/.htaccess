@@ -2,13 +2,13 @@
 <IfModule mod_expires.c>
     ExpiresActive On
     
-    # Cache Javascript, CSS, and HTML
-    ExpiresByType application/javascript "access plus 1 year"
-    ExpiresByType text/javascript "access plus 1 year"
-    ExpiresByType text/css "access plus 1 year"
+    # CSS y JS deben revalidarse siempre (0 segundos) para permitir actualizaciones
+    ExpiresByType application/javascript "access plus 0 seconds"
+    ExpiresByType text/javascript "access plus 0 seconds"
+    ExpiresByType text/css "access plus 0 seconds"
     ExpiresByType text/html "access plus 1 hour"
     
-    # Cache Images and Webfonts
+    # Cache de Imágenes y Fuentes a largo plazo
     ExpiresByType image/gif "access plus 1 year"
     ExpiresByType image/png "access plus 1 year"
     ExpiresByType image/jpeg "access plus 1 year"
@@ -21,8 +21,16 @@
 
 # Set public cache control header for static files using mod_headers
 <IfModule mod_headers.c>
-    <FilesMatch "\.(js|css|gif|png|jpg|jpeg|svg|woff|woff2|eot|ttf)$">
+    # Imágenes y fuentes inmutables
+    <FilesMatch "\.(gif|png|jpg|jpeg|svg|woff|woff2|eot|ttf)$">
         Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+    
+    # JS y CSS sin caché del navegador (el Service Worker gestionará su caché de forma óptima)
+    <FilesMatch "\.(js|css)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "-1"
     </FilesMatch>
 </IfModule>
 
