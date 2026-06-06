@@ -356,14 +356,14 @@ window.ensureFileSaver = async function() {
 window.ensureChart = async function() {
     if (window.Chart) return window.Chart;
     console.log("Cargando Chart.js...");
-    await loadScript("https://cdn.jsdelivr.net/npm/chart.js");
+    await loadScript("https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js");
     return window.Chart;
 };
 
 window.ensureChoices = async function() {
     if (window.Choices) return window.Choices;
     console.log("Cargando Choices.js...");
-    await loadScript("https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js");
+    await loadScript("https://cdn.jsdelivr.net/npm/choices.js@10.2.0/public/assets/scripts/choices.min.js");
     return window.Choices;
 };
 `;

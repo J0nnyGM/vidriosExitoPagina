@@ -1,6 +1,6 @@
 // EN app/firebase-messaging-sw.js
 
-const SW_VERSION = 'v1.2.0'; // Versión del Service Worker para forzar actualizaciones y evitar cachés obsoletas
+const SW_VERSION = 'v1.2.2'; // Versión del Service Worker para forzar actualizaciones y evitar cachés obsoletas
 const CACHE_NAME = `vidrios-exito-cache-${SW_VERSION}`;
 
 // Recursos principales que se descargan inmediatamente en la instalación para carga instantánea
@@ -29,9 +29,11 @@ const PRECACHE_ASSETS = [
     './webfonts/fa-regular-400.woff2',
     './webfonts/fa-solid-900.woff2',
     './webfonts/fa-v4compatibility.woff2',
-    'https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css',
-    'https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js',
+    'https://cdn.jsdelivr.net/npm/choices.js@10.2.0/public/assets/styles/choices.min.css',
+    'https://cdn.jsdelivr.net/npm/choices.js@10.2.0/public/assets/scripts/choices.min.js',
+    'https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js',
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+    'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
     'https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js',
     'https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js',
     'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=60&w=1000&auto=format&fit=crop',
