@@ -1,7 +1,7 @@
 // js/modules/dashboard.js
 
 import { db, functions, httpsCallable } from '../firebase-config.js';
-import { collection, doc, getDoc, query, onSnapshot, getDocs, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+import { collection, doc, getDoc, query, onSnapshot, getDocs, where, serverTimestamp, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { 
     allRemisiones, allGastos, allClientes, allUsers, initialBalances, currentUserData, currentUser,
     showModalMessage, hideModal, showTemporaryMessage 
@@ -886,10 +886,14 @@ function renderPendingTransfers() {
                     </div>
                     <p class="text-xs text-slate-400 font-medium">Fecha Transf: ${fechaMostrar}</p>
                     ${transfer.referencia ? `<p class="text-xs text-slate-500 bg-slate-50 border border-slate-100 p-1.5 rounded-lg italic break-all">Ref: ${transfer.referencia}</p>` : ''}
+                <div class="flex gap-2 w-full sm:w-auto">
+                    <button data-transfer-id="${transfer.id}" class="confirm-transfer-btn flex-1 sm:flex-none text-center font-bold px-4 py-2.5 rounded-xl text-xs transition-colors shadow-sm bg-emerald-600 hover:bg-emerald-700 text-white ${!canConfirm ? 'opacity-40 cursor-not-allowed !bg-slate-400 !text-slate-600' : ''}" ${!canConfirm ? 'disabled title="Otro admin debe confirmar"' : ''}>
+                        ✓ Confirmar
+                    </button>
+                    <button data-transfer-id="${transfer.id}" class="reject-transfer-btn flex-1 sm:flex-none text-center font-bold px-4 py-2.5 rounded-xl text-xs transition-colors shadow-sm bg-red-600 hover:bg-red-700 text-white ${!canConfirm ? 'opacity-40 cursor-not-allowed !bg-slate-400 !text-slate-600' : ''}" ${!canConfirm ? 'disabled title="Otro admin debe rechazar"' : ''}>
+                        ✕ Rechazar
+                    </button>
                 </div>
-                <button data-transfer-id="${transfer.id}" class="confirm-transfer-btn w-full sm:w-auto text-center font-bold px-4 py-2.5 rounded-xl text-xs transition-colors shadow-xs bg-emerald-650 hover:bg-emerald-755 text-white ${!canConfirm ? 'opacity-40 cursor-not-allowed bg-slate-400 hover:bg-slate-400 text-slate-600' : ''}" ${!canConfirm ? 'disabled title="Otro admin debe confirmar"' : ''}>
-                    Confirmar
-                </button>
             `;
             container.appendChild(el);
         });
@@ -901,7 +905,9 @@ function renderPendingTransfers() {
 
 function handleConfirmTransferClick(e) {
     const confirmButton = e.target.closest('.confirm-transfer-btn:not([disabled])');
-    if (confirmButton) handleConfirmTransfer(e);
+    if (confirmButton) { handleConfirmTransfer(e); return; }
+    const rejectButton = e.target.closest('.reject-transfer-btn:not([disabled])');
+    if (rejectButton) handleRejectTransfer(rejectButton);
 }
 
 async function handleConfirmTransfer(e) {
@@ -928,6 +934,24 @@ async function handleConfirmTransfer(e) {
         hideModal(); showTemporaryMessage("¡Transferencia confirmada!", "success");
     } catch (error) {
         console.error("Error al confirmar:", error); showModalMessage(`Error: ${error.message}`);
+    }
+}
+
+async function handleRejectTransfer(button) {
+    const transferId = button.dataset.transferId;
+    if (!transferId) return;
+
+    if (!confirm("¿Estás seguro de que quieres RECHAZAR esta transferencia? Se eliminará permanentemente.")) return;
+
+    showModalMessage("Rechazando transferencia...", true);
+    try {
+        const transferRef = doc(db, "transferencias", transferId);
+        await deleteDoc(transferRef);
+        hideModal();
+        showTemporaryMessage("Transferencia rechazada y eliminada.", "info");
+    } catch (error) {
+        console.error("Error al rechazar:", error);
+        showModalMessage(`Error al rechazar: ${error.message}`);
     }
 }
 

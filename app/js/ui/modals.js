@@ -5940,54 +5940,104 @@ function closeMainModal() {
 
 // --- CONFIRM, IMAGE, AND SUCCESS MODALS ---
 
-const confirmModal = document.getElementById('confirm-modal');
-const confirmModalBody = document.getElementById('confirm-modal-body');
-const confirmModalCancelBtn = document.getElementById('confirm-modal-cancel-btn');
-const confirmModalConfirmBtn = document.getElementById('confirm-modal-confirm-btn');
 let onConfirmCallback = () => { };
-// ESTA ES LA FUNCIÓN MEJORADA
+let confirmListenersInitialized = false;
+let imageListenersInitialized = false;
+let successListenersInitialized = false;
+
 function openConfirmModal(message, callback) {
+    const confirmModal = document.getElementById('confirm-modal');
+    const confirmModalBody = document.getElementById('confirm-modal-body');
+    const confirmModalCancelBtn = document.getElementById('confirm-modal-cancel-btn');
+    const confirmModalConfirmBtn = document.getElementById('confirm-modal-confirm-btn');
+
+    if (!confirmModal || !confirmModalBody) {
+        // Fallback to native confirm if elements don't exist
+        if (confirm(message)) {
+            callback();
+        }
+        return;
+    }
+
     confirmModalBody.textContent = message;
     onConfirmCallback = callback;
 
-    // CAMBIO: Aseguramos que sea el más alto (70)
-    confirmModal.style.zIndex = "70";
+    if (!confirmListenersInitialized) {
+        if (confirmModalCancelBtn) {
+            confirmModalCancelBtn.addEventListener('click', closeConfirmModal);
+        }
+        if (confirmModalConfirmBtn) {
+            confirmModalConfirmBtn.addEventListener('click', () => {
+                if (typeof onConfirmCallback === 'function') onConfirmCallback();
+                closeConfirmModal();
+            });
+        }
+        confirmListenersInitialized = true;
+    }
 
+    confirmModal.style.zIndex = "70";
     confirmModal.style.display = 'flex';
 }
-function closeConfirmModal() { confirmModal.style.display = 'none'; }
-confirmModalCancelBtn.addEventListener('click', closeConfirmModal);
-confirmModalConfirmBtn.addEventListener('click', () => { onConfirmCallback(); closeConfirmModal(); });
 
-const imageModal = document.getElementById('image-modal');
-const modalImage = document.getElementById('modal-image');
-const imageModalCloseBtn = document.getElementById('image-modal-close-btn');
-const registerSuccessModal = document.getElementById('register-success-modal');
+function closeConfirmModal() {
+    const confirmModal = document.getElementById('confirm-modal');
+    if (confirmModal) confirmModal.style.display = 'none';
+}
 
 function openImageModal(imageUrl) {
+    const imageModal = document.getElementById('image-modal');
+    const modalImage = document.getElementById('modal-image');
+    const imageModalCloseBtn = document.getElementById('image-modal-close-btn');
+
+    if (!imageModal || !modalImage) return;
+
     modalImage.src = imageUrl;
     imageModal.style.display = 'flex';
+
+    if (!imageListenersInitialized && imageModalCloseBtn) {
+        imageModalCloseBtn.addEventListener('click', closeImageModal);
+        imageListenersInitialized = true;
+    }
 }
 
 window.openImageModal = openImageModal;
 
 function closeImageModal() {
-    imageModal.style.display = 'none';
-    modalImage.src = '';
+    const imageModal = document.getElementById('image-modal');
+    const modalImage = document.getElementById('modal-image');
+    if (imageModal) imageModal.style.display = 'none';
+    if (modalImage) modalImage.src = '';
 }
 
 function openRegisterSuccessModal() {
+    const registerSuccessModal = document.getElementById('register-success-modal');
+    const acceptBtn = document.getElementById('register-success-accept-btn');
+
+    if (!registerSuccessModal) return;
+
     registerSuccessModal.style.display = 'flex';
+
+    if (!successListenersInitialized && acceptBtn) {
+        acceptBtn.addEventListener('click', async () => {
+            closeRegisterSuccessModal();
+            if (typeof signOut === 'function' && typeof auth !== 'undefined') {
+                await signOut(auth);
+            }
+            const regForm = document.getElementById('register-form');
+            if (regForm) regForm.reset();
+            if (typeof showAuthView === 'function') {
+                showAuthView('login');
+            } else if (typeof window.showAuthView === 'function') {
+                window.showAuthView('login');
+            }
+        });
+        successListenersInitialized = true;
+    }
 }
 
 function closeRegisterSuccessModal() {
-    registerSuccessModal.style.display = 'none';
+    const registerSuccessModal = document.getElementById('register-success-modal');
+    if (registerSuccessModal) registerSuccessModal.style.display = 'none';
 }
 
-document.getElementById('register-success-accept-btn').addEventListener('click', async () => {
-    closeRegisterSuccessModal();
-    await signOut(auth);
-    document.getElementById('register-form').reset();
-    showAuthView('login');
-});
 export { openMainModal, closeMainModal, openConfirmModal, closeConfirmModal, openImageModal, closeImageModal, openRegisterSuccessModal, closeRegisterSuccessModal };

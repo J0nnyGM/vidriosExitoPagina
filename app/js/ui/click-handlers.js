@@ -521,16 +521,44 @@ export function initClickHandlers() {
                 }
                 break;
             case 'report-entry': {
-                if (typeof window.handleReportEntry === 'function' && window.currentUser && window.usersMap) {
-                    const userData = window.usersMap.get(window.currentUser.uid);
-                    window.handleReportEntry(
-                        db,
-                        storage,
-                        window.currentUser,
-                        userData,
-                        window.openMainModal,
-                        window.closeMainModal
-                    );
+                if (typeof window.handleReportEntry === 'function' && window.currentUser) {
+                    // Esperar a que el mapa de usuarios termine de cargar si aún no está listo
+                    if ((!window.usersMap || window.usersMap.size === 0 || !window.usersMap.has(window.currentUser.uid)) && window.usersMapPromise) {
+                        console.log("[ClickHandlers] Esperando a que el mapa de usuarios cargue...");
+                        await window.usersMapPromise;
+                    }
+
+                    const userData = window.usersMap ? window.usersMap.get(window.currentUser.uid) : null;
+                    if (!userData) {
+                        console.warn("[ClickHandlers] No se encontró perfil de usuario localmente. Intentando lectura directa...");
+                        try {
+                            const userDoc = await getDoc(doc(db, "users", window.currentUser.uid));
+                            if (userDoc.exists()) {
+                                window.handleReportEntry(
+                                    db,
+                                    storage,
+                                    window.currentUser,
+                                    userDoc.data(),
+                                    window.openMainModal,
+                                    window.closeMainModal
+                                );
+                            } else {
+                                alert("⚠️ Error: No se encontró tu registro de usuario en el sistema.");
+                            }
+                        } catch (e) {
+                            console.error("Error al obtener perfil de respaldo:", e);
+                            alert("Error al cargar perfil de usuario.");
+                        }
+                    } else {
+                        window.handleReportEntry(
+                            db,
+                            storage,
+                            window.currentUser,
+                            userData,
+                            window.openMainModal,
+                            window.closeMainModal
+                        );
+                    }
                 } else {
                     console.error("Error: handleReportEntry or required globals not ready.");
                 }

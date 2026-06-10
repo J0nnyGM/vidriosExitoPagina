@@ -1348,320 +1348,339 @@ async function renderBodegaStatsHTML(container, pendingRequests, pendingPO, lowS
  * Renderiza el Dashboard para BODEGA con KPIs INTERACTIVOS.
  * OPTIMIZACIÓN PREMIUM: Caching inteligente con refresco en segundo plano no bloqueante.
  */
+/**
+ * Renderiza el Dashboard para BODEGA con KPIs INTERACTIVOS.
+ * OPTIMIZACIÓN PREMIUM: Caching inteligente con listener real-time (onSnapshot) y cero reads redundantes.
+ */
 async function renderBodegaDashboard(container) {
     const dateStr = new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     const capitalizedDate = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
-
-    // 1. Obtener cachés si existen
-    const cachedRequests = window.requestsPendingCache;
-    const cachedPO = window.poPendingCache;
-    const cachedCatalog = window.materialCatalogCache;
 
     const queryRequests = query(collectionGroup(_db, 'materialRequests'), where("status", "==", "pendiente"));
     const queryPO = query(collection(_db, "purchaseOrders"), where("status", "==", "pendiente"));
     const queryCatalog = collection(_db, "materialCatalog");
 
-    // Función auxiliar para procesar y renderizar los datos
-    const processAndRender = async (requestsSnap, poSnap, catalogSnap) => {
-        const pendingRequests = requestsSnap.size;
-        const pendingPO = poSnap.size;
-        const { lowStockCount, healthyStockCount, totalRefs } = countCatalogStock(catalogSnap);
+    let requestsSnap = window.requestsPendingCache || null;
+    let poSnap = window.poPendingCache || null;
+    let catalogSnap = window.materialCatalogCache || null;
 
-        await renderBodegaStatsHTML(
-            container,
-            pendingRequests,
-            pendingPO,
-            lowStockCount,
-            healthyStockCount,
-            totalRefs,
-            capitalizedDate
-        );
+    const checkAndRender = async () => {
+        if (requestsSnap && poSnap && catalogSnap) {
+            const pendingRequests = requestsSnap.size;
+            const pendingPO = poSnap.size;
+            const { lowStockCount, healthyStockCount, totalRefs } = countCatalogStock(catalogSnap);
+
+            window.requestsPendingCache = requestsSnap;
+            window.poPendingCache = poSnap;
+            window.materialCatalogCache = catalogSnap;
+
+            // Verificar si la vista sigue activa para evitar sobreescritura indeseada
+            const widgetContainer = document.getElementById('dashboard-widgets-container');
+            if (widgetContainer) {
+                await renderBodegaStatsHTML(
+                    container,
+                    pendingRequests,
+                    pendingPO,
+                    lowStockCount,
+                    healthyStockCount,
+                    totalRefs,
+                    capitalizedDate
+                );
+            }
+        }
     };
 
-    // Si todo está en caché, renderizar de inmediato y actualizar en segundo plano
-    if (cachedRequests && cachedPO && cachedCatalog) {
-        console.log("⚡ Bodega Dashboard: Renderizado inmediato usando caché.");
-        await processAndRender(cachedRequests, cachedPO, cachedCatalog);
-
-        // Refrescar en segundo plano de manera no bloqueante
-        Promise.all([
-            getDocs(queryRequests),
-            getDocs(queryPO),
-            getDocs(queryCatalog)
-        ]).then(async ([newRequests, newPO, newCatalog]) => {
-            console.log("⚡ Bodega Dashboard: Datos actualizados en segundo plano.");
-            const oldLow = countCatalogStock(cachedCatalog).lowStockCount;
-            const newLow = countCatalogStock(newCatalog).lowStockCount;
-
-            // Actualizar referencias en window
-            window.requestsPendingCache = newRequests;
-            window.poPendingCache = newPO;
-            window.materialCatalogCache = newCatalog;
-
-            // Solo si cambian los conteos, hacer re-render silencioso
-            if (newRequests.size !== cachedRequests.size || 
-                newPO.size !== cachedPO.size || 
-                newCatalog.size !== cachedCatalog.size ||
-                newLow !== oldLow) {
-                
-                // Verificar si la vista actual sigue siendo el dashboard de bodega antes de actualizar
-                // (Para evitar sobreescribir la pantalla si el usuario navegó a otra sección)
-                const widgetContainer = document.getElementById('dashboard-widgets-container');
-                if (widgetContainer && widgetContainer.innerHTML.includes('Panel de Bodega')) {
-                    await processAndRender(newRequests, newPO, newCatalog);
-                }
-            }
-        }).catch(console.error);
-
-        return;
+    if (requestsSnap && poSnap && catalogSnap) {
+        console.log("⚡ Bodega Dashboard: Renderizado inmediato usando caché de sesión.");
+        await checkAndRender();
+    } else {
+        container.innerHTML = `
+            <div class="col-span-full flex flex-col items-center justify-center py-12 h-96">
+                <div class="loader mb-4"></div>
+                <p class="text-gray-400 font-medium animate-pulse">Sincronizando inventario...</p>
+            </div>`;
     }
 
-    // 2. Si no hay caché, mostrar loader y esperar a la carga inicial (bloqueante una sola vez)
-    container.innerHTML = `
-        <div class="col-span-full flex flex-col items-center justify-center py-12 h-96">
-            <div class="loader mb-4"></div>
-            <p class="text-gray-400 font-medium animate-pulse">Sincronizando inventario...</p>
-        </div>`;
+    const unsubRequests = onSnapshot(queryRequests, (snap) => {
+        requestsSnap = snap;
+        checkAndRender();
+    }, (e) => console.log("Error requests snap", e));
 
-    try {
-        const [requestsSnap, poSnap, catalogSnap] = await Promise.all([
-            getDocs(queryRequests),
-            getDocs(queryPO),
-            getDocs(queryCatalog)
-        ]);
+    const unsubPO = onSnapshot(queryPO, (snap) => {
+        poSnap = snap;
+        checkAndRender();
+    }, (e) => console.log("Error PO snap", e));
 
-        // Guardar en caché para futuras visitas
-        window.requestsPendingCache = requestsSnap;
-        window.poPendingCache = poSnap;
-        window.materialCatalogCache = catalogSnap;
+    const unsubCatalog = onSnapshot(queryCatalog, (snap) => {
+        catalogSnap = snap;
+        checkAndRender();
+    }, (e) => console.log("Error catalog snap", e));
 
-        await processAndRender(requestsSnap, poSnap, catalogSnap);
-
-    } catch (error) {
-        console.error("Error Dashboard Bodega:", error);
-        container.innerHTML = `<p class="text-red-500 text-center">Error cargando datos: ${error.message}</p>`;
-    }
+    unsubscribeDashboard = () => {
+        if (typeof unsubRequests === 'function') unsubRequests();
+        if (typeof unsubPO === 'function') unsubPO();
+        if (typeof unsubCatalog === 'function') unsubCatalog();
+    };
 }
 
 /**
  * Renderiza el Dashboard para SST con diseño de columnas y Gráfica de Herramientas CORREGIDA.
+ * OPTIMIZACIÓN PREMIUM: Caching inteligente con listener real-time (onSnapshot) y cero reads redundantes.
  */
 async function renderSSTDashboard(container) {
     const dateStr = new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     const capitalizedDate = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
 
-    container.innerHTML = `
-        <div class="col-span-full flex flex-col items-center justify-center py-12 h-96">
-            <div class="loader mb-4"></div>
-            <p class="text-gray-400 font-medium animate-pulse">Verificando seguridad...</p>
-        </div>`;
+    const statsRef = doc(_db, "system", "dashboardStats");
+    const queryDotacion = query(collection(_db, "dotacionHistory"), where("status", "==", "activo"));
+    const queryUsers = query(collection(_db, "users"), where("status", "==", "active"));
+    const queryCatalog = collection(_db, "dotacionCatalog");
 
-    try {
-        // 1. CONSULTAS (Recuperamos la consulta de estadísticas globales para la gráfica)
-        const [statsDoc, dotacionSnap, usersSnap, catalogSnap] = await Promise.all([
-            getDoc(doc(_db, "system/dashboardStats")), // <--- ESTA FALTABA
-            getDocs(query(collection(_db, "dotacionHistory"), where("status", "==", "activo"))),
-            getDocs(query(collection(_db, "users"), where("status", "==", "active"))),
-            getDocs(collection(_db, "dotacionCatalog"))
-        ]);
+    let statsDoc = window.sstStatsCache || null;
+    let dotacionSnap = window.sstDotacionHistoryCache || null;
+    let usersSnap = window.sstActiveUsersCache || null;
+    let catalogSnap = window.sstDotacionCatalogCache || null;
 
-        // 2. PROCESAR DATOS
-        // Extraer estadísticas de herramientas para la GRÁFICA y el KPI
-        const statsData = statsDoc.exists() ? statsDoc.data() : {};
-        const toolStats = statsData.tools || { disponible: 0, asignada: 0, en_reparacion: 0, dada_de_baja: 0 };
-        
-        // KPI: Equipos en Riesgo (Reparación + Baja)
-        const toolsIssues = (toolStats.en_reparacion || 0) + (toolStats.dada_de_baja || 0);
-        
-        const activePersonnel = usersSnap.size;
+    const checkAndRender = async () => {
+        if (statsDoc !== null && dotacionSnap && usersSnap && catalogSnap) {
+            // Guardar en caché
+            window.sstStatsCache = statsDoc;
+            window.sstDotacionHistoryCache = dotacionSnap;
+            window.sstActiveUsersCache = usersSnap;
+            window.sstDotacionCatalogCache = catalogSnap;
 
-        // Calcular Dotación Vencida (KPI)
-        let expiredDotacionCount = 0;
-        const vidaUtilMap = new Map();
-        catalogSnap.forEach(d => vidaUtilMap.set(d.id, d.data().vidaUtilDias || 0));
+            const statsData = statsDoc.exists() ? statsDoc.data() : {};
+            const toolStats = statsData.tools || { disponible: 0, asignada: 0, en_reparacion: 0, dada_de_baja: 0 };
+            const toolsIssues = (toolStats.en_reparacion || 0) + (toolStats.dada_de_baja || 0);
+            const activePersonnel = usersSnap.size;
 
-        const today = new Date();
-        dotacionSnap.forEach(doc => {
-            const entry = doc.data();
-            const vidaUtil = vidaUtilMap.get(entry.itemId);
-            if (vidaUtil && entry.fechaEntrega) {
-                const deliveryDate = new Date(entry.fechaEntrega + 'T00:00:00');
-                const expDate = new Date(deliveryDate);
-                expDate.setDate(expDate.getDate() + vidaUtil);
-                const daysLeft = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
-                if (daysLeft <= 15) expiredDotacionCount++;
-            }
-        });
+            let expiredDotacionCount = 0;
+            const vidaUtilMap = new Map();
+            catalogSnap.forEach(d => vidaUtilMap.set(d.id, d.data().vidaUtilDias || 0));
 
-        // 3. RENDERIZADO HTML
-        container.innerHTML = `
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                <div>
-                    <h1 class="text-3xl font-extrabold text-slate-800 tracking-tight">Panel SST</h1>
-                    <p class="text-slate-500 mt-1 text-sm">Seguridad y Salud en el Trabajo.</p>
-                </div>
-                <div class="bg-white px-5 py-2.5 rounded-xl shadow-sm border border-slate-200 text-sm text-slate-600 font-medium flex items-center gap-3">
-                    <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                    <i class="fa-regular fa-calendar text-slate-400"></i> ${capitalizedDate}
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                
-                <div class="lg:col-span-9 space-y-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                        
-                        <div class="bg-white p-6 rounded-2xl shadow-sm border ${expiredDotacionCount > 0 ? 'border-red-100 bg-red-50/30' : 'border-slate-100'} flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-dotacion">
-                            <div>
-                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-blue-600 transition-colors">Alertas EPP</p>
-                                <h3 class="text-4xl font-black ${expiredDotacionCount > 0 ? 'text-red-700' : 'text-slate-800'}">${expiredDotacionCount}</h3>
-                                <p class="text-xs text-slate-500 mt-2 flex items-center gap-1 group-hover:text-blue-500">
-                                    Dotación por vencer <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
-                                </p>
-                            </div>
-                            <div class="w-16 h-16 rounded-2xl ${expiredDotacionCount > 0 ? 'bg-red-100 text-red-600' : 'bg-blue-50 text-blue-600'} flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
-                                <i class="fa-solid fa-helmet-safety"></i>
-                            </div>
-                        </div>
-
-                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-herramientas">
-                            <div>
-                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-orange-600 transition-colors">Equipos Riesgo</p>
-                                <h3 class="text-4xl font-black text-slate-800">${toolsIssues}</h3>
-                                <p class="text-xs text-orange-600 font-medium mt-2 flex items-center gap-1">
-                                    Reparación / Baja <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
-                                </p>
-                            </div>
-                            <div class="w-16 h-16 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
-                                <i class="fa-solid fa-screwdriver-wrench"></i>
-                            </div>
-                        </div>
-
-                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="back-to-empleados">
-                            <div>
-                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-emerald-600 transition-colors">Personal Activo</p>
-                                <h3 class="text-4xl font-black text-slate-800">${activePersonnel}</h3>
-                                <p class="text-xs text-emerald-600 font-medium mt-2 flex items-center gap-1">
-                                    En operación hoy <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
-                                </p>
-                            </div>
-                            <div class="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
-                                <i class="fa-solid fa-users"></i>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-8 items-center">
-                        <div class="flex-1 w-full">
-                            <h4 class="text-lg font-bold text-slate-700 mb-2">Estado de Herramientas</h4>
-                            <p class="text-sm text-slate-500 mb-6">Distribución actual de equipos y maquinaria.</p>
-                            
-                            <ul class="space-y-3 text-sm">
-                                <li class="flex justify-between items-center p-2 bg-green-50 rounded-lg border border-green-100">
-                                    <span class="flex items-center text-green-700 font-medium"><span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>Disponibles</span> 
-                                    <span class="font-bold text-green-800 text-lg">${toolStats.disponible || 0}</span>
-                                </li>
-                                <li class="flex justify-between items-center p-2 bg-blue-50 rounded-lg border border-blue-100">
-                                    <span class="flex items-center text-blue-700 font-medium"><span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>Asignadas</span> 
-                                    <span class="font-bold text-blue-800 text-lg">${toolStats.asignada || 0}</span>
-                                </li>
-                                <li class="flex justify-between items-center p-2 bg-orange-50 rounded-lg border border-orange-100">
-                                    <span class="flex items-center text-orange-700 font-medium"><span class="w-2 h-2 rounded-full bg-orange-500 mr-2"></span>En Reparación</span> 
-                                    <span class="font-bold text-orange-800 text-lg">${toolStats.en_reparacion || 0}</span>
-                                </li>
-                                <li class="flex justify-between items-center p-2 bg-red-50 rounded-lg border border-red-100">
-                                    <span class="flex items-center text-red-700 font-medium"><span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span>Dada de Baja</span> 
-                                    <span class="font-bold text-red-800 text-lg">${toolStats.dada_de_baja || 0}</span>
-                                </li>
-                            </ul>
-                        </div>
-                        <div class="w-full md:w-64 h-64 relative flex items-center justify-center">
-                            <canvas id="sst-tools-chart"></canvas>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="lg:col-span-3 space-y-6">
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 h-full">
-                        <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2 uppercase tracking-wide border-b pb-3">
-                            <i class="fa-solid fa-bolt text-yellow-500"></i> Acciones Rápidas
-                        </h3>
-
-                        <div class="space-y-3">
-                            <button data-action="send-admin-alert" class="w-full flex items-center gap-3 p-3 rounded-xl bg-red-50 text-red-700 hover:bg-red-100 hover:shadow-md transition-all text-left group border border-red-100">
-                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-red-500 shadow-sm"><i class="fa-solid fa-bullhorn"></i></div>
-                                <div><p class="font-bold text-sm">Alerta SST</p><p class="text-[10px] opacity-75">Emergencia</p></div>
-                            </button>
-
-                            <button data-action="go-to-dotacion" class="w-full flex items-center gap-3 p-3 rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-100 hover:shadow-md transition-all text-left group border border-amber-100">
-                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-amber-500 shadow-sm"><i class="fa-solid fa-vest"></i></div>
-                                <div><p class="font-bold text-sm">Gestión EPP</p><p class="text-[10px] opacity-75">Entregas y control</p></div>
-                            </button>
-
-                            <button data-action="back-to-empleados" class="w-full flex items-center gap-3 p-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 hover:shadow-md transition-all text-left group border border-blue-100">
-                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-blue-500 shadow-sm"><i class="fa-solid fa-id-card"></i></div>
-                                <div><p class="font-bold text-sm">Personal</p><p class="text-[10px] opacity-75">Documentos</p></div>
-                            </button>
-
-                            <button data-action="go-to-herramientas" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
-                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-slate-500 shadow-sm"><i class="fa-solid fa-clipboard-check"></i></div>
-                                <div><p class="font-bold text-sm">Inspección</p><p class="text-[10px] opacity-75">Equipos</p></div>
-                            </button>
-
-                             <button data-action="request-loan" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
-                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-gray-500 shadow-sm"><i class="fa-solid fa-hand-holding-dollar"></i></div>
-                                <div><p class="font-bold text-sm">Préstamo</p><p class="text-[10px] opacity-75">Personal</p></div>
-                            </button>
-
-                            <button data-action="view-my-payment-history" class="w-full flex items-center gap-3 p-3 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 hover:shadow-md transition-all text-left group">
-                                <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm group-hover:scale-110 transition-transform">
-                                    <i class="fa-solid fa-receipt"></i>
-                                </div>
-                                <div>
-                                    <p class="font-bold text-sm text-gray-700 group-hover:text-emerald-700">Mis Pagos</p>
-                                    <p class="text-[10px] text-gray-400">Nómina y Préstamos</p>
-                                </div>
-                            </button>
-
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        // 4. CREAR GRÁFICA
-        if (typeof window.ensureChart === 'function') {
-            await window.ensureChart();
-        }
-        const ctx = document.getElementById('sst-tools-chart').getContext('2d');
-        const chart = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Disponible', 'Asignada', 'Reparación', 'Baja'],
-                datasets: [{
-                    data: [toolStats.disponible || 0, toolStats.asignada || 0, toolStats.en_reparacion || 0, toolStats.dada_de_baja || 0],
-                    backgroundColor: ['#22c55e', '#3b82f6', '#f97316', '#ef4444'], // Colores brillantes
-                    borderWidth: 0,
-                    hoverOffset: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false } // Ocultamos leyenda por defecto (ya hicimos una custom)
-                },
-                cutout: '70%',
-                animation: {
-                    animateScale: true,
-                    animateRotate: true
+            const today = new Date();
+            dotacionSnap.forEach(doc => {
+                const entry = doc.data();
+                const vidaUtil = vidaUtilMap.get(entry.itemId);
+                if (vidaUtil && entry.fechaEntrega) {
+                    const deliveryDate = new Date(entry.fechaEntrega + 'T00:00:00');
+                    const expDate = new Date(deliveryDate);
+                    expDate.setDate(expDate.getDate() + vidaUtil);
+                    const daysLeft = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
+                    if (daysLeft <= 15) expiredDotacionCount++;
                 }
-            }
-        });
-        activeModuleCharts.push(chart);
+            });
 
-    } catch (error) {
-        console.error("Error Dashboard SST:", error);
-        container.innerHTML = `<p class="text-red-500 text-center p-10">Error cargando datos: ${error.message}</p>`;
+            // Verificar si el contenedor sigue activo
+            const widgetContainer = document.getElementById('dashboard-widgets-container');
+            if (!widgetContainer) return;
+
+            container.innerHTML = `
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                    <div>
+                        <h1 class="text-3xl font-extrabold text-slate-800 tracking-tight">Panel SST</h1>
+                        <p class="text-slate-500 mt-1 text-sm">Seguridad y Salud en el Trabajo.</p>
+                    </div>
+                    <div class="bg-white px-5 py-2.5 rounded-xl shadow-sm border border-slate-200 text-sm text-slate-600 font-medium flex items-center gap-3">
+                        <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                        <i class="fa-regular fa-calendar text-slate-400"></i> ${capitalizedDate}
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                    
+                    <div class="lg:col-span-9 space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                            
+                            <div class="bg-white p-6 rounded-2xl shadow-sm border ${expiredDotacionCount > 0 ? 'border-red-100 bg-red-50/30' : 'border-slate-100'} flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-dotacion">
+                                <div>
+                                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-blue-600 transition-colors">Alertas EPP</p>
+                                    <h3 class="text-4xl font-black ${expiredDotacionCount > 0 ? 'text-red-700' : 'text-slate-800'}">${expiredDotacionCount}</h3>
+                                    <p class="text-xs text-slate-500 mt-2 flex items-center gap-1 group-hover:text-blue-500">
+                                        Dotación por vencer <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                    </p>
+                                </div>
+                                <div class="w-16 h-16 rounded-2xl ${expiredDotacionCount > 0 ? 'bg-red-100 text-red-600' : 'bg-blue-50 text-blue-600'} flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                                    <i class="fa-solid fa-helmet-safety"></i>
+                                </div>
+                            </div>
+
+                            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-herramientas">
+                                <div>
+                                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-orange-600 transition-colors">Equipos Riesgo</p>
+                                    <h3 class="text-4xl font-black text-slate-800">${toolsIssues}</h3>
+                                    <p class="text-xs text-orange-600 font-medium mt-2 flex items-center gap-1">
+                                        Reparación / Baja <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                    </p>
+                                </div>
+                                <div class="w-16 h-16 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                                    <i class="fa-solid fa-screwdriver-wrench"></i>
+                                </div>
+                            </div>
+
+                            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="back-to-empleados">
+                                <div>
+                                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-emerald-600 transition-colors">Personal Activo</p>
+                                    <h3 class="text-4xl font-black text-slate-800">${activePersonnel}</h3>
+                                    <p class="text-xs text-emerald-600 font-medium mt-2 flex items-center gap-1">
+                                        En operación hoy <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                                    </p>
+                                </div>
+                                <div class="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                                    <i class="fa-solid fa-users"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-8 items-center">
+                            <div class="flex-1 w-full">
+                                <h4 class="text-lg font-bold text-slate-700 mb-2">Estado de Herramientas</h4>
+                                <p class="text-sm text-slate-500 mb-6">Distribución actual de equipos y maquinaria.</p>
+                                
+                                <ul class="space-y-3 text-sm">
+                                    <li class="flex justify-between items-center p-2 bg-green-50 rounded-lg border border-green-100">
+                                        <span class="flex items-center text-green-700 font-medium"><span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>Disponibles</span> 
+                                        <span class="font-bold text-green-800 text-lg">${toolStats.disponible || 0}</span>
+                                    </li>
+                                    <li class="flex justify-between items-center p-2 bg-blue-50 rounded-lg border border-blue-100">
+                                        <span class="flex items-center text-blue-700 font-medium"><span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>Asignadas</span> 
+                                        <span class="font-bold text-blue-800 text-lg">${toolStats.asignada || 0}</span>
+                                    </li>
+                                    <li class="flex justify-between items-center p-2 bg-orange-50 rounded-lg border border-orange-100">
+                                        <span class="flex items-center text-orange-700 font-medium"><span class="w-2 h-2 rounded-full bg-orange-500 mr-2"></span>En Reparación</span> 
+                                        <span class="font-bold text-orange-800 text-lg">${toolStats.en_reparacion || 0}</span>
+                                    </li>
+                                    <li class="flex justify-between items-center p-2 bg-red-50 rounded-lg border border-red-100">
+                                        <span class="flex items-center text-red-700 font-medium"><span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span>Dada de Baja</span> 
+                                        <span class="font-bold text-red-800 text-lg">${toolStats.dada_de_baja || 0}</span>
+                                    </li>
+                                </ul>
+                            </div>
+                            <div class="w-full md:w-64 h-64 relative flex items-center justify-center">
+                                <canvas id="sst-tools-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-3 space-y-6">
+                        <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 h-full">
+                            <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2 uppercase tracking-wide border-b pb-3">
+                                <i class="fa-solid fa-bolt text-yellow-500"></i> Acciones Rápidas
+                            </h3>
+
+                            <div class="space-y-3">
+                                <button data-action="send-admin-alert" class="w-full flex items-center gap-3 p-3 rounded-xl bg-red-50 text-red-700 hover:bg-red-100 hover:shadow-md transition-all text-left group border border-red-100">
+                                    <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-red-500 shadow-sm"><i class="fa-solid fa-bullhorn"></i></div>
+                                    <div><p class="font-bold text-sm">Alerta SST</p><p class="text-[10px] opacity-75">Emergencia</p></div>
+                                </button>
+
+                                <button data-action="go-to-dotacion" class="w-full flex items-center gap-3 p-3 rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-100 hover:shadow-md transition-all text-left group border border-amber-100">
+                                    <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-amber-500 shadow-sm"><i class="fa-solid fa-vest"></i></div>
+                                    <div><p class="font-bold text-sm">Gestión EPP</p><p class="text-[10px] opacity-75">Entregas y control</p></div>
+                                </button>
+
+                                <button data-action="back-to-empleados" class="w-full flex items-center gap-3 p-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 hover:shadow-md transition-all text-left group border border-blue-100">
+                                    <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-blue-500 shadow-sm"><i class="fa-solid fa-id-card"></i></div>
+                                    <div><p class="font-bold text-sm">Personal</p><p class="text-[10px] opacity-75">Documentos</p></div>
+                                </button>
+
+                                <button data-action="go-to-herramientas" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
+                                    <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-slate-500 shadow-sm"><i class="fa-solid fa-clipboard-check"></i></div>
+                                    <div><p class="font-bold text-sm">Inspección</p><p class="text-[10px] opacity-75">Equipos</p></div>
+                                </button>
+
+                                 <button data-action="request-loan" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
+                                    <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-gray-500 shadow-sm"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                                    <div><p class="font-bold text-sm">Préstamo</p><p class="text-[10px] opacity-75">Personal</p></div>
+                                </button>
+
+                                <button data-action="view-my-payment-history" class="w-full flex items-center gap-3 p-3 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 hover:shadow-md transition-all text-left group">
+                                    <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm group-hover:scale-110 transition-transform">
+                                        <i class="fa-solid fa-receipt"></i>
+                                    </div>
+                                    <div>
+                                        <p class="font-bold text-sm text-gray-700 group-hover:text-emerald-700">Mis Pagos</p>
+                                        <p class="text-[10px] text-gray-400">Nómina y Préstamos</p>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Crear o refrescar gráfica
+            if (activeModuleCharts.length > 0) {
+                activeModuleCharts.forEach(chart => chart.destroy());
+                activeModuleCharts = [];
+            }
+            if (typeof window.ensureChart === 'function') {
+                await window.ensureChart();
+            }
+            const ctx = document.getElementById('sst-tools-chart').getContext('2d');
+            const chart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Disponible', 'Asignada', 'Reparación', 'Baja'],
+                    datasets: [{
+                        data: [toolStats.disponible || 0, toolStats.asignada || 0, toolStats.en_reparacion || 0, toolStats.dada_de_baja || 0],
+                        backgroundColor: ['#22c55e', '#3b82f6', '#f97316', '#ef4444'],
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    cutout: '70%',
+                    animation: {
+                        animateScale: true,
+                        animateRotate: true
+                    }
+                }
+            });
+            activeModuleCharts.push(chart);
+        }
+    };
+
+    if (statsDoc && dotacionSnap && usersSnap && catalogSnap) {
+        console.log("⚡ SST Dashboard: Renderizado inmediato usando caché.");
+        await checkAndRender();
+    } else {
+        container.innerHTML = `
+            <div class="col-span-full flex flex-col items-center justify-center py-12 h-96">
+                <div class="loader mb-4"></div>
+                <p class="text-gray-400 font-medium animate-pulse">Verificando seguridad...</p>
+            </div>`;
     }
+
+    const unsubStats = onSnapshot(statsRef, (docSnap) => {
+        statsDoc = docSnap;
+        checkAndRender();
+    }, (e) => console.log("Error stats snap", e));
+
+    const unsubDotacion = onSnapshot(queryDotacion, (snap) => {
+        dotacionSnap = snap;
+        checkAndRender();
+    }, (e) => console.log("Error dotacion snap", e));
+
+    const unsubUsers = onSnapshot(queryUsers, (snap) => {
+        usersSnap = snap;
+        checkAndRender();
+    }, (e) => console.log("Error users snap", e));
+
+    const unsubCatalog = onSnapshot(queryCatalog, (snap) => {
+        catalogSnap = snap;
+        checkAndRender();
+    }, (e) => console.log("Error catalog snap", e));
+
+    unsubscribeDashboard = () => {
+        if (typeof unsubStats === 'function') unsubStats();
+        if (typeof unsubDotacion === 'function') unsubDotacion();
+        if (typeof unsubUsers === 'function') unsubUsers();
+        if (typeof unsubCatalog === 'function') unsubCatalog();
+    };
 }

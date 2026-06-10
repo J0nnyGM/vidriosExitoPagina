@@ -168,7 +168,7 @@ window.handleDeletePhoto = handleDeletePhoto;
 
 // Import dynamic Firebase operations
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
-import { doc, getDoc, addDoc, collection, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+import { doc, getDoc, addDoc, collection, query, orderBy, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
 // --- DYNAMIC MODULE VARIABLES AND LOADERS ---
 let initDotacion, loadDotacionView, updateDotacionFilterOptions, loadDotacionAsignaciones;
@@ -548,20 +548,41 @@ Object.defineProperty(window, 'pendingProfileUpdateData', { get: () => pendingPr
 Object.defineProperty(window, 'processedPhotoFile', { get: () => processedPhotoFile, set: (val) => { processedPhotoFile = val; } });
 
 // --- LÓGICA DE INICIO GENERAL ---
+let unsubscribeUsersMap = null;
 async function loadUsersMap() {
-    window.usersMapPromise = (async () => {
+    if (window.usersMapPromise) return window.usersMapPromise;
+
+    window.usersMapPromise = new Promise((resolve, reject) => {
         try {
+            if (unsubscribeUsersMap) unsubscribeUsersMap();
+
             const usersQuery = query(collection(db, "users"));
-            const snapshot = await getDocs(usersQuery);
-            usersMap.clear();
-            snapshot.forEach(doc => {
-                usersMap.set(doc.id, doc.data());
+            let isResolved = false;
+
+            unsubscribeUsersMap = onSnapshot(usersQuery, (snapshot) => {
+                usersMap.clear();
+                snapshot.forEach(doc => {
+                    usersMap.set(doc.id, doc.data());
+                });
+
+                console.log(`[usersMap] Sincronizado en tiempo real. Total de usuarios: ${usersMap.size}`);
+                if (!isResolved) {
+                    isResolved = true;
+                    resolve(usersMap);
+                }
+            }, (error) => {
+                console.error("Error en onSnapshot de usersMap:", error);
+                if (!isResolved) {
+                    isResolved = true;
+                    reject(error);
+                }
             });
-            console.log("UsersMap loaded successfully.");
         } catch (e) {
             console.error("Error loading usersMap:", e);
+            reject(e);
         }
-    })();
+    });
+
     return window.usersMapPromise;
 }
 window.loadUsersMap = loadUsersMap;
