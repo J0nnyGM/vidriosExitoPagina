@@ -855,6 +855,54 @@ onAuthStateChanged(auth, async (user) => {
     }
 });
 
+window.forceApplicationHardReset = async function() {
+    console.log('[App] Iniciando hard reset de la aplicación...');
+    
+    // 1. Mostrar pantalla de actualización visible
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (loadingOverlay) {
+        loadingOverlay.innerHTML = `
+            <div class="flex flex-col items-center justify-center p-6 text-center">
+                <div class="loader mb-6"></div>
+                <h3 class="text-xl font-bold text-slate-800 mb-2">Instalando nueva versión...</h3>
+                <p class="text-sm text-slate-500 max-w-sm">Limpiando la caché y reconstruyendo los datos locales para asegurar un rendimiento óptimo.</p>
+            </div>
+        `;
+        loadingOverlay.classList.remove('hidden');
+    }
+
+    try {
+        // 2. Limpiar todos los cachés del navegador (Cache Storage)
+        if ('caches' in window) {
+            const cacheNames = await caches.keys();
+            await Promise.all(cacheNames.map(name => caches.delete(name)));
+            console.log('[App] Todos los Cache Storage han sido purgados.');
+        }
+
+        // 3. Eliminar Service Workers antiguos
+        if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map(r => r.unregister()));
+            console.log('[App] Todos los Service Workers han sido desregistrados.');
+        }
+
+        // 4. Limpiar LocalStorage y SessionStorage
+        localStorage.clear();
+        sessionStorage.clear();
+        console.log('[App] LocalStorage y SessionStorage han sido vaciados.');
+
+        // 5. Pequeña espera visual y recarga dura de la página
+        setTimeout(() => {
+            window.location.reload(true);
+        }, 1200);
+
+    } catch (error) {
+        console.error('[App] Error durante el hard reset:', error);
+        // Recargar de todos modos
+        window.location.reload(true);
+    }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     // Registrar Service Worker para PWA (Aspecto nativo de aplicación y carga instantánea)
     if ('serviceWorker' in navigator) {
@@ -869,9 +917,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const registerSW = () => {
-            navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.3.0')
+            navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.3.2')
                 .then(reg => {
                     console.log('[App] Service Worker PWA registrado con éxito en el ámbito:', reg.scope);
+                    
+                    // Detectar actualizaciones automáticas de forma agresiva
+                    reg.onupdatefound = () => {
+                        const installingWorker = reg.installing;
+                        if (installingWorker) {
+                            installingWorker.onstatechange = () => {
+                                if (installingWorker.state === 'installed') {
+                                    if (navigator.serviceWorker.controller) {
+                                        console.log('[App] Nueva versión disponible. Iniciando actualización agresiva...');
+                                        window.forceApplicationHardReset();
+                                    }
+                                }
+                            };
+                        }
+                    };
                 })
                 .catch(err => {
                     console.error('[App] Error al registrar Service Worker PWA:', err);

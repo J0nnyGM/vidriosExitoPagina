@@ -500,6 +500,26 @@ export function initClickHandlers() {
                     window.handleLogout();
                 }
                 break;
+            case 'force-app-update':
+                if (typeof window.openConfirmModal === 'function') {
+                    window.openConfirmModal(
+                        "Esto eliminará toda la caché y datos locales temporales para buscar e instalar la última versión. La aplicación se reiniciará. ¿Continuar?",
+                        () => {
+                            if (typeof window.forceApplicationHardReset === 'function') {
+                                window.forceApplicationHardReset();
+                            } else {
+                                window.location.reload(true);
+                            }
+                        }
+                    );
+                } else if (confirm("Esto eliminará toda la caché y datos locales temporales para buscar e instalar la última versión. La aplicación se reiniciará. ¿Continuar?")) {
+                    if (typeof window.forceApplicationHardReset === 'function') {
+                        window.forceApplicationHardReset();
+                    } else {
+                        window.location.reload(true);
+                    }
+                }
+                break;
             case 'report-entry': {
                 if (typeof window.handleReportEntry === 'function' && window.currentUser && window.usersMap) {
                     const userData = window.usersMap.get(window.currentUser.uid);
