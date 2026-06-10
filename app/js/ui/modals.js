@@ -3130,6 +3130,11 @@ async function openMainModal(type, data = {}) {
 
                     listContainer.innerHTML = '';
 
+                    if (!window.pendingLoansMap) {
+                        window.pendingLoansMap = new Map();
+                    }
+                    window.pendingLoansMap.clear();
+
                     for (const loanDoc of snapshot.docs) {
                         const loan = loanDoc.data();
                         const userRef = loanDoc.ref.parent.parent;
@@ -3149,16 +3154,18 @@ async function openMainModal(type, data = {}) {
                         // Generador de avatar si no hay foto
                         const userPhoto = userData.photoURL || `https://ui-avatars.com/api/?name=${userData.firstName}+${userData.lastName}&background=random&color=fff`;
 
-                        // Objeto para el botón de aprobar
-                        const loanDataJson = JSON.stringify({
-                            id: loanDoc.id, uid: userRef.id, userName: userName,
+                        // Guardar datos en el mapa global usando el ID del préstamo
+                        const loanId = loanDoc.id;
+                        window.pendingLoansMap.set(loanId, {
+                            id: loanId, uid: userRef.id, userName: userName,
                             amount: loan.amount, date: loan.date,
-                            description: loan.description, installments: loan.installments,
+                            description: loan.description || 'Sin motivo especificado',
+                            installments: loan.installments || 1,
                             bankName: userData.bankName || 'No registrado',
                             accountType: userData.accountType || '',
                             accountNumber: userData.accountNumber || '---',
                             userPhoto: userPhoto
-                        }).replace(/"/g, '&quot;');
+                        });
 
                         // Tarjeta
                         const card = document.createElement('div');
@@ -3212,7 +3219,7 @@ async function openMainModal(type, data = {}) {
                             </div>
 
                             <div class="px-5 py-3 bg-gray-50 border-t border-gray-200 flex justify-end">
-                                <button data-action="open-loan-review" data-loan='${loanDataJson}' 
+                                <button type="button" data-action="open-loan-review" data-loan-id="${loanId}" 
                                     class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm hover:shadow-md transition-all flex items-center gap-2 transform active:scale-95">
                                     Revisar y Aprobar <i class="fa-solid fa-arrow-right"></i>
                                 </button>

@@ -25,6 +25,7 @@ const app = initializeApp(firebaseConfig);
 
 // 4. Configuración de App Check (Seguridad)
 export const VAPID_KEY = "BKdSH8VAjrl0Fpzc-FZmIVvahDsXV_BlIXU440PWRL3CBkqHiNCg3tav-Lf2kZFOy99sfTHfA5L2e-yXpf-eMiQ";
+
 const appCheck = initializeAppCheck(app, {
     provider: new ReCaptchaV3Provider('6Lc-090rAAAAAKkE09k5txsrVWXG3Xelxnrpb7Ty'),
     isTokenAutoRefreshEnabled: true

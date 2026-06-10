@@ -231,14 +231,13 @@ export async function initializePushNotifications(user) {
             return;
         }
 
-        const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.2.5');
+        const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.3.0');
         const token = await getToken(messaging, {
             vapidKey: VAPID_KEY,
             serviceWorkerRegistration: registration
         });
 
         if (token) {
-            console.log("FCM Token obtenido:", token);
             const userRef = doc(db, "users", user.uid);
             await updateDoc(userRef, {
                 fcmToken: token,

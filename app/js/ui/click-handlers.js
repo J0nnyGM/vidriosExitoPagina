@@ -645,9 +645,26 @@ export function initClickHandlers() {
                 });
                 break;
             }
-            case 'open-loan-review':
-                window.openMainModal('reviewLoan', { loanId: elementId, userId: elementWithAction.dataset.userId });
+            case 'open-loan-review': {
+                const loanId = elementWithAction.dataset.loanId;
+                if (loanId && window.pendingLoansMap && window.pendingLoansMap.has(loanId)) {
+                    const loanData = window.pendingLoansMap.get(loanId);
+                    window.openMainModal('review-loan', loanData);
+                } else {
+                    const loanDataStr = elementWithAction.dataset.loan;
+                    if (loanDataStr) {
+                        try {
+                            const loanData = JSON.parse(loanDataStr);
+                            window.openMainModal('review-loan', loanData);
+                        } catch (error) {
+                            console.error("Error al parsear datos del préstamo:", error);
+                        }
+                    } else {
+                        console.error("No se encontró la información del préstamo con ID:", loanId);
+                    }
+                }
                 break;
+            }
 
             case 'add-corte-payment':
                 window.openMainModal('add-corte-payment', { corteId: elementId, corteNumber: elementWithAction.dataset.corteNumber });

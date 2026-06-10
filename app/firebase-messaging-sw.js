@@ -1,6 +1,6 @@
 // EN app/firebase-messaging-sw.js
 
-const SW_VERSION = 'v1.2.9'; // Versión del Service Worker para forzar actualizaciones y evitar cachés obsoletas
+const SW_VERSION = 'v1.3.0'; // Versión del Service Worker para forzar actualizaciones y evitar cachés obsoletas
 const CACHE_NAME = `vidrios-exito-cache-${SW_VERSION}`;
 
 // Recursos principales que se descargan inmediatamente en la instalación para carga instantánea
@@ -146,6 +146,9 @@ self.addEventListener('fetch', (event) => {
 
     try {
         const url = new URL(event.request.url);
+
+        // Ignorar esquemas no soportados por Cache Storage (como chrome-extension://, data:, blob:)
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
 
         // Excluir llamadas de Firebase Auth, Firestore, Cloud Functions y otros endpoints de base de datos
         if (
