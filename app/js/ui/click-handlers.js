@@ -94,18 +94,43 @@ export function initClickHandlers() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('sidebar-overlay');
             if (sidebar) {
-                const isCollapsed = sidebar.classList.contains('-translate-x-full');
-                if (isCollapsed) {
+                const isOpen = !sidebar.classList.contains('-translate-x-full');
+                if (isOpen) {
+                    if (typeof window.closeSidebar === 'function') {
+                        window.closeSidebar();
+                    } else {
+                        sidebar.classList.add('-translate-x-full');
+                        if (overlay) {
+                            overlay.classList.remove('opacity-100', 'pointer-events-auto');
+                            overlay.classList.add('opacity-0', 'pointer-events-none');
+                        }
+                    }
+                } else {
                     sidebar.classList.remove('-translate-x-full');
                     if (overlay) {
                         overlay.classList.remove('opacity-0', 'pointer-events-none');
                         overlay.classList.add('opacity-100', 'pointer-events-auto');
                     }
-                } else {
-                    sidebar.classList.add('-translate-x-full');
-                    if (overlay) {
-                        overlay.classList.remove('opacity-100', 'pointer-events-auto');
-                        overlay.classList.add('opacity-0', 'pointer-events-none');
+                    
+                    // Sincronizar iconos a estado abierto (X con rotación)
+                    const mobileIcon = document.querySelector('#mobile-more-menu-btn i');
+                    const mobileSpan = document.querySelector('#mobile-more-menu-btn span');
+                    const mobileBtn = document.getElementById('mobile-more-menu-btn');
+                    const headerIcon = document.querySelector('#menu-toggle-btn i');
+                    
+                    if (mobileIcon) {
+                        mobileIcon.classList.remove('fa-bars');
+                        mobileIcon.classList.add('fa-xmark', 'rotate-90');
+                    }
+                    if (mobileSpan) {
+                        mobileSpan.textContent = 'Cerrar';
+                    }
+                    if (mobileBtn) {
+                        mobileBtn.classList.add('text-blue-500', 'active');
+                    }
+                    if (headerIcon) {
+                        headerIcon.classList.remove('fa-bars');
+                        headerIcon.classList.add('fa-xmark', 'rotate-90');
                     }
                 }
             }

@@ -1,6 +1,6 @@
 // EN app/firebase-messaging-sw.js
 
-const SW_VERSION = 'v1.2.8'; // Versión del Service Worker para forzar actualizaciones y evitar cachés obsoletas
+const SW_VERSION = 'v1.2.9'; // Versión del Service Worker para forzar actualizaciones y evitar cachés obsoletas
 const CACHE_NAME = `vidrios-exito-cache-${SW_VERSION}`;
 
 // Recursos principales que se descargan inmediatamente en la instalación para carga instantánea
@@ -23,6 +23,23 @@ const PRECACHE_ASSETS = [
     './js/ui/click-handlers.js',
     './js/modules/dashboard.js',
     './js/modules/tareas.js',
+    './js/modules/cartera.js',
+    './js/modules/catalogo.js',
+    './js/modules/compras.js',
+    './js/modules/configuracion.js',
+    './js/modules/cortes.js',
+    './js/modules/cotizaciones.js',
+    './js/modules/despiece2d.js',
+    './js/modules/dotacion.js',
+    './js/modules/empleados.js',
+    './js/modules/herramientas.js',
+    './js/modules/informes.js',
+    './js/modules/ingresopersonal.js',
+    './js/modules/proveedores.js',
+    './js/modules/proyecto-detalles.js',
+    './js/modules/proyectos.js',
+    './js/modules/solicitudes.js',
+    './js/modules/usuarios.js',
     './recursos/logo.png',
     './recursos/logove.png',
     './webfonts/fa-brands-400.woff2',

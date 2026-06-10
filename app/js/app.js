@@ -806,7 +806,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const registerSW = () => {
-            navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.2.5')
+            navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.2.9')
                 .then(reg => {
                     console.log('[App] Service Worker PWA registrado con éxito en el ámbito:', reg.scope);
                 })
@@ -843,8 +843,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-    // Load FaceAPI models on demand
-    loadFaceAPImodels();
+    // Load FaceAPI models on demand is deferred to post-login or request phase
 
     document.getElementById('po-details-close-btn')?.addEventListener('click', () => {
         if (typeof closePurchaseOrderModal === 'function') closePurchaseOrderModal();

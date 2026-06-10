@@ -109,6 +109,27 @@ export function closeSidebar() {
         overlay.classList.remove('opacity-100', 'pointer-events-auto');
         overlay.classList.add('opacity-0', 'pointer-events-none');
     }
+    
+    // Sincronizar el icono de menú móvil y cabecera a su estado cerrado
+    const mobileIcon = document.querySelector('#mobile-more-menu-btn i');
+    const mobileSpan = document.querySelector('#mobile-more-menu-btn span');
+    const mobileBtn = document.getElementById('mobile-more-menu-btn');
+    const headerIcon = document.querySelector('#menu-toggle-btn i');
+
+    if (mobileIcon) {
+        mobileIcon.classList.remove('fa-xmark', 'rotate-90');
+        mobileIcon.classList.add('fa-bars');
+    }
+    if (mobileSpan) {
+        mobileSpan.textContent = 'Menú';
+    }
+    if (mobileBtn) {
+        mobileBtn.classList.remove('text-blue-500', 'active');
+    }
+    if (headerIcon) {
+        headerIcon.classList.remove('fa-xmark', 'rotate-90');
+        headerIcon.classList.add('fa-bars');
+    }
 }
 
 /**

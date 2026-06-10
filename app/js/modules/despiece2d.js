@@ -459,7 +459,7 @@ function downloadTemplateExcel() {
             ];
             
             XLSX.utils.book_append_sheet(wb, ws, "Medidas");
-            XLSX.writeFile(wb, "Plantilla_Optimizacion_VidrioExpress.xlsx");
+            XLSX.writeFile(wb, "Plantilla_Optimizacion_VidrioExito.xlsx");
         } catch (err) {
             console.error(err);
             alert("Error al generar la plantilla de Excel: " + err.message);

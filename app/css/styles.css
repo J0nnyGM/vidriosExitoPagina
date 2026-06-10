@@ -599,7 +599,7 @@ dl dd span.block:last-child {
 
 /* 1. COMPORTAMIENTO GENERAL */
 #sidebar, #main-content, .nav-link, .logo-container {
-    transition: width 0.3s ease, padding 0.3s ease, margin 0.3s ease;
+    transition: transform 0.3s ease-in-out, width 0.3s ease, padding 0.3s ease, margin 0.3s ease;
 }
 
 /* Configuración de textos del menú */
@@ -1105,4 +1105,9 @@ dl dd span.block:last-child {
     background-color: #e0e7ff;
     color: #3730a3;
     border: 1px solid #c7d2fe;
+}
+
+/* Transiciones para morphing y rotación del icono de menú responsive */
+#mobile-more-menu-btn i, #menu-toggle-btn i {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), color 0.3s ease;
 }
