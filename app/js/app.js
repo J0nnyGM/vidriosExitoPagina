@@ -549,17 +549,20 @@ Object.defineProperty(window, 'processedPhotoFile', { get: () => processedPhotoF
 
 // --- LÓGICA DE INICIO GENERAL ---
 async function loadUsersMap() {
-    try {
-        const usersQuery = query(collection(db, "users"));
-        const snapshot = await getDocs(usersQuery);
-        usersMap.clear();
-        snapshot.forEach(doc => {
-            usersMap.set(doc.id, doc.data());
-        });
-        console.log("UsersMap loaded successfully.");
-    } catch (e) {
-        console.error("Error loading usersMap:", e);
-    }
+    window.usersMapPromise = (async () => {
+        try {
+            const usersQuery = query(collection(db, "users"));
+            const snapshot = await getDocs(usersQuery);
+            usersMap.clear();
+            snapshot.forEach(doc => {
+                usersMap.set(doc.id, doc.data());
+            });
+            console.log("UsersMap loaded successfully.");
+        } catch (e) {
+            console.error("Error loading usersMap:", e);
+        }
+    })();
+    return window.usersMapPromise;
 }
 window.loadUsersMap = loadUsersMap;
 
@@ -798,16 +801,35 @@ onAuthStateChanged(auth, async (user) => {
                     }
                 }
 
-                // 3. Generar descriptor facial (en segundo plano, no bloqueante)
+                // 3. Generar/Recuperar descriptor facial (en segundo plano, no bloqueante)
                 if (profilePhotoURL) {
-                    generateProfileFaceDescriptor(profilePhotoURL)
-                        .then(descriptor => {
-                            currentUserFaceDescriptor = descriptor;
-                        })
-                        .catch(e => {
-                            console.warn("No se pudo generar descriptor facial en segundo plano:", e);
-                            currentUserFaceDescriptor = null;
-                        });
+                    const photoHash = profilePhotoURL.substring(profilePhotoURL.length - 30).replace(/[^a-zA-Z0-9]/g, '');
+                    const cacheKey = `face_desc_${user.uid}_${photoHash}`;
+                    const cachedDesc = localStorage.getItem(cacheKey);
+
+                    if (cachedDesc) {
+                        try {
+                            currentUserFaceDescriptor = new Float32Array(JSON.parse(cachedDesc));
+                            console.log("[App] Huella facial recuperada desde caché local (0 ms, sin instanciar IA).");
+                        } catch (e) {
+                            console.error("[App] Error al deserializar huella facial guardada:", e);
+                            localStorage.removeItem(cacheKey);
+                        }
+                    }
+
+                    if (!currentUserFaceDescriptor) {
+                        generateProfileFaceDescriptor(profilePhotoURL)
+                            .then(descriptor => {
+                                currentUserFaceDescriptor = descriptor;
+                                if (descriptor) {
+                                    localStorage.setItem(cacheKey, JSON.stringify(Array.from(descriptor)));
+                                }
+                            })
+                            .catch(e => {
+                                console.warn("No se pudo generar descriptor facial en segundo plano:", e);
+                                currentUserFaceDescriptor = null;
+                            });
+                    }
                 } else {
                     currentUserFaceDescriptor = null;
                 }

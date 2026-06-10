@@ -46,12 +46,6 @@ export function showGeneralDashboard() {
     const widgetsContainer = document.getElementById('dashboard-widgets-container');
     
     widgetsContainer.className = 'space-y-8';
-    widgetsContainer.innerHTML = `
-        <div class="flex flex-col items-center justify-center h-64 text-gray-400">
-            <div class="loader mb-4"></div>
-            <p class="animate-pulse">Cargando panel de control...</p>
-        </div>
-    `;
 
     // 1. Limpieza de Gráficas previas
     if (activeModuleCharts.length > 0) {
@@ -67,7 +61,25 @@ export function showGeneralDashboard() {
 
     const userRole = _getCurrentUserRole();
 
-    // 3. Renderizado por Rol
+    // 3. Comprobar si hay caché disponible para el rol actual
+    let hasCache = false;
+    if (userRole === 'admin' && localStorage.getItem('vidrios_exito_admin_dashboard_stats')) {
+        hasCache = true;
+    } else if (userRole === 'bodega' && window.requestsPendingCache && window.poPendingCache && window.materialCatalogCache) {
+        hasCache = true;
+    }
+
+    // Mostrar loader solo si no hay caché
+    if (!hasCache) {
+        widgetsContainer.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-64 text-gray-400">
+                <div class="loader mb-4"></div>
+                <p class="animate-pulse">Cargando panel de control...</p>
+            </div>
+        `;
+    }
+
+    // 4. Renderizado por Rol
     if (userRole === 'admin') {
         loadAdminDashboard(widgetsContainer);
     } 
@@ -96,20 +108,52 @@ export function showGeneralDashboard() {
 function loadAdminDashboard(container) {
     const statsRef = doc(_db, "system", "dashboardStats");
     let isInitializing = false;
+    let unsubLoans = null;
 
     // Helper para renderizar y evitar código duplicado
     const renderData = async (data) => {
         destroyExistingCharts();
+        // Esperar a que se carguen los usuarios si es necesario
+        if ((!_getUsersMap() || _getUsersMap().size === 0) && window.usersMapPromise) {
+            console.log("⏳ Dashboard: Esperando a que cargue el mapa de usuarios...");
+            await window.usersMapPromise;
+        }
         renderAdminDashboard(data, container);
         await createDashboardCharts(data);
     };
+
+    // 1. CARGAR DESDE CACHÉ LOCAL (0 ms Latency)
+    const cachedStatsStr = localStorage.getItem('vidrios_exito_admin_dashboard_stats');
+    if (cachedStatsStr) {
+        try {
+            const cachedStats = JSON.parse(cachedStatsStr);
+            console.log("⚡ Admin Dashboard: Renderizado inmediato usando caché local.");
+            renderData(cachedStats);
+        } catch (e) {
+            console.error("Error al parsear caché de estadísticas:", e);
+        }
+    }
 
     const unsubStats = onSnapshot(statsRef, (docSnap) => {
         
         // 1. CAMINO FELIZ: El documento existe
         if (docSnap.exists()) {
             console.log("✅ Dashboard: Datos recibidos por listener.");
-            renderData(docSnap.data());
+            const newData = docSnap.data();
+            const newDataStr = JSON.stringify(newData);
+            const currentCacheStr = localStorage.getItem('vidrios_exito_admin_dashboard_stats');
+
+            // Guardar en la caché local
+            localStorage.setItem('vidrios_exito_admin_dashboard_stats', newDataStr);
+
+            // Re-renderizar únicamente si cambiaron los datos o no había caché
+            if (newDataStr !== currentCacheStr) {
+                console.log("⚡ Admin Dashboard: Datos nuevos detectados. Actualizando UI...");
+                renderData(newData);
+            } else {
+                console.log("⚡ Admin Dashboard: Los datos son idénticos. Se omite el re-render.");
+            }
+            
             isInitializing = false;
             return;
         }
@@ -139,7 +183,9 @@ function loadAdminDashboard(container) {
                 .then((forcedSnap) => {
                     if (forcedSnap.exists()) {
                         console.log("✅ Lectura forzada exitosa. Desbloqueando UI...");
-                        renderData(forcedSnap.data());
+                        const calculatedData = forcedSnap.data();
+                        localStorage.setItem('vidrios_exito_admin_dashboard_stats', JSON.stringify(calculatedData));
+                        renderData(calculatedData);
                         isInitializing = false; // Reset para permitir futuras actualizaciones
                     } else {
                         console.error("❌ Error: El servidor dijo 'OK' pero los datos no aparecen.");
@@ -159,18 +205,21 @@ function loadAdminDashboard(container) {
         container.innerHTML = `<p class="text-red-500 text-center p-4">Error de conexión.</p>`;
     });
 
-    unsubscribeDashboard = unsubStats;
-
     // Listener auxiliar para préstamos pendientes (Badge rojo)
     const badgeEl = document.getElementById('pending-loans-badge');
     if (badgeEl) {
         const qLoans = query(collectionGroup(_db, 'loans'), where('status', '==', 'pending'));
-        onSnapshot(qLoans, (snap) => {
+        unsubLoans = onSnapshot(qLoans, (snap) => {
             const count = snap.size;
             badgeEl.textContent = count;
             badgeEl.classList.toggle('hidden', count === 0);
         }, (e) => console.log("Error badge préstamos", e));
     }
+
+    unsubscribeDashboard = () => {
+        if (typeof unsubStats === 'function') unsubStats();
+        if (typeof unsubLoans === 'function') unsubLoans();
+    };
 }
 
 
