@@ -1025,6 +1025,13 @@ async function openMainModal(type, data = {}) {
                                 if (userDoc.exists()) {
                                     // Reutilizamos tu función existente
                                     // (Asegúrate de que openPaymentVoucherModal esté accesible globalmente o impórtala)
+                                    if (!window.openPaymentVoucherModal) {
+                                        try {
+                                            await import('../modules/empleados.js');
+                                        } catch (err) {
+                                            console.error("Error al cargar el módulo de empleados dinámicamente:", err);
+                                        }
+                                    }
                                     if (window.openPaymentVoucherModal) {
                                         window.openPaymentVoucherModal(paymentData, { id: userDoc.id, ...userDoc.data() });
                                     } else {

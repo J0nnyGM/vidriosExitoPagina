@@ -202,7 +202,7 @@ async function ensureModulesLoaded(role) {
                 configuracion: { path: './modules/configuracion.js', test: permissions.configuracion },
                 cartera: { path: './modules/cartera.js', test: permissions.cartera },
                 solicitudes: { path: './modules/solicitudes.js', test: permissions.solicitud },
-                ingresopersonal: { path: './modules/ingresopersonal.js', test: permissions.empleados || permissions.sst },
+                ingresopersonal: { path: './modules/ingresopersonal.js', test: true },
                 cotizaciones: { path: './modules/cotizaciones.js', test: permissions.cotizaciones },
                 informes: { path: './modules/informes.js', test: permissions.reports },
                 proyectos: { path: './modules/proyectos.js', test: permissions.proyectos },

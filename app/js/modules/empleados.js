@@ -27,8 +27,10 @@ import {
     deleteObject
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 
+import { db } from '../core/firebase-config.js';
+
 // --- Variables del Módulo (Dependencias de app.js) ---
-let _db;
+let _db = db;
 let _getUsersMap;
 let _getCurrentUserRole;
 let _showView;
@@ -7317,3 +7319,6 @@ async function renderAttendanceMap(points) {
         attendanceMapInstance.fitBounds(group.getBounds().pad(0.1));
     }
 }
+
+// Exponer openPaymentVoucherModal al cargarse el módulo para que esté accesible dinámicamente
+window.openPaymentVoucherModal = openPaymentVoucherModal;

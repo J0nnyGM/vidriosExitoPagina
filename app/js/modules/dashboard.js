@@ -1095,12 +1095,279 @@ async function createDashboardCharts(stats) {
 }
 
 /**
+ * Auxiliar: Calcula las métricas del inventario a partir del catálogo
+ */
+function countCatalogStock(catalogSnap) {
+    let lowStockCount = 0;
+    let healthyStockCount = 0;
+    let totalRefs = 0;
+    catalogSnap.forEach(doc => {
+        totalRefs++;
+        const item = doc.data();
+        if ((item.quantityInStock || 0) <= (item.minStockThreshold || 5)) {
+            lowStockCount++;
+        } else {
+            healthyStockCount++;
+        }
+    });
+    return { lowStockCount, healthyStockCount, totalRefs };
+}
+
+/**
+ * Auxiliar: Renderiza la estructura HTML del panel de bodega e inicializa su gráfica
+ */
+async function renderBodegaStatsHTML(container, pendingRequests, pendingPO, lowStockCount, healthyStockCount, totalRefs, capitalizedDate) {
+    container.innerHTML = `
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+            <div>
+                <h1 class="text-3xl font-extrabold text-slate-800 tracking-tight">Panel de Bodega</h1>
+                <p class="text-slate-500 mt-1 text-sm">Gestión logística e inventario.</p>
+            </div>
+            <div class="bg-white px-5 py-2.5 rounded-xl shadow-sm border border-slate-200 text-sm text-slate-600 font-medium flex items-center gap-3">
+                <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                <i class="fa-regular fa-calendar text-slate-400"></i> ${capitalizedDate}
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            <div class="lg:col-span-9 space-y-6">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-6">
+                    
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between relative overflow-hidden group hover:shadow-md transition-all cursor-pointer" 
+                         data-action="go-to-solicitudes"> <div class="absolute right-0 top-0 p-4 opacity-5 transform group-hover:scale-110 transition-transform"><i class="fa-solid fa-dolly text-8xl text-blue-600"></i></div>
+                        <div>
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-blue-600 transition-colors">Por Despachar</p>
+                            <h3 class="text-4xl font-black text-slate-800">${pendingRequests}</h3>
+                            <p class="text-xs text-blue-600 font-medium mt-2 flex items-center gap-1">
+                                Solicitudes pendientes <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                            </p>
+                        </div>
+                        <div class="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                            <i class="fa-solid fa-clipboard-list"></i>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-catalog">
+                        <div>
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-amber-600 transition-colors">Stock Crítico</p>
+                            <h3 class="text-4xl font-black text-slate-800">${lowStockCount}</h3>
+                            <p class="text-xs text-amber-600 font-medium mt-2 flex items-center gap-1">
+                                Ítems bajo mínimo <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                            </p>
+                        </div>
+                        <div class="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-compras">
+                        <div>
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-emerald-600 transition-colors">Entradas</p>
+                            <h3 class="text-4xl font-black text-slate-800">${pendingPO}</h3>
+                            <p class="text-xs text-emerald-600 font-medium mt-2 flex items-center gap-1">
+                                Órdenes por recibir <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                            </p>
+                        </div>
+                        <div class="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                            <i class="fa-solid fa-truck-ramp-box"></i>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-catalog">
+                        <div>
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-indigo-600 transition-colors">Total Referencias</p>
+                            <h3 class="text-4xl font-black text-slate-800">${totalRefs}</h3>
+                            <p class="text-xs text-indigo-600 font-medium mt-2 flex items-center gap-1">
+                                Catálogo activo <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                            </p>
+                        </div>
+                        <div class="w-16 h-16 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                            <i class="fa-solid fa-tags"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-8 items-center">
+                    <div class="flex-1 w-full">
+                        <h4 class="text-lg font-bold text-slate-700 mb-2">Salud del Inventario</h4>
+                        <p class="text-sm text-slate-500 mb-6">Proporción de ítems con stock suficiente vs crítico.</p>
+                        
+                        <div class="flex gap-4 mb-4">
+                            <div class="flex-1 bg-green-50 border border-green-100 p-3 rounded-xl">
+                                <p class="text-xs text-green-600 font-bold uppercase">Saludable</p>
+                                <p class="text-2xl font-black text-green-800">${healthyStockCount}</p>
+                            </div>
+                            <div class="flex-1 bg-amber-50 border border-amber-100 p-3 rounded-xl">
+                                <p class="text-xs text-amber-600 font-bold uppercase">Crítico</p>
+                                <p class="text-2xl font-black text-amber-800">${lowStockCount}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="w-full md:w-64 h-64 relative flex items-center justify-center">
+                        <canvas id="bodega-stock-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-3 space-y-6">
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 h-full">
+                    <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2 uppercase tracking-wide border-b pb-3">
+                        <i class="fa-solid fa-bolt text-yellow-500"></i> Acciones Rápidas
+                    </h3>
+                    
+                    <div class="space-y-3">
+                        <button data-action="send-admin-alert" class="w-full flex items-center gap-3 p-3 rounded-xl bg-red-50 text-red-700 hover:bg-red-100 hover:shadow-md transition-all text-left group border border-red-100">
+                            <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-red-500"><i class="fa-solid fa-bullhorn"></i></div>
+                            <div><p class="font-bold text-sm">Llamado Urgente</p><p class="text-[10px] opacity-75">Alerta</p></div>
+                        </button>
+
+                        <button data-action="go-to-solicitudes" class="w-full flex items-center gap-3 p-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 hover:shadow-md transition-all text-left group border border-blue-100">
+                            <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-blue-500"><i class="fa-solid fa-dolly"></i></div>
+                            <div><p class="font-bold text-sm">Despachar Material</p><p class="text-[10px] opacity-75">Solicitudes</p></div>
+                        </button>
+
+                        <button data-action="go-to-catalog" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
+                            <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-indigo-500"><i class="fa-solid fa-boxes-stacked"></i></div>
+                            <div><p class="font-bold text-sm">Inventario</p><p class="text-[10px] opacity-75">Stock</p></div>
+                        </button>
+
+                        <button data-action="go-to-compras" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
+                            <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-emerald-500"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+                            <div><p class="font-bold text-sm">Compras</p><p class="text-[10px] opacity-75">Proveedores</p></div>
+                        </button>
+
+                        <button data-action="go-to-herramientas" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
+                            <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-orange-500"><i class="fa-solid fa-screwdriver-wrench"></i></div>
+                            <div><p class="font-bold text-sm">Herramientas</p><p class="text-[10px] opacity-75">Préstamos</p></div>
+                        </button>
+                        
+                        <button data-action="request-loan" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
+                            <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-gray-500"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                            <div><p class="font-bold text-sm">Préstamo</p><p class="text-[10px] opacity-75">Personal</p></div>
+                        </button>
+
+                        <button data-action="view-my-payment-history" class="w-full flex items-center gap-3 p-3 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 hover:shadow-md transition-all text-left group">
+                            <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-receipt"></i>
+                            </div>
+                            <div>
+                                <p class="font-bold text-sm text-gray-700 group-hover:text-emerald-700">Mis Pagos</p>
+                                <p class="text-[10px] text-gray-400">Nómina y Préstamos</p>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Limpiar gráficas previas en este renderizado
+    if (activeModuleCharts.length > 0) {
+        activeModuleCharts.forEach(chart => chart.destroy());
+        activeModuleCharts = [];
+    }
+
+    if (typeof window.ensureChart === 'function') {
+        await window.ensureChart();
+    }
+    const ctx = document.getElementById('bodega-stock-chart').getContext('2d');
+    const chart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Stock Saludable', 'Stock Bajo'],
+            datasets: [{
+                data: [healthyStockCount, lowStockCount],
+                backgroundColor: ['#10b981', '#f59e0b'], 
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false }
+            },
+            cutout: '70%'
+        }
+    });
+    activeModuleCharts.push(chart);
+}
+
+/**
  * Renderiza el Dashboard para BODEGA con KPIs INTERACTIVOS.
+ * OPTIMIZACIÓN PREMIUM: Caching inteligente con refresco en segundo plano no bloqueante.
  */
 async function renderBodegaDashboard(container) {
     const dateStr = new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     const capitalizedDate = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
 
+    // 1. Obtener cachés si existen
+    const cachedRequests = window.requestsPendingCache;
+    const cachedPO = window.poPendingCache;
+    const cachedCatalog = window.materialCatalogCache;
+
+    const queryRequests = query(collectionGroup(_db, 'materialRequests'), where("status", "==", "pendiente"));
+    const queryPO = query(collection(_db, "purchaseOrders"), where("status", "==", "pendiente"));
+    const queryCatalog = collection(_db, "materialCatalog");
+
+    // Función auxiliar para procesar y renderizar los datos
+    const processAndRender = async (requestsSnap, poSnap, catalogSnap) => {
+        const pendingRequests = requestsSnap.size;
+        const pendingPO = poSnap.size;
+        const { lowStockCount, healthyStockCount, totalRefs } = countCatalogStock(catalogSnap);
+
+        await renderBodegaStatsHTML(
+            container,
+            pendingRequests,
+            pendingPO,
+            lowStockCount,
+            healthyStockCount,
+            totalRefs,
+            capitalizedDate
+        );
+    };
+
+    // Si todo está en caché, renderizar de inmediato y actualizar en segundo plano
+    if (cachedRequests && cachedPO && cachedCatalog) {
+        console.log("⚡ Bodega Dashboard: Renderizado inmediato usando caché.");
+        await processAndRender(cachedRequests, cachedPO, cachedCatalog);
+
+        // Refrescar en segundo plano de manera no bloqueante
+        Promise.all([
+            getDocs(queryRequests),
+            getDocs(queryPO),
+            getDocs(queryCatalog)
+        ]).then(async ([newRequests, newPO, newCatalog]) => {
+            console.log("⚡ Bodega Dashboard: Datos actualizados en segundo plano.");
+            const oldLow = countCatalogStock(cachedCatalog).lowStockCount;
+            const newLow = countCatalogStock(newCatalog).lowStockCount;
+
+            // Actualizar referencias en window
+            window.requestsPendingCache = newRequests;
+            window.poPendingCache = newPO;
+            window.materialCatalogCache = newCatalog;
+
+            // Solo si cambian los conteos, hacer re-render silencioso
+            if (newRequests.size !== cachedRequests.size || 
+                newPO.size !== cachedPO.size || 
+                newCatalog.size !== cachedCatalog.size ||
+                newLow !== oldLow) {
+                
+                // Verificar si la vista actual sigue siendo el dashboard de bodega antes de actualizar
+                // (Para evitar sobreescribir la pantalla si el usuario navegó a otra sección)
+                const widgetContainer = document.getElementById('dashboard-widgets-container');
+                if (widgetContainer && widgetContainer.innerHTML.includes('Panel de Bodega')) {
+                    await processAndRender(newRequests, newPO, newCatalog);
+                }
+            }
+        }).catch(console.error);
+
+        return;
+    }
+
+    // 2. Si no hay caché, mostrar loader y esperar a la carga inicial (bloqueante una sola vez)
     container.innerHTML = `
         <div class="col-span-full flex flex-col items-center justify-center py-12 h-96">
             <div class="loader mb-4"></div>
@@ -1108,201 +1375,18 @@ async function renderBodegaDashboard(container) {
         </div>`;
 
     try {
-        // 1. Consultas de Datos
         const [requestsSnap, poSnap, catalogSnap] = await Promise.all([
-            getDocs(query(collectionGroup(_db, 'materialRequests'), where("status", "==", "pendiente"))),
-            getDocs(query(collection(_db, "purchaseOrders"), where("status", "==", "pendiente"))),
-            getDocs(collection(_db, "materialCatalog"))
+            getDocs(queryRequests),
+            getDocs(queryPO),
+            getDocs(queryCatalog)
         ]);
 
-        const pendingRequests = requestsSnap.size;
-        const pendingPO = poSnap.size;
-        let lowStockCount = 0;
-        let healthyStockCount = 0;
-        let totalRefs = 0;
-        
-        catalogSnap.forEach(doc => {
-            totalRefs++;
-            const item = doc.data();
-            if ((item.quantityInStock || 0) <= (item.minStockThreshold || 5)) {
-                lowStockCount++;
-            } else {
-                healthyStockCount++;
-            }
-        });
+        // Guardar en caché para futuras visitas
+        window.requestsPendingCache = requestsSnap;
+        window.poPendingCache = poSnap;
+        window.materialCatalogCache = catalogSnap;
 
-        // 2. Renderizado HTML Estructurado
-        container.innerHTML = `
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                <div>
-                    <h1 class="text-3xl font-extrabold text-slate-800 tracking-tight">Panel de Bodega</h1>
-                    <p class="text-slate-500 mt-1 text-sm">Gestión logística e inventario.</p>
-                </div>
-                <div class="bg-white px-5 py-2.5 rounded-xl shadow-sm border border-slate-200 text-sm text-slate-600 font-medium flex items-center gap-3">
-                    <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                    <i class="fa-regular fa-calendar text-slate-400"></i> ${capitalizedDate}
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                
-                <div class="lg:col-span-9 space-y-6">
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-6">
-                        
-                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between relative overflow-hidden group hover:shadow-md transition-all cursor-pointer" 
-                             data-action="go-to-solicitudes"> <div class="absolute right-0 top-0 p-4 opacity-5 transform group-hover:scale-110 transition-transform"><i class="fa-solid fa-dolly text-8xl text-blue-600"></i></div>
-                            <div>
-                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-blue-600 transition-colors">Por Despachar</p>
-                                <h3 class="text-4xl font-black text-slate-800">${pendingRequests}</h3>
-                                <p class="text-xs text-blue-600 font-medium mt-2 flex items-center gap-1">
-                                    Solicitudes pendientes <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
-                                </p>
-                            </div>
-                            <div class="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
-                                <i class="fa-solid fa-clipboard-list"></i>
-                            </div>
-                        </div>
-
-                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-catalog">
-                            <div>
-                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-amber-600 transition-colors">Stock Crítico</p>
-                                <h3 class="text-4xl font-black text-slate-800">${lowStockCount}</h3>
-                                <p class="text-xs text-amber-600 font-medium mt-2 flex items-center gap-1">
-                                    Ítems bajo mínimo <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
-                                </p>
-                            </div>
-                            <div class="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
-                                <i class="fa-solid fa-triangle-exclamation"></i>
-                            </div>
-                        </div>
-
-                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-compras">
-                            <div>
-                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-emerald-600 transition-colors">Entradas</p>
-                                <h3 class="text-4xl font-black text-slate-800">${pendingPO}</h3>
-                                <p class="text-xs text-emerald-600 font-medium mt-2 flex items-center gap-1">
-                                    Órdenes por recibir <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
-                                </p>
-                            </div>
-                            <div class="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
-                                <i class="fa-solid fa-truck-ramp-box"></i>
-                            </div>
-                        </div>
-
-                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group" data-action="go-to-catalog">
-                            <div>
-                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 group-hover:text-indigo-600 transition-colors">Total Referencias</p>
-                                <h3 class="text-4xl font-black text-slate-800">${totalRefs}</h3>
-                                <p class="text-xs text-indigo-600 font-medium mt-2 flex items-center gap-1">
-                                    Catálogo activo <i class="fa-solid fa-arrow-right opacity-0 group-hover:opacity-100 transition-opacity"></i>
-                                </p>
-                            </div>
-                            <div class="w-16 h-16 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
-                                <i class="fa-solid fa-tags"></i>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-8 items-center">
-                        <div class="flex-1 w-full">
-                            <h4 class="text-lg font-bold text-slate-700 mb-2">Salud del Inventario</h4>
-                            <p class="text-sm text-slate-500 mb-6">Proporción de ítems con stock suficiente vs crítico.</p>
-                            
-                            <div class="flex gap-4 mb-4">
-                                <div class="flex-1 bg-green-50 border border-green-100 p-3 rounded-xl">
-                                    <p class="text-xs text-green-600 font-bold uppercase">Saludable</p>
-                                    <p class="text-2xl font-black text-green-800">${healthyStockCount}</p>
-                                </div>
-                                <div class="flex-1 bg-amber-50 border border-amber-100 p-3 rounded-xl">
-                                    <p class="text-xs text-amber-600 font-bold uppercase">Crítico</p>
-                                    <p class="text-2xl font-black text-amber-800">${lowStockCount}</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="w-full md:w-64 h-64 relative flex items-center justify-center">
-                            <canvas id="bodega-stock-chart"></canvas>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="lg:col-span-3 space-y-6">
-                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 h-full">
-                        <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2 uppercase tracking-wide border-b pb-3">
-                            <i class="fa-solid fa-bolt text-yellow-500"></i> Acciones Rápidas
-                        </h3>
-                        
-                        <div class="space-y-3">
-                            <button data-action="send-admin-alert" class="w-full flex items-center gap-3 p-3 rounded-xl bg-red-50 text-red-700 hover:bg-red-100 hover:shadow-md transition-all text-left group border border-red-100">
-                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-red-500"><i class="fa-solid fa-bullhorn"></i></div>
-                                <div><p class="font-bold text-sm">Llamado Urgente</p><p class="text-[10px] opacity-75">Alerta</p></div>
-                            </button>
-
-                            <button data-action="go-to-solicitudes" class="w-full flex items-center gap-3 p-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 hover:shadow-md transition-all text-left group border border-blue-100">
-                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-blue-500"><i class="fa-solid fa-dolly"></i></div>
-                                <div><p class="font-bold text-sm">Despachar Material</p><p class="text-[10px] opacity-75">Solicitudes</p></div>
-                            </button>
-
-                            <button data-action="go-to-catalog" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
-                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-indigo-500"><i class="fa-solid fa-boxes-stacked"></i></div>
-                                <div><p class="font-bold text-sm">Inventario</p><p class="text-[10px] opacity-75">Stock</p></div>
-                            </button>
-
-                            <button data-action="go-to-compras" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
-                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-emerald-500"><i class="fa-solid fa-file-invoice-dollar"></i></div>
-                                <div><p class="font-bold text-sm">Compras</p><p class="text-[10px] opacity-75">Proveedores</p></div>
-                            </button>
-
-                            <button data-action="go-to-herramientas" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
-                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-orange-500"><i class="fa-solid fa-screwdriver-wrench"></i></div>
-                                <div><p class="font-bold text-sm">Herramientas</p><p class="text-[10px] opacity-75">Préstamos</p></div>
-                            </button>
-                            
-                            <button data-action="request-loan" class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 hover:shadow-md transition-all text-left group border border-slate-200">
-                                <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-gray-500"><i class="fa-solid fa-hand-holding-dollar"></i></div>
-                                <div><p class="font-bold text-sm">Préstamo</p><p class="text-[10px] opacity-75">Personal</p></div>
-                            </button>
-
-                            <button data-action="view-my-payment-history" class="w-full flex items-center gap-3 p-3 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 hover:shadow-md transition-all text-left group">
-                                <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm group-hover:scale-110 transition-transform">
-                                    <i class="fa-solid fa-receipt"></i>
-                                </div>
-                                <div>
-                                    <p class="font-bold text-sm text-gray-700 group-hover:text-emerald-700">Mis Pagos</p>
-                                    <p class="text-[10px] text-gray-400">Nómina y Préstamos</p>
-                                </div>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        // 3. Crear Gráfica
-        if (typeof window.ensureChart === 'function') {
-            await window.ensureChart();
-        }
-        const ctx = document.getElementById('bodega-stock-chart').getContext('2d');
-        const chart = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Stock Saludable', 'Stock Bajo'],
-                datasets: [{
-                    data: [healthyStockCount, lowStockCount],
-                    backgroundColor: ['#10b981', '#f59e0b'], 
-                    borderWidth: 0
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false }
-                },
-                cutout: '70%'
-            }
-        });
-        activeModuleCharts.push(chart);
+        await processAndRender(requestsSnap, poSnap, catalogSnap);
 
     } catch (error) {
         console.error("Error Dashboard Bodega:", error);

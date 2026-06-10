@@ -74,7 +74,7 @@ export async function handleReportEntry(db, storage, currentUser, userProfile, o
 
     // 3. Preparar el Modal (Si pasó la validación)
     const modalBodyHTML = `
-        <div class="flex flex-col items-center justify-center space-y-6 py-4">
+        <div class="flex flex-col items-center justify-center space-y-4 sm:space-y-6 py-2 sm:py-4">
             <div class="relative w-64 h-64 sm:w-80 sm:h-80 bg-black rounded-full overflow-hidden shadow-2xl border-4 border-emerald-500 ring-4 ring-emerald-100">
                 <video id="entry-camera-video" autoplay playsinline class="w-full h-full object-cover transform scale-x-[-1]"></video>
                 <canvas id="entry-camera-canvas" class="absolute top-0 left-0 w-full h-full hidden"></canvas>
@@ -87,17 +87,17 @@ export async function handleReportEntry(db, storage, currentUser, userProfile, o
                 </p>
             </div>
 
-            <div class="flex gap-4 w-full justify-center px-4">
-                <button type="button" id="btn-cancel-entry" class="flex-1 max-w-[120px] bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 py-3 rounded-xl font-bold transition-colors shadow-sm">
+            <div class="flex flex-col sm:flex-row gap-3 sm:gap-4 w-full justify-center px-4 max-w-sm sm:max-w-none">
+                <button type="button" id="btn-cancel-entry" class="w-full sm:w-auto sm:flex-1 sm:max-w-[120px] bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 py-2.5 sm:py-3 rounded-xl font-bold transition-colors shadow-sm text-center">
                     Cancelar
                 </button>
-                <button id="btn-capture-entry" class="flex-1 max-w-[200px] bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white py-3 rounded-xl font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2">
+                <button id="btn-capture-entry" class="w-full sm:w-auto sm:flex-1 sm:max-w-[200px] bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white py-2.5 sm:py-3 rounded-xl font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2">
                     <i class="fa-solid fa-camera"></i> 
                     <span>Validar Ingreso</span>
                 </button>
             </div>
             
-            <div class="text-[10px] text-slate-400 text-center mt-2">
+            <div class="text-[10px] text-slate-400 text-center mt-1">
                 <i class="fa-solid fa-location-dot mr-1"></i> Se registrará tu ubicación y biometría.
             </div>
         </div>
