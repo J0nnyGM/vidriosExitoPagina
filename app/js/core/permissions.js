@@ -60,6 +60,7 @@ export function getRoleDefaultPermissions(role) {
 export function applySidebarPermissions(role, customPermissions = {}) {
     const defaultVisibility = getRoleDefaultPermissions(role);
 
+    // 1. Aplicar en Sidebar
     SIDEBAR_CONFIG.forEach(module => {
         let shouldShow = defaultVisibility[module.key];
 
@@ -68,7 +69,6 @@ export function applySidebarPermissions(role, customPermissions = {}) {
 
         const viewValue = module.key === 'dashboard' ? 'dashboard-general' : module.key;
 
-        // 1. Aplicar en Sidebar
         const sidebarElement = document.querySelector(`#sidebar [data-view="${viewValue}"]`) || document.querySelector(module.selector);
         if (sidebarElement) {
             if (shouldShow) {
@@ -83,17 +83,82 @@ export function applySidebarPermissions(role, customPermissions = {}) {
                 }
             }
         }
-
-        // 2. Aplicar en Barra de navegación Móvil (Bottom Navbar)
-        const mobileElement = document.querySelector(`#mobile-bottom-nav [data-view="${viewValue}"]`);
-        if (mobileElement) {
-            if (shouldShow) {
-                mobileElement.classList.remove('hidden');
-            } else {
-                mobileElement.classList.add('hidden');
-            }
-        }
     });
+
+    // 2. Renderizar Barra de Navegación Móvil (Bottom Navbar) adaptada al rol
+    const mobileBottomNav = document.getElementById('mobile-bottom-nav');
+    if (mobileBottomNav) {
+        let navItems = [];
+        
+        // Helper para comprobar la clase activa según el hash actual
+        const getActiveClass = (viewName) => {
+            const hash = window.location.hash ? window.location.hash.substring(1) : 'dashboard-general';
+            return hash === viewName ? 'active' : '';
+        };
+
+        if (role === 'admin') {
+            navItems = [
+                { view: 'dashboard-general', icon: 'fa-chart-pie', label: 'Inicio' },
+                { view: 'proyectos', icon: 'fa-city', label: 'Proyectos' },
+                { view: 'tareas', icon: 'fa-list-check', label: 'Tareas' },
+                { view: 'herramienta', icon: 'fa-screwdriver-wrench', label: 'Herramientas' }
+            ];
+        } else if (role === 'bodega') {
+            navItems = [
+                { view: 'dashboard-general', icon: 'fa-chart-pie', label: 'Inicio' },
+                { view: 'solicitud', icon: 'fa-dolly', label: 'Solicitudes' },
+                { view: 'catalog', icon: 'fa-boxes-stacked', label: 'Catálogo' },
+                { view: 'compras', icon: 'fa-file-invoice-dollar', label: 'Compras' }
+            ];
+        } else if (role === 'sst') {
+            navItems = [
+                { view: 'dashboard-general', icon: 'fa-chart-pie', label: 'Inicio' },
+                { view: 'empleados', icon: 'fa-users-gear', label: 'Personal' },
+                { view: 'herramienta', icon: 'fa-screwdriver-wrench', label: 'Herramientas' },
+                { view: 'dotacion', icon: 'fa-vest', label: 'Dotación' }
+            ];
+        } else if (role === 'nomina') {
+            navItems = [
+                { view: 'dashboard-general', icon: 'fa-chart-pie', label: 'Inicio' },
+                { view: 'empleados', icon: 'fa-users-gear', label: 'Personal' },
+                { view: 'compras', icon: 'fa-file-invoice-dollar', label: 'Compras' },
+                { view: 'reports', icon: 'fa-chart-line', label: 'Reportes' }
+            ];
+        } else { // operario u otros
+            navItems = [
+                { view: 'dashboard-general', icon: 'fa-chart-pie', label: 'Inicio' },
+                { view: 'tareas', icon: 'fa-list-check', label: 'Tareas' },
+                { view: 'herramienta', icon: 'fa-screwdriver-wrench', label: 'Herramientas' },
+                { view: 'dotacion', icon: 'fa-vest', label: 'Dotación' }
+            ];
+        }
+
+        let htmlContent = '';
+        navItems.forEach(item => {
+            const activeClass = getActiveClass(item.view);
+            htmlContent += `
+                <a href="#" class="mobile-nav-link flex flex-col items-center justify-center flex-1 py-1 group transition-all ${activeClass}" data-view="${item.view}">
+                    <i class="fa-solid ${item.icon} text-lg transition-transform group-hover:scale-110"></i>
+                    <span class="text-[10px] font-semibold mt-1">${item.label}</span>
+                </a>
+            `;
+        });
+
+        // Botón de Menú (Siempre visible al final)
+        const isMenuOpen = document.getElementById('sidebar') && !document.getElementById('sidebar').classList.contains('-translate-x-full');
+        const menuIconClass = isMenuOpen ? 'fa-xmark rotate-90' : 'fa-bars';
+        const menuLabel = isMenuOpen ? 'Cerrar' : 'Menú';
+        const menuActiveClass = isMenuOpen ? 'text-blue-500 active' : '';
+
+        htmlContent += `
+            <a href="#" id="mobile-more-menu-btn" class="mobile-nav-link flex flex-col items-center justify-center flex-1 py-1 group transition-all ${menuActiveClass}">
+                <i class="fa-solid ${menuIconClass} text-lg transition-transform group-hover:scale-110"></i>
+                <span class="text-[10px] font-semibold mt-1">${menuLabel}</span>
+            </a>
+        `;
+
+        mobileBottomNav.innerHTML = htmlContent;
+    }
 }
 
 /**

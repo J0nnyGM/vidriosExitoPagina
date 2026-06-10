@@ -31,7 +31,7 @@ window.applySidebarPermissions = applySidebarPermissions;
 window.closeSidebar = closeSidebar;
 window.showView = showView;
 
-function navigateToView(viewName, fromHistory = false) {
+async function navigateToView(viewName, fromHistory = false) {
     if (!viewName) return;
     
     // Normalizar alias comunes de vistas
@@ -43,6 +43,16 @@ function navigateToView(viewName, fromHistory = false) {
     // 1. Mostrar la vista
     if (typeof window.showView === 'function') {
         window.showView(viewName, fromHistory);
+    }
+
+    // Si la vista requiere módulos diferidos y aún no se han cargado, esperamos a la carga de fondo
+    const requiresBackground = [
+        'proyectos', 'herramienta', 'dotacion', 'cartera', 'cotizaciones', 
+        'solicitud', 'empleados', 'proveedores', 'catalog', 'compras', 
+        'reports', 'despiece', 'adminPanel', 'configuracion'
+    ];
+    if (requiresBackground.includes(viewName) && window.backgroundModulesPromise) {
+        await window.backgroundModulesPromise;
     }
 
     // 2. Cargar/actualizar datos correspondientes del módulo al cambiar de vista
@@ -185,24 +195,62 @@ let modulesLoadedPromise = null;
 async function ensureModulesLoaded(role) {
     if (modulesLoadedPromise) return modulesLoadedPromise;
 
-    console.log(`Iniciando carga de módulos bajo demanda para el rol: ${role || 'desconocido'}...`);
+    console.log(`Iniciando carga de módulos críticos para el rol: ${role || 'desconocido'}...`);
     modulesLoadedPromise = (async () => {
         try {
             await window.ensureChoices();
 
             const permissions = getRoleDefaultPermissions(role || 'operario');
 
-            // Definimos cuáles módulos cargar según los permisos del rol del usuario
-            const toLoad = {
-                dashboard: { path: './modules/dashboard.js', test: true },
-                tareas: { path: './modules/tareas.js', test: true },
+            // FASE 1: Módulos Críticos para el inicio de la aplicación
+            const criticalToLoad = {
+                dashboard: './modules/dashboard.js',
+                tareas: './modules/tareas.js',
+                ingresopersonal: './modules/ingresopersonal.js'
+            };
+
+            const criticalPromises = Object.entries(criticalToLoad).map(async ([key, path]) => {
+                const mod = await import(path);
+                return { key, mod };
+            });
+
+            const criticalResults = await Promise.all(criticalPromises);
+            const loadedCritical = {};
+            criticalResults.forEach(({ key, mod }) => {
+                loadedCritical[key] = mod;
+            });
+
+            // Asignación de variables locales de Fase 1
+            if (loadedCritical.dashboard) ({ initDashboard, showGeneralDashboard } = loadedCritical.dashboard);
+            if (loadedCritical.tareas) ({ initTareas, openNewTaskModal, openEditTaskModal, openProgressModal, completeTask, openMultipleProgressModal, loadTasksView, loadAndDisplayTasks, createTaskCard, closeTaskDetailsModal, loadTaskMaterialStatus, openTaskDetailsModal, openSafetyCheckInModal, checkIfSafetyCheckInNeeded } = loadedCritical.tareas);
+            if (loadedCritical.ingresopersonal) ({ handleReportEntry } = loadedCritical.ingresopersonal);
+
+            // Exponer a window Fase 1
+            window.showGeneralDashboard = showGeneralDashboard;
+            window.handleReportEntry = handleReportEntry;
+            window.loadTasksView = loadTasksView;
+            window.loadAndDisplayTasks = loadAndDisplayTasks;
+            window.openTaskDetailsModal = openTaskDetailsModal;
+            window.openSafetyCheckInModal = openSafetyCheckInModal;
+            window.checkIfSafetyCheckInNeeded = checkIfSafetyCheckInNeeded;
+
+            window.openNewTaskModal = openNewTaskModal;
+            window.openEditTaskModal = openEditTaskModal;
+            window.openProgressModal = openProgressModal;
+            window.completeTask = completeTask;
+            window.openMultipleProgressModal = openMultipleProgressModal;
+            window.createTaskCard = createTaskCard;
+            window.closeTaskDetailsModal = closeTaskDetailsModal;
+            window.loadTaskMaterialStatus = loadTaskMaterialStatus;
+
+            // FASE 2: Módulos Secundarios (Carga en segundo plano, no bloquea el loading-overlay)
+            const secondaryToLoad = {
                 dotacion: { path: './modules/dotacion.js', test: permissions.dotacion },
                 herramientas: { path: './modules/herramientas.js', test: permissions.herramienta },
                 empleados: { path: './modules/empleados.js', test: permissions.empleados },
                 configuracion: { path: './modules/configuracion.js', test: permissions.configuracion },
                 cartera: { path: './modules/cartera.js', test: permissions.cartera },
                 solicitudes: { path: './modules/solicitudes.js', test: permissions.solicitud },
-                ingresopersonal: { path: './modules/ingresopersonal.js', test: true },
                 cotizaciones: { path: './modules/cotizaciones.js', test: permissions.cotizaciones },
                 informes: { path: './modules/informes.js', test: permissions.reports },
                 proyectos: { path: './modules/proyectos.js', test: permissions.proyectos },
@@ -215,116 +263,131 @@ async function ensureModulesLoaded(role) {
                 despiece: { path: './modules/despiece2d.js', test: permissions.despiece }
             };
 
-            const promises = [];
-            const loadedKeys = [];
-            for (const [key, modInfo] of Object.entries(toLoad)) {
-                if (modInfo.test) {
-                    promises.push(import(modInfo.path));
-                    loadedKeys.push(key);
+            window.backgroundModulesPromise = (async () => {
+                console.log("Iniciando carga de módulos secundarios en segundo plano...");
+                try {
+                    const secPromises = [];
+                    const secKeys = [];
+                    for (const [key, modInfo] of Object.entries(secondaryToLoad)) {
+                        if (modInfo.test) {
+                            secPromises.push(import(modInfo.path));
+                            secKeys.push(key);
+                        }
+                    }
+
+                    const secResults = await Promise.all(secPromises);
+                    const loadedSec = {};
+                    secKeys.forEach((key, idx) => {
+                        loadedSec[key] = secResults[idx];
+                    });
+
+                    // Inicialización / Asignación de variables locales de Fase 2
+                    if (loadedSec.dotacion) ({ initDotacion, loadDotacionView, updateDotacionFilterOptions, loadDotacionAsignaciones } = loadedSec.dotacion);
+                    if (loadedSec.herramientas) ({ initHerramientas, resetToolViewAndLoad, updateToolFilterOptions, TOOL_CATEGORIES } = loadedSec.herramientas);
+                    if (loadedSec.empleados) ({ initEmpleados, loadEmpleadosView, showEmpleadoDetails, loadPaymentHistoryView } = loadedSec.empleados);
+                    if (loadedSec.configuracion) ({ initConfiguracion, loadConfiguracionView } = loadedSec.configuracion);
+                    if (loadedSec.cartera) ({ initCartera, loadCarteraView } = loadedSec.cartera);
+                    if (loadedSec.solicitudes) ({ initSolicitudes, loadSolicitudesView, closeRequestDetailsModal, setupAddMaterialButton, setupRequestItemSearch, resetMaterialRequestForm, handleViewRequestDetails, handleOpenDeliveryModal, showMaterialRequestView } = loadedSec.solicitudes);
+                    if (loadedSec.cotizaciones) ({ initCotizaciones, loadCotizacionesView } = loadedSec.cotizaciones);
+                    if (loadedSec.informes) ({ initInformes, loadInformesView, loadReportsView, getCompanyData } = loadedSec.informes);
+                    if (loadedSec.proyectos) ({ initProyectos, loadProjects, createProject, deleteProject, archiveProject, restoreProject } = loadedSec.proyectos);
+                    if (loadedSec.proyectoDetalles) ({ initProyectoDetalles, showProjectDetails, switchProjectTab, calculateItemUnitPrice, calculateItemTotal, calculateProjectContractedValue } = loadedSec.proyectoDetalles);
+                    if (loadedSec.catalogo) ({ initCatalogo, loadCatalogView, fetchMoreCatalogItems, openImportModal, generateMaterialTemplate, importMaterialsFromExcel } = loadedSec.catalogo);
+                    if (loadedSec.cortes) ({ initCortes, loadCortes, setupCorteSelection, generateCorte, closeCorteSelectionView, approveCorte, denyCorte, showCorteDetails, exportCorteToPDF, cleanupCortesSubscription } = loadedSec.cortes);
+                    if (loadedSec.proveedores) ({ initProveedores, loadProveedoresView, loadSupplierDetailsView, findLastPurchasePrice, currentSupplierId } = loadedSec.proveedores);
+                    if (loadedSec.compras) ({ initCompras, loadComprasView, validatePoDateRange, openPurchaseOrderModal, closePurchaseOrderModal } = loadedSec.compras);
+                    if (loadedSec.usuarios) ({ initUsuarios, loadUsers } = loadedSec.usuarios);
+                    if (loadedSec.despiece) ({ setupDespieceEvents } = loadedSec.despiece);
+
+                    // Exponer a window Fase 2
+                    window.loadDotacionView = loadDotacionView;
+                    window.resetToolViewAndLoad = resetToolViewAndLoad;
+                    window.loadDotacionAsignaciones = loadDotacionAsignaciones;
+                    window.loadEmpleadosView = loadEmpleadosView;
+                    window.showEmpleadoDetails = showEmpleadoDetails;
+                    window.loadPaymentHistoryView = loadPaymentHistoryView;
+                    window.loadCarteraView = loadCarteraView;
+                    window.loadConfiguracionView = loadConfiguracionView;
+                    window.loadCotizacionesView = loadCotizacionesView;
+                    
+                    window.closeRequestDetailsModal = closeRequestDetailsModal;
+                    window.setupAddMaterialButton = setupAddMaterialButton;
+                    window.setupRequestItemSearch = setupRequestItemSearch;
+                    window.resetMaterialRequestForm = resetMaterialRequestForm;
+                    window.openRequestDetailsModal = handleViewRequestDetails;
+                    window.openDeliveryModal = handleOpenDeliveryModal;
+                    window.showMaterialRequestView = showMaterialRequestView;
+                    window.loadSolicitudesView = loadSolicitudesView;
+
+                    window.openImportModal = openImportModal;
+                    window.generateMaterialTemplate = generateMaterialTemplate;
+                    window.importMaterialsFromExcel = importMaterialsFromExcel;
+                    window.loadCatalogView = loadCatalogView;
+
+                    window.loadReportsView = loadReportsView;
+                    window.getCompanyData = getCompanyData;
+
+                    window.loadProjects = loadProjects;
+                    window.createProject = createProject;
+                    window.deleteProject = deleteProject;
+                    window.archiveProject = archiveProject;
+                    window.restoreProject = restoreProject;
+
+                    window.showProjectDetails = showProjectDetails;
+                    window.switchProjectTab = switchProjectTab;
+                    window.calculateItemUnitPrice = calculateItemUnitPrice;
+                    window.calculateItemTotal = calculateItemTotal;
+                    window.calculateProjectContractedValue = calculateProjectContractedValue;
+
+                    window.loadCortes = loadCortes;
+                    window.setupCorteSelection = setupCorteSelection;
+                    window.generateCorte = generateCorte;
+                    window.closeCorteSelectionView = closeCorteSelectionView;
+                    window.approveCorte = approveCorte;
+                    window.denyCorte = denyCorte;
+                    window.showCorteDetails = showCorteDetails;
+                    window.exportCorteToPDF = exportCorteToPDF;
+                    window.cleanupCortesSubscription = cleanupCortesSubscription;
+
+                    window.loadProveedoresView = loadProveedoresView;
+                    window.loadSupplierDetailsView = loadSupplierDetailsView;
+                    window.findLastPurchasePrice = findLastPurchasePrice;
+                    window.currentSupplierId = currentSupplierId;
+
+                    window.loadComprasView = loadComprasView;
+                    window.validatePoDateRange = validatePoDateRange;
+                    window.openPurchaseOrderModal = openPurchaseOrderModal;
+                    window.closePurchaseOrderModal = closePurchaseOrderModal;
+
+                    window.loadUsers = loadUsers;
+                    window.setupDespieceEvents = setupDespieceEvents;
+
+                    // Inicializar los módulos de Fase 2
+                    if (typeof initDotacion === 'function') initDotacion(db, storage, openMainModal, closeMainModal, openConfirmModal, null, openImageModal, () => currentUser, () => usersMap, () => currentUserRole);
+                    if (typeof initHerramientas === 'function') initHerramientas(db, storage, openMainModal, closeMainModal, openConfirmModal, null, openImageModal, () => currentUser, () => usersMap, () => currentUserRole);
+                    if (typeof initEmpleados === 'function') initEmpleados(db, () => usersMap, () => currentUserRole, showView, storage, openConfirmModal, (userId, containerId) => loadDotacionAsignaciones(userId, containerId), () => payrollConfig, () => currentUser ? currentUser.uid : null, setupCurrencyInput);
+                    if (typeof initConfiguracion === 'function') initConfiguracion(db, setupCurrencyInput);
+                    if (typeof initCartera === 'function') initCartera(db, showView);
+                    if (typeof initSolicitudes === 'function') initSolicitudes(db, showView, currentUserRole, usersMap, openMainModal);
+                    if (typeof initCotizaciones === 'function') initCotizaciones(db, storage, showView, currentUser);
+                    if (typeof initInformes === 'function') initInformes(db);
+                    if (typeof initProyectos === 'function') initProyectos(db, functions, () => currentUser, () => currentUserRole);
+                    if (typeof initProyectoDetalles === 'function') initProyectoDetalles(db, { showView, setCurrentProject: (proj) => { currentProject = proj; }, setReturnContext: (ctx) => { materialRequestReturnContext = ctx; }, formatCurrency: (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val), openTaskDetailsModal: (typeof openTaskDetailsModal !== 'undefined' ? openTaskDetailsModal : null), loaders: { loadItems, loadMaterialsTab: (projectId) => { console.log('loadMaterialsTab'); }, loadCortes, loadPayments: (projectId) => { console.log('loadPayments'); }, loadPeopleOfInterest, renderInteractiveDocumentCards } });
+                    if (typeof initCortes === 'function') initCortes(db, { formatCurrency: (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val), getCurrentProject: () => currentProject, showView, openConfirmModal, calculateItemTotal, calculateProjectContractedValue, getUsersMap: () => usersMap });
+                    if (typeof initProveedores === 'function') initProveedores(db, { showView, formatCurrency: (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val) });
+                    if (typeof initCompras === 'function') initCompras(db, { formatCurrency: (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val), getCurrentUserRole: () => currentUserRole });
+                    if (typeof initCatalogo === 'function') initCatalogo(db);
+                    if (typeof initUsuarios === 'function') initUsuarios(db, { openMainModal, openConfirmModal });
+
+                    console.log("✅ Módulos en segundo plano cargados e inicializados.");
+                } catch (err) {
+                    console.error("❌ Error en la carga de fondo:", err);
                 }
-            }
+            })();
 
-            const results = await Promise.all(promises);
-            const loadedModules = {};
-            loadedKeys.forEach((key, index) => {
-                loadedModules[key] = results[index];
-            });
-
-            // Asignación segura de propiedades destructuradas si el módulo fue cargado
-            if (loadedModules.dotacion) ({ initDotacion, loadDotacionView, updateDotacionFilterOptions, loadDotacionAsignaciones } = loadedModules.dotacion);
-            if (loadedModules.herramientas) ({ initHerramientas, resetToolViewAndLoad, updateToolFilterOptions, TOOL_CATEGORIES } = loadedModules.herramientas);
-            if (loadedModules.dashboard) ({ initDashboard, showGeneralDashboard } = loadedModules.dashboard);
-            if (loadedModules.empleados) ({ initEmpleados, loadEmpleadosView, showEmpleadoDetails, loadPaymentHistoryView } = loadedModules.empleados);
-            if (loadedModules.configuracion) ({ initConfiguracion, loadConfiguracionView } = loadedModules.configuracion);
-            if (loadedModules.cartera) ({ initCartera, loadCarteraView } = loadedModules.cartera);
-            if (loadedModules.solicitudes) ({ initSolicitudes, loadSolicitudesView, closeRequestDetailsModal, setupAddMaterialButton, setupRequestItemSearch, resetMaterialRequestForm, handleViewRequestDetails, handleOpenDeliveryModal, showMaterialRequestView } = loadedModules.solicitudes);
-            if (loadedModules.ingresopersonal) ({ handleReportEntry } = loadedModules.ingresopersonal);
-            if (loadedModules.cotizaciones) ({ initCotizaciones, loadCotizacionesView } = loadedModules.cotizaciones);
-            if (loadedModules.informes) ({ initInformes, loadInformesView, loadReportsView, getCompanyData } = loadedModules.informes);
-            if (loadedModules.proyectos) ({ initProyectos, loadProjects, createProject, deleteProject, archiveProject, restoreProject } = loadedModules.proyectos);
-            if (loadedModules.proyectoDetalles) ({ initProyectoDetalles, showProjectDetails, switchProjectTab, calculateItemUnitPrice, calculateItemTotal, calculateProjectContractedValue } = loadedModules.proyectoDetalles);
-            if (loadedModules.catalogo) ({ initCatalogo, loadCatalogView, fetchMoreCatalogItems, openImportModal, generateMaterialTemplate, importMaterialsFromExcel } = loadedModules.catalogo);
-            if (loadedModules.cortes) ({ initCortes, loadCortes, setupCorteSelection, generateCorte, closeCorteSelectionView, approveCorte, denyCorte, showCorteDetails, exportCorteToPDF, cleanupCortesSubscription } = loadedModules.cortes);
-            if (loadedModules.proveedores) ({ initProveedores, loadProveedoresView, loadSupplierDetailsView, findLastPurchasePrice, currentSupplierId } = loadedModules.proveedores);
-            if (loadedModules.compras) ({ initCompras, loadComprasView, validatePoDateRange, openPurchaseOrderModal, closePurchaseOrderModal } = loadedModules.compras);
-            if (loadedModules.usuarios) ({ initUsuarios, loadUsers } = loadedModules.usuarios);
-            if (loadedModules.tareas) ({ initTareas, openNewTaskModal, openEditTaskModal, openProgressModal, completeTask, openMultipleProgressModal, loadTasksView, loadAndDisplayTasks, createTaskCard, closeTaskDetailsModal, loadTaskMaterialStatus, openTaskDetailsModal, openSafetyCheckInModal, checkIfSafetyCheckInNeeded } = loadedModules.tareas);
-            if (loadedModules.despiece) ({ setupDespieceEvents } = loadedModules.despiece);
-
-            // Expose dynamically loaded functions to window for SPA routers (only if defined)
-            window.loadDotacionView = loadDotacionView;
-            window.resetToolViewAndLoad = resetToolViewAndLoad;
-            window.loadDotacionAsignaciones = loadDotacionAsignaciones;
-            window.showGeneralDashboard = showGeneralDashboard;
-            window.loadEmpleadosView = loadEmpleadosView;
-            window.showEmpleadoDetails = showEmpleadoDetails;
-            window.loadPaymentHistoryView = loadPaymentHistoryView;
-            window.handleReportEntry = handleReportEntry;
-            window.loadCarteraView = loadCarteraView;
-            window.loadConfiguracionView = loadConfiguracionView;
-            window.loadCotizacionesView = loadCotizacionesView;
-            
-            window.loadReportsView = loadInformesView;
-            window.getCompanyData = getCompanyData;
-            
-            window.closeRequestDetailsModal = closeRequestDetailsModal;
-            window.setupAddMaterialButton = setupAddMaterialButton;
-            window.setupRequestItemSearch = setupRequestItemSearch;
-            window.resetMaterialRequestForm = resetMaterialRequestForm;
-            window.openRequestDetailsModal = handleViewRequestDetails;
-            window.openDeliveryModal = handleOpenDeliveryModal;
-            window.showMaterialRequestView = showMaterialRequestView;
-            window.loadSolicitudesView = loadSolicitudesView;
-
-            window.openImportModal = openImportModal;
-            window.generateMaterialTemplate = generateMaterialTemplate;
-            window.importMaterialsFromExcel = importMaterialsFromExcel;
-
-            window.loadProjects = loadProjects;
-            window.createProject = createProject;
-            window.deleteProject = deleteProject;
-            window.archiveProject = archiveProject;
-            window.restoreProject = restoreProject;
-            window.showProjectDetails = showProjectDetails;
-            window.switchProjectTab = switchProjectTab;
-            window.calculateItemUnitPrice = calculateItemUnitPrice;
-            window.calculateItemTotal = calculateItemTotal;
-            window.calculateProjectContractedValue = calculateProjectContractedValue;
-            window.loadCatalogView = loadCatalogView;
-            window.loadCortes = loadCortes;
-            window.setupCorteSelection = setupCorteSelection;
-            window.generateCorte = generateCorte;
-            window.closeCorteSelectionView = closeCorteSelectionView;
-            window.approveCorte = approveCorte;
-            window.denyCorte = denyCorte;
-            window.showCorteDetails = showCorteDetails;
-            window.exportCorteToPDF = exportCorteToPDF;
-            window.cleanupCortesSubscription = cleanupCortesSubscription;
-            window.loadProveedoresView = loadProveedoresView;
-            window.loadSupplierDetailsView = loadSupplierDetailsView;
-            window.loadComprasView = loadComprasView;
-            window.openPurchaseOrderModal = openPurchaseOrderModal;
-            window.closePurchaseOrderModal = closePurchaseOrderModal;
-            window.loadUsers = loadUsers;
-            
-            window.openNewTaskModal = openNewTaskModal;
-            window.openEditTaskModal = openEditTaskModal;
-            window.openProgressModal = openProgressModal;
-            window.completeTask = completeTask;
-            window.openMultipleProgressModal = openMultipleProgressModal;
-            window.loadTasksView = loadTasksView;
-            window.loadAndDisplayTasks = loadAndDisplayTasks;
-            window.createTaskCard = createTaskCard;
-            window.closeTaskDetailsModal = closeTaskDetailsModal;
-            window.loadTaskMaterialStatus = loadTaskMaterialStatus;
-            window.openTaskDetailsModal = openTaskDetailsModal;
-            window.openSafetyCheckInModal = openSafetyCheckInModal;
-            window.checkIfSafetyCheckInNeeded = checkIfSafetyCheckInNeeded;
-            window.setupDespieceEvents = setupDespieceEvents;
-
-            console.log("Módulos del rol cargados e inyectados correctamente.");
+            console.log("Módulos esenciales del inicio cargados e inyectados.");
         } catch (error) {
-            console.error("Error al cargar los módulos dinámicos:", error);
+            console.error("Error al cargar los módulos dinámicos esenciales:", error);
             modulesLoadedPromise = null;
             throw error;
         }
