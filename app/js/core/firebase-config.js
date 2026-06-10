@@ -4,7 +4,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
-import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app-check.js";
+// import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app-check.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-functions.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 import { getMessaging } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-messaging.js";
@@ -23,13 +23,12 @@ const firebaseConfig = {
 // 3. Inicialización Principal
 const app = initializeApp(firebaseConfig);
 
-// 4. Configuración de App Check (Seguridad)
+// 4. Configuración de App Check (Seguridad) - Desactivado (Opción 1)
 export const VAPID_KEY = "BKdSH8VAjrl0Fpzc-FZmIVvahDsXV_BlIXU440PWRL3CBkqHiNCg3tav-Lf2kZFOy99sfTHfA5L2e-yXpf-eMiQ";
-
-const appCheck = initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider('6Lc-090rAAAAAKkE09k5txsrVWXG3Xelxnrpb7Ty'),
-    isTokenAutoRefreshEnabled: true
-});
+// const appCheck = initializeAppCheck(app, {
+//     provider: new ReCaptchaV3Provider('6Lc-090rAAAAAKkE09k5txsrVWXG3Xelxnrpb7Ty'),
+//     isTokenAutoRefreshEnabled: true
+// });
 
 // 5. Inicialización de Base de Datos con persistencia
 const db = initializeFirestore(app, {
