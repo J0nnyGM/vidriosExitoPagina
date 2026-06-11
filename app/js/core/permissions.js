@@ -296,7 +296,7 @@ export async function initializePushNotifications(user) {
             return;
         }
 
-        const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.3.8');
+        const registration = await navigator.serviceWorker.ready;
         const token = await getToken(messaging, {
             vapidKey: VAPID_KEY,
             serviceWorkerRegistration: registration

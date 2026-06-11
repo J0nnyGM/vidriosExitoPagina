@@ -1,6 +1,7 @@
 import { db, storage, functions, httpsCallable } from '../core/firebase-config.js';
 import { doc, getDoc, addDoc, updateDoc, collection, query, orderBy, getDocs, where, writeBatch, increment } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
+import { isUserIncapacitatedOnDate } from '../core/utils.js';
 
 export function initClickHandlers() {
     document.body.addEventListener('click', async (e) => {
@@ -567,6 +568,9 @@ export function initClickHandlers() {
             case 'new-project':
                 window.openMainModal('newProject');
                 break;
+            case 'report-incapacidad':
+                window.openMainModal('report-incapacidad');
+                break;
             case 'view-pending-loans':
                 window.openMainModal('view-pending-loans');
                 break;
@@ -602,9 +606,15 @@ export function initClickHandlers() {
                 window.showView('compras');
                 if (typeof window.loadComprasView === 'function') window.loadComprasView();
                 break;
-            case 'create-daily-report':
-                window.openMainModal('create-daily-report');
+            case 'create-daily-report': {
+                const userData = window.usersMap && window.currentUser ? window.usersMap.get(window.currentUser.uid) : null;
+                if (userData && isUserIncapacitatedOnDate(userData)) {
+                    alert("🚫 Te encuentras en estado de incapacidad médica activa. No tienes permitido registrar reportes diarios.");
+                } else {
+                    window.openMainModal('create-daily-report');
+                }
                 break;
+            }
             case 'view-my-payment-history':
                 window.openMainModal('view-my-payment-history', { userId: window.currentUser.uid });
                 break;

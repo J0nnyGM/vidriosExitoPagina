@@ -1,8 +1,9 @@
 // js/ui/form-handlers.js
 
 import { db, auth, storage, httpsCallable } from '../core/firebase-config.js';
-import { doc, getDoc, addDoc, updateDoc, collection, query, where, writeBatch, getDocs, orderBy, increment, serverTimestamp, arrayUnion, runTransaction } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+import { doc, getDoc, setDoc, addDoc, updateDoc, collection, query, where, writeBatch, getDocs, orderBy, increment, serverTimestamp, arrayUnion, runTransaction } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
+import { isUserIncapacitatedOnDate } from '../core/utils.js';
 
 export function initFormHandlers() {
     const modalForm = document.getElementById('modal-form');
@@ -222,6 +223,12 @@ export function initFormHandlers() {
         }
 
         if (type === 'create-daily-report') {
+            const userProfile = window.usersMap && window.currentUser ? window.usersMap.get(window.currentUser.uid) : null;
+            if (userProfile && isUserIncapacitatedOnDate(userProfile)) {
+                alert("🚫 Te encuentras en estado de incapacidad médica activa. No tienes permitido registrar reportes diarios.");
+                return;
+            }
+
             const text = data.reportText;
 
             if (!text || text.trim().length < 5) {
@@ -618,6 +625,97 @@ export function initFormHandlers() {
                 } finally {
                     modalConfirmBtn.disabled = false;
                     modalConfirmBtn.textContent = 'Confirmar Devolución';
+                }
+                break;
+            }
+            case 'report-incapacidad': {
+                modalConfirmBtn.disabled = true;
+                modalConfirmBtn.textContent = 'Procesando...';
+
+                try {
+                    const targetUid = data.targetEmployeeId || window.currentUser.uid;
+                    if (window.currentUserRole === 'admin' && !data.targetEmployeeId) {
+                        throw new Error("Por favor, selecciona un colaborador.");
+                    }
+
+                    const fileInput = document.getElementById('incapacidad-file-input');
+                    const file = fileInput ? fileInput.files[0] : null;
+
+                    const certFileInput = document.getElementById('certificado-file-input');
+                    const certFile = certFileInput ? certFileInput.files[0] : null;
+
+                    if (!file) {
+                        throw new Error("Por favor, selecciona una imagen o archivo PDF para la evidencia de incapacidad médica.");
+                    }
+                    if (!certFile) {
+                        throw new Error("Por favor, selecciona una imagen o archivo PDF para el Certificado o Constancia de Asistencia a Urgencias.");
+                    }
+
+                    // Subir primer archivo (Incapacidad)
+                    const isPDF = file.type === 'application/pdf';
+                    const storagePath = `incapacidades/${targetUid}/${Date.now()}_${file.name}`;
+                    const storageRef = ref(storage, storagePath);
+
+                    let downloadURL = null;
+                    if (isPDF) {
+                        modalConfirmBtn.textContent = 'Subiendo incapacidad PDF...';
+                        await uploadBytes(storageRef, file);
+                    } else {
+                        modalConfirmBtn.textContent = 'Redimensionando incapacidad...';
+                        const resizedImage = await window.resizeImage(file, 1024);
+                        modalConfirmBtn.textContent = 'Subiendo incapacidad...';
+                        await uploadBytes(storageRef, resizedImage);
+                    }
+                    downloadURL = await getDownloadURL(storageRef);
+
+                    // Subir segundo archivo (Certificado/Constancia)
+                    const isCertPDF = certFile.type === 'application/pdf';
+                    const certStoragePath = `incapacidades/${targetUid}/${Date.now()}_cert_${certFile.name}`;
+                    const certStorageRef = ref(storage, certStoragePath);
+
+                    let certDownloadURL = null;
+                    if (isCertPDF) {
+                        modalConfirmBtn.textContent = 'Subiendo certificado PDF...';
+                        await uploadBytes(certStorageRef, certFile);
+                    } else {
+                        modalConfirmBtn.textContent = 'Redimensionando certificado...';
+                        const certResizedImage = await window.resizeImage(certFile, 1024);
+                        modalConfirmBtn.textContent = 'Subiendo certificado...';
+                        await uploadBytes(certStorageRef, certResizedImage);
+                    }
+                    certDownloadURL = await getDownloadURL(certStorageRef);
+
+                    const incapacidadRef = doc(collection(db, "users", targetUid, "incapacidades"));
+                    await setDoc(incapacidadRef, {
+                        startDate: data.startDate,
+                        durationDays: parseInt(data.durationDays) || 1,
+                        medicalCenter: data.medicalCenter,
+                        reason: data.reason,
+                        evidenceURL: downloadURL,
+                        evidenceType: file.type,
+                        certificateURL: certDownloadURL,
+                        certificateType: certFile.type,
+                        status: 'pending',
+                        createdAt: serverTimestamp(),
+                        createdBy: window.currentUser.uid,
+                        userName: `${window.usersMap.get(targetUid)?.firstName || ''} ${window.usersMap.get(targetUid)?.lastName || ''}`.trim()
+                    });
+
+                    // Update root user document with incapacidad fields
+                    const userRef = doc(db, "users", targetUid);
+                    await updateDoc(userRef, {
+                        incapacitado: true,
+                        incapacidadStart: data.startDate,
+                        incapacidadDays: parseInt(data.durationDays) || 1
+                    });
+
+                    window.showToast("Reporte de incapacidad enviado correctamente.", "success");
+                    window.closeMainModal();
+                } catch (error) {
+                    console.error("Error al reportar incapacidad:", error);
+                    alert("Error: " + error.message);
+                } finally {
+                    modalConfirmBtn.disabled = false;
                 }
                 break;
             }

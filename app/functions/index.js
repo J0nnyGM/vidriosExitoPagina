@@ -2232,6 +2232,11 @@ exports.checkLateEntriesWarning = onSchedule({
             const userId = userDoc.id;
             const userData = userDoc.data();
 
+            if (userData.incapacitado === true) {
+                console.log(`Usuario ${userData.firstName || userId} omitido por incapacidad (8:25 AM).`);
+                continue;
+            }
+
             // Verificar reporte de ingreso hoy
             const reportsSnapshot = await db.collection("users").doc(userId).collection("attendance_reports")
                 .where("type", "==", "ingreso")
@@ -2299,6 +2304,11 @@ exports.checkLateEntries = onSchedule({
         for (const userDoc of usersSnapshot.docs) {
             const userId = userDoc.id;
             const userData = userDoc.data();
+
+            if (userData.incapacitado === true) {
+                console.log(`Usuario ${userData.firstName || userId} omitido por incapacidad (8:30 AM).`);
+                continue;
+            }
 
             // Buscar si tiene un reporte de ingreso DESPUÉS de la 1:00 AM de hoy
             const reportsSnapshot = await db.collection("users").doc(userId).collection("attendance_reports")
@@ -2512,6 +2522,11 @@ exports.checkDailyReportWarning = onSchedule({
             const userId = userDoc.id;
             const userData = userDoc.data();
 
+            if (userData.incapacitado === true) {
+                console.log(`Usuario ${userData.firstName || userId} omitido por incapacidad (6:30 PM).`);
+                continue;
+            }
+
             // Buscar si existe un reporte con la fecha de hoy en la subcolección
             const reportsSnapshot = await db.collection("users").doc(userId).collection("daily_reports")
                 .where("date", "==", todayStr)
@@ -2571,6 +2586,11 @@ exports.checkDailyReportFinal = onSchedule({
         for (const userDoc of usersSnapshot.docs) {
             const userId = userDoc.id;
             const userData = userDoc.data();
+
+            if (userData.incapacitado === true) {
+                console.log(`Usuario ${userData.firstName || userId} omitido por incapacidad (7:00 PM).`);
+                continue;
+            }
 
             // Misma verificación: ¿Ya existe reporte de hoy?
             const reportsSnapshot = await db.collection("users").doc(userId).collection("daily_reports")

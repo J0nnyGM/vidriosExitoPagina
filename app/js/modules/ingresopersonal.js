@@ -2,6 +2,7 @@
 
 import { collection, addDoc, serverTimestamp, query, where, getDocs, limit } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
+import { isUserIncapacitatedOnDate } from '../core/utils.js';
 
 let videoStream = null;
 
@@ -56,6 +57,10 @@ export async function handleReportEntry(db, storage, currentUser, userProfile, o
     // 1. Validaciones de Sesión
     if (!currentUser || !userProfile) {
         alert("Error: No se detecta una sesión activa.");
+        return;
+    }
+    if (isUserIncapacitatedOnDate(userProfile)) {
+        alert("🚫 Te encuentras en estado de incapacidad médica activa. No tienes permitido registrar marcaciones.");
         return;
     }
     if (!userProfile.profilePhotoURL) {

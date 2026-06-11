@@ -467,3 +467,24 @@ export function initThemeToggle() {
         }
     });
 }
+
+/**
+ * Verifica si un usuario está incapacitado en una fecha específica basado en el rango registrado.
+ */
+export function isUserIncapacitatedOnDate(userData, dateObj = new Date()) {
+    if (!userData) return false;
+    if (userData.incapacitado) {
+        if (userData.incapacidadStart && userData.incapacidadDays > 0) {
+            const startDate = new Date(userData.incapacidadStart + 'T00:00:00');
+            const endDate = new Date(startDate);
+            endDate.setDate(startDate.getDate() + userData.incapacidadDays - 1);
+            
+            const targetDate = new Date(dateObj);
+            targetDate.setHours(0, 0, 0, 0);
+            
+            return targetDate >= startDate && targetDate <= endDate;
+        }
+        return true;
+    }
+    return false;
+}

@@ -1,0 +1,159 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // --- FUNCIONES AUXILIARES ---
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isValidFile() {
+      return request.resource != null
+        && (
+          request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType == 'application/pdf' ||
+          // AGREGADO: Permitir Excel y Word para SST
+          request.resource.contentType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+          request.resource.contentType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        );
+    }
+
+    function isValidSize() {
+      return request.resource != null && request.resource.size < 100 * 1024 * 1024;
+    }
+
+    // --- REGLAS POR CARPETA ---
+
+    // 1) EVIDENCIA
+    match /evidence/{allPaths=**} {
+      allow read: if isAuth();
+      allow create, update: if isAuth() && isValidFile() && isValidSize();
+      allow delete: if isAuth();
+    }
+
+    // 2) PERFIL
+    match /profile_photos/{userId}/{fileName} {
+      allow read: if isAuth();
+      
+      // CAMBIO AQUÍ: Se permite si el UID coincide O si es Admin
+      allow create, update: if isAuth() 
+                            && isValidFile();
+                            
+      allow delete: if false;
+    }
+
+    // 3) PROYECTOS Y PLANOS
+    match /project_documents/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isValidFile() && isValidSize();
+    }
+    match /blueprints/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isValidFile() && isValidSize();
+    }
+
+    // 4) PROVEEDORES
+    match /suppliers/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isValidFile() && isValidSize();
+    }
+
+    // 5) ALERTAS
+    match /admin_alerts/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isValidFile() && isValidSize();
+    }
+
+    // 6) BACKUPS
+    match /backups/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // 7) HERRAMIENTAS
+    match /tools_photos/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isValidFile() && isValidSize();
+      allow delete: if isAuth();
+    }
+    
+    match /tool_assignments/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isValidFile() && isValidSize();
+      allow delete: if isAuth();
+    }
+    
+    match /tool_returns/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isValidFile() && isValidSize();
+    }
+    
+    // 8) INGRESO DE PERSONAL
+    match /checkin_evidence/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isValidFile() && isValidSize();
+    }
+
+    // =========================================================
+    // 9) DOTACIÓN (NUEVAS REGLAS)
+    // =========================================================
+    
+    // Fotos del catálogo (zapatos, cascos, etc.)
+    match /dotacion_catalog_photos/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isValidFile() && isValidSize();
+    }
+
+    // Evidencias de entrega (fotos firmadas)
+    match /dotacion_deliveries/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isValidFile() && isValidSize();
+      allow delete: if isAuth();
+    }
+
+    // Evidencias de devolución
+    match /dotacion_returns/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isValidFile() && isValidSize();
+      allow delete: if isAuth();
+    }
+   
+    // =========================================================
+    // 10) ASISTENCIA (Selfies de Ingreso) - NUEVA REGLA
+    // =========================================================
+    match /attendance/{userId}/{fileName} {
+      allow read: if isAuth(); // Para que el admin pueda ver la foto en el reporte
+      allow write: if isAuth() && request.auth.uid == userId && isValidFile() && isValidSize();
+    }
+    
+    // 11) EXPEDIENTES (Documentación SST, Contratos, etc.)
+    match /expedientes/{userId}/{category}/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isValidFile() && isValidSize();
+      allow delete: if isAuth();
+    }
+    
+    // 12) DOCUMENTOS GENERALES EMPRESA (SST) - CORREGIDO
+    // Usamos {allPaths=**} para cubrir subcarpetas profundas si las hubiera
+    match /company_docs/{allPaths=**} {
+       allow read: if isAuth();
+       allow write: if isAuth() && isValidFile() && isValidSize();
+       allow delete: if isAuth(); 
+    }
+
+    // =========================================================
+    // 12.5) INCAPACIDADES (Evidencia de Incapacidades Médicas)
+    // =========================================================
+    match /incapacidades/{userId}/{fileName} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isValidFile() && isValidSize();
+      allow delete: if isAuth();
+    }
+
+    // =========================================================
+    // 13) BLOQUEO FINAL POR DEFECTO
+    // =========================================================
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

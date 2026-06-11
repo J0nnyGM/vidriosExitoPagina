@@ -1,5 +1,6 @@
 import { initializeApp, getApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
 import { getFunctions, httpsCallable } from "../core/firebase-config.js"; // <--- Necesario para llamar al backend
+import { isUserIncapacitatedOnDate } from "../core/utils.js";
 import {
     collection,
     query,
@@ -27,6 +28,9 @@ let _getCurrentUserId;
 // --- Variables locales del Módulo (Estado) ---
 let activeDashboardCharts = [];
 let unsubscribeDashboard = null;
+let selectedAttendanceDate = new Date();
+let unsubscribeDailyAttendance = null;
+let unsubscribeDailyReports = null;
 
 /**
  * Inicializa el módulo del Dashboard.
@@ -42,6 +46,7 @@ export function initDashboard(db, showView, getUsersMap, getCurrentUserRole, get
 let activeModuleCharts = [];
 
 export function showGeneralDashboard() {
+    selectedAttendanceDate = new Date();
     _showView('dashboard-general');
     const widgetsContainer = document.getElementById('dashboard-widgets-container');
     
@@ -89,7 +94,7 @@ export function showGeneralDashboard() {
     else if (userRole === 'sst') {
         renderSSTDashboard(widgetsContainer);
     } 
-    else if (userRole === 'operario') {
+    else if (userRole === 'operario' || userRole === 'nomina') {
         loadOperarioDashboard(widgetsContainer, _getCurrentUserId());
     } 
     else {
@@ -219,6 +224,14 @@ function loadAdminDashboard(container) {
     unsubscribeDashboard = () => {
         if (typeof unsubStats === 'function') unsubStats();
         if (typeof unsubLoans === 'function') unsubLoans();
+        if (typeof unsubscribeDailyAttendance === 'function') {
+            unsubscribeDailyAttendance();
+            unsubscribeDailyAttendance = null;
+        }
+        if (typeof unsubscribeDailyReports === 'function') {
+            unsubscribeDailyReports();
+            unsubscribeDailyReports = null;
+        }
     };
 }
 
@@ -339,6 +352,11 @@ function renderAdminDashboard(stats, container) {
                     </div>
                 </div>
 
+                <!-- Nueva sección de marcación y actividad diaria -->
+                <div id="admin-attendance-activity-card" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <!-- Dynamic daily attendance & activity table will load here -->
+                </div>
+
                 <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                         <h3 class="font-bold text-slate-700 flex items-center gap-2">
@@ -384,21 +402,6 @@ function renderAdminDashboard(stats, container) {
                         <div class="h-48"><canvas id="dotacion-chart-canvas"></canvas></div>
                     </div>
                 </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                        <div class="px-5 py-3 bg-slate-50 border-b border-slate-100">
-                            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wide">Top Consumo Dotación</h3>
-                        </div>
-                        <div class="p-2">${topConsumoHtml}</div>
-                    </div>
-                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                        <div class="px-5 py-3 bg-slate-50 border-b border-slate-100">
-                            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wide">Top Reportes Daño</h3>
-                        </div>
-                        <div class="p-2">${topDamageHtml}</div>
-                    </div>
-                </div>
             </div>
 
             <div class="lg:col-span-1 space-y-6">
@@ -431,6 +434,16 @@ function renderAdminDashboard(stats, container) {
                             </div>
                             <span id="pending-loans-badge" class="hidden bg-red-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full shadow-sm animate-pulse z-10">0</span>
                             <div class="absolute inset-0 bg-indigo-50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        </button>
+
+                        <button data-action="report-incapacidad" class="w-full flex items-center gap-3 p-3 rounded-xl bg-red-50 hover:bg-red-100 border border-red-100 text-red-700 font-bold transition-all text-left group">
+                            <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-red-600 shadow-sm group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-notes-medical"></i>
+                            </div>
+                            <div>
+                                <p class="font-bold text-sm">Reportar Incapacidad</p>
+                                <p class="text-[10px] opacity-75 text-red-500">Subir certificado</p>
+                            </div>
                         </button>
 
                         <div class="bg-white p-6 rounded-xl shadow-sm border border-red-100 hover:shadow-md transition-all group cursor-pointer relative overflow-hidden" data-action="send-admin-alert">
@@ -467,10 +480,14 @@ function renderAdminDashboard(stats, container) {
                         </div>
                     </div>
                 </div>
+                ${getActiveIncapacitadosHtml()}
             </div>
         </div>
     `;
 
+    setTimeout(() => {
+        updateAdminAttendanceActivity(selectedAttendanceDate);
+    }, 0);
 }
 
 /**
@@ -617,6 +634,16 @@ async function loadOperarioDashboard(container, userId) {
                                 <span class="text-sm">Solicitar Préstamo</span>
                             </div>
                             <i class="fa-solid fa-chevron-right text-xs opacity-50"></i>
+                        </button>
+
+                        <button data-action="report-incapacidad" class="w-full flex items-center gap-3 p-3 rounded-xl bg-red-50 hover:bg-red-100 border border-red-100 text-red-700 font-bold transition-all text-left group">
+                            <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-red-600 shadow-sm group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-notes-medical"></i>
+                            </div>
+                            <div>
+                                <p class="font-bold text-sm">Reportar Incapacidad</p>
+                                <p class="text-[10px] opacity-75 text-red-500">Subir certificado</p>
+                            </div>
                         </button>
 
                         <button data-action="view-my-payment-history" class="w-full flex items-center gap-3 p-3 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 hover:shadow-md transition-all text-left group">
@@ -1261,7 +1288,7 @@ async function renderBodegaStatsHTML(container, pendingRequests, pendingPO, lowS
             </div>
 
             <div class="lg:col-span-3 space-y-6">
-                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 h-full">
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
                     <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2 uppercase tracking-wide border-b pb-3">
                         <i class="fa-solid fa-bolt text-yellow-500"></i> Acciones Rápidas
                     </h3>
@@ -1270,6 +1297,16 @@ async function renderBodegaStatsHTML(container, pendingRequests, pendingPO, lowS
                         <button data-action="send-admin-alert" class="w-full flex items-center gap-3 p-3 rounded-xl bg-red-50 text-red-700 hover:bg-red-100 hover:shadow-md transition-all text-left group border border-red-100">
                             <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-red-500"><i class="fa-solid fa-bullhorn"></i></div>
                             <div><p class="font-bold text-sm">Llamado Urgente</p><p class="text-[10px] opacity-75">Alerta</p></div>
+                        </button>
+
+                        <button data-action="report-incapacidad" class="w-full flex items-center gap-3 p-3 rounded-xl bg-red-50 hover:bg-red-100 border border-red-100 text-red-700 font-bold transition-all text-left group">
+                            <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-red-600 shadow-sm group-hover:scale-110 transition-transform">
+                                <i class="fa-solid fa-notes-medical"></i>
+                            </div>
+                            <div>
+                                <p class="font-bold text-sm">Reportar Incapacidad</p>
+                                <p class="text-[10px] opacity-75 text-red-500">Subir certificado</p>
+                            </div>
                         </button>
 
                         <button data-action="go-to-solicitudes" class="w-full flex items-center gap-3 p-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 hover:shadow-md transition-all text-left group border border-blue-100">
@@ -1308,6 +1345,7 @@ async function renderBodegaStatsHTML(container, pendingRequests, pendingPO, lowS
                         </button>
                     </div>
                 </div>
+                ${getActiveIncapacitadosHtml()}
             </div>
         </div>
     `;
@@ -1563,7 +1601,7 @@ async function renderSSTDashboard(container) {
                     </div>
 
                     <div class="lg:col-span-3 space-y-6">
-                        <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 h-full">
+                        <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
                             <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2 uppercase tracking-wide border-b pb-3">
                                 <i class="fa-solid fa-bolt text-yellow-500"></i> Acciones Rápidas
                             </h3>
@@ -1572,6 +1610,16 @@ async function renderSSTDashboard(container) {
                                 <button data-action="send-admin-alert" class="w-full flex items-center gap-3 p-3 rounded-xl bg-red-50 text-red-700 hover:bg-red-100 hover:shadow-md transition-all text-left group border border-red-100">
                                     <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-red-500 shadow-sm"><i class="fa-solid fa-bullhorn"></i></div>
                                     <div><p class="font-bold text-sm">Alerta SST</p><p class="text-[10px] opacity-75">Emergencia</p></div>
+                                </button>
+
+                                <button data-action="report-incapacidad" class="w-full flex items-center gap-3 p-3 rounded-xl bg-red-50 hover:bg-red-100 border border-red-100 text-red-700 font-bold transition-all text-left group">
+                                    <div class="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-red-600 shadow-sm group-hover:scale-110 transition-transform">
+                                        <i class="fa-solid fa-notes-medical"></i>
+                                    </div>
+                                    <div>
+                                        <p class="font-bold text-sm">Reportar Incapacidad</p>
+                                        <p class="text-[10px] opacity-75 text-red-500">Subir certificado</p>
+                                    </div>
                                 </button>
 
                                 <button data-action="go-to-dotacion" class="w-full flex items-center gap-3 p-3 rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-100 hover:shadow-md transition-all text-left group border border-amber-100">
@@ -1605,6 +1653,7 @@ async function renderSSTDashboard(container) {
                                 </button>
                             </div>
                         </div>
+                        ${getActiveIncapacitadosHtml()}
                     </div>
                 </div>
             `;
@@ -1683,4 +1732,514 @@ async function renderSSTDashboard(container) {
         if (typeof unsubUsers === 'function') unsubUsers();
         if (typeof unsubCatalog === 'function') unsubCatalog();
     };
+}
+
+/**
+ * Control y visualización en tiempo real de marcaciones y actividad diaria para un día seleccionado.
+ */
+async function updateAdminAttendanceActivity(date) {
+    const card = document.getElementById('admin-attendance-activity-card');
+    if (!card) return;
+
+    // Desconectar listeners anteriores si existen
+    if (typeof unsubscribeDailyAttendance === 'function') {
+        unsubscribeDailyAttendance();
+        unsubscribeDailyAttendance = null;
+    }
+    if (typeof unsubscribeDailyReports === 'function') {
+        unsubscribeDailyReports();
+        unsubscribeDailyReports = null;
+    }
+
+    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    const dateStr = date.toLocaleDateString('es-ES', options);
+    const capitalizedDateStr = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+
+    const today = new Date();
+    const isToday = date.toDateString() === today.toDateString();
+
+    // Mostrar esqueleto de carga
+    card.innerHTML = `
+        <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <h3 class="font-bold text-slate-700 flex items-center gap-2">
+                <i class="fa-solid fa-user-check text-indigo-500"></i> Marcación y Actividad Diaria
+            </h3>
+            
+            <!-- Selector de Fecha -->
+            <div class="flex items-center gap-3 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
+                <button id="btn-prev-day" class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-colors" title="Día Anterior">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <span class="text-sm font-bold text-slate-700 min-w-[180px] text-center select-none">
+                    ${capitalizedDateStr}
+                </span>
+                <button id="btn-next-day" class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-colors" title="Día Siguiente" ${isToday ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : ''}>
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+        <div class="p-8 text-center">
+            <div class="loader mx-auto mb-3"></div>
+            <p class="text-xs text-slate-400 animate-pulse">Cargando marcaciones y actividad diaria...</p>
+        </div>
+    `;
+
+    // Vincular botones de navegación inmediatamente
+    document.getElementById('btn-prev-day').onclick = () => {
+        date.setDate(date.getDate() - 1);
+        updateAdminAttendanceActivity(date);
+    };
+    const nextBtn = document.getElementById('btn-next-day');
+    if (nextBtn && !isToday) {
+        nextBtn.onclick = () => {
+            date.setDate(date.getDate() + 1);
+            updateAdminAttendanceActivity(date);
+        };
+    }
+
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const qAttendance = query(
+        collectionGroup(_db, 'attendance_reports'),
+        where('type', '==', 'ingreso'),
+        where('timestamp', '>=', startOfDay),
+        where('timestamp', '<=', endOfDay)
+    );
+
+    const qReports = query(
+        collectionGroup(_db, 'daily_reports'),
+        where('createdAt', '>=', startOfDay),
+        where('createdAt', '<=', endOfDay)
+    );
+
+    let attendanceDocs = [];
+    let reportsDocs = [];
+    let attendanceLoaded = false;
+    let reportsLoaded = false;
+
+    const renderTable = () => {
+        if (!attendanceLoaded || !reportsLoaded) return;
+
+        const attendanceByUsers = {};
+        attendanceDocs.forEach(docSnap => {
+            const userId = docSnap.ref.parent.parent.id;
+            attendanceByUsers[userId] = { id: docSnap.id, ...docSnap.data() };
+        });
+
+        const reportsByUsers = {};
+        reportsDocs.forEach(docSnap => {
+            const userId = docSnap.ref.parent.parent.id;
+            reportsByUsers[userId] = { id: docSnap.id, ...docSnap.data() };
+        });
+
+        const usersMap = _getUsersMap();
+        const activeUsersList = [];
+        if (usersMap) {
+            usersMap.forEach((user, uid) => {
+                if (user.status === 'active' && user.role !== 'admin') {
+                    activeUsersList.push({ uid, ...user });
+                }
+            });
+        }
+
+        let tableRowsHtml = '';
+        let mobileCardsHtml = '';
+
+        if (activeUsersList.length === 0) {
+            const emptyHtml = `
+                <div class="px-6 py-8 text-center text-sm text-slate-400 italic">
+                    No hay usuarios activos registrados.
+                </div>
+            `;
+            tableRowsHtml = `
+                <tr>
+                    <td colspan="3" class="px-6 py-8 text-center text-sm text-slate-400 italic">
+                        No hay usuarios activos registrados.
+                    </td>
+                </tr>
+            `;
+            mobileCardsHtml = emptyHtml;
+        } else {
+            activeUsersList.sort((a, b) => {
+                const aIncapacitated = isUserIncapacitatedOnDate(a, date);
+                const bIncapacitated = isUserIncapacitatedOnDate(b, date);
+                if (aIncapacitated && !bIncapacitated) return 1;
+                if (!aIncapacitated && bIncapacitated) return -1;
+                return (a.firstName || '').localeCompare(b.firstName || '');
+            });
+            
+            const desktopRows = [];
+            const mobileCards = [];
+
+            activeUsersList.forEach(user => {
+                const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Usuario sin nombre';
+                const roleLabels = {
+                    operario: 'Operario',
+                    bodega: 'Bodega',
+                    sst: 'SST',
+                    nomina: 'Nómina'
+                };
+                const roleLabel = roleLabels[user.role] || user.role || 'Empleado';
+                const initials = `${user.firstName ? user.firstName[0] : ''}${user.lastName ? user.lastName[0] : ''}`.toUpperCase().substring(0, 2);
+
+                const attendance = attendanceByUsers[user.uid];
+                const report = reportsByUsers[user.uid];
+
+                // UI para Escritorio (Desktop)
+                let checkInUi = '';
+                if (attendance) {
+                    const checkInTime = attendance.timestamp ? attendance.timestamp.toDate().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }) : '---';
+                    checkInUi = `
+                        <div class="flex items-center gap-2">
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5 animate-pulse"></span>
+                                Registrado (${checkInTime})
+                            </span>
+                            <button class="view-photo-btn w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors flex items-center justify-center border border-slate-200" 
+                                    data-uid="${user.uid}" title="Ver Foto y Detalles">
+                                <i class="fa-solid fa-camera text-xs"></i>
+                            </button>
+                            <a href="https://www.google.com/maps/search/?api=1&query=${attendance.location?.lat || 0},${attendance.location?.lng || 0}" 
+                               target="_blank" 
+                               class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors flex items-center justify-center border border-slate-200" 
+                               title="Ver Ubicación GPS">
+                                <i class="fa-solid fa-map-location-dot text-xs"></i>
+                            </a>
+                        </div>
+                    `;
+                } else if (isUserIncapacitatedOnDate(user, date)) {
+                    checkInUi = `
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                            <i class="fa-solid fa-house-medical mr-1.5 text-amber-500"></i>
+                            Incapacidad
+                        </span>
+                    `;
+                } else {
+                    checkInUi = `
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200">
+                            <span class="w-1.5 h-1.5 bg-red-500 rounded-full mr-1.5"></span>
+                            Pendiente
+                        </span>
+                    `;
+                }
+
+                let reportUi = '';
+                if (report) {
+                    reportUi = `
+                        <div class="flex items-center gap-2">
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <i class="fa-solid fa-file-circle-check mr-1.5 text-emerald-500"></i>
+                                Completado
+                            </span>
+                            <button class="view-report-btn px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold border border-indigo-150 transition-all text-xs flex items-center gap-1 shadow-sm" 
+                                    data-uid="${user.uid}">
+                                <i class="fa-solid fa-eye text-[10px]"></i> Ver Reporte
+                            </button>
+                        </div>
+                    `;
+                } else if (isUserIncapacitatedOnDate(user, date)) {
+                    reportUi = `
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                            <i class="fa-solid fa-house-medical mr-1.5 text-amber-500"></i>
+                            Incapacidad
+                        </span>
+                    `;
+                } else {
+                    reportUi = `
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200">
+                            <span class="w-1.5 h-1.5 bg-red-500 rounded-full mr-1.5"></span>
+                            Pendiente
+                        </span>
+                    `;
+                }
+
+                // UI para Móvil (Card Layout)
+                let mobileCheckInUi = '';
+                if (attendance) {
+                    const checkInTime = attendance.timestamp ? attendance.timestamp.toDate().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }) : '---';
+                    mobileCheckInUi = `
+                        <div class="flex items-center gap-1.5">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <span class="w-1 h-1 bg-emerald-500 rounded-full mr-1 animate-pulse"></span>
+                                ${checkInTime}
+                            </span>
+                            <button class="view-photo-btn w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors flex items-center justify-center border border-slate-200" 
+                                    data-uid="${user.uid}" title="Ver Foto">
+                                <i class="fa-solid fa-camera text-[10px]"></i>
+                            </button>
+                            <a href="https://www.google.com/maps/search/?api=1&query=${attendance.location?.lat || 0},${attendance.location?.lng || 0}" 
+                               target="_blank" 
+                               class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors flex items-center justify-center border border-slate-200" 
+                               title="Ver GPS">
+                                <i class="fa-solid fa-map-location-dot text-[10px]"></i>
+                            </a>
+                        </div>
+                    `;
+                } else if (isUserIncapacitatedOnDate(user, date)) {
+                    mobileCheckInUi = `
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 w-max">
+                            <i class="fa-solid fa-house-medical mr-1 text-amber-500"></i>
+                            Incapacidad
+                        </span>
+                    `;
+                } else {
+                    mobileCheckInUi = `
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 w-max">
+                            <span class="w-1 h-1 bg-red-500 rounded-full mr-1"></span>
+                            Pendiente
+                        </span>
+                    `;
+                }
+
+                let mobileReportUi = '';
+                if (report) {
+                    mobileReportUi = `
+                        <div class="flex items-center gap-1.5">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                Listo
+                            </span>
+                            <button class="view-report-btn w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition-all flex items-center justify-center border border-indigo-150" 
+                                    data-uid="${user.uid}" title="Ver Reporte">
+                                <i class="fa-solid fa-eye text-[10px]"></i>
+                            </button>
+                        </div>
+                    `;
+                } else if (isUserIncapacitatedOnDate(user, date)) {
+                    mobileReportUi = `
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 w-max">
+                            <i class="fa-solid fa-house-medical mr-1 text-amber-500"></i>
+                            Incapacidad
+                        </span>
+                    `;
+                } else {
+                    mobileReportUi = `
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 w-max">
+                            <span class="w-1 h-1 bg-red-500 rounded-full mr-1"></span>
+                            Pendiente
+                        </span>
+                    `;
+                }
+
+                const gradients = [
+                    'from-blue-500 to-indigo-600',
+                    'from-emerald-400 to-teal-600',
+                    'from-violet-500 to-purple-600',
+                    'from-pink-500 to-rose-600',
+                    'from-amber-400 to-orange-500'
+                ];
+                const gradientIndex = user.uid.charCodeAt(0) % gradients.length;
+                const avatarGradient = gradients[gradientIndex];
+
+                desktopRows.push(`
+                    <tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100 last:border-0 group">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-xl bg-gradient-to-br ${avatarGradient} text-white flex items-center justify-center text-xs font-bold shadow-sm">
+                                    ${initials}
+                                </div>
+                                <div class="flex flex-col">
+                                    <span class="text-sm font-semibold text-slate-700 group-hover:text-indigo-600 transition-colors">${userName}</span>
+                                    <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">${roleLabel}</span>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap border-r border-slate-100">
+                            ${checkInUi}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            ${reportUi}
+                        </td>
+                    </tr>
+                `);
+
+                mobileCards.push(`
+                    <div class="p-4 flex flex-col gap-3 hover:bg-slate-50/50 transition-colors border-b border-slate-100 last:border-b-0">
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl bg-gradient-to-br ${avatarGradient} text-white flex items-center justify-center text-sm font-bold shadow-sm">
+                                    ${initials}
+                                </div>
+                                <div class="flex flex-col">
+                                    <span class="text-sm font-semibold text-slate-700">${userName}</span>
+                                    <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">${roleLabel}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 mt-1">
+                            <div class="flex flex-col gap-1.5 p-2.5 bg-slate-50/70 rounded-xl border border-slate-100">
+                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Ingreso</span>
+                                ${mobileCheckInUi}
+                            </div>
+                            <div class="flex flex-col gap-1.5 p-2.5 bg-slate-50/70 rounded-xl border border-slate-100">
+                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Actividad</span>
+                                ${mobileReportUi}
+                            </div>
+                        </div>
+                    </div>
+                `);
+            });
+
+            tableRowsHtml = desktopRows.join('');
+            mobileCardsHtml = mobileCards.join('');
+        }
+
+        card.innerHTML = `
+            <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-center gap-4">
+                <h3 class="font-bold text-slate-700 flex items-center gap-2">
+                    <i class="fa-solid fa-user-check text-indigo-500"></i> Marcación y Actividad Diaria
+                </h3>
+                
+                <div class="flex items-center gap-3 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm w-full sm:w-auto justify-between sm:justify-start">
+                    <button id="btn-prev-day" class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-colors" title="Día Anterior">
+                        <i class="fa-solid fa-chevron-left"></i>
+                    </button>
+                    <span class="text-sm font-bold text-slate-700 min-w-[180px] text-center select-none">
+                        ${capitalizedDateStr}
+                    </span>
+                    <button id="btn-next-day" class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-colors" title="Día Siguiente" ${isToday ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : ''}>
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Vista Móvil (Tarjetas) -->
+            <div class="block md:hidden divide-y divide-slate-100">
+                ${mobileCardsHtml}
+            </div>
+            
+            <!-- Vista Escritorio (Tabla) -->
+            <div class="hidden md:block overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-150">
+                    <thead class="bg-slate-50/30">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Usuario</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Registro de Ingreso</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Reporte de Actividad</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 bg-white">
+                        ${tableRowsHtml}
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        // Vincular navegación nuevamente
+        document.getElementById('btn-prev-day').onclick = () => {
+            date.setDate(date.getDate() - 1);
+            updateAdminAttendanceActivity(date);
+        };
+        const nextBtnReal = document.getElementById('btn-next-day');
+        if (nextBtnReal && !isToday) {
+            nextBtnReal.onclick = () => {
+                date.setDate(date.getDate() + 1);
+                updateAdminAttendanceActivity(date);
+            };
+        }
+
+        // Vincular botones de detalles
+        card.querySelectorAll('.view-photo-btn').forEach(btn => {
+            btn.onclick = () => {
+                const uid = btn.dataset.uid;
+                const record = attendanceByUsers[uid];
+                const user = usersMap.get(uid);
+                const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+                const checkInTimeStr = record.timestamp ? record.timestamp.toDate().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '---';
+                
+                if (window.openMainModal) {
+                    window.openMainModal('view-attendance-detail', {
+                        userName,
+                        photoURL: record.photoURL,
+                        biometricScore: record.biometricScore || 0,
+                        location: record.location || { lat: 0, lng: 0 },
+                        dateStr: `${capitalizedDateStr} a las ${checkInTimeStr}`
+                    });
+                }
+            };
+        });
+
+        card.querySelectorAll('.view-report-btn').forEach(btn => {
+            btn.onclick = () => {
+                const uid = btn.dataset.uid;
+                const record = reportsByUsers[uid];
+                const user = usersMap.get(uid);
+                const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+                const reportTimeStr = record.createdAt ? record.createdAt.toDate().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }) : '---';
+
+                if (window.openMainModal) {
+                    window.openMainModal('view-daily-report-detail', {
+                        userName,
+                        content: record.content,
+                        dateStr: `${capitalizedDateStr} a las ${reportTimeStr}`
+                    });
+                }
+            };
+        });
+    };
+
+    // Activar listeners en tiempo real
+    unsubscribeDailyAttendance = onSnapshot(qAttendance, (snap) => {
+        attendanceDocs = snap.docs;
+        attendanceLoaded = true;
+        renderTable();
+    }, (error) => {
+        console.error("Error en listener de asistencia diaria:", error);
+    });
+
+    unsubscribeDailyReports = onSnapshot(qReports, (snap) => {
+        reportsDocs = snap.docs;
+        reportsLoaded = true;
+        renderTable();
+    }, (error) => {
+        console.error("Error en listener de reportes diarios:", error);
+    });
+}
+
+function getActiveIncapacitadosHtml() {
+    const usersMap = _getUsersMap();
+    if (!usersMap) return '';
+
+    const activeIncapacitados = [];
+    const today = new Date();
+    usersMap.forEach((user, uid) => {
+        if (user.status === 'active' && user.role !== 'admin') {
+            if (isUserIncapacitatedOnDate(user, today)) {
+                activeIncapacitados.push(user);
+            }
+        }
+    });
+
+    if (activeIncapacitados.length === 0) return '';
+
+    const listHtml = activeIncapacitados.map(user => {
+        const name = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+        const start = user.incapacidadStart || '---';
+        const days = user.incapacidadDays || 0;
+        return `
+            <div class="flex items-center gap-3 p-3 bg-red-50/40 hover:bg-red-50/70 border border-red-100 rounded-xl transition-all">
+                <div class="w-8 h-8 rounded-full bg-red-100 text-red-650 flex items-center justify-center text-sm font-bold shadow-inner">
+                    <i class="fa-solid fa-user-injured text-red-500"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-xs font-bold text-slate-700 truncate">${name}</p>
+                    <p class="text-[9px] text-slate-400 font-medium">Inicio: ${start} (${days} d)</p>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+            <h3 class="font-bold text-slate-700 mb-3 flex items-center gap-2 text-xs uppercase tracking-wide border-b pb-2 text-red-600 border-red-100">
+                <i class="fa-solid fa-house-medical text-red-500 animate-pulse"></i> Incapacidades Activas
+            </h3>
+            <div class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                ${listHtml}
+            </div>
+        </div>
+    `;
 }

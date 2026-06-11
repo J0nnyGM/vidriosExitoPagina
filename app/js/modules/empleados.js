@@ -28,6 +28,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 
 import { db } from '../core/firebase-config.js';
+import { isUserIncapacitatedOnDate } from '../core/utils.js';
 
 // --- Variables del Módulo (Dependencias de app.js) ---
 let _db = db;
@@ -89,6 +90,93 @@ function calculateDays360(startDate, endDate) {
 
     const days = ((year2 - year1) * 360) + ((month2 - month1) * 30) + (day2 - day1) + 1; // +1 inclusivo
     return Math.max(0, days);
+}
+
+/**
+ * Determina el rango de fechas para una quincena contable dada.
+ */
+function getQuincenaDateRange(activeQuincena, selectedMonthYear) {
+    if (!selectedMonthYear) return null;
+    const [year, month] = selectedMonthYear.split('-').map(Number);
+    const isFirst = activeQuincena.toLowerCase().includes('primera');
+    
+    const startDay = isFirst ? 1 : 16;
+    const endDay = isFirst ? 15 : new Date(year, month, 0).getDate();
+    
+    return {
+        startDate: new Date(year, month - 1, startDay),
+        endDate: new Date(year, month - 1, endDay)
+    };
+}
+
+/**
+ * Extrae el periodo de fecha a partir de un concepto textual de nómina.
+ */
+function getQuincenaPeriodFromConcept(concept) {
+    if (!concept) return null;
+    const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    
+    const yearMatch = concept.match(/\b\d{4}\b/);
+    if (!yearMatch) return null;
+    const year = parseInt(yearMatch[0]);
+    
+    let monthIndex = -1;
+    for (let i = 0; i < months.length; i++) {
+        if (concept.toLowerCase().includes(months[i].toLowerCase())) {
+            monthIndex = i;
+            break;
+        }
+    }
+    if (monthIndex === -1) return null;
+    
+    const isFirst = concept.toLowerCase().includes('primera');
+    const isSecond = concept.toLowerCase().includes('segunda');
+    
+    let startDay = 1;
+    let endDay = 30;
+    if (isFirst) {
+        startDay = 1;
+        endDay = 15;
+    } else if (isSecond) {
+        startDay = 16;
+        endDay = new Date(year, monthIndex + 1, 0).getDate();
+    } else {
+        startDay = 1;
+        endDay = new Date(year, monthIndex + 1, 0).getDate();
+    }
+    
+    return {
+        startDate: new Date(year, monthIndex, startDay),
+        endDate: new Date(year, monthIndex, endDay)
+    };
+}
+
+/**
+ * Calcula los días de incapacidad dentro de un rango de fechas.
+ */
+function getIncapacitatedDaysInPeriod(emp, startDate, endDate) {
+    if (!emp.incapacitado) return 0;
+    if (!emp.incapacidadStart || !emp.incapacidadDays) return 15;
+    
+    const incStart = new Date(emp.incapacidadStart + 'T00:00:00');
+    const incEnd = new Date(incStart);
+    incEnd.setDate(incStart.getDate() + emp.incapacidadDays - 1);
+    
+    let count = 0;
+    const current = new Date(startDate);
+    while (current <= endDate) {
+        current.setHours(0,0,0,0);
+        const start = new Date(incStart);
+        start.setHours(0,0,0,0);
+        const end = new Date(incEnd);
+        end.setHours(0,0,0,0);
+        
+        if (current >= start && current <= end) {
+            count++;
+        }
+        current.setDate(current.getDate() + 1);
+    }
+    return count;
 }
 
 /**
@@ -2704,7 +2792,10 @@ async function loadNominaTab(container) {
                 deduccionPotencial: deductionPotential,
                 deudaTotal: loanInfo.totalBalance,
                 loansList: loanInfo.loans,
-                deduccionSobreMinimo: dedSobreMinimo
+                deduccionSobreMinimo: dedSobreMinimo,
+                incapacitado: operario.incapacitado || false,
+                incapacidadStart: operario.incapacidadStart || null,
+                incapacidadDays: operario.incapacidadDays || 0
             };
         });
 
@@ -2726,7 +2817,16 @@ async function loadNominaTab(container) {
             const processedData = rawEmpleadoData.map(emp => {
                 const salarioProrrateado = (emp.salarioBasico / 30) * diasPagar;
                 const auxTransporteMensual = config.auxilioTransporte || 162000;
-                const auxTransporteProrrateado = (auxTransporteMensual / 30) * diasPagar;
+                
+                let incDays = 0;
+                const range = getQuincenaDateRange(activeQuincena, selectedMonthYear);
+                if (range) {
+                    incDays = getIncapacitatedDaysInPeriod(emp, range.startDate, range.endDate);
+                } else if (emp.incapacitado) {
+                    incDays = diasPagar;
+                }
+                const diasAuxTransporte = Math.max(0, diasPagar - incDays);
+                const auxTransporteProrrateado = (auxTransporteMensual / 30) * diasAuxTransporte;
 
                 // Base Deducción Ley
                 let baseDeduccion = 0;
@@ -2860,6 +2960,10 @@ async function loadNominaTab(container) {
                         `;
                     }
 
+                    const range = getQuincenaDateRange(activeQuincena, selectedMonthYear);
+                    const isIncapacitatedInPeriod = range ? getIncapacitatedDaysInPeriod(data, range.startDate, range.endDate) > 0 : data.incapacitado;
+                    const incapacitadoBadge = isIncapacitatedInPeriod ? ' <span class="text-rose-600 font-extrabold bg-rose-50 px-1 py-0.5 rounded border border-rose-100 text-[8px] ml-1 shadow-sm"><i class="fa-solid fa-house-medical mr-1 text-[7px]"></i>INCAPACITADO</span>' : '';
+
                     row.innerHTML = `
                         <td class="px-6 py-4">
                             <div class="flex items-center gap-3">
@@ -2868,7 +2972,7 @@ async function loadNominaTab(container) {
                                 </div>
                                 <div>
                                     <p class="font-bold text-gray-800 text-sm leading-tight">${data.fullName}</p>
-                                    <p class="text-[10px] text-gray-400 uppercase mt-0.5">${data.role}</p>
+                                    <p class="text-[10px] text-gray-400 uppercase mt-0.5">${data.role}${incapacitadoBadge}</p>
                                 </div>
                             </div>
                         </td>
@@ -3009,9 +3113,17 @@ async function loadNominaTab(container) {
             const defaultDias = (activeQuincena.includes('Mensual') || activeQuincena.includes('Completo')) ? 30 : 15;
 
             rawEmpleadoData.forEach(emp => {
+                let incDays = 0;
+                const range = getQuincenaDateRange(activeQuincena, selectedMonthYear);
+                if (range) {
+                    incDays = getIncapacitatedDaysInPeriod(emp, range.startDate, range.endDate);
+                } else if (emp.incapacitado) {
+                    incDays = defaultDias;
+                }
+                const defaultDiasTransporte = Math.max(0, defaultDias - incDays);
                 const salarioProrrateado = (emp.salarioBasico / 30) * defaultDias;
                 const auxTransporteMensual = config.auxilioTransporte || 162000;
-                const auxTransporteProrrateado = (auxTransporteMensual / 30) * defaultDias;
+                const auxTransporteProrrateado = (auxTransporteMensual / 30) * defaultDiasTransporte;
                 
                 let baseDeduccion = 0;
                 if (emp.deduccionSobreMinimo && config.salarioMinimo) {
@@ -3037,7 +3149,7 @@ async function loadNominaTab(container) {
                 row.className = `hover:bg-slate-50 transition-colors ${isPaid ? 'bg-emerald-50/20' : ''}`;
                 row.dataset.id = emp.id;
                 row.dataset.diasSalario = defaultDias;
-                row.dataset.diasAuxTransporte = defaultDias;
+                row.dataset.diasAuxTransporte = defaultDiasTransporte;
                 row.dataset.totalPagar = isPaid ? 0 : totalPagar;
 
                 row.innerHTML = `
@@ -3055,7 +3167,7 @@ async function loadNominaTab(container) {
                         <input type="number" value="${defaultDias}" min="0" max="30" class="export-days-salario w-14 text-center border border-slate-200 focus:ring-emerald-500 focus:border-emerald-500 rounded-md p-1 font-bold text-slate-700">
                     </td>
                     <td class="px-4 py-3 text-center">
-                        <input type="number" value="${defaultDias}" min="0" max="30" class="export-days-transport w-14 text-center border border-slate-200 focus:ring-emerald-500 focus:border-emerald-500 rounded-md p-1 font-bold text-slate-700">
+                        <input type="number" value="${defaultDiasTransporte}" min="0" max="30" class="export-days-transport w-14 text-center border border-slate-200 focus:ring-emerald-500 focus:border-emerald-500 rounded-md p-1 font-bold text-slate-700">
                     </td>
                     <td class="px-4 py-3 text-right font-bold text-emerald-600 font-mono">${currencyFormatter.format(emp.bonificacion)}</td>
                     <td class="px-4 py-3 text-right font-medium text-rose-600 font-mono export-deducciones-display">-${currencyFormatter.format(totalDeduccionesLey + deduccionPrestamos)}</td>
@@ -5009,7 +5121,7 @@ async function renderStandardPayrollForm(container, user) {
                 <div class="grid grid-cols-2 gap-3 sm:gap-4">
                     <div>
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Días Aux. Transp.</label>
-                        <input type="number" id="payment-dias-aux-transporte" class="payment-dias-input w-full border-gray-300 rounded-lg p-3 text-center font-bold text-gray-700" value="15" min="0" max="30">
+                        <input type="number" id="payment-dias-aux-transporte" class="payment-dias-input w-full border-gray-300 rounded-lg p-3 text-center font-bold text-gray-700" value="${user.incapacitado ? 0 : 15}" min="0" max="30">
                     </div>
                     <div class="flex items-end pb-3">
                          <span id="payment-aux-transporte-valor" class="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1.5 rounded-full w-full text-center border border-gray-200">
@@ -5167,9 +5279,17 @@ async function renderStandardPayrollForm(container, user) {
         initialD = 30;
     }
     daysInput.value = initialD;
-    transportDaysInput.value = initialD;
+    
+    let initialIncDays = 0;
+    const initialRange = getQuincenaPeriodFromConcept(initialVal);
+    if (initialRange) {
+        initialIncDays = getIncapacitatedDaysInPeriod(user, initialRange.startDate, initialRange.endDate);
+    } else if (user.incapacitado) {
+        initialIncDays = initialD;
+    }
+    transportDaysInput.value = Math.max(0, initialD - initialIncDays);
 
-    // --- LISTENER PARA CAMBIAR DÍAS AUTOMÁTICAMENTE ---
+    // --- LISTENER PARA CAMBIAR DÍAS AUTOMÁTIMAMENTE ---
     conceptoSelect.addEventListener('change', function() {
         const val = this.value;
         
@@ -5183,7 +5303,15 @@ async function renderStandardPayrollForm(container, user) {
         }
         
         daysInput.value = d;
-        transportDaysInput.value = d;
+        
+        let changeIncDays = 0;
+        const changeRange = getQuincenaPeriodFromConcept(val);
+        if (changeRange) {
+            changeIncDays = getIncapacitatedDaysInPeriod(user, changeRange.startDate, changeRange.endDate);
+        } else if (user.incapacitado) {
+            changeIncDays = d;
+        }
+        transportDaysInput.value = Math.max(0, d - changeIncDays);
         
         // Importante: Recalcular totales inmediatamente
         updatePaymentTotal();
@@ -5191,7 +5319,16 @@ async function renderStandardPayrollForm(container, user) {
 
     // Sincronización automática de Días Aux. Transp. al modificar Días Salario
     daysInput.addEventListener('input', function() {
-        transportDaysInput.value = this.value;
+        let currentIncDays = 0;
+        const val = conceptoSelect.value;
+        const range = getQuincenaPeriodFromConcept(val);
+        const inputVal = parseInt(this.value) || 0;
+        if (range) {
+            currentIncDays = getIncapacitatedDaysInPeriod(user, range.startDate, range.endDate);
+        } else if (user.incapacitado) {
+            currentIncDays = inputVal;
+        }
+        transportDaysInput.value = Math.max(0, inputVal - currentIncDays);
     });
 
     // 4. Listeners Generales

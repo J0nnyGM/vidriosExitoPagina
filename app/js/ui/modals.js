@@ -91,6 +91,15 @@ async function openMainModal(type, data = {}) {
         // 3. Restaurar cuerpo interno
         modalBody.className = 'p-6 flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-slate-50/30';
         modalBody.style.padding = '';
+        modalBody.style.removeProperty('padding');
+        modalBody.style.removeProperty('margin');
+
+        if (modalForm) {
+            modalForm.style.padding = '';
+            modalForm.style.margin = '';
+            modalForm.style.removeProperty('padding');
+            modalForm.style.removeProperty('margin');
+        }
         modalBody.parentElement.classList.remove('overflow-hidden');
     }
 
@@ -3085,16 +3094,25 @@ async function openMainModal(type, data = {}) {
 
             if (modalContentDiv) {
                 modalContentDiv.className = '';
-                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-4xl', 'flex', 'flex-col', 'max-h-[85vh]');
-                modalBody.classList.remove('p-0', 'overflow-hidden');
-                modalBody.style.padding = '0';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-4xl', 'flex', 'flex-col', 'max-h-[85vh]', 'overflow-hidden', 'premium-modal-card');
+                modalBody.className = 'flex-grow flex flex-col min-h-0 overflow-hidden p-0';
+                
+                // Force absolute zero padding/margin on modal containers to remove the white border
+                modalBody.style.setProperty('padding', '0px', 'important');
+                modalBody.style.setProperty('margin', '0px', 'important');
+                if (modalForm) {
+                    modalForm.style.setProperty('padding', '0px', 'important');
+                    modalForm.style.setProperty('margin', '0px', 'important');
+                }
+                modalContentDiv.style.setProperty('padding', '0px', 'important');
             }
 
             title = 'Solicitudes de Préstamo Pendientes';
 
             bodyHtml = `
-                <div class="flex flex-col h-full">
-                    <div class="bg-gradient-to-r from-slate-700 to-slate-900 px-6 py-5 shrink-0 rounded-t-xl flex justify-between items-center">
+                <div class="flex-grow flex flex-col min-h-0 text-slate-800 overflow-hidden">
+                    <!-- Header -->
+                    <div class="bg-gradient-to-r from-slate-700 to-slate-900 px-6 py-5 shrink-0 flex justify-between items-center rounded-t-2xl">
                         <div class="flex items-center gap-3 text-white">
                             <div class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-xl border border-white/10">
                                 <i class="fa-solid fa-inbox"></i>
@@ -3107,136 +3125,497 @@ async function openMainModal(type, data = {}) {
                         <button onclick="closeMainModal()" class="text-white/70 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
                     </div>
 
-                    <div id="pending-loans-list" class="p-6 bg-gray-50 flex-grow overflow-y-auto custom-scrollbar space-y-4">
-                        <div class="flex justify-center items-center h-32">
-                            <div class="loader"></div>
+                    <!-- Navigation Tabs -->
+                    <div class="bg-white border-b border-gray-200 px-6 shrink-0 flex gap-6 text-sm font-semibold">
+                        <button type="button" id="tab-btn-pending" class="py-3 px-1 border-b-2 border-indigo-600 text-indigo-600 transition-all focus:outline-none flex items-center gap-2">
+                            <i class="fa-solid fa-inbox"></i> Solicitudes Pendientes
+                        </button>
+                        <button type="button" id="tab-btn-history" class="py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-indigo-600 hover:border-indigo-300 transition-all focus:outline-none flex items-center gap-2">
+                            <i class="fa-solid fa-history"></i> Historial por Colaborador
+                        </button>
+                    </div>
+
+                    <!-- Panels Container -->
+                    <div class="flex-grow overflow-hidden bg-gray-50 flex flex-col min-h-0">
+                        <!-- Panel: Pending Loans -->
+                        <div id="tab-pending-content" class="p-6 flex-grow overflow-y-auto custom-scrollbar space-y-4">
+                            <div class="flex justify-center items-center h-32">
+                                <div class="loader"></div>
+                            </div>
+                        </div>
+
+                        <!-- Panel: Loan History -->
+                        <div id="tab-history-content" class="p-6 flex-grow flex flex-col hidden min-h-0 overflow-hidden">
+                            <!-- Selector -->
+                            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-4 shrink-0">
+                                <label for="history-employee-select" class="block text-xs font-bold text-gray-500 uppercase mb-2">Seleccionar Colaborador</label>
+                                <div class="relative">
+                                    <select id="history-employee-select" class="w-full border border-gray-300 rounded-lg p-2.5 pl-10 text-sm font-bold text-gray-700 bg-white shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer">
+                                        <option value="">-- Seleccione un colaborador --</option>
+                                    </select>
+                                    <i class="fa-solid fa-user absolute left-3.5 top-3.5 text-gray-400"></i>
+                                </div>
+                            </div>
+
+                            <!-- List Container -->
+                            <div id="history-loans-list" class="flex-grow overflow-y-auto custom-scrollbar space-y-4 min-h-0">
+                                <div class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-white/50">
+                                    <div class="bg-white p-4 rounded-full shadow-sm mb-3">
+                                        <i class="fa-solid fa-user-tag text-3xl text-gray-300"></i>
+                                    </div>
+                                    <p class="font-bold text-gray-600">Ningún empleado seleccionado</p>
+                                    <p class="text-sm">Selecciona un colaborador de la lista para ver su historial de préstamos.</p>
+                                </div>
+                            </div>
+
+                            <!-- Pagination -->
+                            <div id="history-pagination" class="mt-4 pt-4 border-t border-gray-200 flex justify-between items-center shrink-0 hidden">
+                                <button type="button" id="btn-history-prev" class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 shadow-sm">
+                                    <i class="fa-solid fa-chevron-left"></i> Anterior
+                                </button>
+                                <span id="history-page-info" class="text-xs font-semibold text-gray-500">Página 1 de 1</span>
+                                <button type="button" id="btn-history-next" class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 shadow-sm">
+                                    Siguiente <i class="fa-solid fa-chevron-right"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             `;
 
             setTimeout(async () => {
-                const listContainer = document.getElementById('pending-loans-list');
+                const tabBtnPending = document.getElementById('tab-btn-pending');
+                const tabBtnHistory = document.getElementById('tab-btn-history');
+                const tabPendingContent = document.getElementById('tab-pending-content');
+                const tabHistoryContent = document.getElementById('tab-history-content');
+                const selectElement = document.getElementById('history-employee-select');
+                const historyListContainer = document.getElementById('history-loans-list');
+                const historyPagination = document.getElementById('history-pagination');
+                const btnHistoryPrev = document.getElementById('btn-history-prev');
+                const btnHistoryNext = document.getElementById('btn-history-next');
+                const historyPageInfo = document.getElementById('history-page-info');
+
                 const fmtMoney = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
-                try {
-                    const q = query(collectionGroup(db, 'loans'), where('status', '==', 'pending'));
-                    const snapshot = await getDocs(q);
+                // --- TAB SWITCHING LOGIC ---
+                if (tabBtnPending && tabBtnHistory) {
+                    tabBtnPending.addEventListener('click', () => {
+                        tabBtnPending.className = "py-3 px-1 border-b-2 border-indigo-600 text-indigo-600 transition-all focus:outline-none flex items-center gap-2";
+                        tabBtnHistory.className = "py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-indigo-600 hover:border-indigo-300 transition-all focus:outline-none flex items-center gap-2";
+                        tabPendingContent.classList.remove('hidden');
+                        tabHistoryContent.classList.add('hidden');
+                    });
+                    tabBtnHistory.addEventListener('click', () => {
+                        tabBtnHistory.className = "py-3 px-1 border-b-2 border-indigo-600 text-indigo-600 transition-all focus:outline-none flex items-center gap-2";
+                        tabBtnPending.className = "py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-indigo-600 hover:border-indigo-300 transition-all focus:outline-none flex items-center gap-2";
+                        tabHistoryContent.classList.remove('hidden');
+                        tabPendingContent.classList.add('hidden');
+                    });
+                }
 
-                    if (snapshot.empty) {
-                        listContainer.innerHTML = `
-                            <div class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-white/50">
-                                <div class="bg-white p-4 rounded-full shadow-sm mb-3">
-                                    <i class="fa-solid fa-check text-3xl text-emerald-500"></i>
-                                </div>
-                                <p class="font-bold text-gray-600 text-lg">¡Todo al día!</p>
-                                <p class="text-sm">No hay solicitudes por revisar.</p>
-                            </div>`;
-                        return;
-                    }
+                // --- LOAD PENDING LOANS ---
+                const loadPendingLoans = async () => {
+                    try {
+                        const q = query(collectionGroup(db, 'loans'), where('status', '==', 'pending'));
+                        const snapshot = await getDocs(q);
 
-                    listContainer.innerHTML = '';
-
-                    if (!window.pendingLoansMap) {
-                        window.pendingLoansMap = new Map();
-                    }
-                    window.pendingLoansMap.clear();
-
-                    for (const loanDoc of snapshot.docs) {
-                        const loan = loanDoc.data();
-                        const userRef = loanDoc.ref.parent.parent;
-                        const userSnap = await getDoc(userRef);
-
-                        let userData = {
-                            firstName: 'Usuario', lastName: 'Desconocido',
-                            bankName: '---', accountType: '', accountNumber: '---',
-                            photoURL: null
-                        };
-                        if (userSnap.exists()) userData = userSnap.data();
-
-                        const userName = `${userData.firstName} ${userData.lastName}`;
-                        const dateObj = loan.date ? new Date(loan.date) : new Date();
-                        const dateStr = dateObj.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
-
-                        // Generador de avatar si no hay foto
-                        const userPhoto = userData.photoURL || `https://ui-avatars.com/api/?name=${userData.firstName}+${userData.lastName}&background=random&color=fff`;
-
-                        // Guardar datos en el mapa global usando el ID del préstamo
-                        const loanId = loanDoc.id;
-                        window.pendingLoansMap.set(loanId, {
-                            id: loanId, uid: userRef.id, userName: userName,
-                            amount: loan.amount, date: loan.date,
-                            description: loan.description || 'Sin motivo especificado',
-                            installments: loan.installments || 1,
-                            bankName: userData.bankName || 'No registrado',
-                            accountType: userData.accountType || '',
-                            accountNumber: userData.accountNumber || '---',
-                            userPhoto: userPhoto
-                        });
-
-                        // Tarjeta
-                        const card = document.createElement('div');
-                        card.className = "bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all overflow-hidden group mb-4";
-
-                        card.innerHTML = `
-                            <div class="px-5 py-3 border-b border-gray-100 bg-slate-50/50 flex justify-between items-center">
-                                <div class="flex items-center gap-3">
-                                    <img src="${userPhoto}" alt="${userName}" class="w-8 h-8 rounded-full object-cover border border-slate-200 shadow-sm">
-                                    <div>
-                                        <h4 class="text-sm font-bold text-gray-800 leading-tight">${userName}</h4>
-                                        <p class="text-[10px] text-gray-500">Solicitado el ${dateStr}</p>
+                        if (snapshot.empty) {
+                            tabPendingContent.innerHTML = `
+                                <div class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-white/50">
+                                    <div class="bg-white p-4 rounded-full shadow-sm mb-3">
+                                        <i class="fa-solid fa-check text-3xl text-emerald-500"></i>
                                     </div>
-                                </div>
-                                <span class="px-2.5 py-1 bg-amber-100 text-amber-700 text-[10px] font-bold uppercase tracking-wider rounded-md border border-amber-200 flex items-center gap-1">
-                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Pendiente
-                                </span>
-                            </div>
+                                    <p class="font-bold text-gray-600 text-lg">¡Todo al día!</p>
+                                    <p class="text-sm">No hay solicitudes por revisar.</p>
+                                </div>`;
+                            return;
+                        }
 
-                            <div class="grid grid-cols-1 md:grid-cols-2">
-                                <div class="p-5 flex flex-col justify-between">
-                                    <div>
-                                        <p class="text-xs text-gray-400 uppercase font-bold tracking-wide mb-1">Monto Solicitado</p>
-                                        <p class="text-2xl font-black text-gray-800 mb-3 tracking-tight">${fmtMoney.format(loan.amount || 0)} <span class="text-xs font-normal text-gray-400 align-middle">(${loan.installments || 1} pagos)</span></p>
-                                        
-                                        <div class="bg-gray-50 p-3 rounded-lg border border-gray-100 relative">
-                                            <i class="fa-solid fa-quote-left text-gray-300 absolute top-2 left-2 text-xs"></i>
-                                            <p class="text-xs text-gray-600 italic leading-relaxed pl-4">${loan.description || 'Sin motivo especificado'}</p>
+                        tabPendingContent.innerHTML = '';
+
+                        if (!window.pendingLoansMap) {
+                            window.pendingLoansMap = new Map();
+                        }
+                        window.pendingLoansMap.clear();
+
+                        for (const loanDoc of snapshot.docs) {
+                            const loan = loanDoc.data();
+                            const userRef = loanDoc.ref.parent.parent;
+                            const userSnap = await getDoc(userRef);
+
+                            let userData = {
+                                firstName: 'Usuario', lastName: 'Desconocido',
+                                bankName: '---', accountType: '', accountNumber: '---',
+                                photoURL: null
+                            };
+                            if (userSnap.exists()) userData = userSnap.data();
+
+                            const userName = `${userData.firstName} ${userData.lastName}`;
+                            const dateObj = loan.date ? new Date(loan.date) : new Date();
+                            const dateStr = dateObj.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+
+                            const userPhoto = userData.photoURL || `https://ui-avatars.com/api/?name=${userData.firstName}+${userData.lastName}&background=random&color=fff`;
+
+                            const loanId = loanDoc.id;
+                            window.pendingLoansMap.set(loanId, {
+                                id: loanId, uid: userRef.id, userName: userName,
+                                amount: loan.amount, date: loan.date,
+                                description: loan.description || 'Sin motivo especificado',
+                                installments: loan.installments || 1,
+                                bankName: userData.bankName || 'No registrado',
+                                accountType: userData.accountType || '',
+                                accountNumber: userData.accountNumber || '---',
+                                userPhoto: userPhoto
+                            });
+
+                            const card = document.createElement('div');
+                            card.className = "bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all overflow-hidden group mb-4";
+
+                            card.innerHTML = `
+                                <div class="px-5 py-3 border-b border-gray-100 bg-slate-50/50 flex justify-between items-center">
+                                    <div class="flex items-center gap-3">
+                                        <img src="${userPhoto}" alt="${userName}" class="w-8 h-8 rounded-full object-cover border border-slate-200 shadow-sm">
+                                        <div>
+                                            <h4 class="text-sm font-bold text-gray-800 leading-tight">${userName}</h4>
+                                            <p class="text-[10px] text-gray-500">Solicitado el ${dateStr}</p>
                                         </div>
                                     </div>
+                                    <span class="px-2.5 py-1 bg-amber-100 text-amber-700 text-[10px] font-bold uppercase tracking-wider rounded-md border border-amber-200 flex items-center gap-1">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Pendiente
+                                    </span>
                                 </div>
-                                
-                                <div class="bg-indigo-50/50 p-5 border-t md:border-t-0 md:border-l border-indigo-100 flex flex-col justify-center relative overflow-hidden">
-                                    <i class="fa-solid fa-building-columns absolute bottom-[-10px] right-[-10px] text-6xl text-indigo-100 opacity-50 pointer-events-none"></i>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2">
+                                    <div class="p-5 flex flex-col justify-between">
+                                        <div>
+                                            <p class="text-xs text-gray-400 uppercase font-bold tracking-wide mb-1">Monto Solicitado</p>
+                                            <p class="text-2xl font-black text-gray-800 mb-3 tracking-tight">${fmtMoney.format(loan.amount || 0)} <span class="text-xs font-normal text-gray-400 align-middle">(${loan.installments || 1} pagos)</span></p>
+                                            
+                                            <div class="bg-gray-50 p-3 rounded-lg border border-gray-100 relative">
+                                                <i class="fa-solid fa-quote-left text-gray-300 absolute top-2 left-2 text-xs"></i>
+                                                <p class="text-xs text-gray-600 italic leading-relaxed pl-4">${loan.description || 'Sin motivo especificado'}</p>
+                                            </div>
+                                        </div>
+                                    </div>
                                     
-                                    <div class="relative z-10">
-                                        <p class="text-[10px] text-indigo-400 uppercase font-bold mb-2">Cuenta de Destino</p>
-                                        <div class="flex items-start gap-3">
-                                            <div class="p-2 bg-white rounded-lg text-indigo-600 shadow-sm border border-indigo-50"><i class="fa-solid fa-money-bill-transfer text-lg"></i></div>
-                                            <div class="flex-1 min-w-0">
-                                                <p class="text-sm font-bold text-indigo-900 truncate">${userData.bankName}</p>
-                                                <p class="text-xs text-indigo-600 mb-1">${userData.accountType}</p>
-                                                <div class="flex items-center gap-2 bg-white px-2 py-1 rounded border border-indigo-100 w-fit shadow-sm cursor-pointer hover:bg-indigo-50 transition-colors" onclick="navigator.clipboard.writeText('${userData.accountNumber}'); window.showToast('Cuenta copiada', 'success')">
-                                                    <span class="font-mono text-xs font-bold text-gray-600 select-all">${userData.accountNumber}</span>
-                                                    <i class="fa-regular fa-copy text-[10px] text-indigo-400"></i>
+                                    <div class="bg-indigo-50/50 p-5 border-t md:border-t-0 md:border-l border-indigo-100 flex flex-col justify-center relative overflow-hidden">
+                                        <i class="fa-solid fa-building-columns absolute bottom-[-10px] right-[-10px] text-6xl text-indigo-100 opacity-50 pointer-events-none"></i>
+                                        
+                                        <div class="relative z-10">
+                                            <p class="text-[10px] text-indigo-400 uppercase font-bold mb-2">Cuenta de Destino</p>
+                                            <div class="flex items-start gap-3">
+                                                <div class="p-2 bg-white rounded-lg text-indigo-600 shadow-sm border border-indigo-50"><i class="fa-solid fa-money-bill-transfer text-lg"></i></div>
+                                                <div class="flex-1 min-w-0">
+                                                    <p class="text-sm font-bold text-indigo-900 truncate">${userData.bankName}</p>
+                                                    <p class="text-xs text-indigo-600 mb-1">${userData.accountType}</p>
+                                                    <div class="flex items-center gap-2 bg-white px-2 py-1 rounded border border-indigo-100 w-fit shadow-sm cursor-pointer hover:bg-indigo-50 transition-colors" onclick="navigator.clipboard.writeText('${userData.accountNumber}'); window.showToast('Cuenta copiada', 'success')">
+                                                        <span class="font-mono text-xs font-bold text-gray-600 select-all">${userData.accountNumber}</span>
+                                                        <i class="fa-regular fa-copy text-[10px] text-indigo-400"></i>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
+
+                                <div class="px-5 py-3 bg-gray-50 border-t border-gray-200 flex justify-end">
+                                    <button type="button" data-action="open-loan-review" data-loan-id="${loanId}" 
+                                        class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm hover:shadow-md transition-all flex items-center gap-2 transform active:scale-95">
+                                        Revisar y Aprobar <i class="fa-solid fa-arrow-right"></i>
+                                    </button>
+                                </div>
+                            `;
+                            tabPendingContent.appendChild(card);
+                        }
+                    } catch (error) {
+                        console.error("Error cargando préstamos:", error);
+                        tabPendingContent.innerHTML = `<div class="p-6 text-center text-red-500 bg-red-50 rounded-xl border border-red-100">Error al cargar datos.</div>`;
+                    }
+                };
+
+                await loadPendingLoans();
+
+                // --- POPULATE EMPLOYEE SELECTOR ---
+                if (selectElement && window.usersMap) {
+                    const activeUsers = Array.from(window.usersMap.entries())
+                        .filter(([id, u]) => u.status === 'active')
+                        .sort((a, b) => {
+                            const nameA = `${a[1].firstName} ${a[1].lastName}`.toLowerCase();
+                            const nameB = `${b[1].firstName} ${b[1].lastName}`.toLowerCase();
+                            return nameA.localeCompare(nameB);
+                        });
+                    
+                    activeUsers.forEach(([id, u]) => {
+                        const opt = document.createElement('option');
+                        opt.value = id;
+                        opt.textContent = `${u.firstName} ${u.lastName}`;
+                        selectElement.appendChild(opt);
+                    });
+                }
+
+                // --- LOAN HISTORY LOGIC ---
+                let historyLoans = [];
+                let currentHistoryPage = 1;
+                const historyPageSize = 3;
+
+                const renderHistoryPage = (userData) => {
+                    if (!historyLoans.length) {
+                        historyListContainer.innerHTML = `
+                            <div class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-white/50">
+                                <div class="bg-white p-4 rounded-full shadow-sm mb-3">
+                                    <i class="fa-solid fa-piggy-bank text-3xl text-gray-300"></i>
+                                </div>
+                                <p class="font-bold text-gray-600">Sin historial de préstamos</p>
+                                <p class="text-sm">Este colaborador no registra solicitudes ni créditos.</p>
+                            </div>`;
+                        historyPagination.classList.add('hidden');
+                        return;
+                    }
+
+                    const totalPages = Math.ceil(historyLoans.length / historyPageSize);
+                    if (currentHistoryPage > totalPages) currentHistoryPage = totalPages;
+                    if (currentHistoryPage < 1) currentHistoryPage = 1;
+
+                    const startIdx = (currentHistoryPage - 1) * historyPageSize;
+                    const pageLoans = historyLoans.slice(startIdx, startIdx + historyPageSize);
+
+                    historyListContainer.innerHTML = '';
+
+                    pageLoans.forEach(loanDoc => {
+                        const loan = loanDoc.data;
+                        const loanId = loanDoc.id;
+                        const originalAmount = loan.amount || 0;
+                        const currentBalance = loan.balance || 0;
+                        const paidAmount = originalAmount - currentBalance;
+                        
+                        let progress = 0;
+                        if (originalAmount > 0) {
+                            progress = (paidAmount / originalAmount) * 100;
+                        }
+
+                        let statusConfig = { label: 'Desconocido', color: 'text-gray-700', bg: 'bg-gray-50 border-gray-200', icon: 'fa-question', barColor: 'bg-gray-400' };
+
+                        if (loan.status === 'active') {
+                            statusConfig = { label: 'Activo (Debiendo)', color: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-200', icon: 'fa-circle-play', barColor: 'bg-indigo-500' };
+                        } else if (loan.status === 'paid') {
+                            statusConfig = { label: 'Pagado', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200', icon: 'fa-circle-check', barColor: 'bg-emerald-500' };
+                            progress = 100;
+                        } else if (loan.status === 'pending') {
+                            statusConfig = { label: 'Pendiente', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200', icon: 'fa-clock', barColor: 'bg-amber-400' };
+                        } else if (loan.status === 'rejected') {
+                            statusConfig = { label: 'Rechazado', color: 'text-red-700', bg: 'bg-red-50 border-red-200', icon: 'fa-ban', barColor: 'bg-red-400' };
+                        }
+
+                        const dateObj = loan.date ? new Date(loan.date) : new Date();
+                        const dateStr = dateObj.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
+
+                        const card = document.createElement('div');
+                        card.className = `bg-white rounded-xl border ${statusConfig.bg} shadow-sm overflow-hidden mb-4 transition-all hover:shadow-md`;
+
+                        let actionHtml = '';
+                        if (loan.status === 'pending') {
+                            actionHtml = `
+                                <div class="px-5 py-3 bg-gray-50 border-t border-gray-150 flex justify-end">
+                                    <button type="button" data-action="open-loan-review" data-loan-id="${loanId}"
+                                        class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm hover:shadow-md transition-all flex items-center gap-2 transform active:scale-95">
+                                        Revisar y Aprobar <i class="fa-solid fa-arrow-right"></i>
+                                    </button>
+                                </div>
+                            `;
+                        }
+
+                        let notesHtml = '';
+                        if (loan.adminNotes) {
+                            notesHtml = `
+                                <div class="mt-3 p-3 bg-gray-50 border border-gray-100 rounded-lg text-xs text-gray-600">
+                                    <span class="font-bold text-gray-700 block mb-0.5">Nota de Administración:</span>
+                                    "${loan.adminNotes}"
+                                </div>
+                            `;
+                        }
+
+                        card.innerHTML = `
+                            <div class="px-5 py-3 border-b border-gray-100 bg-slate-50/50 flex justify-between items-center">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] font-bold uppercase tracking-wider ${statusConfig.color} bg-white/60 px-2 py-0.5 rounded border border-black/5 flex items-center gap-1">
+                                        <i class="fa-solid ${statusConfig.icon}"></i> ${statusConfig.label}
+                                    </span>
+                                    <span class="text-[10px] text-gray-500 font-medium">${dateStr}</span>
+                                </div>
+                                <span class="text-xs font-black text-gray-800">${fmtMoney.format(originalAmount)}</span>
                             </div>
 
-                            <div class="px-5 py-3 bg-gray-50 border-t border-gray-200 flex justify-end">
-                                <button type="button" data-action="open-loan-review" data-loan-id="${loanId}" 
-                                    class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm hover:shadow-md transition-all flex items-center gap-2 transform active:scale-95">
-                                    Revisar y Aprobar <i class="fa-solid fa-arrow-right"></i>
-                                </button>
+                            <div class="p-5 space-y-3">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="text-sm font-bold text-gray-800 leading-tight">${loan.description || 'Sin motivo especificado'}</p>
+                                        <p class="text-[10px] text-gray-500 mt-0.5">Pactado a ${loan.installments || 1} cuotas</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="text-[10px] text-gray-400 uppercase font-bold">Saldo Pendiente</p>
+                                        <p class="text-sm font-black ${currentBalance > 0 ? 'text-red-650' : 'text-emerald-650'}">${fmtMoney.format(currentBalance)}</p>
+                                    </div>
+                                </div>
+
+                                ${loan.status === 'active' || loan.status === 'paid' ? `
+                                <div class="relative z-10 pt-1">
+                                    <div class="flex justify-between text-[10px] mb-1 font-medium text-gray-500">
+                                        <span class="${statusConfig.color} font-bold">${Math.round(progress)}% Pagado</span>
+                                        <span>Restante: ${fmtMoney.format(currentBalance)}</span>
+                                    </div>
+                                    <div class="w-full bg-gray-100 rounded-full h-1.5 border border-black/5">
+                                        <div class="${statusConfig.barColor} h-1.5 rounded-full transition-all duration-500" style="width: ${progress}%"></div>
+                                    </div>
+                                </div>
+                                ` : ''}
+
+                                ${notesHtml}
                             </div>
+                            ${actionHtml}
                         `;
-                        listContainer.appendChild(card);
-                    }
-                } catch (error) {
-                    console.error("Error cargando préstamos:", error);
-                    listContainer.innerHTML = `<div class="p-6 text-center text-red-500 bg-red-50 rounded-xl border border-red-100">Error al cargar datos.</div>`;
+                        historyListContainer.appendChild(card);
+                    });
+
+                    historyPageInfo.textContent = `Página ${currentHistoryPage} de ${totalPages}`;
+                    btnHistoryPrev.disabled = currentHistoryPage === 1;
+                    btnHistoryNext.disabled = currentHistoryPage === totalPages;
+                    historyPagination.classList.remove('hidden');
+                };
+
+                // --- ON SELECT EMPLOYEE ---
+                if (selectElement) {
+                    selectElement.addEventListener('change', async (e) => {
+                        const userId = e.target.value;
+                        if (!userId) {
+                            historyLoans = [];
+                            currentHistoryPage = 1;
+                            historyListContainer.innerHTML = `
+                                <div class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-white/50">
+                                    <div class="bg-white p-4 rounded-full shadow-sm mb-3">
+                                        <i class="fa-solid fa-user-tag text-3xl text-gray-300"></i>
+                                    </div>
+                                    <p class="font-bold text-gray-600">Ningún empleado seleccionado</p>
+                                    <p class="text-sm">Selecciona un colaborador de la lista para ver su historial de préstamos.</p>
+                                </div>`;
+                            historyPagination.classList.add('hidden');
+                            return;
+                        }
+
+                        historyListContainer.innerHTML = `
+                            <div class="flex justify-center items-center h-32">
+                                <div class="loader"></div>
+                            </div>`;
+                        historyPagination.classList.add('hidden');
+
+                        try {
+                            const uData = window.usersMap.get(userId);
+                            const q = query(collection(db, "users", userId, "loans"));
+                            const snapshot = await getDocs(q);
+
+                            historyLoans = [];
+                            snapshot.forEach(doc => {
+                                historyLoans.push({
+                                    id: doc.id,
+                                    data: doc.data()
+                                });
+                            });
+
+                            // Custom sort: active status first, then date (newest first)
+                            historyLoans.sort((a, b) => {
+                                if (a.data.status === 'active' && b.data.status !== 'active') return -1;
+                                if (a.data.status !== 'active' && b.data.status === 'active') return 1;
+
+                                const dateA = a.data.date ? new Date(a.data.date) : new Date(0);
+                                const dateB = b.data.date ? new Date(b.data.date) : new Date(0);
+                                return dateB - dateA;
+                            });
+
+                            // Populate mapping for review window lookup if needed
+                            if (!window.pendingLoansMap) {
+                                window.pendingLoansMap = new Map();
+                            }
+                            
+                            const userName = `${uData?.firstName || 'Usuario'} ${uData?.lastName || 'Desconocido'}`;
+                            const userPhoto = uData?.photoURL || `https://ui-avatars.com/api/?name=${uData?.firstName || 'Usuario'}+${uData?.lastName || 'Desconocido'}&background=random&color=fff`;
+                            
+                            historyLoans.forEach(loanDoc => {
+                                const loan = loanDoc.data;
+                                const loanId = loanDoc.id;
+                                if (loan.status === 'pending') {
+                                    window.pendingLoansMap.set(loanId, {
+                                        id: loanId, uid: userId, userName: userName,
+                                        amount: loan.amount, date: loan.date,
+                                        description: loan.description || 'Sin motivo especificado',
+                                        installments: loan.installments || 1,
+                                        bankName: uData?.bankName || 'No registrado',
+                                        accountType: uData?.accountType || '',
+                                        accountNumber: uData?.accountNumber || '---',
+                                        userPhoto: userPhoto
+                                    });
+                                }
+                            });
+
+                            currentHistoryPage = 1;
+                            
+                            const userDataObj = {
+                                uid: userId,
+                                firstName: uData?.firstName || 'Usuario',
+                                lastName: uData?.lastName || 'Desconocido',
+                                bankName: uData?.bankName || 'No registrado',
+                                accountType: uData?.accountType || '',
+                                accountNumber: uData?.accountNumber || '---',
+                                photoURL: userPhoto
+                            };
+
+                            renderHistoryPage(userDataObj);
+
+                        } catch (error) {
+                            console.error("Error cargando historial de préstamos:", error);
+                            historyListContainer.innerHTML = `<div class="p-6 text-center text-red-500 bg-red-50 rounded-xl border border-red-100">Error al cargar historial.</div>`;
+                        }
+                    });
+                }
+
+                // --- PAGINATION EVENT LISTENERS ---
+                if (btnHistoryPrev && btnHistoryNext) {
+                    btnHistoryPrev.addEventListener('click', () => {
+                        if (currentHistoryPage > 1) {
+                            currentHistoryPage--;
+                            const userId = selectElement.value;
+                            const uData = window.usersMap.get(userId);
+                            const userPhoto = uData?.photoURL || `https://ui-avatars.com/api/?name=${uData?.firstName || 'Usuario'}+${uData?.lastName || 'Desconocido'}&background=random&color=fff`;
+                            const userDataObj = {
+                                uid: userId,
+                                firstName: uData?.firstName || 'Usuario',
+                                lastName: uData?.lastName || 'Desconocido',
+                                bankName: uData?.bankName || 'No registrado',
+                                accountType: uData?.accountType || '',
+                                accountNumber: uData?.accountNumber || '---',
+                                photoURL: userPhoto
+                            };
+                            renderHistoryPage(userDataObj);
+                        }
+                    });
+
+                    btnHistoryNext.addEventListener('click', () => {
+                        const totalPages = Math.ceil(historyLoans.length / historyPageSize);
+                        if (currentHistoryPage < totalPages) {
+                            currentHistoryPage++;
+                            const userId = selectElement.value;
+                            const uData = window.usersMap.get(userId);
+                            const userPhoto = uData?.photoURL || `https://ui-avatars.com/api/?name=${uData?.firstName || 'Usuario'}+${uData?.lastName || 'Desconocido'}&background=random&color=fff`;
+                            const userDataObj = {
+                                uid: userId,
+                                firstName: uData?.firstName || 'Usuario',
+                                lastName: uData?.lastName || 'Desconocido',
+                                bankName: uData?.bankName || 'No registrado',
+                                accountType: uData?.accountType || '',
+                                accountNumber: uData?.accountNumber || '---',
+                                photoURL: userPhoto
+                            };
+                            renderHistoryPage(userDataObj);
+                        }
+                    });
                 }
             }, 100);
             break;
@@ -5267,10 +5646,7 @@ async function openMainModal(type, data = {}) {
                                         </div>
                                         <div>
                                             <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Salario Básico</label>
-                                            <div class="relative">
-                                                <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 font-bold">$</span>
-                                                <input type="text" id="user-salarioBasico" name="salarioBasico" class="currency-input w-full pl-7 border border-slate-300 rounded-lg p-2.5 text-sm font-mono font-bold text-slate-700 focus:border-slate-500 outline-none" value="${data.salarioBasico || 0}">
-                                            </div>
+                                            <input type="text" id="user-salarioBasico" name="salarioBasico" class="currency-input w-full border border-slate-300 rounded-lg p-2.5 text-sm font-mono font-bold text-slate-700 focus:border-slate-500 outline-none" value="${data.salarioBasico || 0}">
                                         </div>
                                     </div>
 
@@ -5418,6 +5794,844 @@ async function openMainModal(type, data = {}) {
                 }
             }, 150);
             break;
+
+        case 'report-incapacidad': {
+            const isAdmin = window.currentUserRole === 'admin';
+            title = 'Reportar Incapacidad Médica';
+            btnText = 'Enviar Reporte';
+            btnClass = 'bg-red-600 hover:bg-red-700 text-white';
+
+            if (isAdmin) {
+                if (document.getElementById('modal-title')) {
+                    document.getElementById('modal-title').parentElement.style.display = 'none';
+                }
+                if (modalContentDiv) {
+                    modalContentDiv.className = '';
+                    modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-4xl', 'flex', 'flex-col', 'max-h-[85vh]', 'overflow-hidden', 'premium-modal-card');
+                    modalBody.className = 'flex-grow flex flex-col min-h-0 overflow-hidden p-0';
+                    modalBody.style.setProperty('padding', '0px', 'important');
+                    modalBody.style.setProperty('margin', '0px', 'important');
+                    if (modalForm) {
+                        modalForm.style.setProperty('padding', '0px', 'important');
+                        modalForm.style.setProperty('margin', '0px', 'important');
+                    }
+                    modalContentDiv.style.setProperty('padding', '0px', 'important');
+                }
+            } else {
+                modalContentDiv.classList.add('max-w-xl');
+            }
+
+            modalForm.dataset.type = 'report-incapacidad';
+
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            if (isAdmin) {
+                bodyHtml = `
+                    <div class="flex-grow flex flex-col min-h-0 text-slate-800 overflow-hidden">
+                        <!-- Header -->
+                        <div class="bg-gradient-to-r from-red-700 to-red-900 px-6 py-5 shrink-0 flex justify-between items-center rounded-t-2xl">
+                            <div class="flex items-center gap-3 text-white">
+                                <div class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-xl border border-white/10">
+                                    <i class="fa-solid fa-notes-medical"></i>
+                                </div>
+                                <div>
+                                    <h2 class="text-lg font-bold">Reportar Incapacidad Médica</h2>
+                                    <p class="text-red-200 text-xs font-medium">Gestión y control de incapacidades</p>
+                                </div>
+                            </div>
+                            <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+                        </div>
+
+                        <!-- Navigation Tabs -->
+                        <div class="bg-white border-b border-gray-200 px-6 shrink-0 flex gap-6 text-sm font-semibold">
+                            <button type="button" id="tab-btn-register" class="py-3 px-1 border-b-2 border-red-650 text-red-650 transition-all focus:outline-none flex items-center gap-2">
+                                <i class="fa-solid fa-notes-medical"></i> Registrar Incapacidad
+                            </button>
+                            <button type="button" id="tab-btn-history" class="py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-red-655 hover:border-red-300 transition-all focus:outline-none flex items-center gap-2">
+                                <i class="fa-solid fa-history"></i> Historial por Colaborador
+                            </button>
+                        </div>
+
+                        <!-- Panels Container -->
+                        <div class="flex-grow overflow-hidden bg-gray-50 flex flex-col min-h-0">
+                            <!-- Panel: Register Incapacidad -->
+                            <div id="tab-register-content" class="p-6 flex-grow overflow-y-auto custom-scrollbar space-y-4">
+                                <p class="text-xs text-gray-500 bg-red-50/50 p-3.5 rounded-xl border border-red-100 flex items-start gap-2.5">
+                                    <i class="fa-solid fa-circle-info text-red-500 mt-0.5 text-sm"></i>
+                                    <span>Registra la incapacidad médica del colaborador seleccionado subiendo los justificantes correspondientes. El sistema desactivará sus recordatorios y aplicará los ajustes de nómina automáticos de forma inmediata.</span>
+                                </p>
+
+                                <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-2 flex items-center">
+                                        <i class="fa-solid fa-user-check mr-2 text-red-500"></i> Seleccionar Colaborador
+                                    </h4>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Colaborador <span class="text-red-500">*</span></label>
+                                        <div class="relative">
+                                            <select name="targetEmployeeId" id="register-employee-select" required class="w-full border border-gray-300 rounded-lg p-2.5 pl-10 text-sm font-bold text-gray-700 bg-white shadow-sm focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none cursor-pointer">
+                                                <option value="">-- Seleccione un colaborador --</option>
+                                            </select>
+                                            <i class="fa-solid fa-user absolute left-3.5 top-3.5 text-gray-400"></i>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-2 flex items-center">
+                                        <i class="fa-solid fa-circle-info mr-2 text-red-500"></i> Datos de la Incapacidad
+                                    </h4>
+                                    
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 mb-1">Fecha de Inicio <span class="text-red-500">*</span></label>
+                                            <input type="date" name="startDate" value="${todayStr}" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-gray-50 focus:bg-white transition-all placeholder-gray-400 font-medium text-gray-800">
+                                        </div>
+
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 mb-1">Días de Duración <span class="text-red-500">*</span></label>
+                                            <input type="number" name="durationDays" min="1" placeholder="Ej: 3" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-gray-50 focus:bg-white transition-all placeholder-gray-400 font-medium text-gray-800">
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Centro Médico / EPS <span class="text-red-500">*</span></label>
+                                        <input type="text" name="medicalCenter" placeholder="Ej: EPS Sanitas / IPS Sur" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-gray-50 focus:bg-white transition-all placeholder-gray-400 font-medium text-gray-800">
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 mb-1">Diagnóstico / Motivo <span class="text-red-500">*</span></label>
+                                        <textarea name="reason" rows="3" placeholder="Describe brevemente el diagnóstico o motivo..." required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-gray-50 focus:bg-white transition-all placeholder-gray-400 font-medium text-gray-800"></textarea>
+                                    </div>
+                                </div>
+
+                                <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-2 flex items-center">
+                                        <i class="fa-solid fa-paperclip mr-2 text-red-500"></i> Documentos Adjuntos Obligatorios
+                                    </h4>
+
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 mb-1.5">Evidencia de Incapacidad <span class="text-red-500">*</span></label>
+                                            <div id="incapacidad-drop-zone" class="border-2 border-dashed border-gray-300 hover:border-red-400 rounded-xl p-4 text-center cursor-pointer transition-colors bg-gray-50/50">
+                                                <input type="file" id="incapacidad-file-input" accept="image/*,application/pdf" class="hidden">
+                                                <div id="incapacidad-drop-zone-text" class="space-y-1">
+                                                    <i class="fa-solid fa-cloud-arrow-up text-2xl text-red-400"></i>
+                                                    <p class="text-xs font-bold text-gray-600">Subir evidencia</p>
+                                                    <p class="text-[9px] text-gray-400">JPG, PNG, PDF (Máx. 5MB)</p>
+                                                </div>
+                                                <div id="incapacidad-file-preview" class="hidden flex items-center justify-between gap-2 p-1.5 bg-white rounded-lg border border-gray-200 mt-2">
+                                                    <div id="incapacidad-preview-icon" class="text-xl text-red-500"><i class="fa-solid fa-file-pdf"></i></div>
+                                                    <div class="text-left overflow-hidden flex-1">
+                                                        <p id="incapacidad-preview-name" class="text-[11px] font-bold text-gray-750 truncate">archivo.pdf</p>
+                                                        <p id="incapacidad-preview-size" class="text-[9px] text-gray-400">0 KB</p>
+                                                    </div>
+                                                    <button type="button" id="btn-remove-incapacidad-file" class="w-6 h-6 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-655 transition-colors">
+                                                        <i class="fa-solid fa-trash-can text-xs"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 mb-1.5">Constancia de Urgencias <span class="text-red-500">*</span></label>
+                                            <div id="certificado-drop-zone" class="border-2 border-dashed border-gray-300 hover:border-red-400 rounded-xl p-4 text-center cursor-pointer transition-colors bg-gray-50/50">
+                                                <input type="file" id="certificado-file-input" accept="image/*,application/pdf" class="hidden">
+                                                <div id="certificado-drop-zone-text" class="space-y-1">
+                                                    <i class="fa-solid fa-cloud-arrow-up text-2xl text-red-400"></i>
+                                                    <p class="text-xs font-bold text-gray-600">Subir certificado</p>
+                                                    <p class="text-[9px] text-gray-400">JPG, PNG, PDF (Máx. 5MB)</p>
+                                                </div>
+                                                <div id="certificado-file-preview" class="hidden flex items-center justify-between gap-2 p-1.5 bg-white rounded-lg border border-gray-200 mt-2">
+                                                    <div id="certificado-preview-icon" class="text-xl text-red-500"><i class="fa-solid fa-file-pdf"></i></div>
+                                                    <div class="text-left overflow-hidden flex-1">
+                                                        <p id="certificado-preview-name" class="text-[11px] font-bold text-gray-750 truncate">archivo.pdf</p>
+                                                        <p id="certificado-preview-size" class="text-[9px] text-gray-400">0 KB</p>
+                                                    </div>
+                                                    <button type="button" id="btn-remove-certificado-file" class="w-6 h-6 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-655 transition-colors">
+                                                        <i class="fa-solid fa-trash-can text-xs"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Panel: Incapacidades History -->
+                            <div id="tab-history-content" class="p-6 flex-grow flex flex-col hidden min-h-0 overflow-hidden">
+                                <!-- Selector -->
+                                <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-4 shrink-0">
+                                    <label for="history-employee-select" class="block text-xs font-bold text-gray-500 uppercase mb-2">Seleccionar Colaborador</label>
+                                    <div class="relative">
+                                        <select id="history-employee-select" class="w-full border border-gray-300 rounded-lg p-2.5 pl-10 text-sm font-bold text-gray-700 bg-white shadow-sm focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none cursor-pointer">
+                                            <option value="">-- Seleccione un colaborador --</option>
+                                        </select>
+                                        <i class="fa-solid fa-user absolute left-3.5 top-3.5 text-gray-400"></i>
+                                    </div>
+                                </div>
+
+                                <!-- List Container -->
+                                <div id="history-incapacidades-list" class="flex-grow overflow-y-auto custom-scrollbar space-y-4 min-h-0">
+                                    <div class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-white/50">
+                                        <div class="bg-white p-4 rounded-full shadow-sm mb-3">
+                                            <i class="fa-solid fa-user-tag text-3xl text-gray-300"></i>
+                                        </div>
+                                        <p class="font-bold text-gray-600">Ningún empleado seleccionado</p>
+                                        <p class="text-sm">Selecciona un colaborador de la lista para ver su historial de incapacidades.</p>
+                                    </div>
+                                </div>
+
+                                <!-- Pagination -->
+                                <div id="history-pagination" class="mt-4 pt-4 border-t border-gray-200 flex justify-between items-center shrink-0 hidden">
+                                    <button type="button" id="btn-history-prev" class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 shadow-sm">
+                                        <i class="fa-solid fa-chevron-left"></i> Anterior
+                                    </button>
+                                    <span id="history-page-info" class="text-xs font-semibold text-gray-500">Página 1 de 1</span>
+                                    <button type="button" id="btn-history-next" class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 shadow-sm">
+                                        Siguiente <i class="fa-solid fa-chevron-right"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                bodyHtml = `
+                    <div class="space-y-4">
+                        <p class="text-xs text-gray-500 bg-red-50/50 p-3.5 rounded-xl border border-red-100 flex items-start gap-2.5">
+                            <i class="fa-solid fa-circle-info text-red-500 mt-0.5 text-sm"></i>
+                            <span>Registra tu incapacidad médica subiendo los justificantes correspondientes. El sistema desactivará tus recordatorios y aplicará los ajustes de nómina automáticos de forma inmediata.</span>
+                        </p>
+                        
+                        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-2 flex items-center">
+                                <i class="fa-solid fa-circle-info mr-2 text-red-500"></i> Datos de la Incapacidad
+                            </h4>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 mb-1">Fecha de Inicio <span class="text-red-500">*</span></label>
+                                    <input type="date" name="startDate" value="${todayStr}" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-gray-50 focus:bg-white transition-all placeholder-gray-400 font-medium text-gray-800">
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 mb-1">Días de Duración <span class="text-red-500">*</span></label>
+                                    <input type="number" name="durationDays" min="1" placeholder="Ej: 3" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-gray-50 focus:bg-white transition-all placeholder-gray-400 font-medium text-gray-800">
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-1">Centro Médico / EPS <span class="text-red-500">*</span></label>
+                                <input type="text" name="medicalCenter" placeholder="Ej: EPS Sanitas / IPS Sur" required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-gray-50 focus:bg-white transition-all placeholder-gray-400 font-medium text-gray-800">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-1">Diagnóstico / Motivo <span class="text-red-500">*</span></label>
+                                <textarea name="reason" rows="3" placeholder="Describe brevemente el diagnóstico o motivo..." required class="w-full border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-gray-50 focus:bg-white transition-all placeholder-gray-400 font-medium text-gray-800"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
+                            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide border-b pb-2 mb-2 flex items-center">
+                                <i class="fa-solid fa-paperclip mr-2 text-red-500"></i> Documentos Adjuntos Obligatorios
+                            </h4>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 mb-1.5">Evidencia de Incapacidad <span class="text-red-500">*</span></label>
+                                    <div id="incapacidad-drop-zone" class="border-2 border-dashed border-gray-300 hover:border-red-400 rounded-xl p-4 text-center cursor-pointer transition-colors bg-gray-50/50">
+                                        <input type="file" id="incapacidad-file-input" accept="image/*,application/pdf" class="hidden">
+                                        <div id="incapacidad-drop-zone-text" class="space-y-1">
+                                            <i class="fa-solid fa-cloud-arrow-up text-2xl text-red-400"></i>
+                                            <p class="text-xs font-bold text-gray-600">Subir evidencia</p>
+                                            <p class="text-[9px] text-gray-400">JPG, PNG, PDF (Máx. 5MB)</p>
+                                        </div>
+                                        <div id="incapacidad-file-preview" class="hidden flex items-center justify-between gap-2 p-1.5 bg-white rounded-lg border border-gray-200 mt-2">
+                                            <div id="incapacidad-preview-icon" class="text-xl text-red-500"><i class="fa-solid fa-file-pdf"></i></div>
+                                            <div class="text-left overflow-hidden flex-1">
+                                                <p id="incapacidad-preview-name" class="text-[11px] font-bold text-gray-750 truncate">archivo.pdf</p>
+                                                <p id="incapacidad-preview-size" class="text-[9px] text-gray-400">0 KB</p>
+                                            </div>
+                                            <button type="button" id="btn-remove-incapacidad-file" class="w-6 h-6 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-655 transition-colors">
+                                                <i class="fa-solid fa-trash-can text-xs"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 mb-1.5">Constancia de Urgencias <span class="text-red-500">*</span></label>
+                                    <div id="certificado-drop-zone" class="border-2 border-dashed border-gray-300 hover:border-red-400 rounded-xl p-4 text-center cursor-pointer transition-colors bg-gray-50/50">
+                                        <input type="file" id="certificado-file-input" accept="image/*,application/pdf" class="hidden">
+                                        <div id="certificado-drop-zone-text" class="space-y-1">
+                                            <i class="fa-solid fa-cloud-arrow-up text-2xl text-red-400"></i>
+                                            <p class="text-xs font-bold text-gray-600">Subir certificado</p>
+                                            <p class="text-[9px] text-gray-400">JPG, PNG, PDF (Máx. 5MB)</p>
+                                        </div>
+                                        <div id="certificado-file-preview" class="hidden flex items-center justify-between gap-2 p-1.5 bg-white rounded-lg border border-gray-200 mt-2">
+                                            <div id="certificado-preview-icon" class="text-xl text-red-500"><i class="fa-solid fa-file-pdf"></i></div>
+                                            <div class="text-left overflow-hidden flex-1">
+                                                <p id="certificado-preview-name" class="text-[11px] font-bold text-gray-750 truncate">archivo.pdf</p>
+                                                <p id="certificado-preview-size" class="text-[9px] text-gray-400">0 KB</p>
+                                            </div>
+                                            <button type="button" id="btn-remove-certificado-file" class="w-6 h-6 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-655 transition-colors">
+                                                <i class="fa-solid fa-trash-can text-xs"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            setTimeout(async () => {
+                if (isAdmin) {
+                    const tabBtnRegister = document.getElementById('tab-btn-register');
+                    const tabBtnHistory = document.getElementById('tab-btn-history');
+                    const tabRegisterContent = document.getElementById('tab-register-content');
+                    const tabHistoryContent = document.getElementById('tab-history-content');
+                    const registerSelect = document.getElementById('register-employee-select');
+                    const historySelect = document.getElementById('history-employee-select');
+                    const historyListContainer = document.getElementById('history-incapacidades-list');
+                    const historyPagination = document.getElementById('history-pagination');
+                    const btnHistoryPrev = document.getElementById('btn-history-prev');
+                    const btnHistoryNext = document.getElementById('btn-history-next');
+                    const historyPageInfo = document.getElementById('history-page-info');
+
+                    const defaultFooter = document.getElementById('main-modal-footer') || document.getElementById('modal-confirm-btn')?.parentElement;
+
+                    // --- TAB SWITCHING ---
+                    if (tabBtnRegister && tabBtnHistory) {
+                        tabBtnRegister.addEventListener('click', () => {
+                            tabBtnRegister.className = "py-3 px-1 border-b-2 border-red-650 text-red-650 transition-all focus:outline-none flex items-center gap-2";
+                            tabBtnHistory.className = "py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-red-650 hover:border-red-300 transition-all focus:outline-none flex items-center gap-2";
+                            tabRegisterContent.classList.remove('hidden');
+                            tabHistoryContent.classList.add('hidden');
+                            if (defaultFooter) defaultFooter.style.display = 'flex';
+                        });
+                        tabBtnHistory.addEventListener('click', () => {
+                            tabBtnHistory.className = "py-3 px-1 border-b-2 border-red-650 text-red-650 transition-all focus:outline-none flex items-center gap-2";
+                            tabBtnRegister.className = "py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-red-650 hover:border-red-300 transition-all focus:outline-none flex items-center gap-2";
+                            tabHistoryContent.classList.remove('hidden');
+                            tabRegisterContent.classList.add('hidden');
+                            if (defaultFooter) defaultFooter.style.display = 'none';
+                        });
+                    }
+
+                    // --- POPULATE SELECTS ---
+                    if (window.usersMap) {
+                        const activeUsers = Array.from(window.usersMap.entries())
+                            .filter(([id, u]) => u.status === 'active')
+                            .sort((a, b) => {
+                                const nameA = `${a[1].firstName} ${a[1].lastName}`.toLowerCase();
+                                const nameB = `${b[1].firstName} ${b[1].lastName}`.toLowerCase();
+                                return nameA.localeCompare(nameB);
+                            });
+
+                        activeUsers.forEach(([id, u]) => {
+                            const opt1 = document.createElement('option');
+                            opt1.value = id;
+                            opt1.textContent = `${u.firstName} ${u.lastName}`;
+                            registerSelect.appendChild(opt1);
+
+                            const opt2 = document.createElement('option');
+                            opt2.value = id;
+                            opt2.textContent = `${u.firstName} ${u.lastName}`;
+                            historySelect.appendChild(opt2);
+                        });
+                    }
+
+                    // --- HISTORY PAGINATION & RENDER ---
+                    let historyItems = [];
+                    let currentHistoryPage = 1;
+                    const historyPageSize = 3;
+
+                    const renderHistoryPage = () => {
+                        if (!historyItems.length) {
+                            historyListContainer.innerHTML = `
+                                <div class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-white/50">
+                                    <div class="bg-white p-4 rounded-full shadow-sm mb-3">
+                                        <i class="fa-solid fa-house-medical text-3xl text-gray-300"></i>
+                                    </div>
+                                    <p class="font-bold text-gray-600">Sin historial de incapacidades</p>
+                                    <p class="text-sm">Este colaborador no registra incapacidades médicas.</p>
+                                </div>`;
+                            historyPagination.classList.add('hidden');
+                            return;
+                        }
+
+                        const totalPages = Math.ceil(historyItems.length / historyPageSize);
+                        if (currentHistoryPage > totalPages) currentHistoryPage = totalPages;
+                        if (currentHistoryPage < 1) currentHistoryPage = 1;
+
+                        const startIdx = (currentHistoryPage - 1) * historyPageSize;
+                        const pageItems = historyItems.slice(startIdx, startIdx + historyPageSize);
+
+                        historyListContainer.innerHTML = '';
+
+                        pageItems.forEach(item => {
+                            const data = item.data;
+                            const dateObj = data.startDate ? new Date(data.startDate + 'T00:00:00') : new Date();
+                            const dateStr = dateObj.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
+                            
+                            const card = document.createElement('div');
+                            card.className = "bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:shadow-md transition-all";
+                            card.innerHTML = `
+                                <div class="flex justify-between items-start mb-2">
+                                    <div>
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-700 border border-red-200">
+                                            ${data.durationDays || 1} ${data.durationDays === 1 ? 'Día' : 'Días'}
+                                        </span>
+                                        <p class="text-xs text-gray-500 mt-1">Inicio: <span class="font-bold text-gray-700">${dateStr}</span></p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="text-[10px] text-gray-400 uppercase font-bold">Centro Médico / EPS</p>
+                                        <p class="text-xs font-bold text-gray-700 truncate max-w-[150px]">${data.medicalCenter || 'No especificado'}</p>
+                                    </div>
+                                </div>
+
+                                <div class="bg-gray-50 p-2.5 rounded-lg border border-gray-100 text-xs text-gray-600 mb-3 relative">
+                                    <span class="font-bold text-gray-700 block mb-0.5">Diagnóstico / Motivo:</span>
+                                    "${data.reason || 'Sin motivo'}"
+                                </div>
+
+                                <div class="flex gap-2">
+                                    ${data.evidenceURL ? `
+                                        <a href="${data.evidenceURL}" target="_blank" class="flex-grow text-center py-2 px-3 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-[11px] font-bold text-red-700 transition-colors flex items-center justify-center gap-1.5">
+                                            <i class="fa-solid fa-file-medical"></i> Ver Evidencia
+                                        </a>
+                                    ` : ''}
+                                    ${data.certificateURL ? `
+                                        <a href="${data.certificateURL}" target="_blank" class="flex-grow text-center py-2 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 transition-colors flex items-center justify-center gap-1.5">
+                                            <i class="fa-solid fa-hospital-user"></i> Ver Constancia
+                                        </a>
+                                    ` : ''}
+                                </div>
+                            `;
+                            historyListContainer.appendChild(card);
+                        });
+
+                        historyPageInfo.textContent = `Página ${currentHistoryPage} de ${totalPages}`;
+                        btnHistoryPrev.disabled = currentHistoryPage === 1;
+                        btnHistoryNext.disabled = currentHistoryPage === totalPages;
+                        historyPagination.classList.remove('hidden');
+                    };
+
+                    // --- SELECT WORKER EVENT ---
+                    historySelect.addEventListener('change', async (e) => {
+                        const userId = e.target.value;
+                        if (!userId) {
+                            historyItems = [];
+                            currentHistoryPage = 1;
+                            historyListContainer.innerHTML = `
+                                <div class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-white/50">
+                                    <div class="bg-white p-4 rounded-full shadow-sm mb-3">
+                                        <i class="fa-solid fa-user-tag text-3xl text-gray-300"></i>
+                                    </div>
+                                    <p class="font-bold text-gray-600">Ningún empleado seleccionado</p>
+                                    <p class="text-sm">Selecciona un colaborador de la lista para ver su historial de incapacidades.</p>
+                                </div>`;
+                            historyPagination.classList.add('hidden');
+                            return;
+                        }
+
+                        historyListContainer.innerHTML = `
+                            <div class="flex justify-center items-center h-32">
+                                <div class="loader"></div>
+                            </div>`;
+                        historyPagination.classList.add('hidden');
+
+                        try {
+                            const q = query(
+                                collection(db, "users", userId, "incapacidades"),
+                                orderBy("startDate", "desc")
+                            );
+                            const snapshot = await getDocs(q);
+                            historyItems = [];
+                            snapshot.forEach(docSnap => {
+                                historyItems.push({
+                                    id: docSnap.id,
+                                    data: docSnap.data()
+                                });
+                            });
+
+                            currentHistoryPage = 1;
+                            renderHistoryPage();
+
+                        } catch (error) {
+                            console.error("Error cargando historial incapacidades:", error);
+                            historyListContainer.innerHTML = `<div class="p-6 text-center text-red-500 bg-red-50 rounded-xl border border-red-100">Error al cargar datos.</div>`;
+                        }
+                    });
+
+                    // --- PAGINATION ACTIONS ---
+                    btnHistoryPrev.onclick = () => {
+                        if (currentHistoryPage > 1) {
+                            currentHistoryPage--;
+                            renderHistoryPage();
+                        }
+                    };
+                    btnHistoryNext.onclick = () => {
+                        const totalPages = Math.ceil(historyItems.length / historyPageSize);
+                        if (currentHistoryPage < totalPages) {
+                            currentHistoryPage++;
+                            renderHistoryPage();
+                        }
+                    };
+                }
+
+                // --- INITIALIZE FILE UPLOADERS ---
+                function setupUploader(prefix) {
+                    const dropZone = document.getElementById(`${prefix}-drop-zone`);
+                    const fileInput = document.getElementById(`${prefix}-file-input`);
+                    const preview = document.getElementById(`${prefix}-file-preview`);
+                    const zoneText = document.getElementById(`${prefix}-drop-zone-text`);
+                    const previewName = document.getElementById(`${prefix}-preview-name`);
+                    const previewSize = document.getElementById(`${prefix}-preview-size`);
+                    const previewIcon = document.getElementById(`${prefix}-preview-icon`);
+                    const removeBtn = document.getElementById(`btn-remove-${prefix}-file`);
+
+                    if (dropZone && fileInput) {
+                        dropZone.onclick = (e) => {
+                            if (e.target.closest(`#btn-remove-${prefix}-file`) || e.target.closest(`#${prefix}-file-preview`)) return;
+                            fileInput.click();
+                        };
+
+                        dropZone.ondragover = (e) => {
+                            e.preventDefault();
+                            dropZone.classList.add('border-red-400', 'bg-red-50/20');
+                        };
+
+                        dropZone.ondragleave = () => {
+                            dropZone.classList.remove('border-red-400', 'bg-red-50/20');
+                        };
+
+                        dropZone.ondrop = (e) => {
+                            e.preventDefault();
+                            dropZone.classList.remove('border-red-400', 'bg-red-50/20');
+                            if (e.dataTransfer.files.length > 0) {
+                                handleFileSelection(e.dataTransfer.files[0]);
+                                fileInput.files = e.dataTransfer.files;
+                            }
+                        };
+
+                        fileInput.onchange = () => {
+                            if (fileInput.files.length > 0) {
+                                handleFileSelection(fileInput.files[0]);
+                            }
+                        };
+
+                        if (removeBtn) {
+                            removeBtn.onclick = (e) => {
+                                e.stopPropagation();
+                                fileInput.value = '';
+                                preview.classList.add('hidden');
+                                zoneText.classList.remove('hidden');
+                            };
+                        }
+                    }
+
+                    function handleFileSelection(file) {
+                        if (file.size > 5 * 1024 * 1024) {
+                            alert("El archivo excede el límite de 5MB.");
+                            fileInput.value = '';
+                            return;
+                        }
+
+                        previewName.textContent = file.name;
+                        previewSize.textContent = `${(file.size / 1024).toFixed(1)} KB`;
+
+                        if (file.type === 'application/pdf') {
+                            previewIcon.innerHTML = '<i class="fa-solid fa-file-pdf"></i>';
+                        } else if (file.type.startsWith('image/')) {
+                            previewIcon.innerHTML = '<i class="fa-solid fa-file-image"></i>';
+                        } else {
+                            previewIcon.innerHTML = '<i class="fa-solid fa-file-lines"></i>';
+                        }
+
+                        zoneText.classList.add('hidden');
+                        preview.classList.remove('hidden');
+                    }
+                }
+
+                setupUploader('incapacidad');
+                setupUploader('certificado');
+            }, 100);
+
+            break;
+        }
+
+        case 'view-attendance-detail': {
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+            const cleanFooter = document.getElementById('main-modal-footer');
+            if (cleanFooter) {
+                cleanFooter.style.display = 'none';
+            }
+
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-md', 'flex', 'flex-col', 'max-h-[90vh]', 'overflow-hidden');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Detalle de Marcación';
+            btnText = 'Cerrar';
+            btnClass = 'hidden';
+
+            const score = data.biometricScore ? (data.biometricScore * 100).toFixed(0) : 0;
+            const lat = data.location?.lat || 0;
+            const lng = data.location?.lng || 0;
+
+            bodyHtml = `
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-indigo-600 to-blue-600 px-6 py-4 shrink-0 rounded-t-xl flex justify-between items-center relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none transform scale-150 translate-x-4 -translate-y-2">
+                            <i class="fa-solid fa-user-clock text-6xl text-white"></i>
+                        </div>
+                        <div class="flex items-center gap-3 relative z-10">
+                            <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-lg backdrop-blur-sm border border-white/10 shadow-inner text-white">
+                                <i class="fa-solid fa-camera"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-lg font-bold tracking-tight text-white">Detalle de Marcación</h2>
+                                <p class="text-indigo-100 text-[10px] font-medium">Validación biométrica e ingreso</p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white transition-colors relative z-10 p-1.5 rounded-full hover:bg-white/10">
+                            <i class="fa-solid fa-xmark text-lg"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex-grow overflow-y-auto custom-scrollbar p-6 bg-slate-50/30 space-y-4">
+                        <div class="flex items-center gap-3 bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                            <div class="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-md font-bold">
+                                <i class="fa-solid fa-user"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-black text-slate-700 text-sm">${data.userName || 'Colaborador'}</h4>
+                                <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">${data.dateStr || '---'}</p>
+                            </div>
+                        </div>
+
+                        ${data.photoURL ? `
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Foto de Registro</label>
+                                <div class="relative rounded-xl overflow-hidden border border-slate-200 bg-white flex items-center justify-center max-h-64 cursor-pointer hover:shadow-md transition-shadow group shadow-sm" onclick="window.openImageModal('${data.photoURL}')">
+                                    <img src="${data.photoURL}" class="max-w-full max-h-60 object-contain p-2">
+                                    <div class="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-bold gap-2">
+                                        <i class="fa-solid fa-magnifying-glass-plus text-lg animate-bounce"></i> Clic para ampliar
+                                    </div>
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <div class="grid grid-cols-2 gap-4 bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                            <div>
+                                <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Coincidencia Facial</span>
+                                <span class="text-sm font-semibold text-slate-700">${score}%</span>
+                            </div>
+                            <div>
+                                <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ubicación GPS</span>
+                                <a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" target="_blank" class="text-xs font-bold text-indigo-600 hover:text-indigo-850 underline flex items-center gap-1 mt-1 transition-colors">
+                                    <i class="fa-solid fa-location-dot"></i> Ver en Google Maps
+                                </a>
+                            </div>
+                        </div>
+
+                        <div class="pt-4 flex justify-end">
+                            <button type="button" onclick="closeMainModal()" class="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all shadow-sm">
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            break;
+        }
+
+        case 'view-daily-report-detail': {
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+            const cleanFooter = document.getElementById('main-modal-footer');
+            if (cleanFooter) {
+                cleanFooter.style.display = 'none';
+            }
+
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-md', 'flex', 'flex-col', 'max-h-[90vh]', 'overflow-hidden');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Reporte de Actividad Diaria';
+            btnText = 'Cerrar';
+            btnClass = 'hidden';
+
+            bodyHtml = `
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-4 shrink-0 rounded-t-xl flex justify-between items-center relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none transform scale-150 translate-x-4 -translate-y-2">
+                            <i class="fa-solid fa-file-invoice text-6xl text-white"></i>
+                        </div>
+                        <div class="flex items-center gap-3 relative z-10">
+                            <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-lg backdrop-blur-sm border border-white/10 shadow-inner text-white">
+                                <i class="fa-solid fa-clipboard-list"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-lg font-bold tracking-tight text-white">Reporte de Actividad</h2>
+                                <p class="text-emerald-100 text-[10px] font-medium">Labores diarias reportadas</p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white transition-colors relative z-10 p-1.5 rounded-full hover:bg-white/10">
+                            <i class="fa-solid fa-xmark text-lg"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex-grow overflow-y-auto custom-scrollbar p-6 bg-slate-50/30 space-y-4">
+                        <div class="flex items-center gap-3 bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                            <div class="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-md font-bold">
+                                <i class="fa-solid fa-user"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-black text-slate-700 text-sm">${data.userName || 'Colaborador'}</h4>
+                                <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">${data.dateStr || '---'}</p>
+                            </div>
+                        </div>
+
+                        <div class="space-y-1">
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Actividad Reportada</label>
+                            <div class="text-xs text-slate-600 bg-white p-4 rounded-xl border border-slate-100 leading-relaxed font-medium whitespace-pre-wrap max-h-60 overflow-y-auto custom-scrollbar shadow-sm">
+                                ${data.content || 'Sin descripción'}
+                            </div>
+                        </div>
+
+                        <div class="pt-4 flex justify-end">
+                            <button type="button" onclick="closeMainModal()" class="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all shadow-sm">
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            break;
+        }
+
+        case 'view-incapacidad-detail': {
+            title = 'Detalles de Incapacidad Médica';
+            btnText = 'Cerrar';
+            btnClass = 'bg-slate-600 hover:bg-slate-700 text-white';
+            modalContentDiv.classList.add('max-w-lg');
+            
+            const isPDF1 = data.evidenceType === 'application/pdf';
+            const evidenceHtml = isPDF1
+                ? `
+                <div class="mt-4 p-4 rounded-xl border border-red-150 bg-red-50/20 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center text-red-600 text-xl">
+                            <i class="fa-solid fa-file-pdf"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-slate-700">Evidencia de Incapacidad Médica PDF</p>
+                            <p class="text-[10px] text-slate-400">Formato digital adjunto</p>
+                        </div>
+                    </div>
+                    <a href="${data.evidenceURL}" target="_blank" class="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm flex items-center gap-1.5 transition-colors">
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Abrir PDF
+                    </a>
+                </div>
+                `
+                : `
+                <div class="mt-4 space-y-2">
+                    <label class="block text-xs font-bold text-slate-400 uppercase">Evidencia de Incapacidad Médica</label>
+                    <div class="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-100/50 flex items-center justify-center max-h-64 cursor-pointer hover:shadow-md transition-shadow group" onclick="window.openImageModal('${data.evidenceURL}')">
+                        <img src="${data.evidenceURL}" class="max-w-full max-h-60 object-contain p-2">
+                        <div class="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-bold gap-2">
+                            <i class="fa-solid fa-magnifying-glass-plus text-lg animate-bounce"></i> Clic para ampliar
+                        </div>
+                    </div>
+                </div>
+                `;
+
+            let certificateHtml = '';
+            if (data.certificateURL) {
+                const isPDF2 = data.certificateType === 'application/pdf';
+                certificateHtml = isPDF2
+                    ? `
+                    <div class="mt-4 p-4 rounded-xl border border-red-150 bg-red-50/20 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center text-red-600 text-xl">
+                                <i class="fa-solid fa-file-pdf"></i>
+                            </div>
+                            <div>
+                                <p class="text-xs font-bold text-slate-700">Certificado/Constancia de Urgencias PDF</p>
+                                <p class="text-[10px] text-slate-400">Formato digital adjunto</p>
+                            </div>
+                        </div>
+                        <a href="${data.certificateURL}" target="_blank" class="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm flex items-center gap-1.5 transition-colors">
+                            <i class="fa-solid fa-arrow-up-right-from-square"></i> Abrir PDF
+                        </a>
+                    </div>
+                    `
+                    : `
+                    <div class="mt-4 space-y-2">
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Certificado o Constancia de Asistencia a Urgencias</label>
+                        <div class="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-100/50 flex items-center justify-center max-h-64 cursor-pointer hover:shadow-md transition-shadow group" onclick="window.openImageModal('${data.certificateURL}')">
+                            <img src="${data.certificateURL}" class="max-w-full max-h-60 object-contain p-2">
+                            <div class="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-bold gap-2">
+                                <i class="fa-solid fa-magnifying-glass-plus text-lg animate-bounce"></i> Clic para ampliar
+                            </div>
+                        </div>
+                    </div>
+                    `;
+            }
+
+            bodyHtml = `
+                <div class="space-y-4">
+                    <div class="flex items-center gap-3 bg-red-50/50 p-4 rounded-xl border border-red-100/70">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white flex items-center justify-center text-xl shadow-sm">
+                            <i class="fa-solid fa-notes-medical"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-black text-slate-700 text-sm">${data.userName || 'Colaborador'}</h4>
+                            <p class="text-[10px] text-red-600 font-bold uppercase tracking-wider">Incapacidad Registrada</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        <div>
+                            <span class="block text-[10px] font-bold text-slate-400 uppercase">Fecha de Inicio</span>
+                            <span class="text-sm font-semibold text-slate-700">${data.startDate || '---'}</span>
+                        </div>
+                        <div>
+                            <span class="block text-[10px] font-bold text-slate-400 uppercase">Duración</span>
+                            <span class="text-sm font-semibold text-slate-700">${data.durationDays || 1} día${data.durationDays !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div class="col-span-2 pt-2 border-t border-slate-200/60 mt-1">
+                            <span class="block text-[10px] font-bold text-slate-400 uppercase">Centro Médico</span>
+                            <span class="text-sm font-semibold text-slate-700">${data.medicalCenter || 'No especificado'}</span>
+                        </div>
+                    </div>
+
+                    <div class="space-y-1">
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Diagnóstico / Motivo</label>
+                        <p class="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100 leading-relaxed font-medium">${data.reason || 'Sin detalles'}</p>
+                    </div>
+
+                    <div class="space-y-4">
+                        ${evidenceHtml}
+                        ${certificateHtml}
+                    </div>
+                </div>
+            `;
+            break;
+        }
 
         case 'view-profile-history': { // <--- LLAVE DE APERTURA AÑADIDA
             if (document.getElementById('modal-title')) {
@@ -5798,6 +7012,9 @@ async function openMainModal(type, data = {}) {
     document.getElementById('modal-body').innerHTML = bodyHtml;
     confirmBtn.textContent = btnText;
     confirmBtn.className = `text-white font-bold py-2 px-4 rounded-lg transition-all ${btnClass}`;
+    if (modalContentDiv) {
+        modalContentDiv.classList.add('premium-modal-card', 'overflow-hidden');
+    }
     modal.style.display = 'flex';
     window.scrollTo({ top: 0, behavior: 'smooth' });
     if (modalBody) {
@@ -6038,6 +7255,65 @@ function openRegisterSuccessModal() {
 function closeRegisterSuccessModal() {
     const registerSuccessModal = document.getElementById('register-success-modal');
     if (registerSuccessModal) registerSuccessModal.style.display = 'none';
+}
+
+// --- CENTRALIZED MODAL SCROLL LOCK ---
+const initScrollLockObserver = () => {
+    const checkScrollLock = () => {
+        const modals = document.querySelectorAll(
+            '#main-modal, #confirm-modal, #image-modal, #register-success-modal, ' +
+            '#documents-modal, #progress-modal, #import-modal, #multiple-progress-modal, ' +
+            '#document-viewer-modal, #document-display-modal, #otro-si-modal, #varios-modal, ' +
+            '#request-details-modal, #po-details-modal, #delivery-modal, #safety-checkin-modal, ' +
+            '#modal-config-cotizacion, .modal-backdrop'
+        );
+        
+        let anyOpen = false;
+        modals.forEach(el => {
+            const style = window.getComputedStyle(el);
+            if (style.display !== 'none' && !el.classList.contains('hidden')) {
+                anyOpen = true;
+            }
+        });
+
+        if (anyOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+    };
+
+    const observer = new MutationObserver((mutations) => {
+        let shouldCheck = false;
+        mutations.forEach(mutation => {
+            if (mutation.type === 'attributes' && (mutation.attributeName === 'style' || mutation.attributeName === 'class')) {
+                const target = mutation.target;
+                if (target && (target.classList.contains('modal-backdrop') || (target.id && target.id.includes('modal')) || target.id === 'modal-config-cotizacion')) {
+                    shouldCheck = true;
+                }
+            } else if (mutation.type === 'childList') {
+                shouldCheck = true;
+            }
+        });
+        if (shouldCheck) {
+            checkScrollLock();
+        }
+    });
+
+    observer.observe(document.body, { 
+        childList: true, 
+        subtree: true, 
+        attributes: true, 
+        attributeFilter: ['style', 'class'] 
+    });
+
+    checkScrollLock();
+};
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initScrollLockObserver);
+} else {
+    initScrollLockObserver();
 }
 
 export { openMainModal, closeMainModal, openConfirmModal, closeConfirmModal, openImageModal, closeImageModal, openRegisterSuccessModal, closeRegisterSuccessModal };
