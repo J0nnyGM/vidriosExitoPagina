@@ -960,7 +960,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const registerSW = () => {
-            navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.3.2')
+            navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.3.6')
                 .then(reg => {
                     console.log('[App] Service Worker PWA registrado con éxito en el ámbito:', reg.scope);
                     
