@@ -296,7 +296,7 @@ export async function initializePushNotifications(user) {
             return;
         }
 
-        const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.3.6');
+        const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.3.8');
         const token = await getToken(messaging, {
             vapidKey: VAPID_KEY,
             serviceWorkerRegistration: registration
@@ -513,7 +513,15 @@ export function loadNotifications() {
     let personalNotifs = [];
     let channelNotifs = [];
 
-    const personalQuery = query(collection(db, "notifications"), where("userId", "==", currentUser.uid), where("read", "==", false));
+    const threeDaysAgo = new Date();
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+
+    const personalQuery = query(
+        collection(db, "notifications"),
+        where("userId", "==", currentUser.uid),
+        where("read", "==", false),
+        where("createdAt", ">=", threeDaysAgo)
+    );
     const unsubscribePersonal = onSnapshot(personalQuery, (snapshot) => {
         console.log(`DEBUG: 'personalQuery' obtuvo ${snapshot.docs.length} docs.`);
         personalNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -648,7 +656,12 @@ export function loadNotifications() {
 
     let unsubscribeChannel = () => { };
     if (currentUserRole === 'admin' || currentUserRole === 'bodega') {
-        const channelQuery = query(collection(db, "notifications"), where("channel", "==", "admins_bodega"), where("read", "==", false));
+        const channelQuery = query(
+            collection(db, "notifications"),
+            where("channel", "==", "admins_bodega"),
+            where("read", "==", false),
+            where("createdAt", ">=", threeDaysAgo)
+        );
         unsubscribeChannel = onSnapshot(channelQuery, (snapshot) => {
             console.log(`DEBUG: 'channelQuery' obtuvo ${snapshot.docs.length} docs.`);
             channelNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));

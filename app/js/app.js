@@ -324,7 +324,7 @@ async function ensureModulesLoaded(role) {
                     window.importMaterialsFromExcel = importMaterialsFromExcel;
                     window.loadCatalogView = loadCatalogView;
 
-                    window.loadReportsView = loadReportsView;
+                    window.loadReportsView = loadInformesView;
                     window.getCompanyData = getCompanyData;
 
                     window.loadProjects = loadProjects;
@@ -960,7 +960,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const registerSW = () => {
-            navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.3.6')
+            navigator.serviceWorker.register('./firebase-messaging-sw.js?v=1.3.8')
                 .then(reg => {
                     console.log('[App] Service Worker PWA registrado con éxito en el ámbito:', reg.scope);
                     

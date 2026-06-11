@@ -1,6 +1,6 @@
 // EN app/firebase-messaging-sw.js
 
-const SW_VERSION = 'v1.3.6'; // Versión del Service Worker para forzar actualizaciones y evitar cachés obsoletas
+const SW_VERSION = 'v1.3.7'; // Versión del Service Worker para forzar actualizaciones y evitar cachés obsoletas
 const CACHE_NAME = `vidrios-exito-cache-${SW_VERSION}`;
 
 // Recursos principales que se descargan inmediatamente en la instalación para carga instantánea
