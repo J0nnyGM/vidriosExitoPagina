@@ -2771,6 +2771,7 @@ async function loadNominaTab(container) {
             const loanInfo = userLoansMap.get(operario.id) || { totalBalance: 0, estimatedDeduction: 0, loans: [] };
 
             const basico = parseFloat(operario.salarioBasico) || 0;
+            const rodamiento = parseFloat(operario.rodamiento) || 0;
             const bono = stats.totalBonificacion || 0;
             const deductionPotential = Math.min(loanInfo.estimatedDeduction, loanInfo.totalBalance);
             const dedSobreMinimo = operario.deduccionSobreMinimo === true || operario.deduccionSobreMinimo === 'true';
@@ -2788,6 +2789,7 @@ async function loadNominaTab(container) {
                 commissionLevel: operario.commissionLevel || 'principiante',
                 role: operario.role || 'operario',
                 salarioBasico: basico,
+                rodamiento: rodamiento,
                 bonificacion: bono,
                 deduccionPotencial: deductionPotential,
                 deudaTotal: loanInfo.totalBalance,
@@ -2816,6 +2818,7 @@ async function loadNominaTab(container) {
             // A. Recalcular datos dinámicos para una quincena (15 días)
             const processedData = rawEmpleadoData.map(emp => {
                 const salarioProrrateado = (emp.salarioBasico / 30) * diasPagar;
+                const rodamientoProrrateado = (emp.rodamiento / 30) * diasPagar;
                 let auxTransporteMensual = config.auxilioTransporte || 162000;
                 if (emp.salarioBasico > (config.salarioMinimo * 2)) {
                     auxTransporteMensual = 0;
@@ -2831,7 +2834,7 @@ async function loadNominaTab(container) {
                 const diasAuxTransporte = Math.max(0, diasPagar - incDays);
                 const auxTransporteProrrateado = (auxTransporteMensual / 30) * diasAuxTransporte;
 
-                // Base Deducción Ley
+                // Base Deducción Ley (El rodamiento no es salarial, no entra en la base de salud/pensión)
                 let baseDeduccion = 0;
                 if (emp.deduccionSobreMinimo && config.salarioMinimo) {
                     baseDeduccion = (config.salarioMinimo / 30) * diasPagar;
@@ -2850,7 +2853,7 @@ async function loadNominaTab(container) {
                 const deduccionPrestamos = applyLoans ? emp.deduccionPotencial : 0;
 
                 // Devengado & Neto a Pagar
-                const totalDevengado = salarioProrrateado + auxTransporteProrrateado + emp.bonificacion;
+                const totalDevengado = salarioProrrateado + auxTransporteProrrateado + emp.bonificacion + rodamientoProrrateado;
                 
                 // Double-payment logic: Si ya está pagado en la quincena actual, el neto a pagar es 0
                 const originalTotalPagar = Math.max(0, totalDevengado - totalDeduccionesLey - deduccionPrestamos);
@@ -2860,6 +2863,7 @@ async function loadNominaTab(container) {
                 return {
                     ...emp,
                     salarioProrrateado,
+                    rodamientoProrrateado,
                     auxTransporteProrrateado,
                     totalDeduccionesLey,
                     deduccionPrestamos,
@@ -2883,7 +2887,7 @@ async function loadNominaTab(container) {
 
             processedData.forEach(p => {
                 sumBasico += p.salarioProrrateado;
-                sumBonificacion += p.bonificacion;
+                sumBonificacion += p.bonificacion + (p.rodamientoProrrateado || 0);
                 sumDeducciones += p.totalDeduccionesLey + p.deduccionPrestamos;
                 sumTotal += p.totalPagar;
             });
@@ -3125,6 +3129,7 @@ async function loadNominaTab(container) {
                 }
                 const defaultDiasTransporte = Math.max(0, defaultDias - incDays);
                 const salarioProrrateado = (emp.salarioBasico / 30) * defaultDias;
+                const rodamientoProrrateado = (emp.rodamiento / 30) * defaultDias;
                 let auxTransporteMensual = config.auxilioTransporte || 162000;
                 if (emp.salarioBasico > (config.salarioMinimo * 2)) {
                     auxTransporteMensual = 0;
@@ -3146,7 +3151,7 @@ async function loadNominaTab(container) {
                 const totalDeduccionesLey = deduccionSalud + deduccionPension;
                 const deduccionPrestamos = applyLoans ? emp.deduccionPotencial : 0;
                 
-                const totalDevengado = salarioProrrateado + auxTransporteProrrateado + emp.bonificacion;
+                const totalDevengado = salarioProrrateado + auxTransporteProrrateado + emp.bonificacion + rodamientoProrrateado;
                 const totalPagar = Math.max(0, totalDevengado - totalDeduccionesLey - deduccionPrestamos);
                 
                 const isPaid = paidEmployeeIds.has(emp.id);
@@ -3156,6 +3161,7 @@ async function loadNominaTab(container) {
                 row.dataset.id = emp.id;
                 row.dataset.diasSalario = defaultDias;
                 row.dataset.diasAuxTransporte = defaultDiasTransporte;
+                row.dataset.rodamiento = rodamientoProrrateado;
                 row.dataset.totalPagar = isPaid ? 0 : totalPagar;
 
                 row.innerHTML = `
@@ -3165,7 +3171,7 @@ async function loadNominaTab(container) {
                     <td class="px-4 py-3 font-bold text-slate-800">
                         <div>
                             <p class="text-xs font-black text-slate-700">${emp.fullName}</p>
-                            <p class="text-[9px] text-slate-400 mt-0.5">${emp.role.toUpperCase()} • C.C. ${emp.cedula}</p>
+                            <p class="text-[9px] text-slate-400 mt-0.5">${emp.role.toUpperCase()} • C.C. ${emp.cedula}${emp.rodamiento > 0 ? ` • <span class="text-amber-600 font-semibold">Rodamiento: ${currencyFormatter.format(emp.rodamiento)}</span>` : ''}</p>
                         </div>
                     </td>
                     <td class="px-4 py-3 text-right font-medium text-slate-500 font-mono">${currencyFormatter.format(emp.salarioBasico)}</td>
@@ -3195,6 +3201,7 @@ async function loadNominaTab(container) {
                     const dTransport = parseInt(daysTransportInput.value) || 0;
                     
                     const salProrrateado = (emp.salarioBasico / 30) * dSalario;
+                    const rodProrrateado = (emp.rodamiento / 30) * dSalario;
                     let auxTransMensual = config.auxilioTransporte || 162000;
                     if (emp.salarioBasico > (config.salarioMinimo * 2)) {
                         auxTransMensual = 0;
@@ -3216,7 +3223,7 @@ async function loadNominaTab(container) {
                     const totalDedLey = dedSalud + dedPension;
                     const dedPrestamos = applyLoans ? emp.deduccionPotencial : 0;
                     
-                    const totDevengado = salProrrateado + auxTransProrrateado + emp.bonificacion;
+                    const totDevengado = salProrrateado + auxTransProrrateado + emp.bonificacion + rodProrrateado;
                     const totPagar = Math.max(0, totDevengado - totalDedLey - dedPrestamos);
                     
                     const isIncluded = includeChk.checked;
@@ -3224,6 +3231,7 @@ async function loadNominaTab(container) {
                     
                     row.dataset.diasSalario = dSalario;
                     row.dataset.diasAuxTransporte = dTransport;
+                    row.dataset.rodamiento = rodProrrateado;
                     row.dataset.totalPagar = finalPagar;
                     
                     row.querySelector('.export-deducciones-display').textContent = `-${currencyFormatter.format(totalDedLey + dedPrestamos)}`;
@@ -3303,6 +3311,7 @@ async function loadNominaTab(container) {
                         
                         // Prorrateo
                         const salarioProrrateado = (emp.salarioBasico / 30) * dSalario;
+                        const rodamientoProrrateado = (emp.rodamiento / 30) * dSalario;
                         const auxTransporteMensual = config.auxilioTransporte || 162000;
                         const auxTransporteProrrateado = (auxTransporteMensual / 30) * dTransport;
                         
@@ -3388,6 +3397,7 @@ async function loadNominaTab(container) {
                                 auxilioTransporteProrrateado: auxTransporteProrrateado,
                                 diasAuxTransporte: dTransport,
                                 bonificacionM2: emp.bonificacion,
+                                rodamientoProrrateado: rodamientoProrrateado,
                                 horasExtra: 0,
                                 otros: 0,
                                 abonoPrestamos: deduccionPrestamos,
@@ -4466,35 +4476,35 @@ async function openPaymentVoucherModal(payment, user) {
 
     } else {
         // --- NÓMINA NORMAL ---
-        let displaySalario = d.salarioProrrateado;
-        let displayBonificacion = d.bonificacionM2 || 0;
-        let labelSalario = `Salario Básico (${payment.diasPagados} días)`;
-
-        if (d.deduccionSobreMinimo && d.baseDeduccion > 0) {
-             if (displaySalario > d.baseDeduccion) {
-                const excedente = displaySalario - d.baseDeduccion;
-                displaySalario = d.baseDeduccion; 
-                labelSalario = `Salario Básico (Min. Legal)`;
-                displayBonificacion += excedente; 
-            }
-        }
+        const displaySalario = d.salarioProrrateado || 0;
+        const displayBonificacion = d.bonificacionM2 || 0;
+        const displayRodamiento = d.rodamientoProrrateado || d.rodamiento || 0;
+        const labelSalario = `Salario Básico (${payment.diasPagados || 15} días)`;
 
         if (displaySalario > 0) earningsList.innerHTML += createRow(labelSalario, displaySalario);
+
         if (d.auxilioTransporteProrrateado > 0) {
             const diasAux = payment.diasAuxTransporte !== undefined ? payment.diasAuxTransporte : (d.diasAuxTransporte !== undefined ? d.diasAuxTransporte : payment.diasPagados);
             earningsList.innerHTML += createRow(`Aux. Transporte (${diasAux} días)`, d.auxilioTransporteProrrateado);
         }
+
+        if (displayRodamiento > 0) {
+            earningsList.innerHTML += createRow('Auxilio de Rodamiento (No Salarial)', displayRodamiento, true);
+        }
+
         if (d.horasExtra > 0) earningsList.innerHTML += createRow('Horas Extra', d.horasExtra);
         
         if (displayBonificacion > 0) {
-            const labelBono = (d.deduccionSobreMinimo) ? 'Bonificación / Aux. No Salarial' : 'Bonificación';
-            earningsList.innerHTML += createRow(labelBono, displayBonificacion, true);
+            earningsList.innerHTML += createRow('Bonificación M²', displayBonificacion, true);
         }
         
         if (d.otros) earningsList.innerHTML += createRow('Otros', d.otros);
 
-        if (d.deduccionSalud) deductionsList.innerHTML += createRow('Salud', Math.abs(d.deduccionSalud));
-        if (d.deduccionPension) deductionsList.innerHTML += createRow('Pensión', Math.abs(d.deduccionPension));
+        const labelSalud = d.deduccionSobreMinimo ? 'Salud (4% s/ SMLV)' : 'Salud (4%)';
+        const labelPension = d.deduccionSobreMinimo ? 'Pensión (4% s/ SMLV)' : 'Pensión (4%)';
+
+        if (d.deduccionSalud) deductionsList.innerHTML += createRow(labelSalud, Math.abs(d.deduccionSalud));
+        if (d.deduccionPension) deductionsList.innerHTML += createRow(labelPension, Math.abs(d.deduccionPension));
         if (d.abonoPrestamos) deductionsList.innerHTML += createRow('Préstamos', d.abonoPrestamos);
         if (d.otros < 0) deductionsList.innerHTML += createRow('Otras', Math.abs(d.otros));
     }
@@ -5128,12 +5138,14 @@ async function renderStandardPayrollForm(container, user) {
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Días Salario</label>
                         <input type="number" id="payment-dias-pagar" class="payment-dias-input w-full border-gray-300 rounded-lg p-3 text-center font-bold text-gray-700" value="15" min="0" max="30">
                     </div>
-                    <div class="flex items-end pb-3">
+                    <div class="flex flex-col justify-end gap-1 pb-1">
                          <span id="payment-salario-basico" class="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1.5 rounded-full w-full text-center border border-gray-200" 
                             data-value="${user.salarioBasico || 0}" 
+                            data-rodamiento="${user.rodamiento || 0}"
                             data-aux-transporte="${(user.salarioBasico > (_getPayrollConfig()?.salarioMinimo * 2)) ? 0 : (_getPayrollConfig()?.auxilioTransporte || 0)}">
                             ${currencyFormatter.format(user.salarioBasico || 0)}
                         </span>
+                        ${user.rodamiento > 0 ? `<span class="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md text-center border border-amber-200">Rodamiento: ${currencyFormatter.format(user.rodamiento)}</span>` : ''}
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-3 sm:gap-4">
@@ -6764,10 +6776,12 @@ function updatePaymentTotal() {
 
     // 2. Obtener valores MENSUALES
     const salarioMensual = parseFloat(salarioEl.dataset.value || 0);
+    const rodamientoMensual = parseFloat(salarioEl.dataset.rodamiento || 0);
     const auxTransporteMensual = parseFloat(salarioEl.dataset.auxTransporte || 0);
 
     // 3. Calcular valores PRORRATEADOS
     const salarioProrrateado = (salarioMensual / 30) * diasPagar;
+    const rodamientoProrrateado = (rodamientoMensual / 30) * diasPagar;
     const auxTransporteProrrateado = (auxTransporteMensual / 30) * diasAuxTransporte;
 
     // 4. Obtener valores que NO se prorratean
@@ -6802,7 +6816,7 @@ function updatePaymentTotal() {
 
     document.getElementById('payment-total-horas').textContent = currencyFormatter.format(totalHorasExtra);
 
-    // 7. Calcular Deducciones (usando bonificacionAPagar)
+    // 7. Calcular Deducciones (usando bonificacionAPagar, el rodamiento es no salarial)
     const deduccionSobreMinimo = form.dataset.deduccionSobreMinimo === 'true';
     let baseDeduccion = 0;
 
@@ -6821,8 +6835,8 @@ function updatePaymentTotal() {
     const deduccionPension = baseDeduccion * (config.porcentajePension / 100);
     const totalDeducciones = deduccionSalud + deduccionPension;
 
-    // 8. Calcular Total Final (usando bonificacionAPagar)
-    const totalDevengado = salarioProrrateado + auxTransporteProrrateado + bonificacionAPagar + totalHorasExtra + otros;
+    // 8. Calcular Total Final (usando bonificacionAPagar + rodamiento)
+    const totalDevengado = salarioProrrateado + auxTransporteProrrateado + bonificacionAPagar + totalHorasExtra + otros + rodamientoProrrateado;
     const totalPagar = totalDevengado - totalDeducciones - loanDeduction; // Se usa la suma calculada
 
     document.getElementById('payment-total-pagar').textContent = currencyFormatter.format(totalPagar);
@@ -6852,10 +6866,12 @@ async function handleRegisterPayment(e, userId) {
         // 1. LEER DATOS BASE
         const salarioEl = document.getElementById('payment-salario-basico');
         const salarioMensual = parseFloat(salarioEl.dataset.value || 0);
+        const rodamientoMensual = parseFloat(salarioEl.dataset.rodamiento || 0);
         const auxTransporteMensual = parseFloat(salarioEl.dataset.auxTransporte || 0);
 
         // 2. CÁLCULOS PRORRATEADOS
         const salarioProrrateado = (salarioMensual / 30) * diasPagar;
+        const rodamientoProrrateado = (rodamientoMensual / 30) * diasPagar;
         const auxTransporteProrrateado = (auxTransporteMensual / 30) * diasAuxTransporte;
 
         const otros = parseMoney('payment-otros');
@@ -6907,7 +6923,7 @@ async function handleRegisterPayment(e, userId) {
         const totalDeduccionesLey = deduccionSalud + deduccionPension;
 
         // 6. NETO FINAL
-        const totalDevengado = salarioProrrateado + auxTransporteProrrateado + bonificacionPagada + totalHorasExtra + otros;
+        const totalDevengado = salarioProrrateado + auxTransporteProrrateado + bonificacionPagada + totalHorasExtra + otros + rodamientoProrrateado;
         const totalPagar = totalDevengado - totalDeduccionesLey - totalLoanDeduction;
 
         if (totalPagar < 0) {
@@ -6932,6 +6948,7 @@ async function handleRegisterPayment(e, userId) {
                 auxilioTransporteProrrateado: auxTransporteProrrateado,
                 diasAuxTransporte: diasAuxTransporte,
                 bonificacionM2: bonificacionPagada,
+                rodamientoProrrateado: rodamientoProrrateado,
                 horasExtra: totalHorasExtra, 
                 otros: otros, 
                 abonoPrestamos: totalLoanDeduction,

@@ -5745,12 +5745,20 @@ async function openMainModal(type, data = {}) {
                                         </div>
                                     </div>
 
-                                    <div class="flex items-center mb-4">
-                                        <label class="inline-flex items-center cursor-pointer">
-                                            <input type="checkbox" name="deduccionSobreMinimo" class="sr-only peer" ${data.deduccionSobreMinimo ? 'checked' : ''}>
-                                            <div class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                            <span class="ms-3 text-xs font-medium text-slate-600">Aplicar deducciones sobre el Salario Mínimo</span>
-                                        </label>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                        <div>
+                                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Auxilio de Rodamiento (No Salarial)</label>
+                                            <input type="text" id="user-rodamiento" name="rodamiento" class="currency-input w-full border border-slate-300 rounded-lg p-2.5 text-sm font-mono font-bold text-slate-700 focus:border-slate-500 outline-none" value="${data.rodamiento || 0}" placeholder="$ 0">
+                                            <p class="text-[10px] text-slate-400 mt-1">Bonificación no salarial fija para rodamiento o transporte adicional.</p>
+                                        </div>
+                                        <div class="flex flex-col justify-center">
+                                            <label class="inline-flex items-center cursor-pointer mt-2">
+                                                <input type="checkbox" name="deduccionSobreMinimo" class="sr-only peer" ${data.deduccionSobreMinimo ? 'checked' : ''}>
+                                                <div class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                                <span class="ms-3 text-xs font-bold text-slate-700">Aplicar deducciones sobre el Salario Mínimo</span>
+                                            </label>
+                                            <p class="text-[10px] text-slate-400 ms-14 mt-0.5">Calcula Salud (4%) y Pensión (4%) sobre el SMLV legal vigente.</p>
+                                        </div>
                                     </div>
 
                                     <div class="border-t border-slate-200 pt-4">
@@ -5794,6 +5802,9 @@ async function openMainModal(type, data = {}) {
             setTimeout(() => {
                 const salarioInput = document.getElementById('user-salarioBasico');
                 if (salarioInput) setupCurrencyInput(salarioInput);
+
+                const rodamientoInput = document.getElementById('user-rodamiento');
+                if (rodamientoInput) setupCurrencyInput(rodamientoInput);
 
                 processedPhotoFile = null;
                 const dropzone = document.getElementById('editUser-dropzone');

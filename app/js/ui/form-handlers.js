@@ -1843,7 +1843,8 @@ export function initFormHandlers() {
                     if (window.currentUserRole === 'admin' || window.currentUserRole === 'nomina') {
                         dataToUpdate.role = data.role;
                         dataToUpdate.commissionLevel = data.commissionLevel || '';
-                        dataToUpdate.salarioBasico = parseFloat(data.salarioBasico.replace(/[$. ]/g, '')) || 0;
+                        dataToUpdate.salarioBasico = parseFloat((data.salarioBasico || '0').replace(/[$. ]/g, '')) || 0;
+                        dataToUpdate.rodamiento = parseFloat((data.rodamiento || '0').replace(/[$. ]/g, '')) || 0;
                         dataToUpdate.deduccionSobreMinimo = !!data.deduccionSobreMinimo;
 
                         dataToUpdate.customPermissions = customPermissions;
@@ -1872,6 +1873,11 @@ export function initFormHandlers() {
                     const oldSalario = oldUserData.salarioBasico || 0;
                     const newSalario = dataToUpdate.salarioBasico;
                     if (newSalario !== oldSalario) changes.salarioBasico = { old: oldSalario, new: newSalario };
+
+                    const oldRodamiento = oldUserData.rodamiento || 0;
+                    const newRodamiento = dataToUpdate.rodamiento || 0;
+                    if (newRodamiento !== oldRodamiento) changes.rodamiento = { old: oldRodamiento, new: newRodamiento };
+
                     if (data.commissionLevel !== (oldUserData.commissionLevel || '')) changes.commissionLevel = { old: safeVal(oldUserData.commissionLevel), new: data.commissionLevel };
 
                     const oldStart = oldUserData.contractStartDate || null;
