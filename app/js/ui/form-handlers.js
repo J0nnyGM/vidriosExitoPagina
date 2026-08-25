@@ -3,7 +3,253 @@
 import { db, auth, storage, httpsCallable } from '../core/firebase-config.js';
 import { doc, getDoc, setDoc, addDoc, updateDoc, collection, query, where, writeBatch, getDocs, orderBy, increment, serverTimestamp, arrayUnion, runTransaction, collectionGroup } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
-import { isUserIncapacitatedOnDate, generateLaborCertificate } from '../core/utils.js';
+import { isUserIncapacitatedOnDate } from '../core/utils.js';
+
+/**
+ * Convierte un número a texto en español (para moneda).
+ */
+function formatNumeroALetras(num) {
+    if (isNaN(num) || num === null || num === undefined) return '';
+    num = Math.floor(Math.abs(num));
+    const unidades = ['', 'UN ', 'DOS ', 'TRES ', 'CUATRO ', 'CINCO ', 'SEIS ', 'SIETE ', 'OCHO ', 'NUEVE '];
+    const decenas = ['DIEZ ', 'ONCE ', 'DOCE ', 'TRECE ', 'CATORCE ', 'QUINCE ', 'DIECISEIS ', 'DIECISIETE ', 'DIECIOCHO ', 'DIECINUEVE ', 'VEINTE ', 'TREINTA ', 'CUARENTA ', 'CINCUENTA ', 'SESENTA ', 'SETENTA ', 'OCHENTA ', 'NOVENTA '];
+    const centenas = ['', 'CIENTO ', 'DOSCIENTOS ', 'TRESCIENTOS ', 'CUATROCIENTOS ', 'QUINIENTOS ', 'SEISCIENTOS ', 'SETECIENTOS ', 'OCHOCIENTOS ', 'NOVECIENTOS '];
+
+    if (num === 0) return 'CERO';
+    if (num < 10) return unidades[num];
+    if (num < 20) return decenas[num - 10];
+    if (num < 30) return (num === 20 ? 'VEINTE ' : 'VEINTI' + unidades[num - 20]);
+    if (num < 100) {
+        const d = Math.floor(num / 10);
+        const u = num % 10;
+        return decenas[d + 8] + (u > 0 ? 'Y ' + unidades[u] : '');
+    }
+    if (num >= 1000000) {
+        const millones = Math.floor(num / 1000000);
+        const resto = num % 1000000;
+        const strMillones = millones === 1 ? 'UN MILLON ' : formatNumeroALetras(millones) + ' MILLONES ';
+        return strMillones + (resto > 0 ? formatNumeroALetras(resto) : '');
+    }
+    if (num >= 1000) {
+        const miles = Math.floor(num / 1000);
+        const resto = num % 1000;
+        const strMiles = miles === 1 ? 'MIL ' : formatNumeroALetras(miles) + ' MIL ';
+        return strMiles + (resto > 0 ? formatNumeroALetras(resto) : '');
+    }
+    if (num >= 100) {
+        if (num === 100) return 'CIEN ';
+        const c = Math.floor(num / 100);
+        const resto = num % 100;
+        return centenas[c] + (resto > 0 ? formatNumeroALetras(resto) : '');
+    }
+    return '';
+}
+
+/**
+ * Genera el PDF de la Certificación Laboral (Datos 100% dinámicos).
+ */
+export async function generateLaborCertificate(params) {
+    if (window.ensurePDF) {
+        await window.ensurePDF();
+    }
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+        throw new Error("La librería jsPDF no está disponible.");
+    }
+    const { jsPDF } = window.jspdf;
+
+    const docPdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'letter'
+    });
+
+    const marginTop = 25;
+    const marginLeft = 25;
+    const marginRight = 25;
+    const marginBottom = 20;
+
+    const pageWidth = docPdf.internal.pageSize.getWidth();
+    const pageHeight = docPdf.internal.pageSize.getHeight();
+    const contentWidth = pageWidth - marginLeft - marginRight;
+    const today = new Date();
+
+    let companyData = {
+        nombre: "VIDRIOS Y ALUMINIOS EXITO",
+        nit: "",
+        gerente: "Gerente General",
+        logoURL: null,
+        firmaGerenteURL: null,
+        direccion: "",
+        email: "",
+        telefono: ""
+    };
+
+    // Cargar datos reales desde Configuración
+    try {
+        if (typeof window.getCompanyData === 'function') {
+            const data = await window.getCompanyData();
+            if (data && Object.keys(data).length > 0) {
+                companyData = { ...companyData, ...data };
+            }
+        } else {
+            const docSnap = await getDoc(doc(db, "system", "generalConfig"));
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (data.empresa) {
+                    companyData = { ...companyData, ...data.empresa };
+                } else if (data.nombre || data.nit) {
+                    companyData = { ...companyData, ...data };
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("Error cargando configuración de empresa:", e);
+    }
+
+    // Logo
+    if (params.includeLogo && companyData.logoURL) {
+        try {
+            const img = new Image();
+            img.src = companyData.logoURL;
+            img.crossOrigin = "Anonymous";
+            const loaded = await new Promise((resolve) => {
+                img.onload = () => resolve(true);
+                img.onerror = () => resolve(false);
+            });
+            if (loaded) {
+                const imgWidth = 70;
+                const ratio = img.width ? (img.height / img.width) : 0.4;
+                const imgHeight = imgWidth * ratio;
+                docPdf.addImage(img, 'PNG', (pageWidth - imgWidth) / 2, 12, imgWidth, imgHeight);
+            }
+        } catch (e) { console.warn("Error logo", e); }
+    }
+
+    let y = marginTop + 25;
+
+    // Encabezado
+    const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const fechaCiudad = `Bogotá D.C., ${today.getDate()} de ${meses[today.getMonth()]} de ${today.getFullYear()}`;
+
+    docPdf.setFont("helvetica", "normal");
+    docPdf.setFontSize(11);
+    docPdf.text(fechaCiudad, pageWidth - marginRight, y, { align: "right" });
+
+    y += 15;
+    docPdf.setFont("helvetica", "bold");
+    docPdf.setFontSize(13);
+    docPdf.text((companyData.nombre || "VIDRIOS Y ALUMINIOS EXITO").toUpperCase(), pageWidth / 2, y, { align: "center" });
+
+    if (companyData.nit) {
+        y += 6;
+        docPdf.setFont("helvetica", "normal");
+        docPdf.setFontSize(10);
+        docPdf.text(`NIT: ${companyData.nit}`, pageWidth / 2, y, { align: "center" });
+    }
+
+    y += 20;
+    docPdf.setFont("helvetica", "bold");
+    docPdf.setFontSize(15);
+    docPdf.text("CERTIFICACIÓN LABORAL", pageWidth / 2, y, { align: "center" });
+
+    // Cuerpo
+    y += 18;
+    docPdf.setFont("helvetica", "normal");
+    docPdf.setFontSize(11.5);
+
+    const fInicio = params.startDate ? new Date(params.startDate + 'T12:00:00') : new Date();
+    const fInicioStr = `${fInicio.getDate()} de ${meses[fInicio.getMonth()]} de ${fInicio.getFullYear()}`;
+
+    let textoDuracionYContrato = "";
+    if (params.endDate) {
+        const fFin = new Date(params.endDate + 'T12:00:00');
+        const fFinStr = `${fFin.getDate()} de ${meses[fFin.getMonth()]} de ${fFin.getFullYear()}`;
+        textoDuracionYContrato = `desde el ${fInicioStr} hasta el ${fFinStr} mediante contrato a término fijo`;
+    } else {
+        textoDuracionYContrato = `desde el ${fInicioStr} hasta la fecha`;
+    }
+
+    const salarioNum = new Intl.NumberFormat('es-CO').format(params.salary || 0);
+    const salarioTexto = formatNumeroALetras(params.salary || 0).toLowerCase().trim();
+
+    let bodyText = `Que el señor(a) ${(params.fullName || '').toUpperCase()} identificado(a) con cédula de ciudadanía No. ${params.idNumber || ''} labora para nuestra empresa ${textoDuracionYContrato}, desempeñando el cargo de ${(params.jobTitle || 'Operario').toLowerCase()}.`;
+
+    if (params.includeSalary && params.salary > 0) {
+        bodyText += ` Devengando un salario mensual de $${salarioNum} (${salarioTexto} pesos m/cte).`;
+    }
+
+    const splitBody = docPdf.splitTextToSize(bodyText, contentWidth);
+    docPdf.text(splitBody, marginLeft, y, { align: "justify", maxWidth: contentWidth, lineHeightFactor: 1.5 });
+
+    y += (splitBody.length * 6.5) + 12;
+
+    const diaLetras = formatNumeroALetras(today.getDate()).toLowerCase().trim();
+    const anioLetras = formatNumeroALetras(today.getFullYear()).toLowerCase().trim();
+    const cierreText = `Para constancia de lo anterior, se expide la presente certificación a solicitud del interesado en Bogotá D.C., a los ${diaLetras} (${today.getDate()}) días del mes de ${meses[today.getMonth()]} de ${anioLetras} (${today.getFullYear()}).`;
+    
+    const splitCierre = docPdf.splitTextToSize(cierreText, contentWidth);
+    docPdf.text(splitCierre, marginLeft, y, { align: "justify", maxWidth: contentWidth, lineHeightFactor: 1.5 });
+
+    y += (splitCierre.length * 6.5) + 15;
+
+    // Firma
+    const footerStart = pageHeight - marginBottom - 30;
+    if (y + 40 > footerStart) {
+        docPdf.addPage();
+        y = marginTop + 10;
+    }
+
+    docPdf.setFont("helvetica", "normal");
+    docPdf.setFontSize(11);
+    docPdf.text("Cordialmente,", marginLeft, y);
+    y += 8;
+
+    if (companyData.firmaGerenteURL) {
+        try {
+            const imgSig = new Image();
+            imgSig.src = companyData.firmaGerenteURL;
+            imgSig.crossOrigin = "Anonymous";
+            const loadedSig = await new Promise((r) => { imgSig.onload = () => r(true); imgSig.onerror = () => r(false); });
+            if (loadedSig) {
+                const sigWidth = 40;
+                const sigHeight = (imgSig.height * sigWidth) / imgSig.width;
+                docPdf.addImage(imgSig, 'PNG', marginLeft, y, sigWidth, sigHeight);
+                y += sigHeight + 2;
+            } else { y += 18; }
+        } catch (e) { y += 18; }
+    } else { y += 18; }
+
+    docPdf.setFont("helvetica", "bold");
+    docPdf.setFontSize(11);
+    docPdf.text((companyData.gerente || "Gerente General").toUpperCase(), marginLeft, y);
+    y += 5;
+    docPdf.setFont("helvetica", "normal");
+    docPdf.setFontSize(10);
+    docPdf.text("Gerencia General", marginLeft, y);
+
+    // Pie de página
+    if (params.includeLogo) {
+        const footerY = pageHeight - marginBottom;
+        docPdf.setFontSize(8);
+        docPdf.setTextColor(100);
+        docPdf.setFont("helvetica", "bold");
+
+        const linea1 = "VENTANERIA FACHADAS - DIVISIONES DE OFICINA - DIVISIONES DE BAÑO";
+        const linea2 = "VIDRIO TEMPLADO - PELICULA DE SEGURIDAD - VENTANAS ACUSTICAS";
+
+        docPdf.text(linea1, pageWidth / 2, footerY - 8, { align: "center" });
+        docPdf.text(linea2, pageWidth / 2, footerY - 4, { align: "center" });
+        docPdf.setFont("helvetica", "normal");
+        if (companyData.direccion) docPdf.text(companyData.direccion.toUpperCase(), pageWidth / 2, footerY, { align: "center" });
+        const contacto = [companyData.email ? `Email: ${companyData.email}` : '', companyData.telefono ? `Tel: ${companyData.telefono}` : ''].filter(Boolean).join(' | ');
+        if (contacto) docPdf.text(contacto, pageWidth / 2, footerY + 4, { align: "center" });
+    }
+
+    const safeName = (params.fullName || 'Empleado').trim().replace(/\s+/g, '_');
+    docPdf.save(`Certificacion_Laboral_${safeName}.pdf`);
+    if (window.showToast) window.showToast("Certificación generada correctamente.", "success");
+}
+window.generateLaborCertificate = generateLaborCertificate;
 
 export function initFormHandlers() {
     const modalForm = document.getElementById('modal-form');
@@ -32,22 +278,16 @@ export function initFormHandlers() {
             const includeLogo = document.getElementById('include-logo').checked;
 
             try {
-                const fnCert = typeof generateLaborCertificate === 'function' ? generateLaborCertificate : window.generateLaborCertificate;
-                if (typeof fnCert === 'function') {
-                    await fnCert({
-                        fullName: data.fullName,
-                        idNumber: data.idNumber,
-                        startDate: data.startDate,
-                        endDate: data.endDate,
-                        jobTitle: data.jobTitle,
-                        salary: parseFloat(data.salarioBasico || 0),
-                        includeSalary: includeSalary,
-                        includeLogo: includeLogo
-                    });
-                } else {
-                    console.error("Error: generateLaborCertificate no está disponible.");
-                    alert("Error: La función para generar certificación laboral no está disponible.");
-                }
+                await generateLaborCertificate({
+                    fullName: data.fullName,
+                    idNumber: data.idNumber,
+                    startDate: data.startDate,
+                    endDate: data.endDate,
+                    jobTitle: data.jobTitle,
+                    salary: parseFloat(data.salarioBasico || 0),
+                    includeSalary: includeSalary,
+                    includeLogo: includeLogo
+                });
             } catch (err) {
                 console.error("Error al generar certificación laboral:", err);
                 alert("Error al generar certificación laboral: " + err.message);
