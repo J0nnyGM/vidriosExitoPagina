@@ -90,6 +90,28 @@ function closeDotacionHistoryModal() {
     }
 }
 
+async function safeSendNotification(userId, title, message, type = 'dotacion') {
+    if (!userId) return;
+    try {
+        if (typeof sendNotificationCallback === 'function') {
+            await sendNotificationCallback(userId, title, message, type);
+        } else if (typeof window.sendNotification === 'function') {
+            await window.sendNotification(userId, title, message, type);
+        } else if (db) {
+            await addDoc(collection(db, "notifications"), {
+                userId: userId,
+                title: title,
+                message: message,
+                type: type,
+                read: false,
+                createdAt: serverTimestamp()
+            });
+        }
+    } catch (e) {
+        console.warn("Error enviando notificación desde dotación:", e);
+    }
+}
+
 /**
  * Inicializa el módulo de Dotación.
  */
@@ -1484,7 +1506,7 @@ async function handleSaveDotacion(form) {
                 serialNumber: data.serialNumber || null
             });
 
-            sendNotificationCallback(assigneeId, 'Dotación', `Recibiste: ${quantity}x ${data.itemName}`, 'dotacion');
+            safeSendNotification(assigneeId, 'Dotación', `Recibiste: ${quantity}x ${data.itemName}`, 'dotacion');
 
 // === CASO 5: DEVOLUCIÓN (Blindado) ===
         } else if (type === 'return-dotacion-options') {

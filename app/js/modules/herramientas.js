@@ -99,6 +99,27 @@ function resizeImage(file, maxWidth = 800) {
 }
 // --- FIN: Nueva Función de Helper ---
 
+async function safeSendNotification(userId, title, message, type = 'herramienta') {
+    if (!userId) return;
+    try {
+        if (typeof sendNotificationCallback === 'function') {
+            await sendNotificationCallback(userId, title, message, type);
+        } else if (typeof window.sendNotification === 'function') {
+            await window.sendNotification(userId, title, message, type);
+        } else if (db) {
+            await addDoc(collection(db, "notifications"), {
+                userId: userId,
+                title: title,
+                message: message,
+                type: type,
+                read: false,
+                createdAt: serverTimestamp()
+            });
+        }
+    } catch (e) {
+        console.warn("Error enviando notificación desde herramientas:", e);
+    }
+}
 
 /**
  * Inicializa el módulo de Herramientas, recibiendo las dependencias de app.js
@@ -820,7 +841,7 @@ async function handleSaveTool(form) {
                 assignComments: assignComments
             });
 
-            sendNotificationCallback(
+            safeSendNotification(
                 assigneeId,
                 'Herramienta Asignada',
                 `Se te ha asignado la herramienta: ${toolName}.`,
@@ -868,7 +889,7 @@ async function handleSaveTool(form) {
             });
 
             if (originalAssigneeId) {
-                sendNotificationCallback(
+                safeSendNotification(
                     originalAssigneeId,
                     'Devolución Recibida',
                     `Recibimos tu devolución de la herramienta: ${toolName}.`,

@@ -490,6 +490,26 @@ export function isUserIncapacitatedOnDate(userData, dateObj = new Date()) {
 }
 
 /**
+ * Envía una notificación interna al usuario en Firestore.
+ */
+export async function sendNotification(userId, title, message, type = 'general') {
+    if (!userId) return;
+    try {
+        await addDoc(collection(db, "notifications"), {
+            userId: userId,
+            title: title,
+            message: message,
+            type: type,
+            read: false,
+            createdAt: serverTimestamp()
+        });
+    } catch (e) {
+        console.warn("Error enviando notificación a Firestore:", e);
+    }
+}
+window.sendNotification = sendNotification;
+
+/**
  * Genera el PDF de la Certificación Laboral (Datos 100% dinámicos).
  */
 export async function generateLaborCertificate(params) {

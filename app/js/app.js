@@ -1,7 +1,7 @@
 import { db, auth, storage, messaging, functions, VAPID_KEY } from './core/firebase-config.js';
 
 // --- CORE & UI MODULAR IMPORTS (OLA 5 & 6) ---
-import { normalizeString, resizeImage, loadFaceAPImodels, generateProfileFaceDescriptor, formatTimeAgo, fetchMunicipalities, loadScript, timeAgoFormat, numeroALetras, registerSupplierPayment, setupCurrencyInput, loadPeopleOfInterest, initThemeToggle, generateLaborCertificate } from './core/utils.js';
+import { normalizeString, resizeImage, loadFaceAPImodels, generateProfileFaceDescriptor, formatTimeAgo, fetchMunicipalities, loadScript, timeAgoFormat, numeroALetras, registerSupplierPayment, setupCurrencyInput, loadPeopleOfInterest, initThemeToggle, generateLaborCertificate, sendNotification } from './core/utils.js';
 import { getRoleDefaultPermissions, applySidebarPermissions, closeSidebar, showView, initializePushNotifications, updatePermissionUI, requestCameraPermission, requestLocationPermission, requestPushPermission, checkAllPermissionsOnLogin, SIDEBAR_CONFIG, loadNotifications } from './core/permissions.js';
 import { handleLogin, handleRegister, handleLogout, showAuthView, isRegistering, setIsRegistering } from './core/auth.js';
 import { openCameraModal, closeCameraModal, capturePhoto, handlePhotoFile } from './ui/camera.js';
@@ -26,6 +26,7 @@ window.setupCurrencyInput = setupCurrencyInput;
 window.loadPeopleOfInterest = loadPeopleOfInterest;
 window.initThemeToggle = initThemeToggle;
 window.generateLaborCertificate = generateLaborCertificate;
+window.sendNotification = sendNotification;
 
 window.getRoleDefaultPermissions = getRoleDefaultPermissions;
 window.applySidebarPermissions = applySidebarPermissions;
@@ -364,8 +365,8 @@ async function ensureModulesLoaded(role) {
                     window.setupDespieceEvents = setupDespieceEvents;
 
                     // Inicializar los módulos de Fase 2
-                    if (typeof initDotacion === 'function') initDotacion(db, storage, openMainModal, closeMainModal, openConfirmModal, null, openImageModal, () => currentUser, () => usersMap, () => currentUserRole);
-                    if (typeof initHerramientas === 'function') initHerramientas(db, storage, openMainModal, closeMainModal, openConfirmModal, null, openImageModal, () => currentUser, () => usersMap, () => currentUserRole);
+                    if (typeof initDotacion === 'function') initDotacion(db, storage, openMainModal, closeMainModal, openConfirmModal, sendNotification, openImageModal, () => currentUser, () => usersMap, () => currentUserRole);
+                    if (typeof initHerramientas === 'function') initHerramientas(db, storage, openMainModal, closeMainModal, openConfirmModal, sendNotification, openImageModal, () => currentUser, () => usersMap, () => currentUserRole);
                     if (typeof initEmpleados === 'function') initEmpleados(db, () => usersMap, () => currentUserRole, showView, storage, openConfirmModal, (userId, containerId) => loadDotacionAsignaciones(userId, containerId), () => payrollConfig, () => currentUser ? currentUser.uid : null, setupCurrencyInput);
                     if (typeof initConfiguracion === 'function') initConfiguracion(db, setupCurrencyInput);
                     if (typeof initCartera === 'function') initCartera(db, showView);
