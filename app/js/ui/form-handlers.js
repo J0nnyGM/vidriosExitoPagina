@@ -3,7 +3,7 @@
 import { db, auth, storage, httpsCallable } from '../core/firebase-config.js';
 import { doc, getDoc, setDoc, addDoc, updateDoc, collection, query, where, writeBatch, getDocs, orderBy, increment, serverTimestamp, arrayUnion, runTransaction, collectionGroup } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
-import { isUserIncapacitatedOnDate } from '../core/utils.js';
+import { isUserIncapacitatedOnDate, generateLaborCertificate } from '../core/utils.js';
 
 export function initFormHandlers() {
     const modalForm = document.getElementById('modal-form');
@@ -32,8 +32,9 @@ export function initFormHandlers() {
             const includeLogo = document.getElementById('include-logo').checked;
 
             try {
-                if (typeof window.generateLaborCertificate === 'function') {
-                    await window.generateLaborCertificate({
+                const fnCert = typeof generateLaborCertificate === 'function' ? generateLaborCertificate : window.generateLaborCertificate;
+                if (typeof fnCert === 'function') {
+                    await fnCert({
                         fullName: data.fullName,
                         idNumber: data.idNumber,
                         startDate: data.startDate,
@@ -44,7 +45,7 @@ export function initFormHandlers() {
                         includeLogo: includeLogo
                     });
                 } else {
-                    console.error("Error: window.generateLaborCertificate no está disponible.");
+                    console.error("Error: generateLaborCertificate no está disponible.");
                     alert("Error: La función para generar certificación laboral no está disponible.");
                 }
             } catch (err) {
