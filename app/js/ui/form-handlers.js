@@ -86,20 +86,13 @@ export async function generateLaborCertificate(params) {
 
     // Cargar datos reales desde Configuración
     try {
-        if (typeof window.getCompanyData === 'function') {
-            const data = await window.getCompanyData();
-            if (data && Object.keys(data).length > 0) {
+        const docSnap = await getDoc(doc(db, "system", "generalConfig"));
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data.empresa) {
+                companyData = { ...companyData, ...data.empresa };
+            } else if (data.nombre || data.nit) {
                 companyData = { ...companyData, ...data };
-            }
-        } else {
-            const docSnap = await getDoc(doc(db, "system", "generalConfig"));
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                if (data.empresa) {
-                    companyData = { ...companyData, ...data.empresa };
-                } else if (data.nombre || data.nit) {
-                    companyData = { ...companyData, ...data };
-                }
             }
         }
     } catch (e) {

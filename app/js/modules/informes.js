@@ -4,8 +4,9 @@
 import {
     collection, query, where, getDocs, orderBy, getDoc, doc, collectionGroup
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+import { db } from '../core/firebase-config.js';
 
-let _db;
+let _db = db;
 let _currencyFormatter;
 let reportChartInstance = null; // Para destruir gráficos viejos antes de crear nuevos
 
