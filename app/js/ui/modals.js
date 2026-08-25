@@ -1338,7 +1338,102 @@ async function openMainModal(type, data = {}) {
             `;
             break;
 
+        case 'export-attendance-report': {
+            if (document.getElementById('modal-title')) {
+                document.getElementById('modal-title').parentElement.style.display = 'none';
+            }
+            const cleanFooter = document.getElementById('main-modal-footer');
+            if (cleanFooter) {
+                cleanFooter.style.display = 'none';
+            }
 
+            if (modalContentDiv) {
+                modalContentDiv.className = '';
+                modalContentDiv.classList.add('bg-white', 'rounded-xl', 'shadow-2xl', 'transform', 'transition-all', 'w-full', 'max-w-md', 'flex', 'flex-col', 'max-h-[90vh]', 'overflow-hidden');
+                modalBody.classList.remove('p-0', 'overflow-hidden');
+                modalBody.style.padding = '0';
+            }
+
+            title = 'Exportar Reporte de Marcación';
+            btnText = 'Cerrar';
+            btnClass = 'hidden';
+
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            bodyHtml = `
+                <div class="flex flex-col h-full">
+                    <div class="bg-gradient-to-r from-indigo-600 to-blue-600 px-6 py-4 shrink-0 rounded-t-xl flex justify-between items-center relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none transform scale-150 translate-x-4 -translate-y-2">
+                            <i class="fa-solid fa-file-export text-6xl text-white"></i>
+                        </div>
+                        <div class="flex items-center gap-3 relative z-10">
+                            <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-lg backdrop-blur-sm border border-white/10 shadow-inner text-white">
+                                <i class="fa-solid fa-file-invoice"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-lg font-bold tracking-tight text-white">Exportar Marcación</h2>
+                                <p class="text-indigo-100 text-[10px] font-medium">Reportes y actividad diaria</p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="closeMainModal()" class="text-white/70 hover:text-white transition-colors relative z-10 p-1.5 rounded-full hover:bg-white/10">
+                            <i class="fa-solid fa-xmark text-lg"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex-grow overflow-y-auto custom-scrollbar p-6 bg-slate-50/30 space-y-4">
+                        <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm space-y-4">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wide border-b pb-2 mb-2 flex items-center">
+                                <i class="fa-solid fa-calendar-days mr-2 text-indigo-500"></i> Rango de Fechas
+                            </h4>
+                            
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Fecha Inicio</label>
+                                    <input type="date" id="export-start-date" name="startDate" class="w-full border border-slate-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" value="${todayStr}" required>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Fecha Fin</label>
+                                    <input type="date" id="export-end-date" name="endDate" class="w-full border border-slate-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" value="${todayStr}" required>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm space-y-4">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wide border-b pb-2 mb-2 flex items-center">
+                                <i class="fa-solid fa-file-lines mr-2 text-indigo-500"></i> Formato de Exportación
+                            </h4>
+                            
+                            <div class="grid grid-cols-2 gap-4">
+                                <label class="flex items-center gap-3 p-3 border border-slate-150 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                                    <input type="radio" name="format" value="excel" checked class="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-slate-350">
+                                    <div class="flex flex-col">
+                                        <span class="text-sm font-bold text-slate-700">Excel (.xlsx)</span>
+                                        <span class="text-[10px] text-slate-400">Hoja de cálculo</span>
+                                    </div>
+                                </label>
+                                <label class="flex items-center gap-3 p-3 border border-slate-150 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                                    <input type="radio" name="format" value="pdf" class="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-slate-350">
+                                    <div class="flex flex-col">
+                                        <span class="text-sm font-bold text-slate-700">PDF (.pdf)</span>
+                                        <span class="text-[10px] text-slate-400">Documento listo</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-3 pt-2">
+                            <button type="button" onclick="closeMainModal()" class="flex-1 py-3 px-4 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition-colors text-sm text-center">
+                                Cancelar
+                            </button>
+                            <button type="submit" id="btn-export-submit" class="flex-1 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-100 hover:shadow-lg transition-all text-sm flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-download"></i> Descargar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            break;
+        }
 
         // --- CASO: REVISIÓN DE PRÉSTAMO (MODAL DE APROBACIÓN) ---
         case 'review-loan': {

@@ -1,6 +1,6 @@
 // js/core/permissions.js
 
-import { messaging, db, VAPID_KEY } from './firebase-config.js';
+import { messaging, db, VAPID_KEY, auth } from './firebase-config.js';
 import { doc, updateDoc, query, collection, where, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { getToken } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-messaging.js";
 
@@ -378,7 +378,8 @@ export async function requestPushPermission(currentUser) {
     if (!('Notification' in window)) return;
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
-        if (currentUser) initializePushNotifications(currentUser);
+        const user = currentUser || auth.currentUser || window.currentUser;
+        if (user) initializePushNotifications(user);
         updatePermissionUI();
     } else {
         alert("Permiso denegado. Habilita las notificaciones en el navegador.");
@@ -389,25 +390,42 @@ export async function requestPushPermission(currentUser) {
  * Audita y audita si falta algún permiso tras el login para disparar el modal.
  */
 export async function checkAllPermissionsOnLogin(currentUser) {
+    const user = currentUser || auth.currentUser || window.currentUser;
+
+    // Si ya tenemos permiso de notificación concedido, inicializamos de inmediato
+    if (Notification.permission === 'granted' && user) {
+        initializePushNotifications(user);
+    }
+
     let missing = false;
 
     if (Notification.permission !== 'granted') missing = true;
 
+    // Validación segura de cámara (no asume denegado si la API query lanza error)
     try {
-        const camStatus = await navigator.permissions.query({ name: 'camera' });
-        if (camStatus.state !== 'granted') missing = true;
-
-        const locStatus = await navigator.permissions.query({ name: 'geolocation' });
-        if (locStatus.state !== 'granted') missing = true;
+        if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+            const camStatus = await navigator.permissions.query({ name: 'camera' });
+            if (camStatus.state !== 'granted') missing = true;
+        }
     } catch (e) {
-        missing = true;
+        console.warn("No se pudo consultar el permiso de cámara:", e);
+    }
+
+    // Validación segura de ubicación (no asume denegado si la API query lanza error)
+    try {
+        if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+            const locStatus = await navigator.permissions.query({ name: 'geolocation' });
+            if (locStatus.state !== 'granted') missing = true;
+        }
+    } catch (e) {
+        console.warn("No se pudo consultar el permiso de ubicación:", e);
     }
 
     if (missing) {
         if (window.openMainModal) window.openMainModal('check-permissions');
     } else {
-        console.log("Todos los permisos están habilitados. Continuando.");
-        if (currentUser) initializePushNotifications(currentUser);
+        console.log("Todos los permisos están habilitados o soportados. Continuando.");
+        if (user) initializePushNotifications(user);
     }
 }
 

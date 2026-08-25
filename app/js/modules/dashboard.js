@@ -1765,17 +1765,21 @@ async function updateAdminAttendanceActivity(date) {
                 <i class="fa-solid fa-user-check text-indigo-500"></i> Marcación y Actividad Diaria
             </h3>
             
-            <!-- Selector de Fecha -->
-            <div class="flex items-center gap-3 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
-                <button id="btn-prev-day" class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-colors" title="Día Anterior">
-                    <i class="fa-solid fa-chevron-left"></i>
+            <div class="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                <button id="btn-export-report" class="w-full sm:w-auto px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all opacity-50 cursor-not-allowed" disabled>
+                    <i class="fa-solid fa-file-export text-[10px]"></i> Exportar Reporte
                 </button>
-                <span class="text-sm font-bold text-slate-700 min-w-[180px] text-center select-none">
-                    ${capitalizedDateStr}
-                </span>
-                <button id="btn-next-day" class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-colors" title="Día Siguiente" ${isToday ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : ''}>
-                    <i class="fa-solid fa-chevron-right"></i>
-                </button>
+                <div class="flex items-center gap-3 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm w-full sm:w-auto justify-between sm:justify-start">
+                    <button id="btn-prev-day" class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-colors" title="Día Anterior">
+                        <i class="fa-solid fa-chevron-left"></i>
+                    </button>
+                    <span class="text-sm font-bold text-slate-700 min-w-[180px] text-center select-none">
+                        ${capitalizedDateStr}
+                    </span>
+                    <button id="btn-next-day" class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-colors" title="Día Siguiente" ${isToday ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : ''}>
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                </div>
             </div>
         </div>
         <div class="p-8 text-center">
@@ -2093,16 +2097,21 @@ async function updateAdminAttendanceActivity(date) {
                     <i class="fa-solid fa-user-check text-indigo-500"></i> Marcación y Actividad Diaria
                 </h3>
                 
-                <div class="flex items-center gap-3 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm w-full sm:w-auto justify-between sm:justify-start">
-                    <button id="btn-prev-day" class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-colors" title="Día Anterior">
-                        <i class="fa-solid fa-chevron-left"></i>
+                <div class="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                    <button id="btn-export-report" class="w-full sm:w-auto px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all" title="Exportar Reporte">
+                        <i class="fa-solid fa-file-export text-[10px]"></i> Exportar Reporte
                     </button>
-                    <span class="text-sm font-bold text-slate-700 min-w-[180px] text-center select-none">
-                        ${capitalizedDateStr}
-                    </span>
-                    <button id="btn-next-day" class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-colors" title="Día Siguiente" ${isToday ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : ''}>
-                        <i class="fa-solid fa-chevron-right"></i>
-                    </button>
+                    <div class="flex items-center gap-3 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm w-full sm:w-auto justify-between sm:justify-start">
+                        <button id="btn-prev-day" class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-colors" title="Día Anterior">
+                            <i class="fa-solid fa-chevron-left"></i>
+                        </button>
+                        <span class="text-sm font-bold text-slate-700 min-w-[180px] text-center select-none">
+                            ${capitalizedDateStr}
+                        </span>
+                        <button id="btn-next-day" class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600 transition-colors" title="Día Siguiente" ${isToday ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : ''}>
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
             
@@ -2138,6 +2147,15 @@ async function updateAdminAttendanceActivity(date) {
             nextBtnReal.onclick = () => {
                 date.setDate(date.getDate() + 1);
                 updateAdminAttendanceActivity(date);
+            };
+        }
+
+        const exportBtn = document.getElementById('btn-export-report');
+        if (exportBtn) {
+            exportBtn.onclick = () => {
+                if (window.openMainModal) {
+                    window.openMainModal('export-attendance-report');
+                }
             };
         }
 

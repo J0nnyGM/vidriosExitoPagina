@@ -28,7 +28,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 
 import { db } from '../core/firebase-config.js';
-import { isUserIncapacitatedOnDate } from '../core/utils.js';
+import { isUserIncapacitatedOnDate, generateLaborCertificate } from '../core/utils.js';
 
 // --- Variables del Módulo (Dependencias de app.js) ---
 let _db = db;
@@ -1414,7 +1414,7 @@ async function loadSSTColaboradoresSubTab(container) {
     // --- CAMBIO 1: Cargar Configuración de Alertas ---
     let diasAlerta = 45; // Valor por defecto
     try {
-        const configSnap = await getDoc(doc(_db, "system", "generalConfig"));
+        const configSnap = await getDoc(doc(_db, "config", "general"));
         if (configSnap.exists() && configSnap.data().alertas) {
             diasAlerta = configSnap.data().alertas.diasVencimientoSST || 45;
         }
@@ -2816,7 +2816,10 @@ async function loadNominaTab(container) {
             // A. Recalcular datos dinámicos para una quincena (15 días)
             const processedData = rawEmpleadoData.map(emp => {
                 const salarioProrrateado = (emp.salarioBasico / 30) * diasPagar;
-                const auxTransporteMensual = config.auxilioTransporte || 162000;
+                let auxTransporteMensual = config.auxilioTransporte || 162000;
+                if (emp.salarioBasico > (config.salarioMinimo * 2)) {
+                    auxTransporteMensual = 0;
+                }
                 
                 let incDays = 0;
                 const range = getQuincenaDateRange(activeQuincena, selectedMonthYear);
@@ -3122,7 +3125,10 @@ async function loadNominaTab(container) {
                 }
                 const defaultDiasTransporte = Math.max(0, defaultDias - incDays);
                 const salarioProrrateado = (emp.salarioBasico / 30) * defaultDias;
-                const auxTransporteMensual = config.auxilioTransporte || 162000;
+                let auxTransporteMensual = config.auxilioTransporte || 162000;
+                if (emp.salarioBasico > (config.salarioMinimo * 2)) {
+                    auxTransporteMensual = 0;
+                }
                 const auxTransporteProrrateado = (auxTransporteMensual / 30) * defaultDiasTransporte;
                 
                 let baseDeduccion = 0;
@@ -3189,7 +3195,10 @@ async function loadNominaTab(container) {
                     const dTransport = parseInt(daysTransportInput.value) || 0;
                     
                     const salProrrateado = (emp.salarioBasico / 30) * dSalario;
-                    const auxTransMensual = config.auxilioTransporte || 162000;
+                    let auxTransMensual = config.auxilioTransporte || 162000;
+                    if (emp.salarioBasico > (config.salarioMinimo * 2)) {
+                        auxTransMensual = 0;
+                    }
                     const auxTransProrrateado = (auxTransMensual / 30) * dTransport;
                     
                     let baseDed = 0;
@@ -4289,7 +4298,7 @@ async function openPaymentVoucherModal(payment, user) {
             companyLogo = window.companyHeaderCache.logo;
             managerSignature = window.companyHeaderCache.signature;
         } else {
-            const snap = await getDoc(doc(_db, "system", "generalConfig"));
+            const snap = await getDoc(doc(_db, "config", "general"));
             if(snap.exists()) {
                 const data = snap.data();
                 const emp = data.empresa || {}; 
@@ -4311,9 +4320,16 @@ async function openPaymentVoucherModal(payment, user) {
     // ============================================================
     // 4. HEADER UI
     // ============================================================
+    const sidebarLogo = document.querySelector('#desktop-sidebar img')?.getAttribute('src');
+    const mobileLogo = document.querySelector('#mobile-header img')?.getAttribute('src');
+    const authLogo = document.querySelector('#auth-view img')?.getAttribute('src');
+    const defaultLogo = '/app/recursos/LOGO PRISMA.png';
+    const resolvedPageLogo = sidebarLogo || mobileLogo || authLogo || defaultLogo;
+    const activeLogo = companyLogo || resolvedPageLogo;
+
     let visualElementHtml = '';
-    if (companyLogo) {
-        visualElementHtml = `<div class="mb-4 flex justify-center"><img src="${companyLogo}" alt="Logo" class="h-24 w-auto object-contain p-1 bg-white"></div>`;
+    if (activeLogo) {
+        visualElementHtml = `<div class="mb-4 flex justify-center"><img src="${activeLogo}" alt="Logo" class="h-24 w-auto object-contain p-1 bg-white"></div>`;
     } else {
         visualElementHtml = `<div class="flex justify-center mb-3"><div class="w-14 h-14 ${themeBg} rounded-full flex items-center justify-center ${themeColor} text-2xl shadow-sm border-2 ${themeBorder}"><i class="fa-solid ${icon}"></i></div></div>`;
     }
@@ -4486,25 +4502,27 @@ async function openPaymentVoucherModal(payment, user) {
     // --- 7. FIRMAS ---
     const signaturesDiv = document.createElement('div');
     signaturesDiv.id = 'voucher-dynamic-signatures';
-    signaturesDiv.className = "mt-12 flex justify-around text-center items-end";
+    signaturesDiv.className = "mt-12 flex justify-between text-center items-end px-6";
     
     let managerSigHtml = '<div class="h-16 w-full"></div>';
     if (managerSignature) {
         managerSigHtml = `<img src="${managerSignature}" alt="Firma" class="h-16 w-auto object-contain mx-auto mb-1">`;
     }
 
+    const formattedCompanyName = companyName.toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
     signaturesDiv.innerHTML = `
-        <div class="w-1/3 flex flex-col justify-end">
+        <div class="w-[40%] flex flex-col justify-end">
             ${managerSigHtml}
-            <div class="border-t border-gray-400 mb-2 w-full"></div>
-            <p class="text-[10px] font-bold text-gray-600 uppercase">Firma Empresa</p>
-            <p class="text-[9px] text-gray-400 truncate">${companyName}</p>
+            <div class="border-t border-slate-350 mb-2 w-full"></div>
+            <p class="text-[10px] font-black text-slate-500 uppercase tracking-wider">FIRMA EMPRESA</p>
+            <p class="text-[8px] font-bold text-slate-400 mt-0.5 uppercase">${formattedCompanyName}</p>
         </div>
-        <div class="w-1/3 flex flex-col justify-end">
+        <div class="w-[40%] flex flex-col justify-end">
             <div class="h-16 w-full"></div>
-            <div class="border-t border-gray-400 mb-2 w-full"></div>
-            <p class="text-[10px] font-bold text-gray-600 uppercase">Recibí Conforme</p>
-            <p class="text-[9px] text-gray-400">C.C. ${user.idNumber || '---'}</p>
+            <div class="border-t border-slate-350 mb-2 w-full"></div>
+            <p class="text-[10px] font-black text-slate-500 uppercase tracking-wider">RECIBÍ CONFORME</p>
+            <p class="text-[8px] font-bold text-slate-400 mt-0.5">C.C. ${user.idNumber || '---'}</p>
         </div>
     `;
     modalBody.appendChild(signaturesDiv);
@@ -5113,7 +5131,7 @@ async function renderStandardPayrollForm(container, user) {
                     <div class="flex items-end pb-3">
                          <span id="payment-salario-basico" class="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1.5 rounded-full w-full text-center border border-gray-200" 
                             data-value="${user.salarioBasico || 0}" 
-                            data-aux-transporte="${_getPayrollConfig()?.auxilioTransporte || 0}">
+                            data-aux-transporte="${(user.salarioBasico > (_getPayrollConfig()?.salarioMinimo * 2)) ? 0 : (_getPayrollConfig()?.auxilioTransporte || 0)}">
                             ${currencyFormatter.format(user.salarioBasico || 0)}
                         </span>
                     </div>
@@ -5125,7 +5143,7 @@ async function renderStandardPayrollForm(container, user) {
                     </div>
                     <div class="flex items-end pb-3">
                          <span id="payment-aux-transporte-valor" class="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1.5 rounded-full w-full text-center border border-gray-200">
-                            Aux: ${currencyFormatter.format(_getPayrollConfig()?.auxilioTransporte || 0)}
+                            Aux: ${currencyFormatter.format((user.salarioBasico > (_getPayrollConfig()?.salarioMinimo * 2)) ? 0 : (_getPayrollConfig()?.auxilioTransporte || 0))}
                         </span>
                     </div>
                 </div>
@@ -7459,3 +7477,5 @@ async function renderAttendanceMap(points) {
 
 // Exponer openPaymentVoucherModal al cargarse el módulo para que esté accesible dinámicamente
 window.openPaymentVoucherModal = openPaymentVoucherModal;
+window.generateLaborCertificate = generateLaborCertificate;
+export { generateLaborCertificate };

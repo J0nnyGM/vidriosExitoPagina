@@ -1,7 +1,7 @@
 // js/ui/form-handlers.js
 
 import { db, auth, storage, httpsCallable } from '../core/firebase-config.js';
-import { doc, getDoc, setDoc, addDoc, updateDoc, collection, query, where, writeBatch, getDocs, orderBy, increment, serverTimestamp, arrayUnion, runTransaction } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+import { doc, getDoc, setDoc, addDoc, updateDoc, collection, query, where, writeBatch, getDocs, orderBy, increment, serverTimestamp, arrayUnion, runTransaction, collectionGroup } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 import { isUserIncapacitatedOnDate } from '../core/utils.js';
 
@@ -31,16 +31,26 @@ export function initFormHandlers() {
             const includeSalary = document.getElementById('include-salary').checked;
             const includeLogo = document.getElementById('include-logo').checked;
 
-            window.generateLaborCertificate({
-                fullName: data.fullName,
-                idNumber: data.idNumber,
-                startDate: data.startDate,
-                endDate: data.endDate,
-                jobTitle: data.jobTitle,
-                salary: parseFloat(data.salarioBasico),
-                includeSalary: includeSalary,
-                includeLogo: includeLogo
-            });
+            try {
+                if (typeof window.generateLaborCertificate === 'function') {
+                    await window.generateLaborCertificate({
+                        fullName: data.fullName,
+                        idNumber: data.idNumber,
+                        startDate: data.startDate,
+                        endDate: data.endDate,
+                        jobTitle: data.jobTitle,
+                        salary: parseFloat(data.salarioBasico || 0),
+                        includeSalary: includeSalary,
+                        includeLogo: includeLogo
+                    });
+                } else {
+                    console.error("Error: window.generateLaborCertificate no está disponible.");
+                    alert("Error: La función para generar certificación laboral no está disponible.");
+                }
+            } catch (err) {
+                console.error("Error al generar certificación laboral:", err);
+                alert("Error al generar certificación laboral: " + err.message);
+            }
 
             window.closeMainModal();
             return;
@@ -375,6 +385,20 @@ export function initFormHandlers() {
         }
 
         switch (type) {
+            case 'check-permissions': {
+                const user = auth.currentUser || window.currentUser;
+                if (Notification.permission === 'granted' && user) {
+                    try {
+                        if (typeof window.initializePushNotifications === 'function') {
+                            await window.initializePushNotifications(user);
+                        }
+                    } catch (error) {
+                        console.error("Error al inicializar notificaciones desde el modal de permisos:", error);
+                    }
+                }
+                window.closeMainModal();
+                break;
+            }
             case 'newProject': {
                 const projectData = {
                     name: data.name,
@@ -716,6 +740,237 @@ export function initFormHandlers() {
                     alert("Error: " + error.message);
                 } finally {
                     modalConfirmBtn.disabled = false;
+                }
+                break;
+            }
+
+            case 'export-attendance-report': {
+                const submitBtn = document.getElementById('btn-export-submit') || modalConfirmBtn;
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Generando...';
+                }
+
+                try {
+                    const startOfStartDate = new Date(data.startDate + 'T00:00:00');
+                    const endOfEndDate = new Date(data.endDate + 'T23:59:59.999');
+
+                    if (startOfStartDate > endOfEndDate) {
+                        throw new Error("La fecha de inicio no puede ser posterior a la fecha de fin.");
+                    }
+
+                    // 1. Obtener lista de usuarios activos
+                    const activeUsersList = [];
+                    if (window.usersMap) {
+                        window.usersMap.forEach((user, uid) => {
+                            if (user.status === 'active' && user.role !== 'admin') {
+                                activeUsersList.push({ uid, ...user });
+                            }
+                        });
+                    }
+
+                    if (activeUsersList.length === 0) {
+                        throw new Error("No hay usuarios activos registrados.");
+                    }
+
+                    // 2. Consultas concurrentes a Firestore
+                    const qAttendance = query(
+                        collectionGroup(db, 'attendance_reports'),
+                        where('type', '==', 'ingreso'),
+                        where('timestamp', '>=', startOfStartDate),
+                        where('timestamp', '<=', endOfEndDate)
+                    );
+
+                    const qReports = query(
+                        collectionGroup(db, 'daily_reports'),
+                        where('createdAt', '>=', startOfStartDate),
+                        where('createdAt', '<=', endOfEndDate)
+                    );
+
+                    const [attendanceSnap, reportsSnap] = await Promise.all([
+                        getDocs(qAttendance),
+                        getDocs(qReports)
+                    ]);
+
+                    // 3. Mapear datos
+                    const attendanceMap = {};
+                    attendanceSnap.docs.forEach(docSnap => {
+                        const userId = docSnap.ref.parent.parent.id;
+                        const recordData = docSnap.data();
+                        if (recordData.timestamp) {
+                            const dateKey = recordData.timestamp.toDate().toISOString().split('T')[0];
+                            attendanceMap[`${dateKey}_${userId}`] = recordData;
+                        }
+                    });
+
+                    const reportsMap = {};
+                    reportsSnap.docs.forEach(docSnap => {
+                        const userId = docSnap.ref.parent.parent.id;
+                        const recordData = docSnap.data();
+                        if (recordData.createdAt) {
+                            const dateKey = recordData.createdAt.toDate().toISOString().split('T')[0];
+                            reportsMap[`${dateKey}_${userId}`] = recordData;
+                        }
+                    });
+
+                    // 4. Generar lista de días en el rango
+                    const daysList = [];
+                    let current = new Date(startOfStartDate);
+                    while (current <= endOfEndDate) {
+                        daysList.push(current.toISOString().split('T')[0]);
+                        current.setDate(current.getDate() + 1);
+                    }
+
+                    // 5. Cruzar datos
+                    const rows = [];
+                    daysList.forEach(dateStr => {
+                        const dateObj = new Date(dateStr + 'T00:00:00');
+                        const formattedDate = dateObj.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                        const capitalizedDate = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
+
+                        activeUsersList.forEach(user => {
+                            const userId = user.uid;
+                            const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Colaborador';
+                            const roleLabels = {
+                                operario: 'Operario',
+                                bodega: 'Bodega',
+                                sst: 'SST',
+                                nomina: 'Nómina'
+                            };
+                            const roleLabel = roleLabels[user.role] || user.role || 'Empleado';
+
+                            const key = `${dateStr}_${userId}`;
+                            const attendance = attendanceMap[key];
+                            const report = reportsMap[key];
+
+                            let attendanceStatus = 'Pendiente';
+                            let biometricScore = '---';
+                            if (attendance) {
+                                const checkInTime = attendance.timestamp ? attendance.timestamp.toDate().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }) : '---';
+                                attendanceStatus = `Registrado (${checkInTime})`;
+                                biometricScore = attendance.biometricScore ? `${(attendance.biometricScore * 100).toFixed(0)}%` : '0%';
+                            } else if (isUserIncapacitatedOnDate(user, dateObj)) {
+                                attendanceStatus = 'Incapacidad';
+                                biometricScore = '---';
+                            }
+
+                            let reportStatus = 'Pendiente';
+                            if (report) {
+                                reportStatus = report.content || 'Completado';
+                            } else if (isUserIncapacitatedOnDate(user, dateObj)) {
+                                reportStatus = 'Incapacidad';
+                            }
+
+                            rows.push({
+                                date: dateStr,
+                                formattedDate: capitalizedDate,
+                                userName,
+                                role: roleLabel,
+                                attendanceStatus,
+                                biometricScore,
+                                reportStatus
+                            });
+                        });
+                    });
+
+                    if (rows.length === 0) {
+                        throw new Error("No hay registros en el rango de fechas seleccionado.");
+                    }
+
+                    // 6. Exportación según el formato elegido
+                    const format = data.format;
+                    if (format === 'excel') {
+                        const XLSX = await window.ensureXLSX();
+                        if (!XLSX) {
+                            throw new Error("No se pudo cargar la librería Excel.");
+                        }
+
+                        const worksheetData = rows.map(r => ({
+                            'Fecha': r.date,
+                            'Día': r.formattedDate,
+                            'Colaborador': r.userName,
+                            'Cargo': r.role,
+                            'Registro de Ingreso': r.attendanceStatus,
+                            'Coincidencia Biométrica': r.biometricScore,
+                            'Reporte de Actividad': r.reportStatus
+                        }));
+
+                        const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+                        const workbook = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte Marcación");
+
+                        // Ajustar anchos
+                        const maxLens = {};
+                        worksheetData.forEach(row => {
+                            Object.keys(row).forEach(key => {
+                                const val = String(row[key] || '');
+                                maxLens[key] = Math.max(maxLens[key] || key.length, val.length);
+                            });
+                        });
+                        worksheet['!cols'] = Object.keys(maxLens).map(key => ({ wch: Math.min(maxLens[key] + 3, 50) }));
+
+                        XLSX.writeFile(workbook, `Reporte_Marcacion_${data.startDate}_a_${data.endDate}.xlsx`);
+                    } else if (format === 'pdf') {
+                        if (window.ensurePDF) {
+                            await window.ensurePDF();
+                        }
+                        const { jsPDF } = window.jspdf;
+                        if (!jsPDF || !jsPDF.API.autoTable) {
+                            throw new Error("No se pudo cargar la librería PDF.");
+                        }
+
+                        const doc = new jsPDF({ orientation: 'landscape', format: 'letter' });
+                        const fechaDoc = new Date().toLocaleDateString('es-CO');
+
+                        doc.setFontSize(18);
+                        doc.setTextColor(79, 70, 229); // Indigo-600
+                        doc.text("Reporte de Marcación y Actividad Diaria", 14, 20);
+
+                        doc.setFontSize(10);
+                        doc.setTextColor(100);
+                        doc.text(`Rango de Fechas: ${data.startDate} al ${data.endDate}`, 14, 28);
+                        doc.text(`Fecha de Exportación: ${fechaDoc}`, 14, 34);
+
+                        const head = [['Fecha', 'Colaborador', 'Cargo', 'Ingreso', 'Biométrica', 'Actividad']];
+                        const body = rows.map(r => [
+                            r.date,
+                            r.userName,
+                            r.role,
+                            r.attendanceStatus,
+                            r.biometricScore,
+                            r.reportStatus
+                        ]);
+
+                        doc.autoTable({
+                            startY: 40,
+                            head: head,
+                            body: body,
+                            theme: 'grid',
+                            headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255] },
+                            styles: { fontSize: 8, cellPadding: 2 },
+                            columnStyles: {
+                                0: { cellWidth: 22 }, // Fecha
+                                1: { cellWidth: 40 }, // Colaborador
+                                2: { cellWidth: 25 }, // Cargo
+                                3: { cellWidth: 40 }, // Ingreso
+                                4: { cellWidth: 20 }, // Biométrica
+                                5: { cellWidth: 'auto' } // Actividad
+                            }
+                        });
+
+                        doc.save(`Reporte_Marcacion_${data.startDate}_a_${data.endDate}.pdf`);
+                    }
+
+                    window.showToast("Reporte descargado correctamente.", "success");
+                    window.closeMainModal();
+                } catch (error) {
+                    console.error("Error al exportar reporte:", error);
+                    alert("Error: " + error.message);
+                } finally {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = '<i class="fa-solid fa-download"></i> Descargar';
+                    }
                 }
                 break;
             }

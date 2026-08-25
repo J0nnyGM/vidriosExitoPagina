@@ -1,7 +1,7 @@
 import { db, auth, storage, messaging, functions, VAPID_KEY } from './core/firebase-config.js';
 
 // --- CORE & UI MODULAR IMPORTS (OLA 5 & 6) ---
-import { normalizeString, resizeImage, loadFaceAPImodels, generateProfileFaceDescriptor, formatTimeAgo, fetchMunicipalities, loadScript, timeAgoFormat, numeroALetras, registerSupplierPayment, setupCurrencyInput, loadPeopleOfInterest, initThemeToggle } from './core/utils.js';
+import { normalizeString, resizeImage, loadFaceAPImodels, generateProfileFaceDescriptor, formatTimeAgo, fetchMunicipalities, loadScript, timeAgoFormat, numeroALetras, registerSupplierPayment, setupCurrencyInput, loadPeopleOfInterest, initThemeToggle, generateLaborCertificate } from './core/utils.js';
 import { getRoleDefaultPermissions, applySidebarPermissions, closeSidebar, showView, initializePushNotifications, updatePermissionUI, requestCameraPermission, requestLocationPermission, requestPushPermission, checkAllPermissionsOnLogin, SIDEBAR_CONFIG, loadNotifications } from './core/permissions.js';
 import { handleLogin, handleRegister, handleLogout, showAuthView, isRegistering, setIsRegistering } from './core/auth.js';
 import { openCameraModal, closeCameraModal, capturePhoto, handlePhotoFile } from './ui/camera.js';
@@ -25,6 +25,7 @@ window.registerSupplierPayment = registerSupplierPayment;
 window.setupCurrencyInput = setupCurrencyInput;
 window.loadPeopleOfInterest = loadPeopleOfInterest;
 window.initThemeToggle = initThemeToggle;
+window.generateLaborCertificate = generateLaborCertificate;
 
 window.getRoleDefaultPermissions = getRoleDefaultPermissions;
 window.applySidebarPermissions = applySidebarPermissions;

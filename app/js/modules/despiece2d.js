@@ -165,9 +165,14 @@ function renderDespieceUI() {
                             </div>
                         </div>
 
-                        <button id="calculate-despiece-btn" class="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-sm">
-                            <i class="fa-solid fa-wand-magic-sparkles"></i> Calcular Optimización
-                        </button>
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <button type="button" id="clear-despiece-btn" class="w-full sm:w-1/3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3.5 px-4 rounded-xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 text-sm">
+                                <i class="fa-solid fa-trash-can"></i> Limpiar Todo
+                            </button>
+                            <button id="calculate-despiece-btn" class="w-full sm:w-2/3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-sm">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> Calcular Optimización
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -576,6 +581,13 @@ function setupListeners() {
         });
     }
 
+    const clearBtn = document.getElementById('clear-despiece-btn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            clearDespieceCalculator();
+        });
+    }
+
     const printAllBtn = document.getElementById('print-all-sheets-btn');
     if (printAllBtn) {
         printAllBtn.addEventListener('click', () => {
@@ -631,6 +643,51 @@ function setupListeners() {
                 activeHistoryId = null;
             }
         });
+    }
+}
+
+function clearDespieceCalculator() {
+    if (piezasList.length > 0 && !confirm("¿Estás seguro de que deseas limpiar la lista de piezas y comenzar un nuevo despiece?")) {
+        return;
+    }
+
+    piezasList = [];
+    lastId = 0;
+    currentResult = null;
+    currentSheetIndex = 0;
+    activeHistoryId = null;
+
+    // Restablecer parámetros a los valores por defecto
+    const sheetWidthInput = document.getElementById('sheet-width');
+    const sheetHeightInput = document.getElementById('sheet-height');
+    const sheetClientInput = document.getElementById('sheet-client');
+    const sheetMaterialInput = document.getElementById('sheet-material');
+    const optStrategySelect = document.getElementById('opt-strategy');
+    const optRotateCheckbox = document.getElementById('opt-rotate');
+
+    if (sheetWidthInput) sheetWidthInput.value = "3300";
+    if (sheetHeightInput) sheetHeightInput.value = "2140";
+    if (sheetClientInput) sheetClientInput.value = "";
+    if (sheetMaterialInput) sheetMaterialInput.value = "LAMINADO 3+3";
+    if (optStrategySelect) optStrategySelect.value = "AUTO";
+    if (optRotateCheckbox) optRotateCheckbox.checked = true;
+
+    // Renderizar la tabla de piezas vacía
+    renderPiezasTable();
+
+    // Ocultar contenedor de resultados
+    const resultsContainer = document.getElementById('despiece-results-container');
+    if (resultsContainer) {
+        resultsContainer.classList.add('hidden');
+    }
+    
+    // Limpiar el canvas
+    const canvas = document.getElementById('despiece-canvas');
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
     }
 }
 

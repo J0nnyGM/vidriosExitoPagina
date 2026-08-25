@@ -4,6 +4,8 @@ import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/fireba
 import { functions, httpsCallable } from "../core/firebase-config.js";
 
 let db, storage, deps;
+let tasksCurrentPage = 1;
+const tasksItemsPerPage = 6;
 
 // Mapas globales expuestos por app.js en el objeto window
 const materialStatusListeners = window.materialStatusListeners;
@@ -1360,6 +1362,8 @@ export function loadTasksView() {
     const adminToggleContainer = document.getElementById('admin-task-toggle-container');
     const role = window.currentUserRole;
 
+    tasksCurrentPage = 1; // RESET A PÁGINA 1 AL CARGAR VISTA
+
     if (newTaskBtn && adminToggleContainer) {
         const isAdmin = (role === 'admin');
         const isBodega = (role === 'bodega');
@@ -1371,6 +1375,7 @@ export function loadTasksView() {
     if (adminToggleCheckbox && !adminToggleCheckbox.dataset.listenerAttached) {
         adminToggleCheckbox.dataset.listenerAttached = 'true';
         adminToggleCheckbox.addEventListener('change', () => {
+            tasksCurrentPage = 1; // RESET A PÁGINA 1
             const currentActiveTab = document.querySelector('#tareas-view .task-tab-button.active');
             const currentFilter = currentActiveTab ? currentActiveTab.dataset.statusFilter : 'pendiente';
             const titleElement = document.querySelector('#tareas-view h1');
@@ -1396,6 +1401,7 @@ export function loadTasksView() {
             if (!isActive) {
                 tabsContainer.querySelectorAll('.task-tab-button').forEach(btn => btn.classList.remove('active'));
                 clickedButton.classList.add('active');
+                tasksCurrentPage = 1; // RESET A PÁGINA 1
                 loadAndDisplayTasks(statusFilter); // <-- 'blockButtons' eliminado
             }
         });
@@ -1492,6 +1498,8 @@ export async function loadAndDisplayTasks(statusFilter = 'pendiente') {
 
 function renderTasks(tasks, container) {
     container.innerHTML = '';
+    const pagContainer = document.getElementById('tasks-pagination-container');
+
     if (tasks.length === 0) {
         container.className = "w-full";
         container.innerHTML = `
@@ -1503,14 +1511,67 @@ function renderTasks(tasks, container) {
                 <p class="text-slate-400 text-sm mt-1.5">No se encontraron tareas con este filtro en el sistema.</p>
             </div>
         `;
+        if (pagContainer) pagContainer.innerHTML = '';
         return;
+    }
+
+    // PAGINACIÓN EN MEMORIA
+    const totalPages = Math.ceil(tasks.length / tasksItemsPerPage) || 1;
+    if (tasksCurrentPage > totalPages) {
+        tasksCurrentPage = totalPages;
+    }
+    if (tasksCurrentPage < 1) {
+        tasksCurrentPage = 1;
+    }
+
+    const startIdx = (tasksCurrentPage - 1) * tasksItemsPerPage;
+    const endIdx = startIdx + tasksItemsPerPage;
+    const paginatedTasks = tasks.slice(startIdx, endIdx);
+
+    // Pintar controles de paginación
+    if (pagContainer) {
+        const regStart = startIdx + 1;
+        const regEnd = Math.min(endIdx, tasks.length);
+        
+        pagContainer.innerHTML = `
+            <div>
+                Mostrando <span class="font-bold text-slate-700">${regStart}</span> a <span class="font-bold text-slate-700">${regEnd}</span> de <span class="font-bold text-slate-700">${tasks.length}</span> tareas
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="btn-tasks-pag-prev" ${tasksCurrentPage === 1 ? 'disabled' : ''} 
+                    class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 font-bold transition-all disabled:opacity-40 disabled:hover:bg-white cursor-pointer disabled:cursor-not-allowed text-xs flex items-center gap-1">
+                    <i class="fa-solid fa-angle-left"></i> Anterior
+                </button>
+                <span class="text-xs font-bold text-slate-400 px-2">Página ${tasksCurrentPage} de ${totalPages}</span>
+                <button id="btn-tasks-pag-next" ${tasksCurrentPage === totalPages ? 'disabled' : ''} 
+                    class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 font-bold transition-all disabled:opacity-40 disabled:hover:bg-white cursor-pointer disabled:cursor-not-allowed text-xs flex items-center gap-1">
+                    Siguiente <i class="fa-solid fa-angle-right"></i>
+                </button>
+            </div>
+        `;
+
+        const btnPrev = document.getElementById('btn-tasks-pag-prev');
+        const btnNext = document.getElementById('btn-tasks-pag-next');
+
+        if (btnPrev && tasksCurrentPage > 1) {
+            btnPrev.onclick = () => {
+                tasksCurrentPage--;
+                renderTasks(tasks, container);
+            };
+        }
+        if (btnNext && tasksCurrentPage < totalPages) {
+            btnNext.onclick = () => {
+                tasksCurrentPage++;
+                renderTasks(tasks, container);
+            };
+        }
     }
 
     // El contenedor #tasks-container en CSS ya es una cuadrícula, pero le aplicamos clases de Tailwind
     // directamente para asegurar 2 columnas a todo lo ancho de la pantalla y un gap generoso.
     container.className = "grid grid-cols-1 md:grid-cols-2 gap-8 w-full";
     
-    tasks.forEach(task => {
+    paginatedTasks.forEach(task => {
         const card = createTaskCard(task);
         const col = document.createElement('div');
         col.className = "h-full w-full";
