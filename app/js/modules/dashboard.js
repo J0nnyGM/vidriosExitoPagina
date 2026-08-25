@@ -846,22 +846,28 @@ async function handleReportEntry() {
 function getCurrentLocation() {
     return new Promise((resolve, reject) => {
         if (!navigator.geolocation) {
-            reject(new Error("La geolocalización no es soportada por tu navegador."));
-        } else {
-            navigator.geolocation.getCurrentPosition(resolve, (err) => {
-                let msg = "Error de ubicación desconocido.";
-                switch (err.code) {
-                    case err.PERMISSION_DENIED: msg = "Usuario denegó el acceso a la ubicación."; break;
-                    case err.POSITION_UNAVAILABLE: msg = "Información de ubicación no disponible."; break;
-                    case err.TIMEOUT: msg = "Se agotó el tiempo para obtener ubicación."; break;
-                }
-                reject(new Error(msg));
-            }, {
-                enableHighAccuracy: true, // Pedir GPS preciso
-                timeout: 10000,
-                maximumAge: 0
-            });
+            return reject(new Error("La geolocalización no es soportada por tu navegador."));
         }
+        navigator.geolocation.getCurrentPosition(
+            resolve,
+            (err) => {
+                // Fallback rápido con red/celdas
+                navigator.geolocation.getCurrentPosition(
+                    resolve,
+                    (errLow) => {
+                        let msg = "Error al obtener ubicación. Verifica permisos y activa el GPS.";
+                        if (err.code === err.PERMISSION_DENIED) msg = "Permiso de ubicación denegado.";
+                        reject(new Error(msg));
+                    },
+                    { enableHighAccuracy: false, timeout: 5000, maximumAge: 30000 }
+                );
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 15000
+            }
+        );
     });
 }
 

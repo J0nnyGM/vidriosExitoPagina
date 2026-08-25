@@ -5,6 +5,158 @@ import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/fireba
 import { isUserIncapacitatedOnDate } from '../core/utils.js';
 
 let videoStream = null;
+let locationWatchId = null;
+let lastKnownLocation = null;
+let locationPromise = null;
+
+/**
+ * Inicia la adquisición anticipada de GPS de alta precisión en segundo plano.
+ * Esto permite que el chip GPS del móvil se calibre mientras el usuario cuadra su rostro en la cámara.
+ */
+function startLocationAcquisition() {
+    if (!navigator.geolocation) return;
+
+    // Resetear ubicación previa para esta sesión
+    lastKnownLocation = null;
+
+    locationPromise = new Promise((resolve) => {
+        let isResolved = false;
+
+        const onPositionReceived = (position) => {
+            const acc = position.coords.accuracy;
+            // Guardamos la mejor y más reciente posición
+            if (!lastKnownLocation || acc <= lastKnownLocation.coords.accuracy || (Date.now() - (lastKnownLocation.timestamp || 0) > 15000)) {
+                lastKnownLocation = position;
+            }
+
+            // Si la precisión es excelente (<= 35 metros), resolvemos de inmediato
+            if (acc <= 35 && !isResolved) {
+                isResolved = true;
+                resolve(position);
+            }
+        };
+
+        // 1. Monitoreo continuo en tiempo real (mantiene el GPS activo y afinando precisión)
+        try {
+            if (locationWatchId !== null) {
+                navigator.geolocation.clearWatch(locationWatchId);
+            }
+            locationWatchId = navigator.geolocation.watchPosition(
+                onPositionReceived,
+                (err) => console.warn("WatchPosition GPS advertencia:", err.message),
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 10000,
+                    timeout: 8000
+                }
+            );
+        } catch (e) {
+            console.warn("Error iniciando watchPosition:", e);
+        }
+
+        // 2. Consulta rápida simultánea (con permiso de usar caché reciente de hasta 10s para inmediatez)
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                onPositionReceived(pos);
+                if (!isResolved) {
+                    isResolved = true;
+                    resolve(pos);
+                }
+            },
+            (err) => {
+                console.warn("GPS primario rápido fallo (" + err.message + "). Intentando modo red...");
+                // Fallback secundario por redes (Wi-Fi/Celdas)
+                navigator.geolocation.getCurrentPosition(
+                    (posLow) => {
+                        onPositionReceived(posLow);
+                        if (!isResolved) {
+                            isResolved = true;
+                            resolve(posLow);
+                        }
+                    },
+                    (errLow) => {
+                        if (!isResolved && lastKnownLocation) {
+                            isResolved = true;
+                            resolve(lastKnownLocation);
+                        }
+                    },
+                    { enableHighAccuracy: false, maximumAge: 30000, timeout: 5000 }
+                );
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 10000
+            }
+        );
+
+        // Límite de seguridad: si después de 4.5s no se ha resuelto con óptima precisión, devolver la mejor obtenida
+        setTimeout(() => {
+            if (!isResolved) {
+                isResolved = true;
+                if (lastKnownLocation) {
+                    resolve(lastKnownLocation);
+                } else {
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => resolve(pos),
+                        () => resolve(null),
+                        { enableHighAccuracy: false, maximumAge: 60000, timeout: 3000 }
+                    );
+                }
+            }
+        }, 4500);
+    });
+}
+
+/**
+ * Detiene el sensor GPS para ahorrar batería.
+ */
+function stopLocationAcquisition() {
+    if (locationWatchId !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(locationWatchId);
+        locationWatchId = null;
+    }
+}
+
+/**
+ * Obtiene la ubicación precisa de manera ultrarrápida (0-500ms).
+ */
+async function getFastAccurateLocation() {
+    // 1. Si ya se adquirió una coordenada precisa (< 65m) en los últimos 45s, retornarla al instante (0ms)
+    if (lastKnownLocation) {
+        const age = Date.now() - (lastKnownLocation.timestamp || Date.now());
+        if (age < 45000 && lastKnownLocation.coords.accuracy <= 65) {
+            return lastKnownLocation;
+        }
+    }
+
+    // 2. Si hay una promesa de adquisición en curso, esperar con un límite de tiempo razonable
+    if (locationPromise) {
+        const pos = await Promise.race([
+            locationPromise,
+            new Promise((res) => setTimeout(() => res(lastKnownLocation), 3500))
+        ]);
+        if (pos) return pos;
+    }
+
+    // 3. Si por alguna razón no hay ubicación previa, forzar solicitud directa con fallback
+    return new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+            resolve,
+            (errHigh) => {
+                navigator.geolocation.getCurrentPosition(
+                    resolve,
+                    (errLow) => {
+                        if (lastKnownLocation) resolve(lastKnownLocation);
+                        else reject(new Error("No se pudo obtener tu ubicación. Verifica que el GPS y los permisos estén activos."));
+                    },
+                    { enableHighAccuracy: false, maximumAge: 30000, timeout: 4000 }
+                );
+            },
+            { enableHighAccuracy: true, timeout: 4000, maximumAge: 15000 }
+        );
+    });
+}
 
 /**
  * Calcula el rango del "día operativo" actual.
@@ -118,7 +270,13 @@ export async function handleReportEntry(db, storage, currentUser, userProfile, o
     
     openMainModalFunc('camera_entry');
 
-    // 4. Iniciar Cámara
+    // 4. Iniciar Adquisición GPS y Modelos de IA en segundo plano de inmediato
+    startLocationAcquisition();
+    if (window.loadFaceAPImodels) {
+        window.loadFaceAPImodels().catch(e => console.warn("Pre-carga FaceAPI:", e));
+    }
+
+    // 5. Iniciar Cámara
     const videoEl = document.getElementById('entry-camera-video');
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
@@ -131,7 +289,7 @@ export async function handleReportEntry(db, storage, currentUser, userProfile, o
         return;
     }
 
-    // 5. Listeners
+    // 6. Listeners
     document.getElementById('btn-cancel-entry').addEventListener('click', () => closeAndCleanup(closeMainModalFunc));
     
     document.getElementById('btn-capture-entry').addEventListener('click', async () => {
@@ -142,17 +300,14 @@ export async function handleReportEntry(db, storage, currentUser, userProfile, o
         captureBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Procesando...';
 
         try {
-            // Cargar los modelos bajo demanda si no se han cargado aún
+            // Cargar los modelos bajo demanda si no terminaron de pre-cargar
             if (window.loadFaceAPImodels) {
-                updateStatus(statusMsg, 'blue', 'Cargando modelos de IA...');
+                updateStatus(statusMsg, 'blue', 'Preparando reconocimiento...');
                 await window.loadFaceAPImodels();
             }
 
             // @ts-ignore
             if (typeof faceapi === 'undefined') throw new Error("Error: IA Facial no cargada.");
-
-            updateStatus(statusMsg, 'blue', 'Obteniendo ubicación GPS...');
-            const location = await getCurrentLocation();
 
             const canvas = document.getElementById('entry-camera-canvas');
             canvas.width = videoEl.videoWidth;
@@ -163,10 +318,19 @@ export async function handleReportEntry(db, storage, currentUser, userProfile, o
             ctx.drawImage(videoEl, 0, 0);
             ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-            updateStatus(statusMsg, 'indigo', 'Analizando rostro en vivo...');
-            const detection = await faceapi.detectSingleFace(canvas).withFaceLandmarks().withFaceDescriptor();
+            updateStatus(statusMsg, 'indigo', 'Validando rostro y ubicación...');
 
-            if (!detection) throw new Error("No se detectó un rostro. Ajusta la luz.");
+            // Ejecutamos en paralelo la obtención de GPS y la detección facial en el frame
+            const [location, detection] = await Promise.all([
+                getFastAccurateLocation(),
+                faceapi.detectSingleFace(canvas).withFaceLandmarks().withFaceDescriptor()
+            ]);
+
+            if (!location || !location.coords) {
+                throw new Error("No se pudo obtener la ubicación GPS. Enciende el GPS o concede permisos.");
+            }
+
+            if (!detection) throw new Error("No se detectó un rostro claro. Ajusta la iluminación y encuadre.");
 
             updateStatus(statusMsg, 'indigo', 'Verificando identidad...');
             const referenceImage = await faceapi.fetchImage(userProfile.profilePhotoURL);
@@ -217,6 +381,7 @@ export async function handleReportEntry(db, storage, currentUser, userProfile, o
 }
 
 function closeAndCleanup(closeModalFunc) {
+    stopLocationAcquisition();
     if (videoStream) {
         videoStream.getTracks().forEach(track => track.stop());
         videoStream = null;
@@ -226,54 +391,6 @@ function closeAndCleanup(closeModalFunc) {
     closeModalFunc();
 }
 
-/**
- * Obtiene la ubicación actual con estrategia de respaldo.
- * Intenta primero GPS preciso; si falla o tarda, usa redes (Wi-Fi/Celdas).
- */
-function getCurrentLocation() {
-    return new Promise((resolve, reject) => {
-        if (!navigator.geolocation) return reject(new Error("Tu navegador no soporta geolocalización."));
-
-        // Opciones A: Alta Precisión (GPS) - Tiempo límite 7s
-        const highAccuracyOptions = {
-            enableHighAccuracy: true,
-            timeout: 7000, 
-            maximumAge: 0
-        };
-
-        // Opciones B: Baja Precisión (Redes) - Tiempo límite 10s
-        const lowAccuracyOptions = {
-            enableHighAccuracy: false,
-            timeout: 10000,
-            maximumAge: 30000 // Acepta caché de hasta 30 seg
-        };
-
-        // 1. Primer Intento: GPS Preciso
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                console.log("Ubicación obtenida por GPS.");
-                resolve(position);
-            },
-            (errorHigh) => {
-                console.warn("Fallo GPS preciso (" + errorHigh.message + "). Intentando modo red...");
-
-                // 2. Segundo Intento: Redes (Fallback)
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        console.log("Ubicación obtenida por Red.");
-                        resolve(position);
-                    },
-                    (errorLow) => {
-                        // Si ambos fallan, rechazamos
-                        reject(new Error("No se pudo obtener ubicación. Enciende el GPS o dales permisos al navegador."));
-                    },
-                    lowAccuracyOptions
-                );
-            },
-            highAccuracyOptions
-        );
-    });
-}
 function updateStatus(element, color, text) {
     const colorClasses = {
         'blue': 'text-blue-700 bg-blue-100 border-blue-200',
