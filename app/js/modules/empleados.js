@@ -99,9 +99,20 @@ function getQuincenaDateRange(activeQuincena, selectedMonthYear) {
     if (!selectedMonthYear) return null;
     const [year, month] = selectedMonthYear.split('-').map(Number);
     const isFirst = activeQuincena.toLowerCase().includes('primera');
+    const isMonthly = activeQuincena.toLowerCase().includes('mensual') || activeQuincena.toLowerCase().includes('completo');
     
-    const startDay = isFirst ? 1 : 16;
-    const endDay = isFirst ? 15 : new Date(year, month, 0).getDate();
+    let startDay = 1;
+    let endDay = 15;
+    if (isMonthly) {
+        startDay = 1;
+        endDay = new Date(year, month, 0).getDate();
+    } else if (isFirst) {
+        startDay = 1;
+        endDay = 15;
+    } else {
+        startDay = 16;
+        endDay = new Date(year, month, 0).getDate();
+    }
     
     return {
         startDate: new Date(year, month - 1, startDay),
@@ -149,6 +160,119 @@ function getQuincenaPeriodFromConcept(concept) {
         startDate: new Date(year, monthIndex, startDay),
         endDate: new Date(year, monthIndex, endDay)
     };
+}
+
+/**
+ * Calcula los días laborados por un empleado dentro de un periodo contable (quincena o mes),
+ * considerando su fecha de ingreso (contractStartDate) y fecha de fin de contrato (contractEndDate).
+ * En nómina comercial colombiana (mes de 30 días):
+ * - 1ra Quincena: días 1 al 15 (base 15 días).
+ * - 2da Quincena: días 16 al 30 (base 15 días).
+ * - Mes completo: días 1 al 30 (base 30 días).
+ */
+function getEmployeeWorkedDaysInPeriod(emp, startDate, endDate, isMonthly = false) {
+    if (!startDate || !endDate) return isMonthly ? 30 : 15;
+
+    // 1. Obtener fecha de inicio del contrato
+    const empStartRaw = emp.contractStartDate || emp.contractDate || emp.fechaIngreso || emp.fechaInicio || emp.startDate || emp.createdAt || null;
+    let empStart = null;
+    if (empStartRaw) {
+        if (typeof empStartRaw.toDate === 'function') {
+            empStart = empStartRaw.toDate();
+        } else {
+            const parts = String(empStartRaw).split('T')[0].split('-');
+            if (parts.length === 3) {
+                empStart = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            } else {
+                empStart = new Date(empStartRaw);
+            }
+        }
+        if (isNaN(empStart.getTime())) empStart = null;
+    }
+
+    // 2. Obtener fecha de fin de contrato
+    const empEndRaw = emp.contractEndDate || emp.endDate || null;
+    let empEnd = null;
+    if (empEndRaw) {
+        if (typeof empEndRaw.toDate === 'function') {
+            empEnd = empEndRaw.toDate();
+        } else {
+            const parts = String(empEndRaw).split('T')[0].split('-');
+            if (parts.length === 3) {
+                empEnd = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            } else {
+                empEnd = new Date(empEndRaw);
+            }
+        }
+        if (isNaN(empEnd.getTime())) empEnd = null;
+    }
+
+    const pYear = startDate.getFullYear();
+    const pMonth = startDate.getMonth(); // 0-indexed
+    const pStartDay = startDate.getDate(); // 1 or 16
+    const pEndDay = endDate.getDate(); // 15 or 28/29/30/31
+
+    const isFirstQuincena = pStartDay === 1 && pEndDay === 15;
+    const isSecondQuincena = pStartDay >= 16;
+
+    // Normalizar inicio y fin comercial
+    let effStartDay = isSecondQuincena ? 16 : 1;
+    let effEndDay = isFirstQuincena ? 15 : 30;
+
+    // Si tiene fecha de ingreso posterior al periodo -> 0 días
+    if (empStart) {
+        empStart.setHours(0, 0, 0, 0);
+        const periodStartZero = new Date(startDate);
+        periodStartZero.setHours(0, 0, 0, 0);
+        const periodEndZero = new Date(endDate);
+        periodEndZero.setHours(0, 0, 0, 0);
+
+        if (empStart > periodEndZero) {
+            return 0; // Aún no ingresaba en esta quincena
+        }
+
+        // Si ingresó en el mismo año y mes del periodo
+        if (empStart.getFullYear() === pYear && empStart.getMonth() === pMonth) {
+            const entryDay = empStart.getDate();
+            if (isFirstQuincena) {
+                if (entryDay > 15) return 0;
+                effStartDay = Math.max(effStartDay, entryDay);
+            } else if (isSecondQuincena) {
+                if (entryDay > 16) {
+                    effStartDay = Math.min(30, entryDay);
+                }
+            } else if (isMonthly) {
+                effStartDay = Math.min(30, entryDay);
+            }
+        } else if (empStart > periodStartZero) {
+            return 0;
+        }
+    }
+
+    // Si tiene fecha de retiro anterior o dentro del periodo
+    if (empEnd) {
+        empEnd.setHours(0, 0, 0, 0);
+        const periodStartZero = new Date(startDate);
+        periodStartZero.setHours(0, 0, 0, 0);
+
+        if (empEnd < periodStartZero) {
+            return 0; // Ya se había retirado antes de este periodo
+        }
+
+        if (empEnd.getFullYear() === pYear && empEnd.getMonth() === pMonth) {
+            const exitDay = empEnd.getDate();
+            if (isFirstQuincena) {
+                effEndDay = Math.min(15, exitDay);
+            } else if (isSecondQuincena) {
+                effEndDay = Math.min(30, Math.max(16, exitDay));
+            } else if (isMonthly) {
+                effEndDay = Math.min(30, exitDay);
+            }
+        }
+    }
+
+    const calculatedDays = effEndDay - effStartDay + 1;
+    return Math.max(0, Math.min(isMonthly ? 30 : 15, calculatedDays));
 }
 
 /**
@@ -2795,6 +2919,8 @@ async function loadNominaTab(container) {
                 deudaTotal: loanInfo.totalBalance,
                 loansList: loanInfo.loans,
                 deduccionSobreMinimo: dedSobreMinimo,
+                contractStartDate: operario.contractStartDate || operario.contractDate || operario.fechaIngreso || operario.fechaInicio || operario.startDate || operario.createdAt || null,
+                contractEndDate: operario.contractEndDate || operario.endDate || null,
                 incapacitado: operario.incapacitado || false,
                 incapacidadStart: operario.incapacidadStart || null,
                 incapacidadDays: operario.incapacidadDays || 0
@@ -2813,10 +2939,12 @@ async function loadNominaTab(container) {
                 porcentajePension: 4
             };
 
-            const diasPagar = 15;
+            const range = getQuincenaDateRange(activeQuincena, selectedMonthYear);
+            const isMonthly = activeQuincena.toLowerCase().includes('mensual') || activeQuincena.toLowerCase().includes('completo');
 
-            // A. Recalcular datos dinámicos para una quincena (15 días)
+            // A. Recalcular datos dinámicos considerando fecha de ingreso del empleado
             const processedData = rawEmpleadoData.map(emp => {
+                const diasPagar = range ? getEmployeeWorkedDaysInPeriod(emp, range.startDate, range.endDate, isMonthly) : (isMonthly ? 30 : 15);
                 const salarioProrrateado = (emp.salarioBasico / 30) * diasPagar;
                 const rodamientoProrrateado = (emp.rodamiento / 30) * diasPagar;
                 let auxTransporteMensual = config.auxilioTransporte || 162000;
@@ -2825,7 +2953,6 @@ async function loadNominaTab(container) {
                 }
                 
                 let incDays = 0;
-                const range = getQuincenaDateRange(activeQuincena, selectedMonthYear);
                 if (range) {
                     incDays = getIncapacitatedDaysInPeriod(emp, range.startDate, range.endDate);
                 } else if (emp.incapacitado) {
@@ -3117,11 +3244,13 @@ async function loadNominaTab(container) {
             `;
 
             const tbody = document.getElementById('export-nomina-tbody');
-            const defaultDias = (activeQuincena.includes('Mensual') || activeQuincena.includes('Completo')) ? 30 : 15;
+            const isMonthly = (activeQuincena.includes('Mensual') || activeQuincena.includes('Completo'));
+            const range = getQuincenaDateRange(activeQuincena, selectedMonthYear);
+            const defaultBaseDias = isMonthly ? 30 : 15;
 
             rawEmpleadoData.forEach(emp => {
+                const defaultDias = range ? getEmployeeWorkedDaysInPeriod(emp, range.startDate, range.endDate, isMonthly) : defaultBaseDias;
                 let incDays = 0;
-                const range = getQuincenaDateRange(activeQuincena, selectedMonthYear);
                 if (range) {
                     incDays = getIncapacitatedDaysInPeriod(emp, range.startDate, range.endDate);
                 } else if (emp.incapacitado) {
@@ -5300,18 +5429,16 @@ async function renderStandardPayrollForm(container, user) {
         }
     }
 
-    // Configurar días iniciales según la opción pre-seleccionada
+    // Configurar días iniciales según la opción pre-seleccionada y fecha de ingreso del empleado
     const daysInput = document.getElementById('payment-dias-pagar');
     const transportDaysInput = document.getElementById('payment-dias-aux-transporte');
     const initialVal = conceptoSelect.value;
-    let initialD = 15;
-    if (initialVal.includes('Mensual') || initialVal.includes('Completo')) {
-        initialD = 30;
-    }
+    const initialRange = getQuincenaPeriodFromConcept(initialVal);
+    const isMonthlyInit = initialVal.includes('Mensual') || initialVal.includes('Completo');
+    const initialD = initialRange ? getEmployeeWorkedDaysInPeriod(user, initialRange.startDate, initialRange.endDate, isMonthlyInit) : (isMonthlyInit ? 30 : 15);
     daysInput.value = initialD;
     
     let initialIncDays = 0;
-    const initialRange = getQuincenaPeriodFromConcept(initialVal);
     if (initialRange) {
         initialIncDays = getIncapacitatedDaysInPeriod(user, initialRange.startDate, initialRange.endDate);
     } else if (user.incapacitado) {
@@ -5319,23 +5446,16 @@ async function renderStandardPayrollForm(container, user) {
     }
     transportDaysInput.value = Math.max(0, initialD - initialIncDays);
 
-    // --- LISTENER PARA CAMBIAR DÍAS AUTOMÁTIMAMENTE ---
+    // --- LISTENER PARA CAMBIAR DÍAS AUTOMÁTIMAMENTE SEGÚN PERIODO Y FECHA INGRESO ---
     conceptoSelect.addEventListener('change', function() {
         const val = this.value;
-        
-        let d = 15;
-        if (val.includes('Mensual') || val.includes('Completo')) {
-            d = 30; // Siempre 30, incluso en Febrero
-        } else if (val.includes('Segunda')) {
-            d = 15; // La 2da quincena siempre cierra el mes contable de 30
-        } else {
-            d = 15; // 1ra quincena siempre es 15
-        }
+        const isMonthly = val.includes('Mensual') || val.includes('Completo');
+        const changeRange = getQuincenaPeriodFromConcept(val);
+        const d = changeRange ? getEmployeeWorkedDaysInPeriod(user, changeRange.startDate, changeRange.endDate, isMonthly) : (isMonthly ? 30 : 15);
         
         daysInput.value = d;
         
         let changeIncDays = 0;
-        const changeRange = getQuincenaPeriodFromConcept(val);
         if (changeRange) {
             changeIncDays = getIncapacitatedDaysInPeriod(user, changeRange.startDate, changeRange.endDate);
         } else if (user.incapacitado) {

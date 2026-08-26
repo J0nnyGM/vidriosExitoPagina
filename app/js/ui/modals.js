@@ -5548,17 +5548,20 @@ async function openMainModal(type, data = {}) {
             if (defaultFooter) defaultFooter.style.display = 'none';
 
             // Configurar contenedor sin paddings para diseño completo
-            modalBody.classList.add('p-0', 'overflow-hidden');
+            modalBody.className = 'p-0 flex-1 min-h-0 overflow-hidden bg-white';
             modalBody.style.padding = '0';
-            modalBody.parentElement.classList.add('overflow-hidden');
-            modalForm.dataset.id = data.id; // <--- ESTA LÍNEA ES CRUCIAL
+            modalBody.style.overflow = 'hidden';
+            if (modalForm) {
+                modalForm.className = 'flex-1 flex flex-col min-h-0 overflow-hidden';
+                modalForm.dataset.id = data.id; // <--- ESTA LÍNEA ES CRUCIAL
+            }
 
             title = 'Editar Usuario';
             // Aseguramos clases limpias para evitar conflictos visuales
-            modalContentDiv.className = 'relative bg-white rounded-lg shadow-xl transform transition-all w-full max-w-5xl h-[90vh] flex flex-col';
+            modalContentDiv.className = 'relative bg-white rounded-xl shadow-2xl transform transition-all w-full max-w-5xl h-[90vh] max-h-[90vh] flex flex-col overflow-hidden';
 
             bodyHtml = `
-                <div class="flex flex-col h-full">
+                <div class="flex flex-col h-full overflow-hidden">
                     
                     <div class="bg-gradient-to-r from-amber-500 to-orange-600 px-8 py-5 flex justify-between items-center shrink-0 relative overflow-hidden shadow-md z-10">
                         <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none transform scale-150 translate-x-4 -translate-y-2">
@@ -5582,7 +5585,7 @@ async function openMainModal(type, data = {}) {
                         </button>
                     </div>
 
-                    <div class="flex-grow overflow-y-auto custom-scrollbar bg-gray-50 p-6">
+                    <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-gray-50 p-6">
                         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             
                             <div class="lg:col-span-1 space-y-6">
@@ -5751,13 +5754,13 @@ async function openMainModal(type, data = {}) {
                                             <input type="text" id="user-rodamiento" name="rodamiento" class="currency-input w-full border border-slate-300 rounded-lg p-2.5 text-sm font-mono font-bold text-slate-700 focus:border-slate-500 outline-none" value="${data.rodamiento || 0}" placeholder="$ 0">
                                             <p class="text-[10px] text-slate-400 mt-1">Bonificación no salarial fija para rodamiento o transporte adicional.</p>
                                         </div>
-                                        <div class="flex flex-col justify-center">
-                                            <label class="inline-flex items-center cursor-pointer mt-2">
-                                                <input type="checkbox" name="deduccionSobreMinimo" class="sr-only peer" ${data.deduccionSobreMinimo ? 'checked' : ''}>
-                                                <div class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                                <span class="ms-3 text-xs font-bold text-slate-700">Aplicar deducciones sobre el Salario Mínimo</span>
+                                        <div class="flex flex-col justify-center bg-white p-3 rounded-lg border border-slate-200">
+                                            <label class="relative inline-flex items-center cursor-pointer select-none">
+                                                <input type="checkbox" id="user-deduccionSobreMinimo" name="deduccionSobreMinimo" class="sr-only peer" ${data.deduccionSobreMinimo ? 'checked' : ''}>
+                                                <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                                                <span class="ms-3 text-xs font-bold text-slate-700">Deducción sobre Salario Mínimo</span>
                                             </label>
-                                            <p class="text-[10px] text-slate-400 ms-14 mt-0.5">Calcula Salud (4%) y Pensión (4%) sobre el SMLV legal vigente.</p>
+                                            <p class="text-[10px] text-slate-400 mt-1">Calcula Salud (4%) y Pensión (4%) sobre el SMLV legal vigente.</p>
                                         </div>
                                     </div>
 
