@@ -409,6 +409,10 @@ export function loadDotacionView() {
     newDotacionBtn.classList.toggle('hidden', !isAdminView);
     tabsNav.classList.toggle('hidden', !isAdminView);
 
+    if (isAdminView) {
+        updateDotacionFilterOptions();
+    }
+
     if (role === 'operario') {
         // Vista Operario (Carga de inmediato sin suscribirse al catálogo)
         const currentUser = getCurrentUser();
@@ -1928,30 +1932,47 @@ async function handleViewDotacionHistory(itemId, itemName, itemTalla, userId = n
 
 /**
  * Puebla la lista de usuarios en el filtro de asignación de dotación.
- * Debe ser llamada por app.js DESPUÉS de que el usersMap esté listo.
+ * Debe ser llamada por app.js DESPUÉS de que el usersMap esté listo o al cargar la vista.
  */
 export function updateDotacionFilterOptions(usersMap) {
     if (!dotacionAssigneeChoices) {
-        console.warn("Choices.js de Dotación (dotacionAssigneeChoices) no está listo.");
         return;
     }
 
-    // 1. Generar SÓLO las opciones de usuario
-    const userOptions = Array.from(usersMap.entries())
-        .filter(([id, user]) =>
-            user.status === 'active' &&
-            id.toLowerCase() !== 'all' &&
-            user.firstName.toLowerCase() !== 'all'
-        )
-        .sort((a, b) => a[1].firstName.localeCompare(b[1].firstName))
-        .map(([id, user]) => ({
-            value: id,
-            label: `${user.firstName} ${user.lastName}`
-        }));
+    const map = usersMap || (typeof getUsersMap === 'function' ? getUsersMap() : null);
+    if (!map || map.size === 0) return;
 
-    // 2. Añadir SÓLO los usuarios a la lista existente
-    // (El 'false' al final significa AÑADIR, no reemplazar)
-    dotacionAssigneeChoices.setChoices(userOptions, 'value', 'label', false);
+    const currentVal = dotacionAssigneeChoices.getValue(true) || 'all';
+
+    // 1. Generar opciones de usuario
+    const userOptions = [
+        { value: 'all', label: 'Todos los Empleados', selected: currentVal === 'all' },
+        ...Array.from(map.entries())
+            .filter(([id, user]) =>
+                user && user.status === 'active' &&
+                id.toLowerCase() !== 'all' &&
+                (user.firstName || '').toLowerCase() !== 'all'
+            )
+            .sort((a, b) => (a[1].firstName || '').localeCompare(b[1].firstName || ''))
+            .map(([id, user]) => ({
+                value: id,
+                label: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Sin Nombre',
+                selected: currentVal === id
+            }))
+    ];
+
+    // 2. Reemplazar limpiamente las opciones
+    try {
+        dotacionAssigneeChoices.clearChoices();
+        dotacionAssigneeChoices.setChoices(userOptions, 'value', 'label', true);
+        if (currentVal && currentVal !== 'all') {
+            dotacionAssigneeChoices.setChoiceByValue(currentVal);
+        } else {
+            dotacionAssigneeChoices.setChoiceByValue('all');
+        }
+    } catch (e) {
+        console.warn("Error actualizando opciones en dotacionAssigneeChoices:", e);
+    }
 }
 
 /**

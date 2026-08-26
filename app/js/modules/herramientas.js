@@ -245,20 +245,28 @@ export function initHerramientas(
             itemSelectText: 'Seleccionar',
             searchPlaceholderValue: 'Buscar colaborador...',
             allowHTML: false,
-            // ¡CAMBIO CLAVE! Añadimos las opciones estáticas aquí
             choices: [
-                { value: 'all', label: 'Todos' }
-                // (La línea de "bodega" se ha eliminado)
+                { value: 'all', label: 'Todos los Colaboradores' }
             ]
         });
 
         // 4c. Seleccionar "Todos" por defecto INMEDIATAMENTE
         toolAssigneeChoices.setChoiceByValue('all');
 
-        // 4d. (Era 4c) Conectar el 'change' event A LA INSTANCIA de Choices.js
+        // 4d. Conectar el 'change' y 'addItem' event A LA INSTANCIA de Choices.js
         assigneeFilterSelect.addEventListener('change', () => {
             renderFilteredTools();
         });
+        assigneeFilterSelect.addEventListener('addItem', () => {
+            renderFilteredTools();
+        });
+
+        if (typeof getUsersMap === 'function') {
+            const initialMap = getUsersMap();
+            if (initialMap && initialMap.size > 0) {
+                updateToolFilterOptions(initialMap);
+            }
+        }
         // --- INICIO DE CÓDIGO AÑADIDO (CATEGORÍA) ---
         // 4e. Inicializar el filtro de Categoría
         const categoryFilterSelect = document.getElementById('tool-category-filter');
@@ -282,6 +290,9 @@ export function initHerramientas(
             categoryFilterSelect.addEventListener('change', () => {
                 renderFilteredTools();
             });
+            categoryFilterSelect.addEventListener('addItem', () => {
+                renderFilteredTools();
+            });
         }
     }
 
@@ -291,12 +302,6 @@ export function initHerramientas(
         tabsNav.addEventListener('click', (e) => {
             const button = e.target.closest('.tool-tab-button');
             if (button && !button.classList.contains('active')) {
-
-                // const statusFilter = button.dataset.statusFilter; // <--- Línea eliminada
-
-                // --- INICIO DE CORRECCIÓN ---
-                // ¡El bloque 'if' que estaba aquí se ha eliminado!
-                // --- FIN DE CORRECCIÓN ---
 
                 // Actualizar la UI de las pestañas
                 tabsNav.querySelectorAll('.tool-tab-button').forEach(btn => {
@@ -322,37 +327,51 @@ export function initHerramientas(
             }, 300);
         });
     }
-    // --- FIN DE CORRECCIÓN ---
 }
 
 /**
  * Puebla la lista de usuarios en el filtro de asignación de herramientas.
- * Debe ser llamada por app.js DESPUÉS de que el usersMap esté listo.
+ * Debe ser llamada por app.js DESPUÉS de que el usersMap esté listo o al cargar la vista.
  */
 export function updateToolFilterOptions(usersMap) {
     if (!toolAssigneeChoices) {
-        console.warn("Choices.js de Herramientas (toolAssigneeChoices) no está listo.");
         return;
     }
 
-    // 1. Generar SÓLO las opciones de usuario
-    const userOptions = Array.from(usersMap.entries())
-        .filter(([id, user]) =>
-            user.status === 'active' &&
-            id.toLowerCase() !== 'all' &&
-            user.firstName.toLowerCase() !== 'all'
-        )
-        .sort((a, b) => a[1].firstName.localeCompare(b[1].firstName))
-        .map(([id, user]) => ({
-            value: id,
-            label: `${user.firstName} ${user.lastName}`
-        }));
+    const map = usersMap || (typeof getUsersMap === 'function' ? getUsersMap() : null);
+    if (!map || map.size === 0) return;
 
-    // 2. Añadir SÓLO los usuarios a la lista existente
-    // El 'false' al final significa AÑADIR, no reemplazar.
-    toolAssigneeChoices.setChoices(userOptions, 'value', 'label', false);
+    const currentVal = toolAssigneeChoices.getValue(true) || 'all';
 
-    // 3. (La línea de setChoiceByValue se elimina de aquí, ya está en init)
+    // 1. Generar opciones de usuario
+    const userOptions = [
+        { value: 'all', label: 'Todos los Colaboradores', selected: currentVal === 'all' },
+        ...Array.from(map.entries())
+            .filter(([id, user]) =>
+                user && user.status === 'active' &&
+                id.toLowerCase() !== 'all' &&
+                (user.firstName || '').toLowerCase() !== 'all'
+            )
+            .sort((a, b) => (a[1].firstName || '').localeCompare(b[1].firstName || ''))
+            .map(([id, user]) => ({
+                value: id,
+                label: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Sin Nombre',
+                selected: currentVal === id
+            }))
+    ];
+
+    // 2. Reemplazar limpiamente las opciones
+    try {
+        toolAssigneeChoices.clearChoices();
+        toolAssigneeChoices.setChoices(userOptions, 'value', 'label', true);
+        if (currentVal && currentVal !== 'all') {
+            toolAssigneeChoices.setChoiceByValue(currentVal);
+        } else {
+            toolAssigneeChoices.setChoiceByValue('all');
+        }
+    } catch (e) {
+        console.warn("Error actualizando opciones en toolAssigneeChoices:", e);
+    }
 }
 
 /**
@@ -447,6 +466,9 @@ export function loadHerramientaView() {
     const filtersBar = document.getElementById('tool-filter-bar');
 
     if (!gridContainer || !searchContainer || !assigneeContainer || !toolAssigneeChoices || !dashboardContainer || !filtersBar || !categoryContainer) return;
+
+    // Asegurar que las opciones de colaboradores estén actualizadas
+    updateToolFilterOptions();
 
     // 1. Obtener el ROL y el USUARIO primero
     const role = getCurrentUserRole();

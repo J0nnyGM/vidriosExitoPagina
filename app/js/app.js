@@ -568,6 +568,8 @@ async function loadUsersMap() {
                 });
 
                 console.log(`[usersMap] Sincronizado en tiempo real. Total de usuarios: ${usersMap.size}`);
+                if (typeof updateToolFilterOptions === 'function') updateToolFilterOptions(usersMap);
+                if (typeof updateDotacionFilterOptions === 'function') updateDotacionFilterOptions(usersMap);
                 if (!isResolved) {
                     isResolved = true;
                     resolve(usersMap);
