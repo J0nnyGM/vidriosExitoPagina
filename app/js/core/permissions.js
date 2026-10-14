@@ -553,6 +553,7 @@ export function loadNotifications() {
             const senderEl = document.getElementById('admin-alert-sender');
             const timeEl = document.getElementById('admin-alert-time');
             const dismissBtn = document.getElementById('dismiss-alert-btn');
+            const topCloseBtn = document.getElementById('close-alert-top-btn');
 
             if (overlay && overlay.classList.contains('hidden')) {
                 // Rellenar textos
@@ -566,7 +567,7 @@ export function loadNotifications() {
                     // Crear contenedor si no existe
                     imgContainer = document.createElement('div');
                     imgContainer.id = 'admin-alert-img-container';
-                    imgContainer.className = "mb-6 w-full rounded-xl overflow-hidden hidden shadow-lg border-2 border-white/30";
+                    imgContainer.className = "mb-4 sm:mb-6 w-full rounded-xl overflow-hidden hidden shadow-lg border-2 border-white/30";
                     msgEl.parentElement.after(imgContainer);
                 }
 
@@ -578,13 +579,13 @@ export function loadNotifications() {
 
                     if (isPDF) {
                         // MODO PDF: Botón grande
-                        imgContainer.className = "mb-6 w-full hidden"; // Quitamos estilos de imagen, dejamos margen
+                        imgContainer.className = "mb-4 sm:mb-6 w-full hidden"; // Quitamos estilos de imagen, dejamos margen
                         imgContainer.classList.remove('hidden');
 
                         imgContainer.innerHTML = `
-                            <button type="button" id="btn-view-pdf-alert" class="w-full bg-white/10 border-2 border-white/40 hover:bg-white/20 text-white py-4 rounded-xl flex flex-col items-center transition-all group">
-                                <i class="fa-solid fa-file-pdf text-4xl mb-2 text-red-100 group-hover:scale-110 transition-transform"></i>
-                                <span class="font-bold underline">Ver Documento PDF Adjunto</span>
+                            <button type="button" id="btn-view-pdf-alert" class="w-full bg-white/10 border-2 border-white/40 hover:bg-white/20 text-white py-3 sm:py-4 rounded-xl flex flex-col items-center transition-all group">
+                                <i class="fa-solid fa-file-pdf text-3xl sm:text-4xl mb-1 sm:mb-2 text-red-100 group-hover:scale-110 transition-transform"></i>
+                                <span class="font-bold underline text-sm sm:text-base">Ver Documento PDF Adjunto</span>
                             </button>
                         `;
 
@@ -600,11 +601,11 @@ export function loadNotifications() {
 
                     } else {
                         // MODO IMAGEN: Clicable para Zoom
-                        imgContainer.className = "mb-6 w-full rounded-xl overflow-hidden shadow-lg border-2 border-white/30 relative group cursor-zoom-in";
+                        imgContainer.className = "mb-4 sm:mb-6 w-full rounded-xl overflow-hidden shadow-lg border-2 border-white/30 relative group cursor-zoom-in";
                         imgContainer.classList.remove('hidden');
 
                         imgContainer.innerHTML = `
-                            <img src="${urgentAlert.photoURL}" class="w-full h-48 object-cover" alt="Evidencia">
+                            <img src="${urgentAlert.photoURL}" class="w-full max-h-44 sm:max-h-60 object-contain bg-black/10" alt="Evidencia">
                             <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center pointer-events-none">
                                 <i class="fa-solid fa-magnifying-glass-plus text-white opacity-0 group-hover:opacity-100 text-3xl drop-shadow-lg transform scale-50 group-hover:scale-100 transition-all"></i>
                             </div>
@@ -653,18 +654,29 @@ export function loadNotifications() {
                     }
                 };
 
-                // Lógica de cierre y detener sonido
-                dismissBtn.onclick = async () => {
-                    // Detener sonido si sigue sonando
+                // Lógica de cierre y detener sonido (Funciona para ambos botones)
+                const handleDismissAlert = async () => {
+                    // Detener sonido inmediatamente
                     alertSound.pause();
                     alertSound.currentTime = 0;
                     playCount = 99; // Evitar que siga el bucle
 
-                    // Marcar como leída
-                    await updateDoc(doc(db, "notifications", urgentAlert.id), { read: true });
+                    // Ocultar modal de inmediato en UI para no trabar al usuario
                     overlay.classList.add('hidden');
                     overlay.classList.remove('flex');
+
+                    // Marcar como leída en Firestore
+                    try {
+                        await updateDoc(doc(db, "notifications", urgentAlert.id), { read: true });
+                    } catch (err) {
+                        console.error("Error al marcar alerta urgente como leída:", err);
+                    }
                 };
+
+                dismissBtn.onclick = handleDismissAlert;
+                if (topCloseBtn) {
+                    topCloseBtn.onclick = handleDismissAlert;
+                }
             }
         }
         // --- FIN CÓDIGO MEJORADO ---
