@@ -212,15 +212,15 @@ function loadViewTemplates() {
                 <p class="text-xs text-slate-400 font-semibold">Completa los campos para registrarte en el sistema</p>
             </div>
             <div class="space-y-4">
-                <input type="text" id="register-name" placeholder="Nombre Completo" class="w-full p-3 border border-gray-300 rounded-lg" required>
-                <input type="text" id="register-cedula" placeholder="Cédula" class="w-full p-3 border border-gray-300 rounded-lg" required>
-                <input type="tel" id="register-phone" placeholder="Celular" class="w-full p-3 border border-gray-300 rounded-lg" required>
-                <input type="text" id="register-address" placeholder="Dirección" class="w-full p-3 border border-gray-300 rounded-lg">
-                <input type="email" id="register-email" placeholder="Correo Electrónico" class="w-full p-3 border border-gray-300 rounded-lg" required>
+                <input type="text" id="register-name" placeholder="Nombre Completo" autocomplete="name" class="w-full p-3 border border-gray-300 rounded-lg" required>
+                <input type="text" id="register-cedula" placeholder="Cédula" autocomplete="off" class="w-full p-3 border border-gray-300 rounded-lg" required>
+                <input type="tel" id="register-phone" placeholder="Celular" autocomplete="tel" class="w-full p-3 border border-gray-300 rounded-lg" required>
+                <input type="text" id="register-address" placeholder="Dirección" autocomplete="street-address" class="w-full p-3 border border-gray-300 rounded-lg">
+                <input type="email" id="register-email" placeholder="Correo Electrónico" autocomplete="username" class="w-full p-3 border border-gray-300 rounded-lg" required>
                 <input type="password" id="register-password" placeholder="Contraseña (mín. 6 caracteres)" autocomplete="new-password" class="w-full p-3 border border-gray-300 rounded-lg" required>
                 <div>
                     <label for="register-dob" class="block text-xs font-semibold text-slate-500 uppercase mb-1">Fecha de Nacimiento</label>
-                    <input type="date" id="register-dob" class="w-full p-3 border border-gray-300 rounded-lg mt-1" required>
+                    <input type="date" id="register-dob" autocomplete="bday" class="w-full p-3 border border-gray-300 rounded-lg mt-1" required>
                 </div>
                 <div class="flex items-center space-x-2">
                     <input type="checkbox" id="register-politica" class="h-4 w-4 rounded border-gray-300 text-[#0066e2] focus:ring-[#0066e2]" required>
