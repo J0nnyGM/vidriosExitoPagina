@@ -422,6 +422,8 @@ function loadViewTemplates() {
                         </button>
                     </div>
                 </div>
+            </div>
+            
             <!-- Filtros por Estado de Remisión -->
             <div class="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
                 <button data-filter="todas" class="remision-filter-btn px-4 py-2 rounded-full text-xs font-bold transition flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 active-filter shadow-xs flex-shrink-0">
