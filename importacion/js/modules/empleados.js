@@ -38,6 +38,11 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 
 import { db, storage, functions, httpsCallable } from '../firebase-config.js';
+import { getCache, setCache, removeCache } from '../idb-cache.js';
+
+// --- CONFIGURACIÓN DE CACHÉ ---
+const EMPLEADOS_CACHE_KEY = 'empleados_cache';
+const EMPLEADOS_SYNC_KEY = 'empleados_last_sync';
 
 // --- Variables del Módulo (Dependencias de app.js) ---
 let _db = db;
@@ -7745,99 +7750,104 @@ export function loadEmpleados() {
         return () => { }; 
     }
 
-    const cachedData = localStorage.getItem(EMPLEADOS_CACHE_KEY);
-    
     let mapUsers = new Map();
-    let maxLastUpdated = 0; // Guardará la fecha exacta del documento más reciente
+    let maxLastUpdated = 0; 
+    let unsubscribe = () => {};
+    let isCancelled = false;
 
-    // 1. Cargar desde el caché local (Velocidad instantánea)
-    if (cachedData) {
+    (async () => {
+        // 1. Cargar desde el caché local (IndexedDB seguro)
         try {
-            const parsedData = JSON.parse(cachedData);
-            parsedData.forEach(u => {
-                mapUsers.set(u.id, u);
-                // Buscamos cuál es el timestamp más reciente que tenemos guardado
-                if (u._lastUpdated && u._lastUpdated > maxLastUpdated) {
-                    maxLastUpdated = u._lastUpdated;
+            const cachedData = await getCache(EMPLEADOS_CACHE_KEY);
+            if (isCancelled) return;
+
+            if (cachedData && Array.isArray(cachedData)) {
+                cachedData.forEach(u => {
+                    mapUsers.set(u.id, u);
+                    if (u._lastUpdated && u._lastUpdated > maxLastUpdated) {
+                        maxLastUpdated = u._lastUpdated;
+                    }
+                });
+                setAllUsers(Array.from(mapUsers.values()));
+                renderAndAttachEmployeeListeners(Array.from(mapUsers.values()));
+            }
+        } catch (e) {
+            console.warn("Caché de empleados corrupto. Se limpiará.", e);
+            removeCache(EMPLEADOS_CACHE_KEY);
+        }
+
+        if (isCancelled) return;
+
+        // 2. onSnapshot Diferencial basado en la información real del servidor
+        const colRef = collection(db, "users");
+        let q;
+
+        if (maxLastUpdated > 0) {
+            const syncTime = new Date(maxLastUpdated - 120000); 
+            q = query(colRef, where("_lastUpdated", ">=", syncTime));
+        } else {
+            q = query(colRef);
+        }
+
+        // 3. Quedarse escuchando los cambios en vivo
+        let isInitial = true;
+        const unsub = onSnapshot(q, (snapshot) => {
+            let huboCambios = false;
+
+            snapshot.docChanges().forEach((change) => {
+                const doc = change.doc;
+                const data = doc.data();
+
+                if (data._lastUpdated && typeof data._lastUpdated.toMillis === 'function') data._lastUpdated = data._lastUpdated.toMillis();
+                if (data.creadoEn && typeof data.creadoEn.toMillis === 'function') data.creadoEn = data.creadoEn.toMillis();
+                
+                if (change.type === "added" || change.type === "modified") {
+                    mapUsers.set(doc.id, { id: doc.id, ...data });
+                    huboCambios = true;
+                }
+                if (change.type === "removed") {
+                    mapUsers.delete(doc.id);
+                    huboCambios = true;
                 }
             });
-            setAllUsers(Array.from(mapUsers.values()));
-            renderAndAttachEmployeeListeners(Array.from(mapUsers.values()));
-        } catch (e) {
-            console.warn("Caché de empleados corrupto. Se limpiará.");
-            localStorage.removeItem(EMPLEADOS_CACHE_KEY);
-            localStorage.removeItem(EMPLEADOS_SYNC_KEY);
-        }
-    }
 
-    // 2. onSnapshot Diferencial basado en la información real del servidor
-    const colRef = collection(db, "users");
-    let q;
+            // 4. Si hubo un cambio, actualizamos la memoria, el caché local y la pantalla
+            if (huboCambios) {
+                const finalArray = Array.from(mapUsers.values());
+                
+                finalArray.sort((a, b) => {
+                    const statusOrder = { 'pending': 1, 'inactive': 2, 'active': 3 };
+                    const orderA = statusOrder[a.status] || 99;
+                    const orderB = statusOrder[b.status] || 99;
+                    if (orderA !== orderB) return orderA - orderB;
+                    return (a.nombre || '').localeCompare(b.nombre || '');
+                });
 
-    if (maxLastUpdated > 0) {
-        // Restamos 2 minutos de margen de seguridad a la fecha del último documento
-        const syncTime = new Date(maxLastUpdated - 120000); 
-        q = query(colRef, where("_lastUpdated", ">=", syncTime));
-    } else {
-        // Si no hay caché, descarga todo
-        q = query(colRef);
-    }
-
-    // 3. Quedarse escuchando los cambios en vivo
-    let isInitial = true;
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-        let huboCambios = false;
-
-        snapshot.docChanges().forEach((change) => {
-            const doc = change.doc;
-            const data = doc.data();
-
-            // Limpieza de Timestamps para poder serializar en JSON local
-            if (data._lastUpdated && typeof data._lastUpdated.toMillis === 'function') data._lastUpdated = data._lastUpdated.toMillis();
-            if (data.creadoEn && typeof data.creadoEn.toMillis === 'function') data.creadoEn = data.creadoEn.toMillis();
-            
-            if (change.type === "added" || change.type === "modified") {
-                mapUsers.set(doc.id, { id: doc.id, ...data });
-                huboCambios = true;
+                setCache(EMPLEADOS_CACHE_KEY, finalArray).catch(err => console.warn("Error guardando empleados:", err));
+                
+                setAllUsers(finalArray);
+                renderAndAttachEmployeeListeners(finalArray);
+                
+                if (!isInitial) {
+                    console.log(`[Empleados] ${snapshot.docChanges().length} cambios detectados en tiempo real.`);
+                }
             }
-            if (change.type === "removed") {
-                mapUsers.delete(doc.id);
-                huboCambios = true;
-            }
+            isInitial = false;
+        }, (error) => {
+            console.error("Error en onSnapshot diferencial de empleados:", error);
         });
 
-        // 4. Si hubo un cambio, actualizamos la memoria, el caché local y la pantalla
-        if (huboCambios) {
-            const finalArray = Array.from(mapUsers.values());
-            
-            finalArray.sort((a, b) => {
-                const statusOrder = { 'pending': 1, 'inactive': 2, 'active': 3 };
-                const orderA = statusOrder[a.status] || 99;
-                const orderB = statusOrder[b.status] || 99;
-                if (orderA !== orderB) return orderA - orderB;
-                return (a.nombre || '').localeCompare(b.nombre || '');
-            });
+        unsubscribe = unsub;
+    })();
 
-            localStorage.setItem(EMPLEADOS_CACHE_KEY, JSON.stringify(finalArray));
-            
-            setAllUsers(finalArray);
-            renderAndAttachEmployeeListeners(finalArray);
-            
-            if (!isInitial) {
-                console.log(`[Empleados] ${snapshot.docChanges().length} cambios detectados en tiempo real.`);
-            }
-        }
-        isInitial = false;
-    }, (error) => {
-        console.error("Error en onSnapshot diferencial de empleados:", error);
-    });
-
-    return unsubscribe;
+    return () => {
+        isCancelled = true;
+        unsubscribe();
+    };
 }
 
 function updateLocalCache(newOrUpdatedUser) {
-    const cachedData = localStorage.getItem(EMPLEADOS_CACHE_KEY);
-    let users = cachedData ? JSON.parse(cachedData) : [];
+    let users = Array.isArray(allUsers) ? [...allUsers] : [];
     
     const index = users.findIndex(u => u.id === newOrUpdatedUser.id);
     if (index !== -1) users[index] = newOrUpdatedUser;
@@ -7851,8 +7861,8 @@ function updateLocalCache(newOrUpdatedUser) {
         return (a.nombre || '').localeCompare(b.nombre || '');
     });
     
-    localStorage.setItem(EMPLEADOS_CACHE_KEY, JSON.stringify(users));
     setAllUsers(users);
+    setCache(EMPLEADOS_CACHE_KEY, users).catch(err => console.warn("Error actualizando caché empleados:", err));
     renderAndAttachEmployeeListeners(users);
 }
 

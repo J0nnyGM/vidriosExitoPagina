@@ -217,7 +217,7 @@ function loadViewTemplates() {
                 <input type="tel" id="register-phone" placeholder="Celular" class="w-full p-3 border border-gray-300 rounded-lg" required>
                 <input type="text" id="register-address" placeholder="Dirección" class="w-full p-3 border border-gray-300 rounded-lg">
                 <input type="email" id="register-email" placeholder="Correo Electrónico" class="w-full p-3 border border-gray-300 rounded-lg" required>
-                <input type="password" id="register-password" placeholder="Contraseña (mín. 6 caracteres)" class="w-full p-3 border border-gray-300 rounded-lg" required>
+                <input type="password" id="register-password" placeholder="Contraseña (mín. 6 caracteres)" autocomplete="new-password" class="w-full p-3 border border-gray-300 rounded-lg" required>
                 <div>
                     <label for="register-dob" class="block text-xs font-semibold text-slate-500 uppercase mb-1">Fecha de Nacimiento</label>
                     <input type="date" id="register-dob" class="w-full p-3 border border-gray-300 rounded-lg mt-1" required>
