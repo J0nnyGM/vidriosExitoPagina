@@ -42,3 +42,15 @@ export function getOperationDays(fechaPedido) {
     if (diffDays === 1) return '1 día en operación';
     return `${diffDays} días en operación`;
 }
+
+export function isUserIncapacitatedOnDate(emp, date) {
+    if (!emp || !emp.incapacitado || !emp.incapacidadStart || !emp.incapacidadDays) return false;
+    const targetDate = new Date(date);
+    targetDate.setHours(0, 0, 0, 0);
+    const incStart = new Date(emp.incapacidadStart + 'T00:00:00');
+    incStart.setHours(0, 0, 0, 0);
+    const incEnd = new Date(incStart);
+    incEnd.setDate(incStart.getDate() + emp.incapacidadDays - 1);
+    incEnd.setHours(0, 0, 0, 0);
+    return targetDate >= incStart && targetDate <= incEnd;
+}

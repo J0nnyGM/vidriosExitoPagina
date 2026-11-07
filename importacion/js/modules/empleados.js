@@ -38,7 +38,6 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-storage.js";
 
 import { db, storage, functions, httpsCallable } from '../firebase-config.js';
-import { isUserIncapacitatedOnDate } from '../utils.js';
 
 // --- Variables del Módulo (Dependencias de app.js) ---
 let _db = db;
