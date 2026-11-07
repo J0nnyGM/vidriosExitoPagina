@@ -197,13 +197,13 @@ function generarPDFCliente(remision) {
             addPageNumber(data);
 
             if (data.pageNumber === 1) {
-                doc.setFontSize(11).setFont("helvetica", "bold").text("Cliente:", 20, 60).setFont("helvetica", "normal").text(remision.clienteNombre, 55, 60);
-                doc.setFont("helvetica", "bold").text("Correo:", 20, 66).setFont("helvetica", "normal").text(remision.clienteEmail || 'N/A', 55, 66);
-                doc.setFont("helvetica", "bold").text("Teléfono:", 20, 72).setFont("helvetica", "normal").text(remision.clienteTelefono || 'N/A', 55, 72);
-                doc.setFont("helvetica", "bold").text("Fecha Recibido:", 120, 60).setFont("helvetica", "normal").text(remision.fechaRecibido, 160, 60);
-                doc.setFont("helvetica", "bold").text("Fecha Entrega:", 120, 66).setFont("helvetica", "normal").text(remision.fechaEntrega || "Pendiente", 160, 66);
-                doc.setFont("helvetica", "bold").text("Forma de Pago:", 120, 72).setFont("helvetica", "normal").text(remision.formaPago, 160, 72);
-                doc.setFont("helvetica", "bold").text("Estado:", 120, 78).setFont("helvetica", "normal").text(remision.estado, 160, 78);
+                doc.setFontSize(11).setFont("helvetica", "bold").text("Cliente:", 20, 60).setFont("helvetica", "normal").text(String(remision.clienteNombre || 'N/A'), 55, 60);
+                doc.setFont("helvetica", "bold").text("Correo:", 20, 66).setFont("helvetica", "normal").text(String(remision.clienteEmail || 'N/A'), 55, 66);
+                doc.setFont("helvetica", "bold").text("Teléfono:", 20, 72).setFont("helvetica", "normal").text(String(remision.clienteTelefono || 'N/A'), 55, 72);
+                doc.setFont("helvetica", "bold").text("Fecha Recibido:", 120, 60).setFont("helvetica", "normal").text(String(remision.fechaRecibido || 'N/A'), 160, 60);
+                doc.setFont("helvetica", "bold").text("Fecha Entrega:", 120, 66).setFont("helvetica", "normal").text(String(remision.fechaEntrega || "Pendiente"), 160, 66);
+                doc.setFont("helvetica", "bold").text("Forma de Pago:", 120, 72).setFont("helvetica", "normal").text(String(remision.formaPago || 'N/A'), 160, 72);
+                doc.setFont("helvetica", "bold").text("Estado:", 120, 78).setFont("helvetica", "normal").text(String(remision.estado || 'N/A'), 160, 78);
             }
         }
     });
@@ -321,10 +321,10 @@ async function generarPDF(remision, isForPlanta = false) {
             addFooter(paginaResumen, data.pageNumber, data.pageCount);
 
             if (data.pageNumber === 1) {
-                paginaResumen.setFontSize(11).setFont("helvetica", "bold").text("Cliente:", 20, 60).setFont("helvetica", "normal").text(remision.clienteNombre, 55, 60);
-                paginaResumen.setFont("helvetica", "bold").text("Fecha Recibido:", 120, 60).setFont("helvetica", "normal").text(remision.fechaRecibido, 160, 60);
+                paginaResumen.setFontSize(11).setFont("helvetica", "bold").text("Cliente:", 20, 60).setFont("helvetica", "normal").text(String(remision.clienteNombre || 'N/A'), 55, 60);
+                paginaResumen.setFont("helvetica", "bold").text("Fecha Recibido:", 120, 60).setFont("helvetica", "normal").text(String(remision.fechaRecibido || 'N/A'), 160, 60);
                 if (!isForPlanta) {
-                    paginaResumen.setFont("helvetica", "bold").text("Teléfono:", 20, 66).setFont("helvetica", "normal").text(remision.clienteTelefono || 'N/A', 55, 66);
+                    paginaResumen.setFont("helvetica", "bold").text("Teléfono:", 20, 66).setFont("helvetica", "normal").text(String(remision.clienteTelefono || 'N/A'), 55, 66);
                 }
             }
         }
@@ -1389,12 +1389,19 @@ exports.applyRetention = functions.https.onCall(async (data, context) => {
         if (!remisionDoc.exists) throw new functions.https.HttpsError("not-found", "Remisión no encontrada.");
 
         const remisionData = remisionDoc.data();
+        const totalPagado = (remisionData.payments || [])
+            .filter(p => p.status === 'confirmado')
+            .reduce((sum, p) => sum + p.amount, 0);
+        const saldo = remisionData.valorTotal - totalPagado;
+
+        if (retentionAmount > saldo) {
+            throw new functions.https.HttpsError("failed-precondition", "La retención no puede ser mayor al saldo pendiente de la remisión.");
+        }
+
         const subtotal = remisionData.subtotal || 0;
-        const discountAmount = remisionData.discount ? remisionData.discount.amount : 0;
+        const discountAmount = remisionData.discount ? (remisionData.discount.amount || 0) : 0;
         const ivaAmount = remisionData.valorIVA || 0; 
         const totalAntesDeRetencion = subtotal - discountAmount + ivaAmount;
-
-        if (retentionAmount > totalAntesDeRetencion) throw new functions.https.HttpsError("failed-precondition", "La retención no puede ser mayor al total de la factura.");
 
         const newTotal = totalAntesDeRetencion - retentionAmount;
         const updatedData = {

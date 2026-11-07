@@ -8,6 +8,7 @@ import {
     populateDateFilters, initSearchableInput, allProveedores 
 } from '../app.js';
 import { formatCurrency, unformatCurrency } from '../utils.js';
+import { getCache, setCache, removeCache } from '../idb-cache.js';
 
 // --- CONFIGURACIÓN DE CACHÉ Y PAGINACIÓN ---
 const CACHE_KEY = 'gastos_cache';
@@ -16,83 +17,93 @@ const SYNC_KEY = 'gastos_last_sync';
 let currentPage = 1;
 const itemsPerPage = 20;
 
-// --- CARGA DE DATOS (TIEMPO REAL + BORRADO LÓGICO) ---
+// --- CARGA DE DATOS (TIEMPO REAL + BORRADO LÓGICO CON INDEXEDDB) ---
 export function loadGastos() {
-    const cachedData = localStorage.getItem(CACHE_KEY);
-    
     let mapGastos = new Map();
     let maxLastUpdated = 0; 
+    let unsubscribe = () => {};
+    let isCancelled = false;
 
-    if (cachedData) {
+    (async () => {
         try {
-            const parsedData = JSON.parse(cachedData);
-            parsedData.forEach(g => {
-                mapGastos.set(g.id, g);
-                if (g._lastUpdated && g._lastUpdated > maxLastUpdated) {
-                    maxLastUpdated = g._lastUpdated;
+            const cachedData = await getCache(CACHE_KEY);
+            if (isCancelled) return;
+
+            if (cachedData && Array.isArray(cachedData)) {
+                cachedData.forEach(g => {
+                    mapGastos.set(g.id, g);
+                    if (g._lastUpdated && g._lastUpdated > maxLastUpdated) {
+                        maxLastUpdated = g._lastUpdated;
+                    }
+                });
+                setAllGastos(Array.from(mapGastos.values()));
+                renderGastos();
+            }
+        } catch (e) {
+            console.warn("Caché de gastos corrupto. Se limpiará.", e);
+            removeCache(CACHE_KEY);
+        }
+
+        if (isCancelled) return;
+
+        const colRef = collection(db, "gastos");
+        let q;
+
+        if (maxLastUpdated > 0) {
+            const syncTime = new Date(maxLastUpdated - 120000); 
+            q = query(colRef, where("_lastUpdated", ">=", syncTime));
+        } else {
+            q = query(colRef);
+        }
+
+        const unsub = onSnapshot(q, (snapshot) => {
+            let huboCambios = false;
+
+            snapshot.docChanges().forEach((change) => {
+                const document = change.doc;
+                const data = document.data();
+
+                if (data._lastUpdated && typeof data._lastUpdated.toMillis === 'function') data._lastUpdated = data._lastUpdated.toMillis();
+                if (data.timestamp && typeof data.timestamp.toMillis === 'function') data.timestamp = data.timestamp.toMillis();
+                
+                if (change.type === "added" || change.type === "modified") {
+                    if (data.estado === 'eliminado') {
+                        mapGastos.delete(document.id);
+                    } else {
+                        mapGastos.set(document.id, { id: document.id, ...data });
+                    }
+                    huboCambios = true;
+                }
+                if (change.type === "removed") {
+                    mapGastos.delete(document.id);
+                    huboCambios = true;
                 }
             });
-            setAllGastos(Array.from(mapGastos.values()));
-            renderGastos();
-        } catch (e) {
-            console.warn("Caché de gastos corrupto. Se limpiará.");
-            localStorage.removeItem(CACHE_KEY);
-            localStorage.removeItem(SYNC_KEY);
-        }
-    }
 
-    const colRef = collection(db, "gastos");
-    let q;
-
-    if (maxLastUpdated > 0) {
-        const syncTime = new Date(maxLastUpdated - 120000); 
-        q = query(colRef, where("_lastUpdated", ">=", syncTime));
-    } else {
-        q = query(colRef);
-    }
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-        let huboCambios = false;
-
-        snapshot.docChanges().forEach((change) => {
-            const document = change.doc;
-            const data = document.data();
-
-            if (data._lastUpdated && typeof data._lastUpdated.toMillis === 'function') data._lastUpdated = data._lastUpdated.toMillis();
-            if (data.timestamp && typeof data.timestamp.toMillis === 'function') data.timestamp = data.timestamp.toMillis();
-            
-            if (change.type === "added" || change.type === "modified") {
-                if (data.estado === 'eliminado') {
-                    mapGastos.delete(document.id);
-                } else {
-                    mapGastos.set(document.id, { id: document.id, ...data });
+            if (huboCambios) {
+                const finalArray = Array.from(mapGastos.values());
+                finalArray.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+                
+                setCache(CACHE_KEY, finalArray).catch(err => console.warn("Error guardando gastos en caché:", err));
+                setAllGastos(finalArray);
+                
+                renderGastos();
+                
+                if (document.getElementById('modal') && !document.getElementById('modal').classList.contains('hidden') && document.getElementById('dashboard-summary-view')) {
+                    console.log("[Gastos] Dashboard detectado en vivo.");
                 }
-                huboCambios = true;
             }
-            if (change.type === "removed") {
-                mapGastos.delete(document.id);
-                huboCambios = true;
-            }
+        }, (error) => {
+            console.error("Error en onSnapshot diferencial de gastos:", error);
         });
 
-        if (huboCambios) {
-            const finalArray = Array.from(mapGastos.values());
-            finalArray.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-            
-            localStorage.setItem(CACHE_KEY, JSON.stringify(finalArray));
-            setAllGastos(finalArray);
-            
-            renderGastos();
-            
-            if (document.getElementById('modal') && !document.getElementById('modal').classList.contains('hidden') && document.getElementById('dashboard-summary-view')) {
-                console.log("[Gastos] Dashboard detectado en vivo.");
-            }
-        }
-    }, (error) => {
-        console.error("Error en onSnapshot diferencial de gastos:", error);
-    });
+        unsubscribe = unsub;
+    })();
 
-    return unsubscribe;
+    return () => {
+        isCancelled = true;
+        unsubscribe();
+    };
 }
 
 // --- RENDERIZADO CON PAGINACIÓN Y FILTROS ---
@@ -381,7 +392,7 @@ export function setupGastosEvents() {
                         timestamp: serverTimestamp()
                     });
 
-                    localStorage.removeItem(CACHE_KEY);
+                    await removeCache(CACHE_KEY);
                     localStorage.removeItem(SYNC_KEY);
                     showModalMessage("Sincronizando base de datos completa...", true);
                     setTimeout(() => window.location.reload(), 1000);

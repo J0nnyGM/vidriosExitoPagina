@@ -54,6 +54,7 @@
                     }
 
                     // 3. Quedarse escuchando los cambios en vivo
+                    let isInitial = true;
                     const unsubscribe = onSnapshot(q, (snapshot) => {
                         let huboCambios = false;
 
@@ -89,8 +90,11 @@
                             
                             // Si el usuario está creando una remisión y tiene el buscador desplegado,
                             // esto asegura que los nuevos ítems y su stock estén disponibles de inmediato.
-                            console.log(`[Ítems] ${snapshot.docChanges().length} cambios detectados en tiempo real.`);
+                            if (!isInitial) {
+                                console.log(`[Ítems] ${snapshot.docChanges().length} cambios detectados en tiempo real.`);
+                            }
                         }
+                        isInitial = false;
                     }, (error) => {
                         console.error("Error en onSnapshot diferencial de ítems:", error);
                     });

@@ -39,8 +39,8 @@
                 <h2 class="text-2xl font-extrabold text-center text-slate-800 mb-2">Iniciar Sesión</h2>
                 <p class="text-xs text-center text-slate-400 font-semibold mb-6">Ingresa tus credenciales para acceder al sistema</p>
                 <div class="space-y-4">
-                    <input type="email" id="login-email" placeholder="Correo Electrónico" class="w-full p-3 border border-gray-300 rounded-lg" required>
-                    <input type="password" id="login-password" placeholder="Contraseña" class="w-full p-3 border border-gray-300 rounded-lg" required>
+                    <input type="email" id="login-email" placeholder="Correo Electrónico" autocomplete="username" class="w-full p-3 border border-gray-300 rounded-lg" required>
+                    <input type="password" id="login-password" placeholder="Contraseña" autocomplete="current-password" class="w-full p-3 border border-gray-300 rounded-lg" required>
                     <button type="submit" class="w-full bg-[#0066e2] text-white font-extrabold py-3.5 px-4 rounded-xl hover:bg-blue-700 transition shadow-md">Ingresar</button>
                 </div>
                 <p class="text-center mt-6 text-sm text-slate-500 font-semibold">¿No tienes una cuenta? <a href="#" id="show-register-link" class="font-extrabold text-[#0066e2] hover:underline">Regístrate aquí</a></p>
@@ -289,6 +289,81 @@
 
     <div id="modal-secondary" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 hidden z-[60]">
         <div id="modal-secondary-content-wrapper" class="w-full"></div>
+    </div>
+
+    <!-- Modal de Comprobante de Pago -->
+    <div id="payment-voucher-modal"
+        class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop bg-gray-900 bg-opacity-60 p-4 backdrop-blur-sm flex">
+
+        <div
+            class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[95vh] flex flex-col overflow-hidden border border-slate-200 relative">
+
+            <button id="voucher-close-btn"
+                class="absolute top-4 right-4 text-slate-400 hover:text-rose-500 transition-colors z-10 p-2">
+                <i class="fa-solid fa-xmark text-2xl"></i>
+            </button>
+
+            <div class="p-8 overflow-y-auto flex-1 bg-white relative custom-scrollbar">
+
+                <div class="text-right mb-2 mt-8 md:mt-0">
+                    <p id="voucher-date" class="text-sm text-gray-500"></p>
+                </div>
+
+                <div
+                    class="flex flex-col md:flex-row justify-between bg-slate-50 p-5 rounded-xl border border-slate-100 mb-8 gap-4">
+                    <div>
+                        <p class="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-1">Empleado</p>
+                        <h3 id="voucher-employee-name" class="text-lg font-bold text-slate-800 leading-tight">
+                            Cargando...</h3>
+                        <p id="voucher-employee-id" class="text-xs text-slate-500 font-mono mt-1">---</p>
+                    </div>
+                    <div class="md:text-right border-t md:border-t-0 md:border-l border-slate-200 pt-4 md:pt-0 md:pl-6">
+                        <p class="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-1">Concepto del Pago
+                        </p>
+                        <h3 id="voucher-concept" class="text-lg font-bold text-indigo-900 leading-tight">---</h3>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+                    <div class="bg-white rounded-lg">
+                        <h4
+                            class="font-bold text-emerald-700 border-b border-emerald-100 pb-3 mb-4 uppercase text-xs tracking-widest flex items-center">
+                            <i class="fa-solid fa-circle-plus mr-2"></i> Devengados
+                        </h4>
+                        <ul class="text-sm space-y-2" id="voucher-earnings-list"></ul>
+                    </div>
+
+                    <div class="bg-white rounded-lg">
+                        <h4
+                            class="font-bold text-rose-700 border-b border-rose-100 pb-3 mb-4 uppercase text-xs tracking-widest flex items-center">
+                            <i class="fa-solid fa-circle-minus mr-2"></i> Deducciones
+                        </h4>
+                        <ul class="text-sm space-y-2" id="voucher-deductions-list"></ul>
+                    </div>
+                </div>
+
+                <div class="mt-8 pt-6 border-t-2 border-dashed border-gray-200 flex justify-end items-center">
+                    <div class="text-right">
+                        <span class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Neto a
+                            Pagar</span>
+                        <span id="voucher-total" class="font-black text-3xl text-slate-800">$ 0</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="bg-slate-50 p-4 flex justify-end gap-3 border-t border-slate-200">
+                <button onclick="window.print()"
+                    class="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold py-2 px-6 rounded-xl flex items-center transition-all text-xs shadow-sm">
+                    <i class="fa-solid fa-print mr-2"></i> Imprimir
+                </button>
+                <button id="voucher-close-footer-btn"
+                    class="bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 px-6 rounded-xl transition-all text-xs shadow-md">
+                    Cerrar
+                </button>
+            </div>
+        </div>
     </div>
 
     <div id="policy-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden z-50">

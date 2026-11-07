@@ -54,7 +54,13 @@ export const setAllPendingLoans = (data) => allPendingLoans = data;
 
 // --- MANEJO DE AUTENTICACIÓN ---
 let activeListeners = [];
+let prefetchTimeouts = [];
+
 export function unsubscribeAllListeners() {
+    prefetchTimeouts.forEach(t => clearTimeout(t));
+    prefetchTimeouts = [];
+    activePrefetches.clear();
+
     activeListeners.forEach(unsubscribe => {
         if (typeof unsubscribe === 'function') {
             unsubscribe();
@@ -64,39 +70,51 @@ export function unsubscribeAllListeners() {
 }
 
 let isAppInitialized = false;
+let currentAuthUid = null;
 
 onAuthStateChanged(auth, async (user) => {
-    unsubscribeAllListeners();
     if (user) {
-        const userDoc = await getDoc(doc(db, "users", user.uid));
-        if (userDoc.exists()) {
-            currentUser = user;
-            currentUserData = { id: user.uid, ...userDoc.data() };
-            if (currentUserData.status === 'active') {
-                document.getElementById('user-info').textContent = `Usuario: ${currentUserData.nombre} (${currentUserData.role})`;
-                logEvent(analytics, 'login', { method: 'email', user_role: currentUserData.role });
-                
-                // Mostrar la app
-                if(authView) authView.classList.add('hidden');
-                if(deniedView) deniedView.classList.add('hidden');
-                if(appView) appView.classList.remove('hidden');
-                
-                startApp();
+        if (isAppInitialized && currentAuthUid === user.uid) {
+            return;
+        }
+        currentAuthUid = user.uid;
+        unsubscribeAllListeners();
+
+        try {
+            const userDoc = await getDoc(doc(db, "users", user.uid));
+            if (userDoc.exists()) {
+                currentUser = user;
+                currentUserData = { id: user.uid, ...userDoc.data() };
+                if (currentUserData.status === 'active') {
+                    document.getElementById('user-info').textContent = `Usuario: ${currentUserData.nombre} (${currentUserData.role})`;
+                    logEvent(analytics, 'login', { method: 'email', user_role: currentUserData.role });
+                    
+                    // Mostrar la app
+                    if(authView) authView.classList.add('hidden');
+                    if(deniedView) deniedView.classList.add('hidden');
+                    if(appView) appView.classList.remove('hidden');
+                    
+                    startApp();
+                } else {
+                    let message = "Tu cuenta está pendiente de aprobación.";
+                    if (currentUserData.status === 'inactive') message = "Tu cuenta ha sido desactivada temporalmente.";
+                    if (currentUserData.status === 'archived') message = "Tu cuenta ha sido archivada y no puedes acceder.";
+                    document.getElementById('denied-message').textContent = message;
+                    if(authView) authView.classList.add('hidden');
+                    if(appView) appView.classList.add('hidden');
+                    if(deniedView) deniedView.classList.remove('hidden');
+                }
             } else {
-                let message = "Tu cuenta está pendiente de aprobación.";
-                if (currentUserData.status === 'inactive') message = "Tu cuenta ha sido desactivada temporalmente.";
-                if (currentUserData.status === 'archived') message = "Tu cuenta ha sido archivada y no puedes acceder.";
-                document.getElementById('denied-message').textContent = message;
-                if(authView) authView.classList.add('hidden');
-                if(appView) appView.classList.add('hidden');
-                if(deniedView) deniedView.classList.remove('hidden');
+                signOut(auth);
             }
-        } else {
-            signOut(auth);
+        } catch (error) {
+            console.error("Error al obtener datos de usuario:", error);
         }
     } else {
         currentUser = null;
         currentUserData = null;
+        currentAuthUid = null;
+        unsubscribeAllListeners();
         if(appView) appView.classList.add('hidden');
         if(deniedView) deniedView.classList.add('hidden');
         if(authView) authView.classList.remove('hidden');
@@ -126,6 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function startApp() {
     if (isAppInitialized) return;
+    isAppInitialized = true;
 
     updateUIVisibility(currentUserData);
     setupEventListeners();
@@ -158,16 +177,16 @@ function startApp() {
     switchView(initialView, tabs, views, mobileTabs);
 
     loadAllData();
-    isAppInitialized = true;
 }
 
 function loadAllData() {
-    // Como ahora usan Caché Inteligente (getDocs), estas funciones 
-    // ya no devuelven listeners, solo se ejecutan una vez al iniciar.
     loadClientes();
     loadProveedores();
-    loadRemisiones();
-    loadGastos();
+    
+    // Módulos en tiempo real con Caché Inteligente (onSnapshot)
+    activeListeners.push(loadRemisiones());
+    activeListeners.push(loadGastos());
+    
     loadImportaciones();
     loadItems();
     loadComprasNacionales();
@@ -179,9 +198,6 @@ function loadAllData() {
 
     if (currentUserData && currentUserData.role === 'admin') {
         loadEmpleados();
-        
-        // Esta es la única que conservó el onSnapshot (en vivo), 
-        // por lo que SÍ se guarda en la lista para apagarla al salir.
         activeListeners.push(loadAllLoanRequests());
     }
 }
@@ -406,6 +422,37 @@ function loadViewTemplates() {
                         </button>
                     </div>
                 </div>
+            <!-- Filtros por Estado de Remisión -->
+            <div class="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+                <button data-filter="todas" class="remision-filter-btn px-4 py-2 rounded-full text-xs font-bold transition flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 active-filter shadow-xs flex-shrink-0">
+                    <span>Todas</span>
+                    <span class="filter-count-rem bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full text-[10px]">0</span>
+                </button>
+                <button data-filter="Recibido" class="remision-filter-btn px-4 py-2 rounded-full text-xs font-bold transition flex items-center gap-1.5 bg-white border border-slate-200 text-amber-700 hover:bg-amber-50 shadow-xs flex-shrink-0">
+                    <i class="fa-solid fa-inbox text-amber-500 text-[11px]"></i>
+                    <span>Recibido</span>
+                    <span class="filter-count-rem bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full text-[10px]">0</span>
+                </button>
+                <button data-filter="En Proceso" class="remision-filter-btn px-4 py-2 rounded-full text-xs font-bold transition flex items-center gap-1.5 bg-white border border-slate-200 text-blue-700 hover:bg-blue-50 shadow-xs flex-shrink-0">
+                    <i class="fa-solid fa-gears text-blue-500 text-[11px]"></i>
+                    <span>En Proceso</span>
+                    <span class="filter-count-rem bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded-full text-[10px]">0</span>
+                </button>
+                <button data-filter="Procesado" class="remision-filter-btn px-4 py-2 rounded-full text-xs font-bold transition flex items-center gap-1.5 bg-white border border-slate-200 text-purple-700 hover:bg-purple-50 shadow-xs flex-shrink-0">
+                    <i class="fa-solid fa-check text-purple-500 text-[11px]"></i>
+                    <span>Procesado</span>
+                    <span class="filter-count-rem bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded-full text-[10px]">0</span>
+                </button>
+                <button data-filter="Entregado" class="remision-filter-btn px-4 py-2 rounded-full text-xs font-bold transition flex items-center gap-1.5 bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 shadow-xs flex-shrink-0">
+                    <i class="fa-solid fa-truck text-emerald-500 text-[11px]"></i>
+                    <span>Entregado</span>
+                    <span class="filter-count-rem bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full text-[10px]">0</span>
+                </button>
+                <button data-filter="Anulada" class="remision-filter-btn px-4 py-2 rounded-full text-xs font-bold transition flex items-center gap-1.5 bg-white border border-slate-200 text-rose-700 hover:bg-rose-50 shadow-xs flex-shrink-0">
+                    <i class="fa-solid fa-ban text-rose-500 text-[11px]"></i>
+                    <span>Anuladas</span>
+                    <span class="filter-count-rem bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded-full text-[10px]">0</span>
+                </button>
             </div>
 
             <div id="remisiones-list-container" class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
@@ -783,6 +830,10 @@ function updateUIVisibility(userData) {
         remisionListContainer.classList.toggle('lg:col-span-3', isPlanta);
         remisionListContainer.classList.toggle('lg:col-span-2', !isPlanta);
     }
+    const mobileAddRemisionBtn = document.getElementById('mobile-add-remision-btn');
+    if (mobileAddRemisionBtn) {
+        mobileAddRemisionBtn.style.display = isPlanta ? 'none' : '';
+    }
 
     const isContabilidad = userData.role?.toLowerCase() === 'contabilidad';
     const gastosView = document.getElementById('view-gastos');
@@ -996,6 +1047,18 @@ function setupEventListeners() {
     document.getElementById('close-policy-modal')?.addEventListener('click', () => { document.getElementById('policy-modal').classList.add('hidden'); });
     document.getElementById('accept-policy-btn')?.addEventListener('click', () => { document.getElementById('policy-modal').classList.add('hidden'); });
 
+    // Auto-actualizar la fecha de remisión a hoy cuando la página vuelve a estar activa o visible
+    const updateFechaRecibidoInput = () => {
+        const fechaInput = document.getElementById('fecha-recibido');
+        if (fechaInput) {
+            fechaInput.value = new Date().toISOString().split('T')[0];
+        }
+    };
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') updateFechaRecibidoInput();
+    });
+    window.addEventListener('focus', updateFechaRecibidoInput);
+
     // --- EVENT DELEGATION FOR RESPONSIVE MOBILE FORM MODALS ---
     document.body.addEventListener('click', (e) => {
         // Handle trigger buttons
@@ -1059,6 +1122,13 @@ function switchView(viewName, tabs, views, mobileTabs = null) {
     Object.values(views).forEach(view => { if (view) view.classList.add('hidden') });
     if (views[viewName]) views[viewName].classList.remove('hidden');
 
+    if (viewName === 'remisiones') {
+        const fechaInput = document.getElementById('fecha-recibido');
+        if (fechaInput) {
+            fechaInput.value = new Date().toISOString().split('T')[0];
+        }
+    }
+
     // Expandir/contraer dinámicamente el contenedor principal <main> para el módulo de WhatsApp
     const mainContainer = document.querySelector('main');
     const body = document.body;
@@ -1079,6 +1149,7 @@ export function hideModal() {
     const primaryModal = document.getElementById('modal');
     if (primaryModal) {
         primaryModal.classList.add('hidden');
+        primaryModal.style.display = '';
         primaryModal.querySelector('#modal-content-wrapper').innerHTML = '';
         cleanupDashboardListeners();
     }
@@ -1111,9 +1182,11 @@ export function populateDateFilters(prefix) {
     }
 }
 
-export function initSearchableInput(searchInput, resultsContainer, getDataFn, displayFn, onSelect) {
+export function initSearchableInput(searchInput, resultsContainer, getDataFn, displayFn, onSelect, renderItemFn = null) {
+    if (!searchInput || !resultsContainer) return;
+    
     searchInput.addEventListener('input', () => {
-        const data = getDataFn();
+        const data = typeof getDataFn === 'function' ? getDataFn() : (getDataFn || []);
         const searchTerm = searchInput.value.toLowerCase();
         if (!searchTerm) {
             if (onSelect) onSelect(null, searchInput);
@@ -1121,7 +1194,10 @@ export function initSearchableInput(searchInput, resultsContainer, getDataFn, di
             resultsContainer.classList.add('hidden');
             return;
         }
-        const filteredData = data.filter(item => displayFn(item).toLowerCase().includes(searchTerm));
+        const filteredData = data.filter(item => {
+            const str = typeof displayFn === 'function' ? displayFn(item) : String(item);
+            return str.toLowerCase().includes(searchTerm);
+        });
         renderResults(filteredData);
     });
 
@@ -1138,10 +1214,14 @@ export function initSearchableInput(searchInput, resultsContainer, getDataFn, di
         results.forEach(item => {
             const div = document.createElement('div');
             div.className = 'search-result-item';
-            div.textContent = displayFn(item);
+            if (typeof renderItemFn === 'function') {
+                div.innerHTML = renderItemFn(item);
+            } else {
+                div.textContent = typeof displayFn === 'function' ? displayFn(item) : String(item);
+            }
             div.addEventListener('mousedown', (e) => {
                 e.preventDefault();
-                searchInput.value = displayFn(item);
+                searchInput.value = typeof displayFn === 'function' ? displayFn(item) : String(item);
                 resultsContainer.classList.add('hidden');
                 if (onSelect) onSelect(item, searchInput);
             });
@@ -1276,7 +1356,7 @@ function invalidateFileCache(filePath) {
 }
 
 async function getSecureFileUrl(filePath, forceRefresh = false) {
-    if (!filePath) return '';
+    if (!filePath || !auth.currentUser) return '';
     
     if (!forceRefresh) {
         const cache = loadUrlCache();
@@ -1303,6 +1383,7 @@ async function getSecureFileUrl(filePath, forceRefresh = false) {
     }
     
     const fetchPromise = (async () => {
+        if (!auth.currentUser) return '';
         try {
             // Método 1: SDK Cliente Directo (Carga ultra veloz ~100ms)
             const fileRef = ref(storage, filePath);
@@ -1317,6 +1398,7 @@ async function getSecureFileUrl(filePath, forceRefresh = false) {
             saveUrlCache(freshCache);
             return url;
         } catch (error) {
+            if (!auth.currentUser) return '';
             console.warn(`Fallo al obtener enlace directo para ${filePath}, reintentando con Cloud Function...`, error);
             try {
                 // Método 2: Respaldo de Cloud Function (Expiración en 10 minutos)
@@ -1333,7 +1415,9 @@ async function getSecureFileUrl(filePath, forceRefresh = false) {
                 saveUrlCache(freshCache);
                 return url;
             } catch (cfError) {
-                console.error(`Fallo crítico al resolver enlace de archivo seguro para ${filePath}:`, cfError);
+                if (auth.currentUser) {
+                    console.error(`Fallo crítico al resolver enlace de archivo seguro para ${filePath}:`, cfError);
+                }
                 throw cfError;
             }
         } finally {
@@ -1347,7 +1431,7 @@ async function getSecureFileUrl(filePath, forceRefresh = false) {
 
 // Prefetch en segundo plano de manera silenciosa
 export function prefetchSecureFile(filePath) {
-    if (!filePath) return;
+    if (!filePath || !auth.currentUser) return;
     const cache = loadUrlCache();
     const cachedEntry = cache[filePath];
     const isExpired = cachedEntry && cachedEntry.type === 'signed' && cachedEntry.expiresAt <= Date.now();
@@ -1359,6 +1443,7 @@ export function prefetchSecureFile(filePath) {
 
 // Escanear el DOM y precargar todos los PDF visibles con delay staggered (evita ráfagas de red)
 export function scanAndPrefetchSecureFiles() {
+    if (!auth.currentUser) return;
     const elements = document.querySelectorAll('[data-file-path]');
     let delay = 150;
     elements.forEach(el => {
@@ -1369,9 +1454,12 @@ export function scanAndPrefetchSecureFiles() {
             const isExpired = cachedEntry && cachedEntry.type === 'signed' && cachedEntry.expiresAt <= Date.now();
             
             if (!cachedEntry || isExpired) {
-                setTimeout(() => {
-                    prefetchSecureFile(path);
+                const t = setTimeout(() => {
+                    if (auth.currentUser) {
+                        prefetchSecureFile(path);
+                    }
                 }, delay);
+                prefetchTimeouts.push(t);
                 delay += 300; // Espaciar solicitudes 300ms
             }
         }

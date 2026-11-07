@@ -13,6 +13,7 @@ import { renderClientes } from './clientes.js';
 import { formatCurrency, unformatCurrency, unformatCurrencyInput, formatCurrencyInput } from '../utils.js';
 import { ESTADOS_REMISION, METODOS_DE_PAGO } from '../constants.js';
 import { renderFacturacion } from './facturacion.js';
+import { getCache, setCache, removeCache } from '../idb-cache.js';
 
 let localElementCounter = 0; 
 
@@ -22,107 +23,118 @@ const SYNC_KEY = 'remisiones_last_sync';
 
 let currentPage = 1;
 const itemsPerPage = 20;
+let currentStatusFilter = 'todas';
 
-// --- CARGA DE DATOS (INTELIGENTE + TIEMPO REAL INFALIBLE) ---
+// --- CARGA DE DATOS (INTELIGENTE + TIEMPO REAL INFALIBLE CON INDEXEDDB) ---
 export function loadRemisiones() {
-    const cachedData = localStorage.getItem(CACHE_KEY);
-    
     let mapRemisiones = new Map();
     let maxLastUpdated = 0; 
+    let unsubscribe = () => {};
+    let isCancelled = false;
 
-    if (cachedData) {
+    (async () => {
         try {
-            const parsedData = JSON.parse(cachedData);
-            parsedData.forEach(r => {
-                mapRemisiones.set(r.id, r);
-                if (r._lastUpdated && r._lastUpdated > maxLastUpdated) {
-                    maxLastUpdated = r._lastUpdated;
+            const cachedData = await getCache(CACHE_KEY);
+            if (isCancelled) return;
+
+            if (cachedData && Array.isArray(cachedData)) {
+                cachedData.forEach(r => {
+                    mapRemisiones.set(r.id, r);
+                    if (r._lastUpdated && r._lastUpdated > maxLastUpdated) {
+                        maxLastUpdated = r._lastUpdated;
+                    }
+                });
+                setAllRemisiones(Array.from(mapRemisiones.values()));
+                renderRemisiones();
+                renderFacturacion();
+                renderClientes(); 
+            }
+        } catch (e) {
+            console.warn("Caché de remisiones corrupto o inaccesible. Se reiniciará.", e);
+            removeCache(CACHE_KEY);
+        }
+
+        if (isCancelled) return;
+
+        const colRef = collection(db, "remisiones");
+        let q;
+
+        if (maxLastUpdated > 0) {
+            const syncTime = new Date(maxLastUpdated - 120000); 
+            q = query(colRef, where("_lastUpdated", ">=", syncTime));
+        } else {
+            q = query(colRef);
+        }
+
+        const unsub = onSnapshot(q, (snapshot) => {
+            let huboCambios = false;
+
+            snapshot.docChanges().forEach((change) => {
+                const doc = change.doc;
+                const data = doc.data();
+
+                if (data._lastUpdated && typeof data._lastUpdated.toMillis === 'function') data._lastUpdated = data._lastUpdated.toMillis();
+                if (data.timestamp && typeof data.timestamp.toMillis === 'function') data.timestamp = data.timestamp.toMillis();
+                if (data.fechaFacturado && typeof data.fechaFacturado.toMillis === 'function') data.fechaFacturado = data.fechaFacturado.toMillis();
+                
+                if (Array.isArray(data.payments)) {
+                    data.payments.forEach(p => {
+                        if (p.registeredAt && typeof p.registeredAt.toMillis === 'function') p.registeredAt = p.registeredAt.toMillis();
+                        if (p.confirmedAt && typeof p.confirmedAt.toMillis === 'function') p.confirmedAt = p.confirmedAt.toMillis();
+                    });
+                }
+
+                if (change.type === "added" || change.type === "modified") {
+                    mapRemisiones.set(doc.id, { id: doc.id, ...data });
+                    huboCambios = true;
+                }
+                if (change.type === "removed") {
+                    mapRemisiones.delete(doc.id);
+                    huboCambios = true;
                 }
             });
-            setAllRemisiones(Array.from(mapRemisiones.values()));
-            renderRemisiones();
-            renderFacturacion();
-            renderClientes(); 
-        } catch (e) {
-            console.warn("Caché de remisiones corrupto. Se limpiará.");
-            localStorage.removeItem(CACHE_KEY);
-            localStorage.removeItem(SYNC_KEY);
-        }
-    }
 
-    const colRef = collection(db, "remisiones");
-    let q;
+            if (huboCambios) {
+                const finalArray = Array.from(mapRemisiones.values());
+                finalArray.sort((a, b) => b.numeroRemision - a.numeroRemision);
 
-    if (maxLastUpdated > 0) {
-        const syncTime = new Date(maxLastUpdated - 120000); 
-        q = query(colRef, where("_lastUpdated", ">=", syncTime));
-    } else {
-        q = query(colRef);
-    }
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-        let huboCambios = false;
-
-        snapshot.docChanges().forEach((change) => {
-            const doc = change.doc;
-            const data = doc.data();
-
-            if (data._lastUpdated && typeof data._lastUpdated.toMillis === 'function') data._lastUpdated = data._lastUpdated.toMillis();
-            if (data.timestamp && typeof data.timestamp.toMillis === 'function') data.timestamp = data.timestamp.toMillis();
-            if (data.fechaFacturado && typeof data.fechaFacturado.toMillis === 'function') data.fechaFacturado = data.fechaFacturado.toMillis();
-            
-            if (Array.isArray(data.payments)) {
-                data.payments.forEach(p => {
-                    if (p.registeredAt && typeof p.registeredAt.toMillis === 'function') p.registeredAt = p.registeredAt.toMillis();
-                    if (p.confirmedAt && typeof p.confirmedAt.toMillis === 'function') p.confirmedAt = p.confirmedAt.toMillis();
-                });
+                // Guardado asíncrono y seguro en IndexedDB (no satura los 5MB de localStorage)
+                setCache(CACHE_KEY, finalArray).catch(err => console.warn("Error guardando caché de remisiones:", err));
+                setAllRemisiones(finalArray);
+                
+                renderRemisiones();
+                renderFacturacion();
+                renderClientes();
+                
+                if (document.getElementById('close-pending-payments-modal') && !document.getElementById('modal').classList.contains('hidden')) {
+                    const updateBadgeFn = window.updatePendingPaymentsBadge || (() => {});
+                    updateBadgeFn();
+                }
             }
-
-            if (change.type === "added" || change.type === "modified") {
-                mapRemisiones.set(doc.id, { id: doc.id, ...data });
-                huboCambios = true;
-            }
-            if (change.type === "removed") {
-                mapRemisiones.delete(doc.id);
-                huboCambios = true;
-            }
+        }, (error) => {
+            console.error("Error en onSnapshot diferencial de remisiones:", error);
         });
 
-        if (huboCambios) {
-            const finalArray = Array.from(mapRemisiones.values());
-            finalArray.sort((a, b) => b.numeroRemision - a.numeroRemision);
+        unsubscribe = unsub;
+    })();
 
-            localStorage.setItem(CACHE_KEY, JSON.stringify(finalArray));
-            setAllRemisiones(finalArray);
-            
-            renderRemisiones();
-            renderFacturacion();
-            renderClientes();
-            
-            if (document.getElementById('close-pending-payments-modal') && !document.getElementById('modal').classList.contains('hidden')) {
-                const updateBadgeFn = window.updatePendingPaymentsBadge || (() => {});
-                updateBadgeFn();
-            }
-        }
-    }, (error) => {
-        console.error("Error en onSnapshot diferencial de remisiones:", error);
-    });
-
-    return unsubscribe;
+    return () => {
+        isCancelled = true;
+        unsubscribe();
+    };
 }
 
 function updateLocalCache(newOrUpdatedRemision) {
-    const cachedData = localStorage.getItem(CACHE_KEY);
-    let remisiones = cachedData ? JSON.parse(cachedData) : [];
+    let remisiones = Array.isArray(allRemisiones) ? [...allRemisiones] : [];
     
     const index = remisiones.findIndex(r => r.id === newOrUpdatedRemision.id);
     if (index !== -1) remisiones[index] = newOrUpdatedRemision;
-    else remisiones.push(newOrUpdatedRemision);
+    else remisiones.unshift(newOrUpdatedRemision);
     
     remisiones.sort((a, b) => b.numeroRemision - a.numeroRemision);
     
-    localStorage.setItem(CACHE_KEY, JSON.stringify(remisiones));
     setAllRemisiones(remisiones);
+    setCache(CACHE_KEY, remisiones).catch(err => console.warn("Error actualizando caché de remisiones:", err));
     
     renderRemisiones();
     renderFacturacion();
@@ -140,12 +152,36 @@ export function renderRemisiones() {
     const searchInput = document.getElementById('search-remisiones');
     const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
     
+    // Conteo por estados (para badges de los filtros)
+    const counts = {
+        todas: allRemisiones.length,
+        Recibido: allRemisiones.filter(r => r.estado === 'Recibido').length,
+        'En Proceso': allRemisiones.filter(r => r.estado === 'En Proceso').length,
+        Procesado: allRemisiones.filter(r => r.estado === 'Procesado').length,
+        Entregado: allRemisiones.filter(r => r.estado === 'Entregado').length,
+        Anulada: allRemisiones.filter(r => r.estado === 'Anulada').length
+    };
+
+    document.querySelectorAll('.remision-filter-btn').forEach(btn => {
+        const filterType = btn.dataset.filter;
+        const countSpan = btn.querySelector('.filter-count-rem');
+        if (countSpan && counts[filterType] !== undefined) {
+            countSpan.textContent = counts[filterType];
+        }
+        btn.classList.toggle('active-filter', filterType === currentStatusFilter);
+    });
+
     let filtered = allRemisiones;
 
     if (isPlanta) {
         const allowedStates = ['Recibido', 'En Proceso', 'Procesado'];
         filtered = filtered.filter(r => allowedStates.includes(r.estado));
     }
+
+    if (currentStatusFilter !== 'todas') {
+        filtered = filtered.filter(r => r.estado === currentStatusFilter);
+    }
+
     if (year !== 'all') {
         filtered = filtered.filter(r => new Date(r.fechaRecibido).getFullYear() == year);
     }
@@ -1032,7 +1068,7 @@ async function handleRemisionSubmit(e) {
         const nuevaRemision = {
             numeroRemision: newRemisionNumber, idCliente: clienteId, clienteNombre: cliente.nombre,
             clienteEmail: cliente.email, clienteTelefono: cliente.telefono1 || cliente.telefono2 || 'N/A',
-            fechaRecibido: document.getElementById('fecha-recibido').value,
+            fechaRecibido: new Date().toISOString().split('T')[0],
             formaPago: document.getElementById('forma-pago').value, observaciones: observaciones, 
             incluyeIVA, items: itemsParaGuardar, cargosAdicionales, subtotal: Math.round(subtotalGeneral),
             valorIVA: Math.round(valorIVA), valorTotal: Math.round(totalFinal), creadoPor: currentUser.uid,
@@ -1231,7 +1267,8 @@ function showPaymentModal(remision) {
                     const remisionDoc = await transaction.get(remisionRef);
                     updatedPayments = Array.isArray(remisionDoc.data().payments) ? remisionDoc.data().payments : [];
                     
-                    if (updatedPayments[paymentIndex].registeredBy === currentUser.uid) {
+                    const registeredBy = updatedPayments[paymentIndex].registeredBy;
+                    if (registeredBy && currentUser && currentUser.uid && registeredBy === currentUser.uid) {
                         throw "Error de Seguridad: No puedes confirmar/rechazar tu propio pago.";
                     }
                     
@@ -1247,7 +1284,8 @@ function showPaymentModal(remision) {
                 const updatedRem = { ...remision, _lastUpdated: Date.now() };
                 updateLocalCache(updatedRem);
 
-                document.getElementById('modal-content').innerHTML = ''; 
+                const modalCont = document.getElementById('modal-content');
+                if (modalCont) modalCont.innerHTML = '';
                 document.getElementById('modal').classList.add('hidden'); 
                 
                 showTemporaryMessage(`¡Pago ${action === 'confirmar' ? 'confirmado' : 'rechazado'}!`, action === 'confirmar' ? "success" : "info");
@@ -1286,7 +1324,19 @@ function showPaymentModal(remision) {
                 return showModalMessage(`No puedes registrar un abono mayor al saldo pendiente de ${formatCurrency(saldoRealPendiente)}.`);
             }
 
-            const newPayment = { amount, date: secondaryModalContentWrapper.querySelector('#new-payment-date').value, method: secondaryModalContentWrapper.querySelector('#new-payment-method').value, registeredAt: Date.now(), registeredBy: currentUser.uid, status: 'por confirmar' };
+            const methodSelect = secondaryModalContentWrapper.querySelector('#new-payment-method');
+            const method = methodSelect ? methodSelect.value : '';
+            if (!method || method === 'undefined') {
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Registrar Pago"; }
+                return showModalMessage("Error: Método de pago no válido o no seleccionado.");
+            }
+
+            if (!currentUser || !currentUser.uid) {
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Registrar Pago"; }
+                return showModalMessage("Error de sesión: Usuario no autenticado.");
+            }
+
+            const newPayment = { amount, date: secondaryModalContentWrapper.querySelector('#new-payment-date').value, method: method, registeredAt: Date.now(), registeredBy: currentUser.uid, status: 'por confirmar' };
 
             showModalMessage("Registrando pago...", true);
             try {
@@ -1351,11 +1401,17 @@ function showDiscountModal(remision) {
 export function showRetentionModal(remision) {
     const modalContentWrapper = document.getElementById('modal-content-wrapper');
     const currentRetention = remision.retention ? remision.retention.amount : 0;
+
+    const paymentsArray = Array.isArray(remision.payments) ? remision.payments : [];
+    const totalPagadoConfirmado = paymentsArray.filter(p => p.status === 'confirmado').reduce((sum, p) => sum + p.amount, 0);
+    const saldoPendiente = remision.valorTotal - totalPagadoConfirmado;
+
     modalContentWrapper.innerHTML = `
         <div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-auto text-left">
             <div class="flex justify-between items-center mb-4"><h2 class="text-xl font-semibold">Aplicar Retenciones</h2><button id="close-retention-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button></div>
-            <p class="text-sm text-gray-600 mb-2">Remisión N°: <span class="font-bold">${remision.numeroRemision}</span></p>
-            <p class="text-sm text-gray-600 mb-4">Total Actual: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>
+            <p class="text-sm text-gray-600 mb-1">Remisión N°: <span class="font-bold">${remision.numeroRemision}</span></p>
+            <p class="text-sm text-gray-600 mb-1">Total Actual: <span class="font-bold">${formatCurrency(remision.valorTotal)}</span></p>
+            <p class="text-sm text-gray-650 mb-4">Saldo Pendiente: <span class="font-bold text-red-600">${formatCurrency(saldoPendiente)}</span></p>
             <form id="retention-form" class="space-y-4">
                 <div><label class="block text-sm font-medium">Valor Retención (COP)</label><input type="text" id="retention-amount" class="w-full p-2 border rounded-lg mt-1" inputmode="numeric" required value="${currentRetention > 0 ? formatCurrency(currentRetention) : ''}"></div>
                 <button type="submit" class="w-full bg-amber-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-amber-700">Aplicar Retención</button>
@@ -1373,6 +1429,9 @@ export function showRetentionModal(remision) {
         e.preventDefault();
         const retentionAmount = unformatCurrency(amountInput.value);
         if (isNaN(retentionAmount) || retentionAmount < 0) return showModalMessage("Ingresa un valor válido.");
+        if (retentionAmount > saldoPendiente) {
+            return showModalMessage(`La retención no puede exceder el saldo pendiente de ${formatCurrency(saldoPendiente)}.`);
+        }
 
         showModalMessage("Aplicando retención...", true);
         try {
@@ -1522,7 +1581,8 @@ function showPendingPaymentsModal() {
                 updatedRem = { id: remDocNew.id, ...remDocNew.data() };
                 updateLocalCache(updatedRem);
 
-                document.getElementById('modal-content').innerHTML = ''; 
+                const modalCont = document.getElementById('modal-content');
+                if (modalCont) modalCont.innerHTML = '';
                 document.getElementById('modal').classList.add('hidden'); 
                 showPendingPaymentsModal(); // Recargamos el modal
                 
@@ -1579,6 +1639,14 @@ export function setupRemisionesEvents() {
     const filterRemYear = document.getElementById('filter-remisiones-year');
     if (filterRemMonth) filterRemMonth.addEventListener('change', resetAndRender);
     if (filterRemYear) filterRemYear.addEventListener('change', resetAndRender);
+
+    // Filtros por Estado de Remisión
+    document.querySelectorAll('.remision-filter-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            currentStatusFilter = e.currentTarget.dataset.filter;
+            resetAndRender();
+        });
+    });
 
     const searchRemisiones = document.getElementById('search-remisiones');
     let debounceTimer;

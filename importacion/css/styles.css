@@ -246,6 +246,10 @@ body {
     text-align: left;
 }
 
+#desktop-sidebar .tab-btn.hidden {
+    display: none !important;
+}
+
 #desktop-sidebar .tab-btn:hover {
     color: #ffffff !important;
     background-color: rgba(255, 255, 255, 0.15) !important;
@@ -888,4 +892,58 @@ button.facturacion-main-btn {
     font-weight: 700 !important;
     height: 40px !important;
     gap: 0.25rem !important;
+}
+
+@media print {
+    /* 1. Ocultar TODO por defecto */
+    body * {
+        visibility: hidden;
+    }
+    
+    /* 2. Hacer visible SOLO el modal de voucher y sus hijos */
+    #payment-voucher-modal, #payment-voucher-modal * {
+        visibility: visible;
+    }
+
+    /* 3. Posicionar el modal como el contenido único de la página */
+    #payment-voucher-modal {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: auto;
+        margin: 0;
+        padding: 0;
+        background: white !important; /* Ahorrar tinta */
+        box-shadow: none !important;
+        border: none !important;
+        z-index: 9999; /* Asegurar que esté encima */
+    }
+    
+    /* 4. Ocultar botones de acción del modal (Cerrar, Imprimir, Aceptar) */
+    #voucher-close-btn, 
+    #voucher-close-footer-btn, 
+    #payment-voucher-modal button {
+        display: none !important;
+    }
+
+    /* 5. Ajustes de diseño para papel */
+    .modal-content {
+        max-width: 100% !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+    
+    /* 6. Ajuste de colores para impresión (Alto Contraste / Ahorro Tinta) */
+    .bg-slate-50, .bg-gray-50 { 
+        background-color: white !important; 
+        border: 1px solid #ddd !important; /* Agregar borde suave para mantener estructura */
+    }
+    .text-blue-600, .text-blue-800, .text-indigo-600, .text-indigo-700 { 
+        color: black !important; 
+    }
+    /* Forzar texto negro en general para mejor lectura */
+    p, span, h3, h4, td, th {
+        color: black !important;
+    }
 }

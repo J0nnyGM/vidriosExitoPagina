@@ -86,24 +86,24 @@ export function renderFacturacion() {
                         }
                     } catch (e) {}
                     if (rutPath) {
-                        botonRUT = `<button data-file-path="${rutPath}" data-file-title="RUT de ${clienteDeRemision.nombre}" class="w-full bg-purple-50 text-purple-700 border border-purple-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-100 transition flex items-center justify-center gap-1">📄 RUT</button>`;
+                        botonRUT = `<button data-file-path="${rutPath}" data-file-title="RUT de ${clienteDeRemision.nombre}" class="w-full bg-violet-50 text-violet-750 border border-violet-100 py-2 px-3 rounded-xl text-xs font-bold hover:bg-violet-100 hover:text-violet-850 hover:shadow-sm transition-all duration-200 flex items-center justify-center gap-1.5 transform hover:-translate-y-0.5 active:translate-y-0">📄 RUT</button>`;
                     }
                 }
                 infoClienteExtra = `<p class="text-sm text-gray-500 mt-1">${clienteDeRemision.nit ? `NIT: <span class="font-medium">${clienteDeRemision.nit}</span>` : ''}${clienteDeRemision.nit && clienteDeRemision.email ? ' <span class="mx-1">&bull;</span> ' : ''}${clienteDeRemision.email ? `<span class="truncate block sm:inline">${clienteDeRemision.email}</span>` : ''}</p>`;
             }
 
             const remisionPdfButton = remision.pdfPath 
-                ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="w-full bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-200 transition flex items-center justify-center gap-1">📋 Remisión PDF</button>` 
-                : `<button class="w-full bg-slate-100 text-slate-400 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold cursor-not-allowed flex items-center justify-center gap-1">⏱️ Generando...</button>`;
+                ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="w-full bg-slate-50 text-slate-700 border border-slate-250 py-2 px-3 rounded-xl text-xs font-bold hover:bg-slate-100 hover:shadow-sm transition-all duration-200 flex items-center justify-center gap-1.5 transform hover:-translate-y-0.5 active:translate-y-0">📋 Remisión PDF</button>` 
+                : `<button class="w-full bg-slate-50 text-slate-355 border border-slate-100 py-2 px-3 rounded-xl text-xs font-bold cursor-not-allowed flex items-center justify-center gap-1.5 opacity-60" disabled title="Generando PDF de la remisión...">📋 Remisión PDF</button>`;
             
             let btnRetencion = '';
             if (!remision.retention || !remision.retention.amount) {
-                btnRetencion = `<button data-remision-json='${JSON.stringify(remision)}' class="retention-btn w-full bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-amber-100 transition flex items-center justify-center gap-1">💰 Retención</button>`;
+                btnRetencion = `<button data-remision-json='${JSON.stringify(remision)}' class="retention-btn w-full bg-amber-50 text-amber-800 border border-amber-250 py-2 px-3 rounded-xl text-xs font-bold hover:bg-amber-100 hover:shadow-sm transition-all duration-200 flex items-center justify-center gap-1.5 transform hover:-translate-y-0.5 active:translate-y-0">💰 Retención</button>`;
             }
 
             let btnRevertir = '';
             if (isAdmin) {
-                btnRevertir = `<button data-remision-id="${remision.id}" class="no-facturar-btn w-full bg-red-50 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-100 transition flex items-center justify-center gap-1">🚫 Quitar IVA</button>`;
+                btnRevertir = `<button data-remision-id="${remision.id}" class="no-facturar-btn w-full bg-rose-50 text-rose-600 border border-rose-250 py-2 px-3 rounded-xl text-xs font-bold hover:bg-rose-100 hover:shadow-sm transition-all duration-200 flex items-center justify-center gap-1.5 transform hover:-translate-y-0.5 active:translate-y-0">🚫 Quitar IVA</button>`;
             }
 
             el.innerHTML = `
@@ -119,14 +119,14 @@ export function renderFacturacion() {
                         <span class="text-sm text-gray-700">Total a Facturar: <span class="font-extrabold text-blue-700 ml-1">${formatCurrency(remision.valorTotal)}</span></span>
                     </div>
                 </div>
-                <div class="facturacion-btn-container mt-4 lg:mt-0 lg:ml-4 border-t lg:border-t-0 pt-4 lg:pt-0 border-gray-100">
-                    <div class="facturacion-secondary-row">
+                <div class="flex flex-col gap-2 w-full lg:w-72 flex-shrink-0 mt-4 lg:mt-0 lg:ml-4 border-t lg:border-t-0 pt-4 lg:pt-0 border-gray-100">
+                    <div class="grid grid-cols-2 gap-2">
                         ${botonRUT}
                         ${remisionPdfButton}
                         ${btnRetencion}
                         ${btnRevertir}
                     </div>
-                    <button data-remision-id="${remision.id}" class="facturar-btn facturacion-main-btn bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm transition flex items-center justify-center gap-1">🧾 Facturar</button>
+                    <button data-remision-id="${remision.id}" class="facturar-btn facturacion-main-btn bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider hover:from-blue-700 hover:to-indigo-700 shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2 w-full transform hover:-translate-y-0.5 active:translate-y-0">🧾 Facturar</button>
                 </div>`;
             pendientesListEl.appendChild(el);
         });
@@ -175,16 +175,16 @@ export function renderFacturacion() {
             }
 
             const remisionPdfButton = remision.pdfPath 
-                ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="w-full bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-200 transition flex items-center justify-center gap-1">📋 Remisión PDF</button>` 
+                ? `<button data-file-path="${remision.pdfPath}" data-file-title="Remisión N° ${remision.numeroRemision}" class="w-full bg-slate-50 text-slate-700 border border-slate-250 py-2 px-3 rounded-xl text-xs font-bold hover:bg-slate-100 hover:shadow-sm transition-all duration-200 flex items-center justify-center gap-1.5 transform hover:-translate-y-0.5 active:translate-y-0">📋 Remisión PDF</button>` 
                 : '';
             
             let facturaButtons = remision.facturaPdfPath
-                ? `<button data-file-path="${remision.facturaPdfPath}" data-file-title="Factura N° ${remision.numeroFactura || remision.numeroRemision}" class="w-full bg-teal-50 text-teal-700 border border-teal-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-teal-100 transition flex items-center justify-center gap-1">👁️ Ver Factura</button>`
-                : `<button data-remision-id="${remision.id}" class="facturar-btn w-full bg-orange-50 text-orange-600 border border-orange-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-orange-100 transition flex items-center justify-center gap-1">📎 Adjuntar PDF</button>`;
+                ? `<button data-file-path="${remision.facturaPdfPath}" data-file-title="Factura N° ${remision.numeroFactura || remision.numeroRemision}" class="w-full bg-gradient-to-r from-teal-600 to-emerald-600 text-white py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider hover:from-teal-700 hover:to-emerald-700 shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2 transform hover:-translate-y-0.5 active:translate-y-0">👁️ Ver Factura</button>`
+                : `<button data-remision-id="${remision.id}" class="facturar-btn w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider hover:from-orange-600 hover:to-amber-600 shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2 transform hover:-translate-y-0.5 active:translate-y-0">📎 Adjuntar PDF</button>`;
 
             let btnRetencion = '';
             if (!remision.retention || !remision.retention.amount) {
-                 btnRetencion = `<button data-remision-json='${JSON.stringify(remision)}' class="retention-btn w-full bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-amber-100 transition flex items-center justify-center gap-1">💰 Retenciones</button>`;
+                 btnRetencion = `<button data-remision-json='${JSON.stringify(remision)}' class="retention-btn w-full bg-amber-50 text-amber-800 border border-amber-250 py-2 px-3 rounded-xl text-xs font-bold hover:bg-amber-100 hover:shadow-sm transition-all duration-200 flex items-center justify-center gap-1.5 transform hover:-translate-y-0.5 active:translate-y-0">💰 Retenciones</button>`;
             }
 
             el.innerHTML = `
@@ -201,12 +201,12 @@ export function renderFacturacion() {
                         <span class="text-sm text-gray-700">Total: <span class="font-extrabold text-teal-700 ml-1">${formatCurrency(remision.valorTotal)}</span></span>
                     </div>
                 </div>
-                <div class="facturacion-btn-container mt-4 lg:mt-0 lg:ml-4 border-t lg:border-t-0 pt-4 lg:pt-0 border-gray-100">
-                    <div class="facturacion-secondary-row">
+                <div class="flex flex-col gap-2 w-full lg:w-72 flex-shrink-0 mt-4 lg:mt-0 lg:ml-4 border-t lg:border-t-0 pt-4 lg:pt-0 border-gray-100">
+                    <div class="grid grid-cols-2 gap-2">
                         ${btnRetencion}
                         ${remisionPdfButton}
                     </div>
-                    <div class="facturacion-main-btn">
+                    <div class="w-full">
                         ${facturaButtons}
                     </div>
                 </div>`;
